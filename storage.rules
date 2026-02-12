@@ -1,0 +1,108 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    /* =========================
+       HELPERS
+       ========================= */
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+
+    function isPdf() {
+      return request.resource.contentType == 'application/pdf';
+    }
+
+    function isReasonableEbookSize() {
+      // 50MB — aligned with ATTACHMENT_UPLOAD_CONTRACT_V1
+      return request.resource.size < 50 * 1024 * 1024;
+    }
+
+    /* =========================
+       📕 BOOK COVERS (CANONICAL — SERVER OWNED)
+       ========================= */
+    /*
+      COVER_STORAGE_CONTRACT_V1
+      - NEVER publicly readable
+      - Written ONLY by backend (Admin SDK bypasses rules)
+      - Access ONLY via signed URLs
+    */
+    match /books/{bookId}/covers/{allPaths=**} {
+  // Covers are publicly readable
+  allow read: if true;
+
+  // ❌ No client writes — server (Admin SDK) only
+  allow write: if false;
+}
+
+    /* =========================
+       👤 USER ASSETS (AVATAR / BANNER / POSTS)
+       ========================= */
+    match /users/{uid}/{allPaths=**} {
+      allow read: if true;
+
+      allow write: if isOwner(uid)
+        && isImage()
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    /* =========================
+       📎 ATTACHMENTS (EBOOK FILES)
+       ========================= */
+    /*
+      ATTACHMENT_SECURITY_V1
+      - No public reads ever
+      - Access is ALWAYS mediated (signed URLs / reader service)
+      - Uploads only by owner
+    */
+    match /attachments/{ownerUid}/{attachmentId} {
+
+      // ❌ No direct reads
+      allow read: if false;
+
+      // ✅ Upload ebook (PDF only)
+      allow write: if isOwner(ownerUid)
+        && isPdf()
+        && isReasonableEbookSize();
+
+      // ❌ No deletes from client
+      allow delete: if false;
+    }
+
+    /* =========================
+       DATA IMPORTS (PRIVATE)
+       ========================= */
+    match /imports/{uid}/{allPaths=**} {
+      allow read, write: if isOwner(uid);
+    }
+
+    /* =========================
+       FEEDBACK ATTACHMENTS
+       ========================= */
+    match /feedback/{uid}/{allPaths=**} {
+      allow create: if isOwner(uid)
+        && request.resource.size < 10 * 1024 * 1024;
+
+      allow read: if false;
+    }
+
+    /* =========================
+       VENUE IMAGES (PUBLIC)
+       ========================= */
+    match /venues/{allPaths=**} {
+      allow read: if true;
+
+      allow write: if isAuthenticated()
+        && isImage()
+        && request.resource.size < 10 * 1024 * 1024;
+    }
+  }
+}

@@ -1,0 +1,191 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    /* =========================
+       HELPERS
+       ========================= */
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isSystemShelfId(shelfId) {
+      return shelfId == 'currently-reading'
+          || shelfId == 'want-to-read'
+          || shelfId == 'finished';
+    }
+
+    function isShelfOwner() {
+      return isSignedIn()
+        && request.auth.uid == resource.data.ownerId;
+    }
+
+    function isCreateShelfOwner() {
+      return isSignedIn()
+        && request.auth.uid == request.resource.data.ownerId;
+    }
+
+    /* =========================
+       USERS
+       ========================= */
+    match /users/{uid} {
+      allow read, create, update: if isOwner(uid);
+      allow delete: if false;
+
+      match /{subCollection}/{docId} {
+        allow read, create, update: if isOwner(uid);
+        allow delete: if false;
+      }
+    }
+
+    /* =========================
+       USER STATS
+       ========================= */
+    match /user_stats/{uid} {
+      allow read, create, update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    /* =========================
+       USER SETTINGS
+       ========================= */
+    match /user_settings/{uid} {
+      allow read, create, update: if isOwner(uid);
+      allow delete: if false;
+    }
+
+    /* =========================
+       SHELVES (CANONICAL)
+       ========================= */
+    match /shelves/{shelfDocId} {
+
+      allow read: if isSignedIn();
+
+      allow create: if isCreateShelfOwner();
+
+      allow update: if isShelfOwner()
+        && (
+          !isSystemShelfId(resource.data.id)
+          ||
+          (
+            request.resource.data.titleEn == resource.data.titleEn
+            && request.resource.data.titleAr == resource.data.titleAr
+          )
+        );
+
+      allow delete: if isShelfOwner()
+        && !isSystemShelfId(resource.data.id);
+    }
+
+    /* =========================
+       BOOKS (CATALOG)
+       ========================= */
+    match /books/{bookId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
+
+      /* =========================
+         📚 REVIEWS (SECURE)
+         ========================= */
+      match /reviews/{reviewId} {
+
+        // Public read (book details, discovery)
+        allow get, list: if true;
+
+        // Create: signed-in user, must be author
+        allow create: if isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.bookId == bookId
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.text is string;
+
+        // Update: ONLY the author
+        allow update: if isSignedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.bookId == resource.data.bookId;
+
+        // Delete: ONLY the author
+        allow delete: if isSignedIn()
+          && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    /* =========================
+       EDITIONS
+       ========================= */
+    match /editions/{editionId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
+       ATTACHMENTS
+       ========================= */
+    match /attachments/{attachmentId} {
+      allow get: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.uploaderUid == request.auth.uid
+        && request.resource.data.type == 'ebook';
+
+      allow update: if isSignedIn()
+        && resource.data.uploaderUid == request.auth.uid;
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       📖 READING PROGRESS (SSoT)
+       ========================= */
+    match /reading_progress/{progressId} {
+
+      allow get, list: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.status_state == 'currently_reading'
+        && request.resource.data.progress == 0;
+
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == resource.data.userId
+        && !('status_state' in request.resource.data);
+
+      allow delete: if false;
+    }
+
+    /* =========================
+       SOCIAL
+       ========================= */
+    match /posts/{postId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    match /comments/{commentId} {
+      allow read: if true;
+      allow create, update, delete: if isSignedIn();
+    }
+
+    /* =========================
+       WRITE PROJECTS
+       ========================= */
+    match /projects/{projectId} {
+      allow read, create, update, delete: if isSignedIn();
+    }
+
+    /* =========================
+       DENY ALL (DEFAULT)
+       ========================= */
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

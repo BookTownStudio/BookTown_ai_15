@@ -1,0 +1,67 @@
+# =========================
+# Logs
+# =========================
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# =========================
+# Environment variables
+# =========================
+.env
+.env.*
+!.env.example
+scripts/serviceAccountKey.json
+
+# =========================
+# Dependency directories
+# =========================
+node_modules/
+functions/node_modules/
+
+# =========================
+# Build artifacts
+# =========================
+dist/
+dist-ssr/
+build/
+coverage/
+functions/lib/
+
+# =========================
+# Firebase local artifacts
+# =========================
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# =========================
+# OS / Editor files
+# =========================
+.DS_Store
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# =========================
+# VS Code
+# =========================
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+
+# =========================
+# Temporary / cache
+# =========================
+.cache/
+.tmp/
+# Profiling artifacts
+*.cpuprofile

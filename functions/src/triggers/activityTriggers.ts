@@ -1,0 +1,115 @@
+import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
+import { admin } from "../firebaseAdmin";
+import * as logger from "firebase-functions/logger";
+
+const db = admin.firestore();
+
+async function emitActivityLog(data: {
+    actor: { uid: string; type: 'user' };
+    verb: string;
+    object: { entity_type: string; entity_id: string };
+    context: { target_owner_uid: string | null; visibility: 'public' | 'private' };
+    metadata?: { source: string; ui_surface: string };
+}) {
+    try {
+        await db.collection('activity_log').add({
+            ...data,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            version: "1.0"
+        });
+    } catch (error) {
+        logger.error(`[ACTIVITY_LOG][ERROR] Failed to emit log:`, error);
+    }
+}
+
+// --- TRIGGERS ---
+
+export const onActivityPostCreated = onDocumentCreated("posts/{postId}", async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+    await emitActivityLog({
+        actor: { uid: data.authorId, type: 'user' },
+        verb: 'post_created',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: null, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'social' }
+    });
+});
+
+export const onActivityPostLiked = onDocumentCreated("users/{userId}/likes/{postId}", async (event) => {
+    const postSnap = await db.collection('posts').doc(event.params.postId).get();
+    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
+
+    await emitActivityLog({
+        actor: { uid: event.params.userId, type: 'user' },
+        verb: 'post_liked',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: targetOwner, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'feed' }
+    });
+});
+
+export const onActivityPostBookmarked = onDocumentCreated("users/{userId}/bookmarks/{postId}", async (event) => {
+    const postSnap = await db.collection('posts').doc(event.params.postId).get();
+    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
+
+    await emitActivityLog({
+        actor: { uid: event.params.userId, type: 'user' },
+        verb: 'post_bookmarked',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: targetOwner, visibility: 'private' },
+        metadata: { source: 'web', ui_surface: 'detail' }
+    });
+});
+
+export const onActivityPostCommented = onDocumentCreated("posts/{postId}/comments/{commentId}", async (event) => {
+    const commentData = event.data?.data();
+    if (!commentData) return;
+    const postSnap = await db.collection('posts').doc(event.params.postId).get();
+    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
+
+    await emitActivityLog({
+        actor: { uid: commentData.authorId, type: 'user' },
+        verb: 'post_commented',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: targetOwner, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'feed' }
+    });
+});
+
+export const onActivityPostReposted = onDocumentCreated(
+  { document: "users/{userId}/reposts/{postId}" },
+  async (event) => {
+    const postSnap = await db.collection('posts').doc(event.params.postId).get();
+    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
+
+    await emitActivityLog({
+        actor: { uid: event.params.userId, type: 'user' },
+        verb: 'post_reposted',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: targetOwner, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'feed' }
+    });
+});
+
+export const onActivityPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {
+    const data = event.data?.data();
+    if (!data) return;
+    await emitActivityLog({
+        actor: { uid: data.authorId, type: 'user' },
+        verb: 'post_deleted',
+        object: { entity_type: 'post', entity_id: event.params.postId },
+        context: { target_owner_uid: null, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'social' }
+    });
+});
+
+export const onActivityUserFollowed = onDocumentCreated("users/{userId}/followers/{followerId}", async (event) => {
+    await emitActivityLog({
+        actor: { uid: event.params.followerId, type: 'user' },
+        verb: 'user_followed',
+        object: { entity_type: 'user', entity_id: event.params.userId },
+        context: { target_owner_uid: event.params.userId, visibility: 'public' },
+        metadata: { source: 'web', ui_surface: 'profile' }
+    });
+});
