@@ -4,6 +4,39 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue, WriteBatch } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { recomputeUserStats } from "./userStats/recomputeUserStats";
+import { wrapCallableV1 } from "./contracts/wrapCallableV1";
+import { wrapCallableV2 } from "./contracts/wrapCallableV2";
+import { wrapRestExport } from "./contracts/wrapRestExport";
+import { ingestBook as ingestBookRaw } from "./library/ingestBook";
+import { deriveBookCovers } from "./library/deriveBookCovers";
+import { backfillCovers as backfillCoversRaw } from "./library/backfillCovers";
+import { requestEbookReadAccess as requestEbookReadAccessRaw } from "./reader/requestEbookReadAccess";
+import { recordReadingProgress as recordReadingProgressRaw } from "./reader/recordReadingProgress";
+import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderProgress";
+import { getReaderInsights as getReaderInsightsRaw } from "./reader/getReaderInsights";
+import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "./reader/getOrCreateReadingSession";
+import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "./reader/requestEbookOfflineAccess";
+import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
+import {
+  addSocialComment as addSocialCommentRaw,
+  editSocialComment as editSocialCommentRaw,
+  deleteSocialComment as deleteSocialCommentRaw,
+} from "./social/comments";
+import { editSocialPost as editSocialPostRaw } from "./social/editPost";
+import { likeSocialPost as likeSocialPostRaw, repostSocialPost as repostSocialPostRaw } from "./social/interactions";
+import { reportSocialPost as reportSocialPostRaw } from "./social/reporting";
+import {
+  applyModerationAction as applyModerationActionRaw,
+  transitionModerationStage as transitionModerationStageRaw,
+} from "./social/moderation";
+import { incrementPostView as incrementPostViewRaw } from "./social/analytics";
+import { createWriteProject as createWriteProjectRaw } from "./createWriteProject";
+import { deleteWriteProject as deleteWriteProjectRaw } from "./deleteWriteProject";
+import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
+import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
+import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
+import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
+import { api as apiRaw } from "./api";
 
 // ------------------------------------------------------------------
 // Admin SDK (initialized via firebaseAdmin module)
@@ -122,7 +155,7 @@ export const onUserCreatedBootstrap = functions.auth
  * AMENDMENT (LOCKED):
  * - Does NOT create "currently-reading"
  */
-export const createDefaultShelves = onCall({ cors: true }, async (request) => {
+const createDefaultShelvesRaw = onCall({ cors: true }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "You must be signed in.");
   }
@@ -173,49 +206,120 @@ export const createDefaultShelves = onCall({ cors: true }, async (request) => {
 // ------------------------------------------------------------------
 // 🔒 AUTHORITATIVE INGESTION (CRITICAL EXPORT)
 // ------------------------------------------------------------------
-export { ingestBook } from "./library/ingestBook";
-export { deriveBookCovers } from "./library/deriveBookCovers";
-export { backfillCovers } from "./library/backfillCovers";
+export const createDefaultShelves = wrapCallableV2(
+  "createDefaultShelves",
+  createDefaultShelvesRaw
+);
+export const ingestBook = wrapCallableV2("ingestBook", ingestBookRaw);
+export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
 
 // ------------------------------------------------------------------
 // 📖 READER MEDIATION (SECURE, CANONICAL)
 // ------------------------------------------------------------------
-export { requestEbookReadAccess } from "./reader/requestEbookReadAccess";
-export { recordReadingProgress } from "./reader/recordReadingProgress";
-export { getReaderProgress } from "./reader/getReaderProgress";
-export { getReaderInsights } from "./reader/getReaderInsights";
-export { getOrCreateReadingSession } from "./reader/getOrCreateReadingSession";
-export { requestEbookOfflineAccess } from "./reader/requestEbookOfflineAccess";
+export const requestEbookReadAccess = wrapCallableV1(
+  "requestEbookReadAccess",
+  requestEbookReadAccessRaw as any
+);
+export const recordReadingProgress = wrapCallableV2(
+  "recordReadingProgress",
+  recordReadingProgressRaw
+);
+export const getReaderProgress = wrapCallableV2(
+  "getReaderProgress",
+  getReaderProgressRaw
+);
+export const getReaderInsights = wrapCallableV2(
+  "getReaderInsights",
+  getReaderInsightsRaw
+);
+export const getOrCreateReadingSession = wrapCallableV2(
+  "getOrCreateReadingSession",
+  getOrCreateReadingSessionRaw
+);
+export const requestEbookOfflineAccess = wrapCallableV2(
+  "requestEbookOfflineAccess",
+  requestEbookOfflineAccessRaw
+);
 
 // ------------------------------------------------------------------
 // Authoritative Service Exports
 // ------------------------------------------------------------------
 
 // Social
-export { createSocialPost } from "./createSocialPost";
-export {
-  addSocialComment,
-  editSocialComment,
-  deleteSocialComment,
-} from "./social/comments";
-export { likeSocialPost, repostSocialPost } from "./social/interactions";
-export { reportSocialPost } from "./social/reporting";
-export {
-  applyModerationAction,
-  transitionModerationStage,
-} from "./social/moderation";
-export { incrementPostView } from "./social/analytics";
+export const createSocialPost = wrapCallableV2(
+  "createSocialPost",
+  createSocialPostRaw
+);
+export const addSocialComment = wrapCallableV2(
+  "addSocialComment",
+  addSocialCommentRaw
+);
+export const editSocialComment = wrapCallableV2(
+  "editSocialComment",
+  editSocialCommentRaw
+);
+export const deleteSocialComment = wrapCallableV2(
+  "deleteSocialComment",
+  deleteSocialCommentRaw
+);
+export const editSocialPost = wrapCallableV2(
+  "editSocialPost",
+  editSocialPostRaw
+);
+export const likeSocialPost = wrapCallableV2(
+  "likeSocialPost",
+  likeSocialPostRaw
+);
+export const repostSocialPost = wrapCallableV2(
+  "repostSocialPost",
+  repostSocialPostRaw
+);
+export const reportSocialPost = wrapCallableV2(
+  "reportSocialPost",
+  reportSocialPostRaw
+);
+export const applyModerationAction = wrapCallableV2(
+  "applyModerationAction",
+  applyModerationActionRaw
+);
+export const transitionModerationStage = wrapCallableV2(
+  "transitionModerationStage",
+  transitionModerationStageRaw
+);
+export const incrementPostView = wrapCallableV2(
+  "incrementPostView",
+  incrementPostViewRaw
+);
 
 // Write
-export { createWriteProject } from "./createWriteProject";
-export { deleteWriteProject } from "./deleteWriteProject";
+export const createWriteProject = wrapCallableV2(
+  "createWriteProject",
+  createWriteProjectRaw
+);
+export const deleteWriteProject = wrapCallableV2(
+  "deleteWriteProject",
+  deleteWriteProjectRaw
+);
 
 // Attachments
-export { getAttachmentUrl } from "./attachments/getAttachmentUrl";
-export { createEbookAttachment } from "./attachments/createEbookAttachment";
+export const getAttachmentUrl = wrapCallableV2(
+  "getAttachmentUrl",
+  getAttachmentUrlRaw
+);
+export const createEbookAttachment = wrapCallableV2(
+  "createEbookAttachment",
+  createEbookAttachmentRaw
+);
+export const finalizeMetadata = wrapCallableV2(
+  "finalizeMetadata",
+  finalizeMetadataRaw
+);
 
 // Admin
-export { backfillDerivedStats } from "./admin/backfillStats";
+export const backfillDerivedStats = wrapCallableV2(
+  "backfillDerivedStats",
+  backfillDerivedStatsRaw
+);
 export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";
 
@@ -226,4 +330,4 @@ export * from "./triggers/activityTriggers";
 export * from "./triggers/searchTriggers";
 
 // REST API (CRITICAL WIRING)
-export { api } from "./api";
+export const api = wrapRestExport(apiRaw);
