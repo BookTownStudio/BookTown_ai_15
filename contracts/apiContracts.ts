@@ -648,32 +648,26 @@ export const apiContracts = {
   },
 
   rest: {
-  searchBooks: defineContract(
-    z
-      .object({
-        q: z.string().min(2),
-        ebookOnly: z.boolean().optional(),
-        lang: z.string().min(2).max(8).optional(),
-      })
-      .strict(),
-    z
-      .object({
-        success: z.literal(true),
-        data: z
-          .object({
-            results: z.array(searchBookSchema),
-          })
-          .strict(),
-      })
-      .strict(),
-    "rest",
-    {
-      method: "GET",
-      route: "/api/search/books",
-      callSites: ["services/federatedSearch.ts"],
-    }
-  ),
-}
+    searchBooks: defineContract(
+      z
+        .object({
+          q: z.string().min(2),
+          ebookOnly: z.boolean().optional(),
+          lang: z.string().min(2).max(8).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          results: z.array(searchBookSchema),
+        })
+        .strict(),
+      "rest",
+      {
+        method: "GET",
+        route: "/api/search/books",
+        callSites: ["services/federatedSearch.ts"],
+      }
+    ),
 
     aiChat: defineContract(
       z
