@@ -20,6 +20,33 @@ import SearchResultCard, {
   SearchResultDTO
 } from '../../components/content/SearchResultCard.tsx';
 
+const normalizeIngestionSource = (
+  source: unknown,
+  externalId: string
+): 'googleBooks' | 'openLibrary' => {
+  const value = String(source || '').trim();
+
+  if (
+    value === 'googleBooks' ||
+    value === 'google_books' ||
+    value === 'googlebooks' ||
+    value === 'GOOGLE_BOOKS'
+  ) {
+    return 'googleBooks';
+  }
+
+  if (
+    value === 'openLibrary' ||
+    value === 'open_library' ||
+    value === 'openlibrary' ||
+    value === 'OPEN_LIBRARY'
+  ) {
+    return 'openLibrary';
+  }
+
+  return externalId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
+};
+
 const LiveSearchScreen: React.FC = () => {
   const { navigate, currentView } = useNavigation();
   const { lang } = useI18n();
@@ -48,7 +75,7 @@ const LiveSearchScreen: React.FC = () => {
       const res = await ingestBook({
         bookId: result.externalId,
         source: result.source,
-        rawBook: result
+        rawBook: result.rawBook ?? result
       });
 
       const canonicalId =
@@ -77,17 +104,23 @@ const LiveSearchScreen: React.FC = () => {
   };
 
   const validResults: SearchResultDTO[] =
-    (results || []).map((b: any) => ({
-      externalId: b.id,
-      source:
-        b.source ||
-        (b.id?.startsWith('gb_') ? 'googleBooks' : 'openLibrary'),
-      titleEn: b.titleEn || b.title,
-      titleAr: b.titleAr,
-      authorEn: b.authorEn || b.author,
-      authorAr: b.authorAr,
-      coverUrl: b.coverUrl
-    }));
+    (results || [])
+      .map((b: any) => {
+        const externalId = b.id || b.editionId || b.bookId;
+        if (!externalId || typeof externalId !== 'string') return null;
+
+        return {
+          externalId,
+          source: normalizeIngestionSource(b.source, externalId),
+          titleEn: b.titleEn || b.title,
+          titleAr: b.titleAr,
+          authorEn: b.authorEn || b.author,
+          authorAr: b.authorAr,
+          coverUrl: b.coverUrl,
+          rawBook: b
+        } as SearchResultDTO;
+      })
+      .filter((item): item is SearchResultDTO => item !== null);
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-900">

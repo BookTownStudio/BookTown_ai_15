@@ -28,6 +28,32 @@ export type BookIngestionResult = {
   status?: string;
 };
 
+const normalizeIngestionSource = (
+  source: unknown
+): 'googleBooks' | 'openLibrary' | null => {
+  const value = String(source || '').trim();
+
+  if (
+    value === 'googleBooks' ||
+    value === 'google_books' ||
+    value === 'googlebooks' ||
+    value === 'GOOGLE_BOOKS'
+  ) {
+    return 'googleBooks';
+  }
+
+  if (
+    value === 'openLibrary' ||
+    value === 'open_library' ||
+    value === 'openlibrary' ||
+    value === 'OPEN_LIBRARY'
+  ) {
+    return 'openLibrary';
+  }
+
+  return null;
+};
+
 export const bookIngestionService = {
   /**
    * ingest
@@ -40,23 +66,39 @@ export const bookIngestionService = {
     params: BookIngestionParams
   ): Promise<BookIngestionResult | null> {
     try {
+      const source = normalizeIngestionSource(params.source);
+      if (!source) {
+        console.warn('[INGESTION_SERVICE][INVALID_SOURCE]', params.source);
+        return null;
+      }
+
       const functions = getFirebaseFunctions();
       const ingestFn = httpsCallable(functions, 'ingestBook');
 
       const result = await ingestFn({
         bookId: params.bookId,
-        source: params.source,
+        source,
         rawBook: params.rawBook,
       });
 
       /**
-       * Defensive contract validation
-       * Backend MAY return:
-       * { bookId }
-       * { bookId, editionId }
-       * { bookId, status }
+       * Contract-aware response parsing:
+       * - Enforced wrapper: { success: true, data: { ... } }
+       * - Legacy callable: { ... }
        */
-      const data = result?.data as Partial<BookIngestionResult> | undefined;
+      const payload = result?.data as any;
+      const data: Partial<BookIngestionResult> | undefined =
+        payload?.success === true && payload?.data
+          ? payload.data
+          : payload;
+
+      if (payload?.success === false) {
+        console.warn(
+          '[INGESTION_SERVICE][BACKEND_FAILURE]',
+          payload?.error
+        );
+        return null;
+      }
 
       if (data?.bookId) {
         return {

@@ -36,6 +36,33 @@ import { useCurrentlyReading } from '../../lib/hooks/useCurrentlyReading.ts';
 const EBOOK_ONLY_STORAGE_KEY = 'booktown.search.ebookOnly';
 const CURRENTLY_READING_ID = 'currently-reading';
 
+const normalizeIngestionSource = (
+  source: unknown,
+  externalId: string
+): 'googleBooks' | 'openLibrary' => {
+  const value = String(source || '').trim();
+
+  if (
+    value === 'googleBooks' ||
+    value === 'google_books' ||
+    value === 'googlebooks' ||
+    value === 'GOOGLE_BOOKS'
+  ) {
+    return 'googleBooks';
+  }
+
+  if (
+    value === 'openLibrary' ||
+    value === 'open_library' ||
+    value === 'openlibrary' ||
+    value === 'OPEN_LIBRARY'
+  ) {
+    return 'openLibrary';
+  }
+
+  return externalId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
+};
+
 /* -------------------------------
    Home Screen
 -------------------------------- */
@@ -112,7 +139,7 @@ const HomeScreen: React.FC = () => {
       const res = await ingestBook({
         bookId: result.externalId,
         source: result.source,
-        rawBook: result
+        rawBook: result.rawBook ?? result
       });
 
       const canonicalId = res?.editionId || res?.bookId;
@@ -138,18 +165,24 @@ const HomeScreen: React.FC = () => {
   -------------------------------- */
   const renderSearchResults = () => {
     const validResults: SearchResultDTO[] =
-      (searchResults || []).map((b: any) => ({
-        externalId: b.id,
-        source:
-          b.source ||
-          (b.id?.startsWith('gb_') ? 'googleBooks' : 'openLibrary'),
-        titleEn: b.titleEn || b.title,
-        titleAr: b.titleAr,
-        authorEn: b.authorEn || b.author,
-        authorAr: b.authorAr,
-        coverUrl: b.coverUrl,
-        isEbookAvailable: b.isEbookAvailable
-      }));
+      (searchResults || [])
+        .map((b: any) => {
+          const externalId = b.id || b.editionId || b.bookId;
+          if (!externalId || typeof externalId !== 'string') return null;
+
+          return {
+            externalId,
+            source: normalizeIngestionSource(b.source, externalId),
+            titleEn: b.titleEn || b.title,
+            titleAr: b.titleAr,
+            authorEn: b.authorEn || b.author,
+            authorAr: b.authorAr,
+            coverUrl: b.coverUrl,
+            isEbookAvailable: b.isEbookAvailable,
+            rawBook: b
+          } as SearchResultDTO;
+        })
+        .filter((item): item is SearchResultDTO => item !== null);
 
     return (
       <div className="pt-4 min-h-[40vh]">

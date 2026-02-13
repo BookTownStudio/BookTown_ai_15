@@ -41,14 +41,19 @@ export const firebaseCatalogService = {
         book?.coverUrl ||
         '';
 
-      if (typeof coverPath === 'string' && coverPath.startsWith('books/')) {
-        try {
-          const storage = getFirebaseStorage();
-          resolvedCoverUrl = await getDownloadURL(
-            storageRef(storage, coverPath)
-          );
-        } catch {
-          // Cover resolution must NEVER break rendering
+      if (typeof coverPath === 'string' && coverPath.length > 0) {
+        if (coverPath.startsWith('books/')) {
+          try {
+            const storage = getFirebaseStorage();
+            resolvedCoverUrl = await getDownloadURL(
+              storageRef(storage, coverPath)
+            );
+          } catch {
+            resolvedCoverUrl =
+              typeof book.coverUrl === 'string' ? book.coverUrl : '';
+          }
+        } else {
+          resolvedCoverUrl = coverPath;
         }
       }
 

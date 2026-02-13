@@ -29,12 +29,15 @@ export const performFederatedSearch = async (
         }
 
         /**
-         * 🔒 AUTHORITATIVE CONTRACT
-         * Cloud Function returns Book[] or { results: Book[] }
+         * Contract-compatible parsing:
+         * - New enforced envelope: { success: true, data: { results: Book[] } }
+         * - Legacy fallback: { results: Book[] } or Book[]
          */
         const data = await response.json();
         const books: Book[] = Array.isArray(data)
             ? data
+            : Array.isArray(data?.data?.results)
+            ? data.data.results
             : Array.isArray(data?.results)
             ? data.results
             : [];

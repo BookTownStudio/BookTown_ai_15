@@ -51,6 +51,29 @@ function classifyIngestionError(err: any): IngestionFailureType {
   return IngestionFailureType.FATAL;
 }
 
+function resolveDescription(rawBook: any): string {
+  return (
+    rawBook?.descriptionEn ||
+    rawBook?.description ||
+    rawBook?.summary ||
+    ""
+  );
+}
+
+function resolveCoverUrl(rawBook: any): string | null {
+  const url =
+    rawBook?.coverUrl ||
+    rawBook?.thumbnail ||
+    rawBook?.imageLinks?.thumbnail ||
+    rawBook?.coverImages?.large ||
+    rawBook?.coverImages?.medium ||
+    rawBook?.coverImages?.small ||
+    null;
+
+  if (!url) return null;
+  return String(url).replace("http:", "https:");
+}
+
 /**
  * upgradeGoogleCoverCandidates
  */
@@ -85,11 +108,33 @@ export function upgradeOpenLibraryCandidates(
   rawBook: any,
   externalId: string
 ): string[] {
-  return [
+  const explicitCover =
+    rawBook?.coverUrl ||
+    rawBook?.thumbnail ||
+    rawBook?.coverImages?.large ||
+    rawBook?.coverImages?.medium ||
+    rawBook?.coverImages?.small ||
+    null;
+
+  const coverId =
+    rawBook?.coverId ||
+    rawBook?.cover_i ||
+    null;
+
+  const candidates = [
+    explicitCover ? String(explicitCover).replace("http:", "https:") : null,
+    explicitCover && /-M\.(jpg|jpeg|png)$/i.test(String(explicitCover))
+      ? String(explicitCover).replace(/-M(\.(jpg|jpeg|png))$/i, "-L$1")
+      : null,
+    coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : null,
+    coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : null,
+    coverId ? `https://covers.openlibrary.org/b/id/${coverId}-S.jpg` : null,
     `https://covers.openlibrary.org/b/olid/${externalId}-L.jpg`,
     `https://covers.openlibrary.org/b/olid/${externalId}-M.jpg`,
     `https://covers.openlibrary.org/b/olid/${externalId}-S.jpg`,
   ];
+
+  return Array.from(new Set(candidates.filter(Boolean))) as string[];
 }
 
 /**
@@ -114,8 +159,12 @@ export async function fetchFirstValid(
 
       if (!res.ok) continue;
 
+      const contentType = res.headers.get("content-type") || "";
+      if (!contentType.toLowerCase().startsWith("image/")) continue;
+
       const buffer = Buffer.from(await res.arrayBuffer());
-      if (buffer.length > 10_000) return buffer;
+      // Accept smaller but still meaningful images (many provider thumbnails are <10KB).
+      if (buffer.length >= 1_000) return buffer;
     } catch (err) {
       logger.error("[FETCH] Failed", { url, err: String(err) });
     }
@@ -155,6 +204,8 @@ export const ingestBook = onCall<IngestionRequest>(
       (Array.isArray(rawBook.authors) && rawBook.authors[0]) ||
       rawBook.author ||
       "Unknown";
+    const description = resolveDescription(rawBook);
+    const fallbackCoverUrl = resolveCoverUrl(rawBook);
 
     const publicationYear =
       rawBook.publicationYear ||
@@ -228,6 +279,7 @@ export const ingestBook = onCall<IngestionRequest>(
       const coverPath = buffer
         ? `books/${bookId}/covers/original.jpg`
         : null;
+      const persistedCoverValue = coverPath || fallbackCoverUrl;
 
       if (buffer && coverPath) {
         await bucket.file(coverPath).save(buffer, {
@@ -248,14 +300,26 @@ export const ingestBook = onCall<IngestionRequest>(
             source,
             externalId,
             title,
+            titleEn: rawBook.titleEn || title,
+            titleAr: rawBook.titleAr || "",
             author,
-            description: rawBook.description || "",
+            authorEn: rawBook.authorEn || author,
+            authorAr: rawBook.authorAr || "",
+            description,
+            descriptionEn: rawBook.descriptionEn || description,
+            descriptionAr: rawBook.descriptionAr || "",
+            coverUrl: fallbackCoverUrl,
             cover: {
-              original: coverPath,
-              large: coverPath,
-              medium: coverPath,
-              small: coverPath,
+              original: persistedCoverValue,
+              large: persistedCoverValue,
+              medium: persistedCoverValue,
+              small: persistedCoverValue,
             },
+            isEbookAvailable: Boolean(
+              rawBook.isEbookAvailable ||
+                rawBook.ebookAvailable ||
+                rawBook.hasEbook
+            ),
             createdAt: now,
             updatedAt: now,
             ingestionState: IngestionState.COMPLETE,
@@ -273,10 +337,20 @@ export const ingestBook = onCall<IngestionRequest>(
             externalKey,
             canonicalKey,
             titleEn: title,
+            titleAr: rawBook.titleAr || "",
             authorEn: author,
-            description: rawBook.description || "",
+            authorAr: rawBook.authorAr || "",
+            description,
+            descriptionEn: rawBook.descriptionEn || description,
+            descriptionAr: rawBook.descriptionAr || "",
             source,
             externalId,
+            coverUrl: fallbackCoverUrl,
+            isEbookAvailable: Boolean(
+              rawBook.isEbookAvailable ||
+                rawBook.ebookAvailable ||
+                rawBook.hasEbook
+            ),
             publicDomain: publicDomainResult.isPublicDomain,
             publicDomainReason: publicDomainResult.reason,
             publicDomainEvaluatedAt: now,

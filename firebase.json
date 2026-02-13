@@ -21,6 +21,7 @@
     ]
   },
   "hosting": {
+    "site": "booktown-ai",
     "public": "dist",
     "ignore": [
       "firebase.json",

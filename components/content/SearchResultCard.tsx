@@ -18,6 +18,7 @@ export interface SearchResultDTO {
   authorAr?: string;
   coverUrl?: string;
   isEbookAvailable?: boolean;
+  rawBook?: any;
 }
 
 interface SearchResultCardProps {

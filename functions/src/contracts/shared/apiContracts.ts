@@ -91,7 +91,8 @@ const readerInsightsDataSchema = z
 
 const searchBookSchema = z
   .object({
-    id: z.string().min(1),
+    id: z.string().min(1).optional(),
+    bookId: z.string().min(1).optional(),
     titleEn: z.string().optional(),
     titleAr: z.string().optional(),
     authorEn: z.string().optional(),
@@ -103,7 +104,16 @@ const searchBookSchema = z
     editionId: z.string().optional(),
     isEbookAvailable: z.boolean().optional(),
   })
-  .passthrough();
+  .passthrough()
+  .refine(
+    (v) =>
+      (typeof v.id === "string" && v.id.length > 0) ||
+      (typeof v.editionId === "string" && v.editionId.length > 0) ||
+      (typeof v.bookId === "string" && v.bookId.length > 0),
+    {
+      message: "At least one identifier (id, editionId, or bookId) is required.",
+    }
+  );
 
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,

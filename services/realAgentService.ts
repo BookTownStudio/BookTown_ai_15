@@ -15,7 +15,19 @@ export class RealAgentService implements AgentService {
                 throw new Error(errorData.error || `Request failed with status ${response.status}`);
             }
 
-            return await response.json();
+            const payload = await response.json();
+
+            // Contract envelope (v1): { success: true, data: ... }
+            if (payload?.success === true && payload?.data !== undefined) {
+                return payload.data;
+            }
+
+            if (payload?.success === false && payload?.error) {
+                throw new Error(payload.error.message || 'API request failed.');
+            }
+
+            // Backward-compatible fallback
+            return payload;
         } catch (error) {
             console.error(`[RealAgentService] Error calling ${endpoint}:`, error);
             throw error;

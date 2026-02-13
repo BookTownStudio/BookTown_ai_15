@@ -123,7 +123,8 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
                   titleAr: book.titleAr,
                   authorEn: book.authorEn,
                   authorAr: book.authorAr,
-                  coverUrl: book.coverUrl
+                  coverUrl: book.coverUrl,
+                  rawBook: book
                 }}
                 lang={lang}
                 onAdd={() => handleSelect(book)}
