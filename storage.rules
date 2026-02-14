@@ -21,6 +21,14 @@ service firebase.storage {
       return request.resource.contentType == 'application/pdf';
     }
 
+    function isEpub() {
+      return request.resource.contentType == 'application/epub+zip';
+    }
+
+    function isAllowedUserUploadMimeType() {
+      return isPdf() || isEpub();
+    }
+
     function isReasonableEbookSize() {
       // 50MB — aligned with ATTACHMENT_UPLOAD_CONTRACT_V1
       return request.resource.size < 50 * 1024 * 1024;
@@ -42,6 +50,30 @@ service firebase.storage {
   // ❌ No client writes — server (Admin SDK) only
   allow write: if false;
 }
+
+    /* =========================
+       📘 USER UPLOAD SOURCE FILES
+       ========================= */
+    /*
+      USER_UPLOAD_SOURCE_CONTRACT_V1
+      - Client can upload ONLY its own user_upload source file
+      - Path is strictly books/{bookId}/original/{fileName}
+      - Ownership and metadata are verified against Firestore book doc
+    */
+    match /books/{bookId}/original/{fileName} {
+      allow read: if false;
+
+      allow create, update: if isAuthenticated()
+        && request.resource.size > 0
+        && request.resource.size <= 25 * 1024 * 1024
+        && isAllowedUserUploadMimeType()
+        && firestore.exists(/databases/(default)/documents/books/$(bookId))
+        && firestore.get(/databases/(default)/documents/books/$(bookId)).data.source == "user_upload"
+        && firestore.get(/databases/(default)/documents/books/$(bookId)).data.ownerUid == request.auth.uid
+        && firestore.get(/databases/(default)/documents/books/$(bookId)).data.fileName == fileName;
+
+      allow delete: if false;
+    }
 
     /* =========================
        👤 USER ASSETS (AVATAR / BANNER / POSTS)
