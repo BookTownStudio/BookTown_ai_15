@@ -22,7 +22,7 @@ import { queryClient } from './lib/query-client.ts';
 // 1️⃣ Initialize Firebase exactly once before anything touches it
 initializeFirebase();
 
-// 2️⃣ Enforce AISTUDIO_MEDIA_PERMISSION_GUARD_V1 at bootstrap
+// 2️⃣ Enforce MEDIA_PERMISSION_GUARD_V1 at bootstrap
 initMediaGuard();
 
 // 3️⃣ Safe build/version log

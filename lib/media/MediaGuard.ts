@@ -1,5 +1,5 @@
 /**
- * AISTUDIO_MEDIA_PERMISSION_GUARD_V1
+ * MEDIA_PERMISSION_GUARD_V1
  * Authority: frontend_with_platform_enforcement
  * 
  * Intercepts and blocks preemptive media hardware requests.

@@ -4,7 +4,7 @@
 // Identity Helpers
 // -------------------------
 
-// Normalize identity across app (auth / guest / mock / AI Studio)
+// Normalize identity across app (auth / guest)
 // FIX: Updated identity helpers to accept null, matching useAuth's effectiveUid.
 const normalizeUid = (uid: string | null | undefined) => uid ?? 'anonymous';
 

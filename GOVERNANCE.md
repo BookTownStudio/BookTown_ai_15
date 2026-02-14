@@ -43,5 +43,5 @@ Critical flows are logged to Google Cloud Logging via `firebase-functions/logger
 
 ## 5. Environment Awareness
 
-*   **Mock Mode**: When running in AI Studio or with `VITE_FORCE_MOCK=true`, the app uses in-memory mock services. An orange "MOCK MODE" badge is displayed.
-*   **Production**: When running with valid Firebase credentials, the app connects to real backend services.
+*   **Single Runtime Path**: App behavior is production-aligned in all environments. It always uses Firebase-backed services.
+*   **Configuration Gate**: Missing Firebase credentials are treated as startup misconfiguration and must fail fast.

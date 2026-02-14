@@ -14,27 +14,23 @@ The architecture successfully isolates the Gemini SDK from the client bundle.
 | **Secret Safety** | **PASS** | `vite.config.ts` does NOT inject `GEMINI_API_KEY`. |
 
 ## 2. Mode Determinism
-The application correctly selects between Mock and Real services based on the environment.
+The application runs a single deterministic production service path.
 
 | Scenario | Logic Path | Result Service |
 | :--- | :--- | :--- |
-| **AI Studio / Demo** | `isDemoEnv=true` | `MockAgentService`, `MockDbService` |
-| **Dev (Forced Mock)** | `VITE_FORCE_MOCK=true` | `MockAgentService`, `MockDbService` |
-| **Production** | `API_KEY` present | `RealAgentService`, `FirebaseDbService` |
+| **Local Development** | Firebase config present | `RealAgentService`, `FirebaseDbService` |
+| **Production** | Firebase config present | `RealAgentService`, `FirebaseDbService` |
 
 ## 3. Critical Flow Verification
 
 ### 3.1 AI Chat & Recommendations
 *   **Production**: `RealAgentService` calls `fetch('/api/ai/chat')`. The request is routed via `firebase.json` rewrites to the Cloud Function.
-*   **Mock**: `MockAgentService` returns immediate, deterministic strings.
 
 ### 3.2 Visual Search
 *   **Production**: `CameraCaptureModal` -> `identifyBook` -> POST `/api/ai/chat` (Multimodal).
-*   **Mock**: Returns hardcoded "The Great Gatsby".
 
 ### 3.3 Data Persistence
 *   **Production**: Writes to Firestore.
-*   **Mock**: Writes to in-memory `MOCK_DATA` object.
 
 ## 4. Build Output
 The build process (`npm run build`) generates a clean `dist/` directory:

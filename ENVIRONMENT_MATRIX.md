@@ -1,11 +1,10 @@
 # Environment & Secrets Matrix
 
 ## Frontend Environment Flags (VITE_*)
-These flags control frontend behavior and are safe to expose in the bundle.
+These flags control frontend Firebase connectivity and are safe to expose in the bundle.
 
 | Flag | Description | Default |
 | :--- | :--- | :--- |
-| `VITE_FORCE_MOCK` | If `true`, forces the app to use Mock Data Services and Mock AI, regardless of other configs. Useful for UI testing or offline demos. | `false` |
 | `VITE_FIREBASE_API_KEY` | Firebase Public API Key. Presence indicates Firebase is configured. | `undefined` |
 | `VITE_FIREBASE_PROJECT_ID` | Firebase Project ID. | `undefined` |
 | ... | (Other standard Firebase config variables) | ... |
@@ -19,9 +18,7 @@ These secrets must **never** be exposed to the frontend. They are managed via Fi
 
 ## Environment Behavior Map
 
-| Environment | `VITE_FORCE_MOCK` | Backend Connection | Data Source | AI Source |
-| :--- | :--- | :--- | :--- | :--- |
-| **AI Studio / Demo** | `false` (implicit) | None | Mock DB (In-Memory) | Mock Agent (Client-side simulation) |
-| **Local Dev (Mock Mode)** | `true` | None | Mock DB | Mock Agent |
-| **Local Dev (Connected)** | `false` | Emulators / Real | Real Firestore | Real Functions (via proxy/emulator) |
-| **Production** | `false` | Real | Real Firestore | Real Functions |
+| Environment | Backend Connection | Data Source | AI Source |
+| :--- | :--- | :--- | :--- |
+| **Local Development** | Emulators / Real | Firestore | Cloud Functions (via proxy/emulator) |
+| **Production** | Real | Firestore | Cloud Functions |

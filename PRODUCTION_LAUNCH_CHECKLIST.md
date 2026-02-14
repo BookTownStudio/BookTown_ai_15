@@ -27,8 +27,8 @@
 - [ ] **Lighthouse Score**: Target >90 for Performance, Accessibility, Best Practices, SEO.
 
 ## 4. Environment Variables
-- [ ] **Production**: Set `VITE_FIREBASE_API_KEY`, `VITE_GEMINI_API_KEY`, etc. in Vercel/Netlify.
-- [ ] **Mock Mode**: Ensure `VITE_FORCE_MOCK=true` works for demo deployments.
+- [ ] **Production**: Set all required Firebase `VITE_*` keys in hosting environment.
+- [ ] **Backend Secrets**: Set `GEMINI_API_KEY` via Firebase Functions secrets (never in frontend env vars).
 
 ## 5. Feature Verification
 - [ ] **Gemini AI**: Test "Surprise Me" and "Librarian" chat with a valid API key.

@@ -63,18 +63,11 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const lastIdentityRef = useRef<string | null>(null);
 
     const firebaseAuth = getFirebaseAuth();
-    const isMockAuth = (authObj: any) => !!authObj?.isMock;
 
     // -----------------------
     // Firebase Auth Listener
     // -----------------------
     useEffect(() => {
-        if (!firebaseAuth) {
-            setIsLoading(false);
-            setIsInitialized(true);
-            return;
-        }
-
         const handleUserChange = async (firebaseUser: FirebaseUser | null) => {
             const identity =
                 firebaseUser?.uid || (isGuest ? guestId : null);
@@ -98,24 +91,16 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             setIsLoading(false);
         };
 
-        let unsubscribe: () => void;
-
         try {
-            if (isMockAuth(firebaseAuth)) {
-                unsubscribe = (firebaseAuth as any)
-                    .onAuthStateChanged(handleUserChange);
-            } else {
-                unsubscribe = onAuthStateChanged(
-                    firebaseAuth,
-                    handleUserChange
-                );
-            }
+            const unsubscribe = onAuthStateChanged(
+                firebaseAuth,
+                handleUserChange
+            );
+            return () => unsubscribe();
         } catch {
             setIsLoading(false);
-            unsubscribe = () => {};
+            return () => {};
         }
-
-        return () => unsubscribe();
     }, [firebaseAuth, guestId, isGuest]);
 
     const isAdmin = false;
@@ -144,22 +129,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     // Auth Actions
     // -----------------------
     const login = async (email: string, pass: string) => {
-        if (!firebaseAuth) return;
-
         setIsLoggingIn(true);
         setError(null);
 
         try {
-            if (isMockAuth(firebaseAuth)) {
-                await (firebaseAuth as any)
-                    .signInWithEmailAndPassword(email, pass);
-            } else {
-                await signInWithEmailAndPassword(
-                    firebaseAuth,
-                    email,
-                    pass
-                );
-            }
+            await signInWithEmailAndPassword(
+                firebaseAuth,
+                email,
+                pass
+            );
         } catch (e: any) {
             setError(e.message || "Failed to sign in.");
             setIsLoggingIn(false);
@@ -167,18 +145,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const logout = async () => {
-        if (!firebaseAuth) return;
-
         setIsGuest(false);
         setGuestId(null);
         localStorage.removeItem(GUEST_KEY);
 
         try {
-            if (isMockAuth(firebaseAuth)) {
-                await (firebaseAuth as any).signOut();
-            } else {
-                await signOut(firebaseAuth);
-            }
+            await signOut(firebaseAuth);
         } catch (error) {
             console.error("Logout failed", error);
         }
@@ -188,18 +160,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const signInWithGoogle = async () => {
-        if (!firebaseAuth) return;
-
         setIsLoggingIn(true);
         setError(null);
 
         try {
-            if (isMockAuth(firebaseAuth)) {
-                await (firebaseAuth as any).signInWithPopup();
-            } else {
-                const provider = new GoogleAuthProvider();
-                await signInWithPopup(firebaseAuth, provider);
-            }
+            const provider = new GoogleAuthProvider();
+            await signInWithPopup(firebaseAuth, provider);
         } catch (e: any) {
             setError(e.message || "Failed to sign in with Google.");
             setIsLoggingIn(false);
@@ -207,22 +173,15 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const signUp = async (email: string, pass: string) => {
-        if (!firebaseAuth) return;
-
         setIsLoggingIn(true);
         setError(null);
 
         try {
-            if (isMockAuth(firebaseAuth)) {
-                await (firebaseAuth as any)
-                    .createUserWithEmailAndPassword(email, pass);
-            } else {
-                await createUserWithEmailAndPassword(
-                    firebaseAuth,
-                    email,
-                    pass
-                );
-            }
+            await createUserWithEmailAndPassword(
+                firebaseAuth,
+                email,
+                pass
+            );
         } catch (e: any) {
             setError(e.message || "Failed to create account.");
             setIsLoggingIn(false);
@@ -230,17 +189,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const resetPassword = async (email: string) => {
-        if (!firebaseAuth) return;
-
         setError(null);
 
         try {
-            if (isMockAuth(firebaseAuth)) {
-                await (firebaseAuth as any)
-                    .sendPasswordResetEmail(email);
-            } else {
-                await sendPasswordResetEmail(firebaseAuth, email);
-            }
+            await sendPasswordResetEmail(firebaseAuth, email);
         } catch (e: any) {
             setError(e.message || "Failed to send reset email.");
             throw e;

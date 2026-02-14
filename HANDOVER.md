@@ -6,18 +6,7 @@
 
 ## 1. System Overview
 
-BookTown is a dual-mode React application designed for social book discovery, writing, and AI-assisted reading. It utilizes a **Hexagonal Architecture** approach where core UI components interact with abstract Service Interfaces (`DataService`, `MediaService`, `AgentService`), allowing the backend implementation to be swapped seamlessly.
-
-### Operational Modes
-
-| Feature | **AI Studio / Demo Mode** | **Production Mode** |
-| :--- | :--- | :--- |
-| **Trigger** | `VITE_FORCE_MOCK=true` OR Hostname includes `aistudio` | Valid `VITE_FIREBASE_API_KEY` present |
-| **Database** | In-Memory Mock (`lib/db.ts`) | Google Cloud Firestore |
-| **Authentication** | Guest Mode (Mock Admin) | Firebase Auth (Google, Email) |
-| **Storage** | Browser Blob URLs (Temporary) | Firebase Storage |
-| **AI Agents** | Client-side Mock Responses | Cloud Functions (`/api/ai/*`) -> Gemini 2.5 |
-| **Search** | Local In-Memory Filter | Firestore Queries + Federated Search |
+BookTown is a production-grade React application for social book discovery, writing, and AI-assisted reading. It follows a **Hexagonal Architecture** where UI components interact with service interfaces (`DataService`, `MediaService`, `AgentService`) bound to Firebase-backed implementations.
 
 ## 2. Environment Configuration
 
@@ -32,9 +21,6 @@ VITE_FIREBASE_PROJECT_ID=booktown
 VITE_FIREBASE_STORAGE_BUCKET=booktown.appspot.com
 VITE_FIREBASE_MESSAGING_SENDER_ID=...
 VITE_FIREBASE_APP_ID=...
-
-# Operational Flags
-VITE_FORCE_MOCK=false # Set to true to force Mock Mode even with keys
 ```
 
 ### Backend (Firebase Functions Secrets)
@@ -62,9 +48,8 @@ Serverless functions handle AI Gateway logic to protect API keys.
 
 ## 4. Known Limitations & Tradeoffs
 
-1.  **Mock Persistence**: In AI Studio/Demo mode, all data (posts, shelves, books) is lost on page refresh. This is by design.
-2.  **Search Index**: Production search relies on Firestore inequality filters (`>=`, `<=`). For scale >1M records, integrate Algolia or Typesense.
-3.  **AI Rate Limiting**: Currently enforced per-request IP/quota in Cloud Functions. User-based quota requires enabling App Check.
+1.  **Search Index**: Production search relies on Firestore inequality filters (`>=`, `<=`). For scale >1M records, integrate Algolia or Typesense.
+2.  **AI Rate Limiting**: Currently enforced per-request IP/quota in Cloud Functions. User-based quota requires enabling App Check.
 
 ## 5. Troubleshooting
 

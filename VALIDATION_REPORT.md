@@ -7,12 +7,11 @@
     - [x] No `process.env` secrets in frontend code.
     - [x] `@google/genai` SDK is **excluded** from frontend bundle (used only in `functions/`).
     - [x] Node-only modules (`express`, `multer`) removed from source path.
-    - [x] `lib/firebase.ts` gracefully handles missing keys (Demo Mode).
+    - [x] `lib/firebase.ts` fails fast when Firebase keys are missing.
 
 ## 2. Environment Architecture
 | Environment | Frontend Config | Backend Logic | Data Source |
 | :--- | :--- | :--- | :--- |
-| **AI Studio (Demo)** | `VITE_FORCE_MOCK=false` (Default)<br>Missing Firebase Keys | Client-side Mock Agents<br>`MockDbService` | In-Memory Mock Data |
 | **Local Development** | `VITE_FIREBASE_API_KEY=...` | Local Emulators (`firebase emulators:start`) | Local Firestore Emulator |
 | **Production** | `VITE_FIREBASE_API_KEY=...` | Cloud Functions (Gen 2) | Google Cloud Firestore |
 
@@ -20,7 +19,6 @@
 These flows have been verified against the current codebase logic:
 
 1.  **Onboarding**: 
-    - Guest Mode (Mock Auth) -> Works.
     - Production Auth (Firebase) -> Works (configured in `lib/auth.tsx`).
 2.  **AI Features**:
     - **Chat**: Frontend calls `/api/ai/chat`. `firebase.json` rewrites this to the `chat` Cloud Function.

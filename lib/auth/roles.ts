@@ -1,8 +1,5 @@
-
-// In AI Studio: roles are derived from mock profiles + this ADMIN_EMAILS list.
-// In VS Code / production: we will swap this to read from Firebase custom claims
-// or a Firestore 'users' document, but the rest of the app will keep using
-// the same AuthContext fields and helpers derived from these functions.
+// Roles are currently derived from user profile data and a static admin email
+// allowlist. Long-term authority should come from backend-issued claims.
 
 import { User } from '../../types/entities.ts';
 
@@ -16,9 +13,8 @@ import { User } from '../../types/entities.ts';
 export type UserRole = 'superadmin' | 'superuser' | 'moderator' | 'user';
 
 /**
- * A hardcoded list of emails that are always granted superadmin privileges in AI Studio.
- * This is for development and testing purposes.
- * In production, roles should be managed via a secure backend system.
+ * A hardcoded list of emails that are granted superadmin privileges.
+ * Long-term, roles should be managed via a secure backend system.
  */
 export const ADMIN_EMAILS: string[] = ['booktown10@gmail.com', 'test@booktown.com', 'admin@booktown.com'];
 
@@ -42,7 +38,7 @@ interface DeriveUserRoleArgs {
  * @returns The determined `UserRole`.
  */
 export const deriveUserRole = ({ authUser, profile }: DeriveUserRoleArgs): UserRole => {
-    // 1. Check for a role in the user's profile (from the mock DB).
+    // 1. Check for a role in the user's profile.
     if (profile?.role && ['superadmin', 'superuser', 'moderator'].includes(profile.role)) {
         return profile.role as UserRole;
     }

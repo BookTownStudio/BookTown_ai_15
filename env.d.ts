@@ -12,7 +12,6 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID: string;
   readonly VITE_FIREBASE_APP_ID: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID: string;
-  readonly VITE_FORCE_MOCK: string;
   // FIX: Added VITE_APP_VERSION to ensure it is recognized when accessed via import.meta.env
   readonly VITE_APP_VERSION: string;
 }

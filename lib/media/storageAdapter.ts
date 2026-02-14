@@ -43,24 +43,3 @@ export class FirebaseStorageAdapter implements StorageAdapter {
     });
   }
 }
-
-export class MockStorageAdapter implements StorageAdapter {
-  async upload(
-    path: string,
-    file: Blob,
-    onProgress?: (progress: number) => void
-  ): Promise<string> {
-    console.log(`[MockStorage] Uploading to ${path}...`);
-
-    // Simulate progress
-    const steps = 10;
-    for (let i = 1; i <= steps; i++) {
-      await new Promise((r) => setTimeout(r, 100));
-      if (onProgress) onProgress(i * 10);
-    }
-
-    const url = URL.createObjectURL(file);
-    console.log(`[MockStorage] Upload complete: ${url}`);
-    return url;
-  }
-}

@@ -1,21 +1,8 @@
 import { DataService } from './db.types.ts';
-import { mockDbService } from './mockDbService.ts';
 import { firebaseDbService } from './firebaseDbService.ts';
 import { librarySearchService } from './librarySearchService.ts';
 
-// Safely access environment variables
-const env = (typeof import.meta !== 'undefined' && import.meta.env) ? import.meta.env : {} as any;
-
-const forceMock = env.VITE_FORCE_MOCK === 'true';
-const hasFirebaseEnv = !!env.VITE_FIREBASE_API_KEY;
-const isDemoEnv = typeof window !== 'undefined' && (
-    window.location.hostname.includes('aistudio') || 
-    window.location.hostname.includes('googleusercontent') ||
-    window.location.hostname.includes('run.app')
-);
-
-const shouldUseFirebase = hasFirebaseEnv && !forceMock && !isDemoEnv;
-const rawService: DataService = shouldUseFirebase ? firebaseDbService : mockDbService;
+const rawService: DataService = firebaseDbService as DataService;
 
 // Ensure librarySearch is always available as the Bibliographic Source of Truth
 rawService.librarySearch = librarySearchService;
@@ -49,6 +36,6 @@ const guardedDataService = new Proxy(rawService, {
   }
 });
 
-console.log(`[DataService] Initializing. Mode: ${shouldUseFirebase ? 'FIREBASE (Real)' : 'MOCK (Simulated)'}`);
+console.log('[DataService] Initializing. Mode: FIREBASE (Production Runtime)');
 
 export const dataService: DataService = guardedDataService;

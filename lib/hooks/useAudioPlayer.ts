@@ -20,7 +20,7 @@ export interface AudioPlayerState {
 /**
  * useAudioPlayer
  * Authoritative hook for TTS playback.
- * Enforces AISTUDIO_MEDIA_PERMISSION_GUARD_V1 by deferring Audio object 
+ * Enforces MEDIA_PERMISSION_GUARD_V1 by deferring Audio object
  * creation until explicit user "play" intent.
  */
 export const useAudioPlayer = (bookId: string | undefined, initialSrc?: string) => {
