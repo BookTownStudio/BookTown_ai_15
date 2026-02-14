@@ -3,15 +3,14 @@ import { bookUploadService } from '../../services/bookUploadService.ts';
 
 type UploadBookParams = {
   shelfId: string;
-  fileName: string;
-  fileType: 'epub' | 'pdf';
-  fileSize: number;
+  file: File;
 };
 
 type UploadBookResult = {
   bookId: string;
   shelfId: string;
   storagePath: string;
+  coverState: 'PENDING';
   status: 'UPLOADED';
 };
 
@@ -25,4 +24,3 @@ export const useBookUpload = () => {
     },
   });
 };
-

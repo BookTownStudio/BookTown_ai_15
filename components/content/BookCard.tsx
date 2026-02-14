@@ -85,7 +85,7 @@ const BookCard: React.FC<BookCardProps> = ({
     [book?.titleEn]
   );
 
-  const hasInAppEbook = !!book?.ebookAttachmentId;
+  const hasInAppEbook = !!book?.ebookAttachmentId || !!book?.isEbookAvailable;
   const hasExternalBuy = !!book?.isEbookAvailable;
 
   // ----------------------------------

@@ -205,12 +205,31 @@ export const apiContracts = {
           bookId: z.string().min(1),
           shelfId: z.string().min(1),
           storagePath: z.string().min(1),
+          coverState: z.literal("PENDING"),
           status: z.literal("UPLOADED"),
         })
         .strict(),
       "httpsCallable",
       {
         callSites: ["components/modals/AddBookModal.tsx"],
+      }
+    ),
+
+    finalizeUserUpload: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          status: z.literal("QUEUED"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/bookUploadService.ts"],
       }
     ),
 
@@ -243,6 +262,34 @@ export const apiContracts = {
           restoredBooks: z.number().int().nonnegative(),
           restoredOriginals: z.number().int().nonnegative(),
           restoredDerived: z.number().int().nonnegative(),
+          nextCursor: z.string().optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    backfillUserUploadCoverJobs: defineContract(
+      z
+        .object({
+          dryRun: z.boolean().optional(),
+          force: z.boolean().optional(),
+          limit: z.number().int().positive().max(500).optional(),
+          startAfterBookId: z.string().min(1).optional(),
+        })
+        .strict()
+        .optional(),
+      z
+        .object({
+          dryRun: z.boolean(),
+          force: z.boolean(),
+          scanned: z.number().int().nonnegative(),
+          queued: z.number().int().nonnegative(),
+          skippedReady: z.number().int().nonnegative(),
+          skippedMissingStoragePath: z.number().int().nonnegative(),
+          failed: z.number().int().nonnegative(),
           nextCursor: z.string().optional(),
         })
         .strict(),

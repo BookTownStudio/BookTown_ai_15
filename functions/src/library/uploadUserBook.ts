@@ -12,6 +12,13 @@ type UploadUserBookRequest = {
   fileSize: number;
 };
 
+type CoverState =
+  | "PENDING"
+  | "PROCESSING"
+  | "READY"
+  | "FAILED_RETRYABLE"
+  | "FAILED_FATAL";
+
 const ENDPOINT_KEY = "uploadUserBook";
 const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
 const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/;
@@ -89,6 +96,7 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
     const shelfRef = db.doc(`shelves/${shelfId}`);
     const userShelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
     const shelfBookRef = db.doc(`users/${uid}/shelves/${shelfId}/books/${bookId}`);
+    const coverJobRef = db.collection("coverJobs").doc(bookId);
 
     logger.info("[UPLOAD_USER_BOOK][START]", {
       endpointKey: ENDPOINT_KEY,
@@ -160,6 +168,10 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           descriptionEn: "",
           descriptionAr: "",
           coverUrl: "",
+          coverState: "PENDING" as CoverState,
+          coverFailureCode: null,
+          coverFailureMessage: null,
+          coverUpdatedAt: now,
           isEbookAvailable: true,
           fileName: sanitizedFileName,
           fileType,
@@ -168,6 +180,24 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           createdAt: now,
           updatedAt: now,
         });
+
+        tx.set(
+          coverJobRef,
+          {
+            id: bookId,
+            bookId,
+            ownerUid: uid,
+            source: "user_upload",
+            status: "AWAITING_UPLOAD",
+            attempts: 0,
+            maxAttempts: 3,
+            fileType,
+            storagePath,
+            createdAt: now,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
 
         tx.set(
           userShelfRef,
@@ -260,6 +290,7 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
       bookId,
       shelfId,
       storagePath,
+      coverState: "PENDING" as CoverState,
       status: "UPLOADED" as const,
     };
   }

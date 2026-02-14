@@ -84,6 +84,8 @@ const BookDetailsScreen: React.FC = () => {
     }
   }, [existingUserReview, isEditingReview, isAddingReview]);
 
+  const hasReadableEbook = Boolean(book?.ebookAttachmentId || book?.isEbookAvailable);
+
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;
     navigate(from || { type: 'tab', id: 'home' });
@@ -164,7 +166,7 @@ const BookDetailsScreen: React.FC = () => {
           <button onClick={() => setIsShelfModalOpen(true)} className={cn('flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10', isSaved && 'text-accent bg-accent/10')}><ShelvesIcon className="h-6 w-6" /></button>
           <button className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><QuoteIcon className="h-6 w-6" /></button>
           <button onClick={handleShare} className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><ShareIcon className="h-6 w-6" /></button>
-          <button onClick={() => book.ebookAttachmentId && navigate({ type: 'immersive', id: 'reader', params: { bookId, from: currentView } })} disabled={!book.ebookAttachmentId} className={cn('flex items-center justify-center aspect-square rounded-2xl border bg-white/5 border-white/10', !book.ebookAttachmentId && 'opacity-20')}><EyeIcon className="h-6 w-6" /></button>
+          <button onClick={() => hasReadableEbook && navigate({ type: 'immersive', id: 'reader', params: { bookId, from: currentView } })} disabled={!hasReadableEbook} className={cn('flex items-center justify-center aspect-square rounded-2xl border bg-white/5 border-white/10', !hasReadableEbook && 'opacity-20')}><EyeIcon className="h-6 w-6" /></button>
         </section>
 
         {/* Summary */}

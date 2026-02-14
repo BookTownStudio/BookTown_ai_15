@@ -92,6 +92,10 @@ function mapBook(data: any, id: string): Book {
     rating: data.rating || 0,
     ratingsCount: data.ratingsCount || 0,
     isEbookAvailable: Boolean(data.isEbookAvailable || data.hasEbook),
+    ebookAttachmentId:
+      typeof data.ebookAttachmentId === "string" && data.ebookAttachmentId.trim().length > 0
+        ? data.ebookAttachmentId.trim()
+        : undefined,
     genresEn: Array.isArray(data.categories) ? data.categories : data.genresEn || [],
     genresAr: Array.isArray(data.genresAr) ? data.genresAr : [],
   };

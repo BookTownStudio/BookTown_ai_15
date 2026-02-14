@@ -296,9 +296,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
       const uploaded = await uploadUserBook({
         shelfId: targetShelfId,
-        fileName: uploadFile.name,
-        fileType,
-        fileSize: uploadFile.size,
+        file: uploadFile,
       });
 
       if (!uploaded?.bookId) {

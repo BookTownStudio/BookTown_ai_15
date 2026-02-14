@@ -9,9 +9,12 @@ import { wrapCallableV2 } from "./contracts/wrapCallableV2";
 import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
+import { finalizeUserUpload as finalizeUserUploadRaw } from "./library/finalizeUserUpload";
 import { deriveBookCovers } from "./library/deriveBookCovers";
 import { backfillCovers as backfillCoversRaw } from "./library/backfillCovers";
 import { backfillMissingCovers as backfillMissingCoversRaw } from "./library/backfillMissingCovers";
+import { backfillUserUploadCoverJobs as backfillUserUploadCoverJobsRaw } from "./library/backfillUserUploadCoverJobs";
+import { processUserUploadCoverJobs } from "./library/processUserUploadCoverJobs";
 import { requestEbookReadAccess as requestEbookReadAccessRaw } from "./reader/requestEbookReadAccess";
 import { recordReadingProgress as recordReadingProgressRaw } from "./reader/recordReadingProgress";
 import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderProgress";
@@ -224,10 +227,18 @@ export const uploadUserBook = wrapCallableV2(
   "uploadUserBook",
   uploadUserBookRaw
 );
+export const finalizeUserUpload = wrapCallableV2(
+  "finalizeUserUpload",
+  finalizeUserUploadRaw
+);
 export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
 export const backfillMissingCovers = wrapCallableV2(
   "backfillMissingCovers",
   backfillMissingCoversRaw
+);
+export const backfillUserUploadCoverJobs = wrapCallableV2(
+  "backfillUserUploadCoverJobs",
+  backfillUserUploadCoverJobsRaw
 );
 
 // ------------------------------------------------------------------
@@ -361,6 +372,7 @@ export * from "./triggers/aggregationTriggers";
 export * from "./triggers/notificationTriggers";
 export * from "./triggers/activityTriggers";
 export * from "./triggers/searchTriggers";
+export { processUserUploadCoverJobs };
 
 // REST API (CRITICAL WIRING)
 export const api = wrapRestExport(apiRaw);
