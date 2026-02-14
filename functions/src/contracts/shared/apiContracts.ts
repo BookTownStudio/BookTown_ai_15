@@ -174,6 +174,33 @@ export const apiContracts = {
       }
     ),
 
+    uploadUserBook: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+          fileName: z.string().min(1),
+          fileType: z.enum(["epub", "pdf"]),
+          fileSize: z
+            .number()
+            .finite()
+            .positive()
+            .max(25 * 1024 * 1024),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          shelfId: z.string().min(1),
+          storagePath: z.string().min(1),
+          status: z.literal("UPLOADED"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["components/modals/AddBookModal.tsx"],
+      }
+    ),
+
     backfillCovers: defineContract(
       z.unknown(),
       z.unknown(),

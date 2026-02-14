@@ -8,6 +8,7 @@ import { wrapCallableV1 } from "./contracts/wrapCallableV1";
 import { wrapCallableV2 } from "./contracts/wrapCallableV2";
 import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
+import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { deriveBookCovers } from "./library/deriveBookCovers";
 import { backfillCovers as backfillCoversRaw } from "./library/backfillCovers";
 import { requestEbookReadAccess as requestEbookReadAccessRaw } from "./reader/requestEbookReadAccess";
@@ -211,6 +212,10 @@ export const createDefaultShelves = wrapCallableV2(
   createDefaultShelvesRaw
 );
 export const ingestBook = wrapCallableV2("ingestBook", ingestBookRaw);
+export const uploadUserBook = wrapCallableV2(
+  "uploadUserBook",
+  uploadUserBookRaw
+);
 export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
 
 // ------------------------------------------------------------------

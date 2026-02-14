@@ -1,0 +1,214 @@
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { FieldValue } from "firebase-admin/firestore";
+import * as logger from "firebase-functions/logger";
+import { admin } from "../firebaseAdmin";
+import { CONTRACT_VERSION } from "../contracts/shared/version";
+import { generateCorrelationId, getHeaderValue } from "../contracts/correlation";
+
+type UploadUserBookRequest = {
+  shelfId: string;
+  fileName: string;
+  fileType: "epub" | "pdf";
+  fileSize: number;
+};
+
+const ENDPOINT_KEY = "uploadUserBook";
+const MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024;
+const CONTROL_CHAR_PATTERN = /[\u0000-\u001F\u007F]/;
+
+function sanitizeFileName(fileName: string): string {
+  const trimmed = fileName.trim();
+
+  if (trimmed.length === 0 || trimmed.length > 255) {
+    throw new HttpsError("invalid-argument", "Invalid fileName.");
+  }
+
+  if (
+    trimmed.includes("/") ||
+    trimmed.includes("\\") ||
+    trimmed.includes("..") ||
+    CONTROL_CHAR_PATTERN.test(trimmed)
+  ) {
+    throw new HttpsError("invalid-argument", "Invalid fileName.");
+  }
+
+  return trimmed;
+}
+
+function assertFileTypeMatchesName(
+  fileName: string,
+  fileType: "epub" | "pdf"
+): void {
+  const lowered = fileName.toLowerCase();
+  const extension = fileType === "epub" ? ".epub" : ".pdf";
+
+  if (!lowered.endsWith(extension)) {
+    throw new HttpsError(
+      "invalid-argument",
+      `fileName extension must match fileType (${extension}).`
+    );
+  }
+}
+
+function toContentType(fileType: "epub" | "pdf"): string {
+  return fileType === "epub" ? "application/epub+zip" : "application/pdf";
+}
+
+export const uploadUserBook = onCall<UploadUserBookRequest>(
+  { cors: true },
+  async (request) => {
+    if (!request.auth) {
+      throw new HttpsError("unauthenticated", "Authentication required.");
+    }
+
+    const uid = request.auth.uid;
+    const correlationId =
+      getHeaderValue(
+        request.rawRequest?.headers as Record<string, unknown> | undefined,
+        "x-correlation-id"
+      ) ?? generateCorrelationId();
+
+    const { shelfId, fileName, fileType, fileSize } = request.data;
+    const sanitizedFileName = sanitizeFileName(fileName);
+    assertFileTypeMatchesName(sanitizedFileName, fileType);
+
+    if (!Number.isFinite(fileSize) || fileSize <= 0) {
+      throw new HttpsError("invalid-argument", "Invalid fileSize.");
+    }
+
+    if (fileSize > MAX_FILE_SIZE_BYTES) {
+      throw new HttpsError("resource-exhausted", "File exceeds 25MB limit.");
+    }
+
+    const db = admin.firestore();
+    const bucket = admin.storage().bucket();
+    const bookRef = db.collection("books").doc();
+    const bookId = bookRef.id;
+    const storagePath = `books/${bookId}/original/${sanitizedFileName}`;
+    const shelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
+    const shelfBookRef = db.doc(`users/${uid}/shelves/${shelfId}/books/${bookId}`);
+
+    logger.info("[UPLOAD_USER_BOOK][START]", {
+      endpointKey: ENDPOINT_KEY,
+      contractVersion: CONTRACT_VERSION,
+      correlationId,
+      uid,
+      stage: "start",
+      shelfId,
+      bookId,
+    });
+
+    try {
+      await bucket.file(storagePath).save(Buffer.alloc(0), {
+        resumable: false,
+        contentType: toContentType(fileType),
+        metadata: {
+          metadata: {
+            endpointKey: ENDPOINT_KEY,
+            contractVersion: CONTRACT_VERSION,
+            correlationId,
+            uid,
+            stage: "storage_write",
+            fileType,
+            fileSize: String(fileSize),
+          },
+        },
+      });
+    } catch (error) {
+      logger.error("[UPLOAD_USER_BOOK][STORAGE_WRITE_FAILED]", {
+        endpointKey: ENDPOINT_KEY,
+        contractVersion: CONTRACT_VERSION,
+        correlationId,
+        uid,
+        stage: "storage_write_failed",
+        shelfId,
+        bookId,
+        error: String(error),
+      });
+
+      throw new HttpsError("internal", "Failed to create storage object.");
+    }
+
+    try {
+      await db.runTransaction(async (tx) => {
+        const shelfSnap = await tx.get(shelfRef);
+        if (!shelfSnap.exists) {
+          throw new HttpsError("not-found", "Shelf not found.");
+        }
+
+        const now = FieldValue.serverTimestamp();
+
+        tx.set(bookRef, {
+          id: bookId,
+          ownerUid: uid,
+          source: "user_upload",
+          fileName: sanitizedFileName,
+          fileType,
+          fileSize,
+          storagePath,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        tx.set(shelfBookRef, {
+          id: bookId,
+          bookId,
+          shelfId,
+          ownerUid: uid,
+          source: "user_upload",
+          createdAt: now,
+          updatedAt: now,
+        });
+      });
+    } catch (error) {
+      logger.error("[UPLOAD_USER_BOOK][FIRESTORE_WRITE_FAILED]", {
+        endpointKey: ENDPOINT_KEY,
+        contractVersion: CONTRACT_VERSION,
+        correlationId,
+        uid,
+        stage: "firestore_write_failed",
+        shelfId,
+        bookId,
+        error: String(error),
+      });
+
+      try {
+        await bucket.file(storagePath).delete({ ignoreNotFound: true });
+      } catch (cleanupError) {
+        logger.error("[UPLOAD_USER_BOOK][ROLLBACK_FAILED]", {
+          endpointKey: ENDPOINT_KEY,
+          contractVersion: CONTRACT_VERSION,
+          correlationId,
+          uid,
+          stage: "rollback_failed",
+          shelfId,
+          bookId,
+          error: String(cleanupError),
+        });
+      }
+
+      if (error instanceof HttpsError) {
+        throw error;
+      }
+
+      throw new HttpsError("internal", "Failed to create book documents.");
+    }
+
+    logger.info("[UPLOAD_USER_BOOK][SUCCESS]", {
+      endpointKey: ENDPOINT_KEY,
+      contractVersion: CONTRACT_VERSION,
+      correlationId,
+      uid,
+      stage: "complete",
+      shelfId,
+      bookId,
+    });
+
+    return {
+      bookId,
+      shelfId,
+      storagePath,
+      status: "UPLOADED" as const,
+    };
+  }
+);
