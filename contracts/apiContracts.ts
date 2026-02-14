@@ -223,6 +223,35 @@ export const apiContracts = {
       }
     ),
 
+    backfillMissingCovers: defineContract(
+      z
+        .object({
+          dryRun: z.boolean().optional(),
+          limit: z.number().int().positive().max(200).optional(),
+          startAfterBookId: z.string().min(1).optional(),
+        })
+        .strict()
+        .optional(),
+      z
+        .object({
+          dryRun: z.boolean(),
+          scanned: z.number().int().nonnegative(),
+          targeted: z.number().int().nonnegative(),
+          healthy: z.number().int().nonnegative(),
+          skipped: z.number().int().nonnegative(),
+          failed: z.number().int().nonnegative(),
+          restoredBooks: z.number().int().nonnegative(),
+          restoredOriginals: z.number().int().nonnegative(),
+          restoredDerived: z.number().int().nonnegative(),
+          nextCursor: z.string().optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
     finalizeMetadata: defineContract(
       z
         .object({

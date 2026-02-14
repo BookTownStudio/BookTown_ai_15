@@ -11,6 +11,7 @@ import { ingestBook as ingestBookRaw } from "./library/ingestBook";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { deriveBookCovers } from "./library/deriveBookCovers";
 import { backfillCovers as backfillCoversRaw } from "./library/backfillCovers";
+import { backfillMissingCovers as backfillMissingCoversRaw } from "./library/backfillMissingCovers";
 import { requestEbookReadAccess as requestEbookReadAccessRaw } from "./reader/requestEbookReadAccess";
 import { recordReadingProgress as recordReadingProgressRaw } from "./reader/recordReadingProgress";
 import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderProgress";
@@ -224,6 +225,10 @@ export const uploadUserBook = wrapCallableV2(
   uploadUserBookRaw
 );
 export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
+export const backfillMissingCovers = wrapCallableV2(
+  "backfillMissingCovers",
+  backfillMissingCoversRaw
+);
 
 // ------------------------------------------------------------------
 // 📖 READER MEDIATION (SECURE, CANONICAL)
