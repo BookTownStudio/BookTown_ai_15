@@ -84,8 +84,10 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
     const bucket = admin.storage().bucket();
     const bookRef = db.collection("books").doc();
     const bookId = bookRef.id;
+    const derivedTitle = sanitizedFileName.replace(/\.[^.]+$/, "");
     const storagePath = `books/${bookId}/original/${sanitizedFileName}`;
-    const shelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
+    const shelfRef = db.doc(`shelves/${shelfId}`);
+    const userShelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
     const shelfBookRef = db.doc(`users/${uid}/shelves/${shelfId}/books/${bookId}`);
 
     logger.info("[UPLOAD_USER_BOOK][START]", {
@@ -136,12 +138,29 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           throw new HttpsError("not-found", "Shelf not found.");
         }
 
+        const shelfData = shelfSnap.data() as
+          | { ownerId?: unknown }
+          | undefined;
+
+        if (typeof shelfData?.ownerId !== "string" || shelfData.ownerId !== uid) {
+          throw new HttpsError("permission-denied", "Shelf access denied.");
+        }
+
         const now = FieldValue.serverTimestamp();
+        const addedAt = new Date().toISOString();
 
         tx.set(bookRef, {
           id: bookId,
           ownerUid: uid,
           source: "user_upload",
+          titleEn: derivedTitle,
+          titleAr: derivedTitle,
+          authorEn: "Unknown",
+          authorAr: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          isEbookAvailable: true,
           fileName: sanitizedFileName,
           fileType,
           fileSize,
@@ -150,15 +169,46 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           updatedAt: now,
         });
 
+        tx.set(
+          userShelfRef,
+          {
+            id: shelfId,
+            ownerId: uid,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+
         tx.set(shelfBookRef, {
           id: bookId,
           bookId,
           shelfId,
           ownerUid: uid,
           source: "user_upload",
+          fileName: sanitizedFileName,
+          fileType,
+          fileSize,
+          addedAt,
           createdAt: now,
           updatedAt: now,
         });
+
+        tx.set(
+          shelfRef,
+          {
+            updatedAt: now,
+            [`entries.${bookId}`]: {
+              bookId,
+              addedAt,
+              snapshot: {
+                titleEn: derivedTitle,
+                titleAr: derivedTitle,
+                coverUrl: "",
+              },
+            },
+          },
+          { merge: true }
+        );
       });
     } catch (error) {
       logger.error("[UPLOAD_USER_BOOK][FIRESTORE_WRITE_FAILED]", {
