@@ -17,6 +17,23 @@ interface IngestionRequest {
   rawBook: any;
 }
 
+const SEARCH_STOPWORDS = new Set([
+  "a",
+  "an",
+  "and",
+  "at",
+  "by",
+  "for",
+  "from",
+  "in",
+  "of",
+  "on",
+  "or",
+  "the",
+  "to",
+  "with",
+]);
+
 // -------------------------------------------------
 // A2.7 — Ingestion lifecycle & failure classification
 // -------------------------------------------------
@@ -58,6 +75,37 @@ function resolveDescription(rawBook: any): string {
     rawBook?.summary ||
     ""
   );
+}
+
+function normalizeSearchText(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenizeSearch(value?: string | null): string[] {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return [];
+  return normalized
+    .split(" ")
+    .filter((token) => token.length > 1 && !SEARCH_STOPWORDS.has(token));
+}
+
+function computeServerVerifiedDownloadable(rawBook: any): boolean {
+  const attachmentId =
+    typeof rawBook?.ebookAttachmentId === "string"
+      ? rawBook.ebookAttachmentId.trim()
+      : "";
+  const storagePath =
+    typeof rawBook?.ebookStoragePath === "string"
+      ? rawBook.ebookStoragePath.trim()
+      : "";
+  return attachmentId.length > 0 || storagePath.length > 0;
 }
 
 function resolveCoverUrl(rawBook: any): string | null {
@@ -199,13 +247,30 @@ export const ingestBook = onCall<IngestionRequest>(
     }
 
     const title = rawBook.titleEn || rawBook.title || "Untitled";
+    const authors: string[] = Array.isArray(rawBook.authors)
+      ? rawBook.authors
+          .filter((v: unknown) => typeof v === "string")
+          .map((v: string) => v.trim())
+          .filter(Boolean)
+      : [];
     const author =
       rawBook.authorEn ||
-      (Array.isArray(rawBook.authors) && rawBook.authors[0]) ||
+      authors[0] ||
       rawBook.author ||
       "Unknown";
+    const effectiveAuthors = authors.length > 0 ? authors : [author];
     const description = resolveDescription(rawBook);
     const fallbackCoverUrl = resolveCoverUrl(rawBook);
+    const downloadable = computeServerVerifiedDownloadable(rawBook);
+    const hasEbook = downloadable;
+    const searchTitleNormalized = normalizeSearchText(title);
+    const searchAuthorNormalized = normalizeSearchText(effectiveAuthors.join(" "));
+    const searchTokens = Array.from(
+      new Set([
+        ...tokenizeSearch(title),
+        ...effectiveAuthors.flatMap((entry) => tokenizeSearch(entry)),
+      ])
+    );
 
     const publicationYear =
       rawBook.publicationYear ||
@@ -244,7 +309,7 @@ export const ingestBook = onCall<IngestionRequest>(
 
       const publicDomainResult = evaluatePublicDomainStatus({
         title,
-        authors: [author],
+        authors: effectiveAuthors,
         publicationYear,
         source,
         sourcePublicDomainFlag: rawBook.publicDomain,
@@ -305,6 +370,7 @@ export const ingestBook = onCall<IngestionRequest>(
             author,
             authorEn: rawBook.authorEn || author,
             authorAr: rawBook.authorAr || "",
+            authors: effectiveAuthors,
             description,
             descriptionEn: rawBook.descriptionEn || description,
             descriptionAr: rawBook.descriptionAr || "",
@@ -315,11 +381,12 @@ export const ingestBook = onCall<IngestionRequest>(
               medium: persistedCoverValue,
               small: persistedCoverValue,
             },
-            isEbookAvailable: Boolean(
-              rawBook.isEbookAvailable ||
-                rawBook.ebookAvailable ||
-                rawBook.hasEbook
-            ),
+            isEbookAvailable: hasEbook,
+            hasEbook,
+            downloadable,
+            searchTitleNormalized,
+            searchAuthorNormalized,
+            searchTokens,
             createdAt: now,
             updatedAt: now,
             ingestionState: IngestionState.COMPLETE,
@@ -338,19 +405,22 @@ export const ingestBook = onCall<IngestionRequest>(
             canonicalKey,
             titleEn: title,
             titleAr: rawBook.titleAr || "",
+            title,
             authorEn: author,
             authorAr: rawBook.authorAr || "",
+            authors: effectiveAuthors,
             description,
             descriptionEn: rawBook.descriptionEn || description,
             descriptionAr: rawBook.descriptionAr || "",
             source,
             externalId,
             coverUrl: fallbackCoverUrl,
-            isEbookAvailable: Boolean(
-              rawBook.isEbookAvailable ||
-                rawBook.ebookAvailable ||
-                rawBook.hasEbook
-            ),
+            isEbookAvailable: hasEbook,
+            hasEbook,
+            downloadable,
+            searchTitleNormalized,
+            searchAuthorNormalized,
+            searchTokens,
             publicDomain: publicDomainResult.isPublicDomain,
             publicDomainReason: publicDomainResult.reason,
             publicDomainEvaluatedAt: now,

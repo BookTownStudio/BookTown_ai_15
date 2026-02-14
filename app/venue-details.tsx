@@ -40,7 +40,7 @@ const VenueDetailsScreen: React.FC = () => {
         } else if (fromView) {
             navigate(fromView);
         } else {
-            navigate({ type: 'drawer', id: 'venues' });
+            navigate({ type: 'immersive', id: 'venues' });
         }
     };
     

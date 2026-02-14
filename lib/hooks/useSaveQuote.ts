@@ -1,7 +1,10 @@
 
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { dataService } from '../../services/dataService.ts';
+import { quoteService } from '../../services/quoteService.ts';
 import { useAuth } from '../auth.tsx';
+import { socialActionRepository } from '../../services/socialActionRepository.ts';
+import { BookmarkType } from '../../types/entities.ts';
+import { queryKeys } from '../queryKeys.ts';
 
 export const useSaveQuote = () => {
     const queryClient = useQueryClient();
@@ -9,17 +12,26 @@ export const useSaveQuote = () => {
     const uid = user?.uid;
 
     return useMutation({
-        mutationFn: async (quoteId: string) => {
+        mutationFn: async ({ quoteId, ownerId }: { quoteId: string; ownerId: string }) => {
             if (!uid) throw new Error("Not authenticated");
-            const quote = await dataService.users.getQuote('alex_doe', quoteId); // Assuming public quotes logic
-            return dataService.users.saveQuote(uid, { ...quote });
+            return quoteService.saveQuoteFromReference({
+                sourceOwnerId: ownerId,
+                sourceQuoteId: quoteId,
+            });
         },
         onSuccess: () => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['userQuotes', uid]);
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.quotes(uid),
+            });
         }
     });
 };
+
+interface SaveBookmarkParams {
+    entityId: string;
+    type: BookmarkType;
+    quoteOwnerId?: string;
+}
 
 export const useSaveBookmark = () => {
     const queryClient = useQueryClient();
@@ -27,14 +39,24 @@ export const useSaveBookmark = () => {
     const uid = user?.uid;
     
     return useMutation({
-        mutationFn: async (entityId: string) => {
+        mutationFn: async (params: SaveBookmarkParams) => {
             if (!uid) throw new Error("Not authenticated");
-            // Placeholder: Bookmark logic would usually require type info or a more generic bookmark service
-             throw new Error("Use specialized hooks or update useSaveBookmark to accept type");
+
+            if (params.type === 'quote' && params.quoteOwnerId) {
+                await quoteService.toggleQuoteBookmark({
+                    quoteId: params.entityId,
+                    quoteOwnerId: params.quoteOwnerId,
+                    active: true,
+                });
+                return;
+            }
+
+            await socialActionRepository.bookmark(params.entityId, uid, params.type);
         },
         onSuccess: () => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['bookmarks', uid]);
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.bookmarks(uid),
+            });
         }
     });
 };

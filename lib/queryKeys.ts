@@ -59,6 +59,9 @@ export const queryKeys = {
     bookmarkStatus: (uid: string | null | undefined, type: string, entityId: string) =>
       [...sessionRoot(uid), 'user', 'bookmarkStatus', safe({ type, entityId })] as const,
 
+    authorFollow: (uid: string | null | undefined, authorId: string | undefined) =>
+      [...sessionRoot(uid), 'user', 'authorFollow', safe({ authorId })] as const,
+
     drafts: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'drafts'] as const,
 
@@ -106,6 +109,9 @@ export const queryKeys = {
   // -------------------------
   venues: {
     all: ['venues'] as const,
+
+    search: (query: string) =>
+      ['venues', 'search', safe({ query: query.trim().toLowerCase() })] as const,
 
     detail: (id: string | undefined) =>
       ['venues', 'detail', safe({ id })] as const,

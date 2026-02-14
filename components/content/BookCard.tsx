@@ -27,7 +27,7 @@ interface BookCardProps {
 
 const BookCard: React.FC<BookCardProps> = ({
   bookId,
-  book: _providedBook,
+  book: providedBook,
   shelfId,
   layout,
   progress,
@@ -47,22 +47,36 @@ const BookCard: React.FC<BookCardProps> = ({
   const [showMoveModal, setShowMoveModal] = useState(false);
 
   const {
-    data: book,
+    data: catalogBook,
     isLoading,
     isError
-  } = useBookCatalog(bookId, { enabled: !!bookId });
+  } = useBookCatalog(bookId, { enabled: !!bookId && !providedBook });
+
+  const book = catalogBook ?? providedBook ?? null;
 
   // ----------------------------------
   // Derived values
   // ----------------------------------
 
   const title = useMemo(
-    () => (book ? (lang === 'en' ? book.titleEn : book.titleAr) : ''),
+    () => {
+      if (!book) return '';
+      if (lang === 'en') {
+        return book.titleEn || book.titleAr || 'Untitled';
+      }
+      return book.titleAr || book.titleEn || 'بدون عنوان';
+    },
     [book, lang]
   );
 
   const author = useMemo(
-    () => (book ? (lang === 'en' ? book.authorEn : book.authorAr) : ''),
+    () => {
+      if (!book) return '';
+      if (lang === 'en') {
+        return book.authorEn || book.authorAr || 'Unknown';
+      }
+      return book.authorAr || book.authorEn || 'غير معروف';
+    },
     [book, lang]
   );
 
@@ -232,11 +246,19 @@ const BookCard: React.FC<BookCardProps> = ({
   // Guards
   // ----------------------------------
 
-  if (!bookId || isLoading) {
+  if (!bookId) {
     return <BookCardSkeleton layout={layout} />;
   }
 
-  if (isError || !book) {
+  if (!book && isLoading) {
+    return <BookCardSkeleton layout={layout} />;
+  }
+
+  if (isError && !book) {
+    return null;
+  }
+
+  if (!book) {
     return null;
   }
 

@@ -197,31 +197,38 @@ export class LibrarySearchService implements LibrarySearchDataService {
             book.editionId ||
             book.id ||
             `external_${Math.random().toString(36).slice(2)}`;
+        const authors = Array.isArray(book.authors)
+            ? book.authors.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
+            : [book.authorEn || book.author].filter(Boolean);
+        const sourceRaw = String(book.source || '').trim();
+        const normalizedSource = sourceRaw === 'googleBooks'
+            ? 'google_books'
+            : sourceRaw === 'openLibrary'
+            ? 'open_library'
+            : editionId.startsWith('gb_')
+            ? 'google_books'
+            : 'open_library';
+        const downloadable = Boolean(book.downloadable);
+        const ebookAvailable = downloadable;
 
         return {
             editionId,
-            bookId: book.workId || 'unknown_work',
-            language: 'en',
-            title: book.titleEn || book.title,
+            bookId: book.bookId || book.workId || editionId,
+            language: book.language || 'en',
+            title: book.title || book.titleEn,
             subtitle: '',
-            authors: [book.authorEn || book.author].filter(Boolean),
+            authors,
             publisher: 'External Provider',
-            publishedDate: book.publicationDate,
+            publishedDate: book.publicationDate || book.publishedDate,
             pageCount: book.pageCount,
             categories: book.genresEn || [],
             dimensions: {},
             coverImages: { medium: book.coverUrl },
-            description: book.descriptionEn || '',
+            description: book.description || book.descriptionEn || '',
             editionFormat: 'ebook',
-            ebookAvailable: Boolean(
-                book.ebookAvailable ||
-                book.hasEbook ||
-                book.isEbookAvailable
-            ),
+            ebookAvailable,
             otherIdentifiers: [],
-            source: editionId.startsWith('gb_')
-                ? 'google_books'
-                : 'open_library',
+            source: normalizedSource as any,
             rawSourceRefs: [],
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()

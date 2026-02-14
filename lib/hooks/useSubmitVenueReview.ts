@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
+import { queryKeys } from '../queryKeys.ts';
 
 type ReviewVariables = {
     venueId: string;
@@ -20,9 +21,8 @@ export const useSubmitVenueReview = () => {
             return dataService.venues.submitVenueReview(uid, venueId, rating, text);
         },
         onSuccess: (data, variables) => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['venueReviews', variables.venueId]);
-            queryClient.invalidateQueries(['venue', variables.venueId]);
+            queryClient.invalidateQueries(queryKeys.venues.reviews(variables.venueId) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.venues.detail(variables.venueId) as unknown as any[]);
         },
     });
 };

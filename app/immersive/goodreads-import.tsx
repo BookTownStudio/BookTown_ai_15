@@ -21,7 +21,7 @@ const GoodreadsImportScreen: React.FC = () => {
         if (currentView.params?.from) {
             navigate(currentView.params.from);
         } else {
-            navigate({ type: 'drawer', id: 'settings' });
+            navigate({ type: 'immersive', id: 'settings' });
         }
     };
 

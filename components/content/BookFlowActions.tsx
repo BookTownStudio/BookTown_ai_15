@@ -17,6 +17,7 @@ import { useI18n } from '../../store/i18n.tsx';
 interface BookFlowActionsProps {
     entityType: 'book' | 'user' | 'quote' | 'venue' | 'event' | 'bookfair' | 'author';
     entityId: string;
+    quoteOwnerId?: string;
 }
 
 const ActionButton: React.FC<{ icon: React.FC<any>, label: string, onClick: (e: React.MouseEvent) => void }> = ({ icon: Icon, label, onClick }) => (
@@ -28,7 +29,7 @@ const ActionButton: React.FC<{ icon: React.FC<any>, label: string, onClick: (e: 
 );
 
 
-const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId }) => {
+const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId, quoteOwnerId }) => {
     const { data: shelves } = useUserShelves();
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
@@ -52,8 +53,8 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId 
                 }
                 break;
             case 'quote':
-                // FIX: mutate correctly accepts string now.
-                saveQuote(entityId);
+                if (!quoteOwnerId) return;
+                saveQuote({ quoteId: entityId, ownerId: quoteOwnerId });
                 break;
             case 'user':
                 // FIX: mutate correctly accepts string now.
@@ -77,8 +78,25 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId 
 
     const handleBookmark = (e: React.MouseEvent) => {
         e.stopPropagation();
-        // FIX: mutate correctly accepts string now.
-        saveBookmark(entityId);
+        if (entityType === 'book') {
+            saveBookmark({ entityId, type: 'book' });
+            return;
+        }
+        if (entityType === 'quote') {
+            saveBookmark({ entityId, type: 'quote', quoteOwnerId });
+            return;
+        }
+        if (entityType === 'author') {
+            saveBookmark({ entityId, type: 'author' });
+            return;
+        }
+        if (entityType === 'venue') {
+            saveBookmark({ entityId, type: 'venue' });
+            return;
+        }
+        if (entityType === 'event') {
+            saveBookmark({ entityId, type: 'event' });
+        }
     };
 
     const handleShare = (e: React.MouseEvent) => {

@@ -97,10 +97,10 @@ service firebase.storage {
     /* =========================
        VENUE IMAGES (PUBLIC)
        ========================= */
-    match /venues/{allPaths=**} {
+    match /venues/{ownerUid}/{allPaths=**} {
       allow read: if true;
 
-      allow write: if isAuthenticated()
+      allow write: if isOwner(ownerUid)
         && isImage()
         && request.resource.size < 10 * 1024 * 1024;
     }

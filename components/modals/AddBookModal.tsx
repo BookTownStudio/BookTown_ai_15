@@ -72,6 +72,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [isUploadBusy, setIsUploadBusy] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const { data: searchResults, isLoading: isSearching } =
     useLiveBookSearch(searchQuery, false);
@@ -79,6 +80,13 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const { mutateAsync: ingestBook } = useBookIngestion();
   const { mutate: toggleBook } = useToggleBookOnShelf();
   const { mutateAsync: uploadUserBook } = useBookUpload();
+
+  const targetShelf = targetShelfId
+    ? shelves?.find((s) => s.id === targetShelfId)
+    : null;
+  const targetShelfDisplayName = targetShelfId === 'currently-reading'
+    ? (lang === 'en' ? 'Currently Reading' : 'أقرأ حاليًا')
+    : (targetShelf ? (lang === 'en' ? targetShelf.titleEn : targetShelf.titleAr) : '');
 
   const resolveUploadFileType = (file: File): 'epub' | 'pdf' | null => {
     const lowerName = file.name.toLowerCase();
@@ -89,6 +97,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
   const resetUploadSelection = () => {
     setUploadFile(null);
+    setUploadError(null);
     if (uploadInputRef.current) {
       uploadInputRef.current.value = '';
     }
@@ -204,14 +213,48 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     event: React.ChangeEvent<HTMLInputElement>
   ) => {
     const selected = event.target.files?.[0] ?? null;
+    if (!selected) {
+      setUploadFile(null);
+      setUploadError(null);
+      return;
+    }
+
+    const selectedType = resolveUploadFileType(selected);
+    if (!selectedType) {
+      setUploadFile(null);
+      setUploadError(
+        lang === 'en'
+          ? 'Only EPUB and PDF files are supported.'
+          : 'يدعم النظام ملفات EPUB و PDF فقط.'
+      );
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = '';
+      }
+      return;
+    }
+
+    if (selected.size > 25 * 1024 * 1024) {
+      setUploadFile(null);
+      setUploadError(
+        lang === 'en'
+          ? 'File must be 25MB or smaller.'
+          : 'يجب أن يكون الملف بحجم 25MB أو أقل.'
+      );
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = '';
+      }
+      return;
+    }
+
     setUploadFile(selected);
+    setUploadError(null);
   };
 
   const handleUploadSubmit = async () => {
     if (isUploadBusy) return;
 
     if (!targetShelfId) {
-      showToast(
+      setUploadError(
         lang === 'en'
           ? 'Select a shelf before uploading.'
           : 'اختر رفًا قبل الرفع.'
@@ -220,7 +263,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     }
 
     if (!uploadFile) {
-      showToast(
+      setUploadError(
         lang === 'en'
           ? 'Choose an EPUB or PDF file first.'
           : 'اختر ملف EPUB أو PDF أولاً.'
@@ -230,7 +273,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
     const fileType = resolveUploadFileType(uploadFile);
     if (!fileType) {
-      showToast(
+      setUploadError(
         lang === 'en'
           ? 'Only EPUB and PDF files are supported.'
           : 'يدعم النظام ملفات EPUB و PDF فقط.'
@@ -239,7 +282,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     }
 
     if (uploadFile.size > 25 * 1024 * 1024) {
-      showToast(
+      setUploadError(
         lang === 'en'
           ? 'File must be 25MB or smaller.'
           : 'يجب أن يكون الملف بحجم 25MB أو أقل.'
@@ -249,6 +292,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
     try {
       setIsUploadBusy(true);
+      setUploadError(null);
 
       const uploaded = await uploadUserBook({
         shelfId: targetShelfId,
@@ -261,7 +305,41 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
         throw new Error('UPLOAD_FAILED');
       }
 
+      // Use the same shelf mutation pipeline as search-add for parity.
+      toggleBook({
+        shelfId: targetShelfId,
+        bookId: uploaded.bookId,
+        book: {
+          id: uploaded.bookId,
+          titleEn: uploadFile.name.replace(/\.[^.]+$/, ''),
+          titleAr: uploadFile.name.replace(/\.[^.]+$/, ''),
+          authorEn: 'Unknown',
+          authorAr: '',
+          coverUrl: '',
+        } as any,
+      });
+
       if (effectiveUid) {
+        queryClient.setQueryData(
+          queryKeys.catalog.book(uploaded.bookId) as unknown as any[],
+          {
+            id: uploaded.bookId,
+            authorId: '',
+            titleEn: uploadFile.name.replace(/\.[^.]+$/, ''),
+            titleAr: uploadFile.name.replace(/\.[^.]+$/, ''),
+            authorEn: '',
+            authorAr: '',
+            coverUrl: '',
+            descriptionEn: '',
+            descriptionAr: '',
+            genresEn: [],
+            genresAr: [],
+            rating: 0,
+            ratingsCount: 0,
+            isEbookAvailable: true,
+          } as any
+        );
+
         await Promise.all([
           queryClient.invalidateQueries({
             queryKey: queryKeys.user.shelves(effectiveUid) as unknown as any[],
@@ -278,25 +356,27 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
               targetShelfId
             ) as unknown as any[],
           }),
+          queryClient.invalidateQueries({
+            queryKey: queryKeys.catalog.book(uploaded.bookId) as unknown as any[],
+          }),
         ]);
       }
 
-      const shelf = shelves?.find(s => s.id === targetShelfId);
-      const shelfName = shelf ? (lang === 'en' ? shelf.titleEn : shelf.titleAr) : '';
-      const displayName = targetShelfId === 'currently-reading'
-        ? (lang === 'en' ? 'Currently Reading' : 'أقرأ حاليًا')
-        : shelfName;
-
       showToast(
         lang === 'en'
-          ? `Uploaded to ${displayName}`
-          : `تم رفع الكتاب إلى ${displayName}`
+          ? `Uploaded to ${targetShelfDisplayName}`
+          : `تم رفع الكتاب إلى ${targetShelfDisplayName}`
       );
 
       resetUploadSelection();
       onClose();
     } catch (error) {
       console.error('[AddBookModal][UPLOAD_FAILED]', error);
+      setUploadError(
+        lang === 'en'
+          ? 'Book upload failed. Please try again.'
+          : 'فشل رفع الكتاب. يرجى المحاولة مرة أخرى.'
+      );
       showToast(
         lang === 'en'
           ? 'Book upload failed. Please try again.'
@@ -305,6 +385,24 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     } finally {
       setIsUploadBusy(false);
     }
+  };
+
+  const handleUploadPrimaryAction = async () => {
+    if (isUploadBusy) return;
+
+    if (!uploadFile) {
+      uploadInputRef.current?.click();
+      return;
+    }
+
+    await handleUploadSubmit();
+  };
+
+  const formatFileSize = (sizeInBytes: number): string => {
+    if (sizeInBytes < 1024 * 1024) {
+      return `${Math.max(1, Math.round(sizeInBytes / 1024))} KB`;
+    }
+    return `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -408,36 +506,59 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
               onChange={handleUploadFileChange}
             />
 
-            <div className="rounded-lg border border-white/10 bg-black/10 p-4 text-center">
+            <div className="flex items-center justify-center">
+              <div className="rounded-full border border-accent/35 bg-accent/10 px-3 py-1 text-xs font-semibold text-accent">
+                {lang === 'en'
+                  ? `Adding to: ${targetShelfDisplayName || 'Selected Shelf'}`
+                  : `الإضافة إلى: ${targetShelfDisplayName || 'الرف المحدد'}`}
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => uploadInputRef.current?.click()}
+              disabled={isUploadBusy}
+              className="w-full rounded-lg border border-white/10 bg-black/10 p-4 text-left transition-colors hover:border-accent/40 disabled:cursor-not-allowed disabled:opacity-70"
+            >
               <BilingualText role="Caption" className="mb-2">
                 {lang === 'en'
                   ? 'Select an EPUB or PDF file (max 25MB).'
                   : 'اختر ملف EPUB أو PDF (بحد أقصى 25MB).'}
               </BilingualText>
 
-              <BilingualText className="text-slate-300">
+              <BilingualText className="text-slate-200">
                 {uploadFile
                   ? uploadFile.name
                   : (lang === 'en' ? 'No file selected.' : 'لم يتم اختيار ملف.')}
               </BilingualText>
-            </div>
 
-            <div className="flex items-center justify-center gap-3">
-              <Button
-                variant="secondary"
-                onClick={() => uploadInputRef.current?.click()}
-                disabled={isUploadBusy}
-              >
-                {lang === 'en' ? 'Choose File' : 'اختر ملفًا'}
-              </Button>
+              {uploadFile && (
+                <BilingualText role="Caption" className="mt-1 text-slate-400">
+                  {`${uploadFile.name.toLowerCase().endsWith('.epub') ? 'EPUB' : 'PDF'}  •  ${formatFileSize(uploadFile.size)}  •  ${lang === 'en' ? 'Tap to change' : 'اضغط للتغيير'}`}
+                </BilingualText>
+              )}
+            </button>
+
+            {uploadError && (
+              <BilingualText role="Caption" className="text-center text-red-400">
+                {uploadError}
+              </BilingualText>
+            )}
+
+            <div className="flex items-center justify-center">
               <Button
                 variant="primary"
-                onClick={handleUploadSubmit}
-                disabled={!uploadFile || isUploadBusy}
+                onClick={handleUploadPrimaryAction}
+                disabled={isUploadBusy || !targetShelfId}
+                className="min-w-[220px]"
               >
                 {isUploadBusy
                   ? (lang === 'en' ? 'Uploading...' : 'جارٍ الرفع...')
-                  : (lang === 'en' ? 'Upload Book' : 'رفع الكتاب')}
+                  : uploadFile
+                    ? (lang === 'en'
+                      ? `Upload to ${targetShelfDisplayName || 'Shelf'}`
+                      : `رفع إلى ${targetShelfDisplayName || 'الرف'}`)
+                    : (lang === 'en' ? 'Choose File' : 'اختر ملفًا')}
               </Button>
             </div>
           </div>

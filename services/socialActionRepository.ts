@@ -1,12 +1,18 @@
+import {
+    doc,
+    setDoc,
+    deleteDoc,
+    getDoc,
+    serverTimestamp,
+    collection,
+    Firestore,
+} from 'firebase/firestore';
 import { BookmarkType } from '../types/entities.ts';
-import { serverTimestamp } from 'firebase/firestore';
 import { getFirebaseDb } from '../lib/firebase.ts';
 
 /**
  * SocialActionRepository
  * Authority: POST_INTERACTION_V1 (LOCKED)
- * 
- * Implements the append-only event principle for social signals.
  * Truth resides in document existence within user-scoped subcollections.
  */
 export interface SocialActionRepository {
@@ -43,47 +49,67 @@ export interface SocialActionRepository {
     hasReportedComment(userId: string, commentId: string): Promise<boolean>;
 }
 
-class UnifiedSocialActionRepository implements SocialActionRepository {
-    private getDb() {
-        const db = getFirebaseDb();
-        if (!db) throw new Error('FIRESTORE_NOT_AVAILABLE');
-        return db;
+function requireDb(): Firestore {
+    const db = getFirebaseDb();
+    if (!db) {
+        throw new Error('FIRESTORE_NOT_AVAILABLE');
+    }
+    return db;
+}
+
+function requireId(value: string, field: string): string {
+    if (typeof value !== 'string') {
+        throw new Error(`INVALID_ARGUMENT:${field}`);
     }
 
+    const normalized = value.trim();
+    if (!normalized) {
+        throw new Error(`INVALID_ARGUMENT:${field}`);
+    }
+    return normalized;
+}
+
+class UnifiedSocialActionRepository implements SocialActionRepository {
     async like(postId: string, userId: string) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'likes', postId);
-        await db.setDoc(ref, {
-            postId,
-            timestamp: typeof serverTimestamp === 'function'
-                ? serverTimestamp()
-                : new Date().toISOString(),
-            version: 1
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        const ref = doc(db, 'users', normalizedUserId, 'likes', normalizedPostId);
+        await setDoc(ref, {
+            postId: normalizedPostId,
+            timestamp: serverTimestamp(),
+            version: 1,
         });
     }
 
     async unlike(postId: string, userId: string) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'likes', postId);
-        await db.deleteDoc(ref);
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        await deleteDoc(doc(db, 'users', normalizedUserId, 'likes', normalizedPostId));
     }
 
     async repost(postId: string, userId: string) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'reposts', postId);
-        await db.setDoc(ref, {
-            postId,
-            timestamp: typeof serverTimestamp === 'function'
-                ? serverTimestamp()
-                : new Date().toISOString(),
-            version: 1
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        const ref = doc(db, 'users', normalizedUserId, 'reposts', normalizedPostId);
+        await setDoc(ref, {
+            postId: normalizedPostId,
+            timestamp: serverTimestamp(),
+            version: 1,
         });
     }
 
     async unrepost(postId: string, userId: string) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'reposts', postId);
-        await db.deleteDoc(ref);
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        await deleteDoc(doc(db, 'users', normalizedUserId, 'reposts', normalizedPostId));
     }
 
     async bookmark(
@@ -91,16 +117,21 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         userId: string,
         entityType: BookmarkType = 'post'
     ) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'bookmarks', entityId);
-        await db.setDoc(ref, {
-            type: entityType,
-            entityId,
-            timestamp: typeof serverTimestamp === 'function'
-                ? serverTimestamp()
-                : new Date().toISOString(),
-            version: 1
-        });
+        const db = requireDb();
+        const normalizedEntityId = requireId(entityId, 'entityId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        const ref = doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId);
+        await setDoc(
+            ref,
+            {
+                type: entityType,
+                entityId: normalizedEntityId,
+                timestamp: serverTimestamp(),
+                version: 1,
+            },
+            { merge: true }
+        );
     }
 
     async unbookmark(
@@ -108,10 +139,11 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         userId: string,
         entityType: BookmarkType = 'post'
     ) {
-        const db = this.getDb();
-        await db.deleteDoc(
-            db.doc('users', userId, 'bookmarks', entityId)
-        );
+        const db = requireDb();
+        const normalizedEntityId = requireId(entityId, 'entityId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        await deleteDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId));
     }
 
     async hasBookmarked(
@@ -119,9 +151,11 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         userId: string,
         type: BookmarkType
     ): Promise<boolean> {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'bookmarks', entityId);
-        const snap = await db.getDoc(ref);
+        const db = requireDb();
+        const normalizedEntityId = requireId(entityId, 'entityId');
+        const normalizedUserId = requireId(userId, 'userId');
+
+        const snap = await getDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId));
         return snap.exists();
     }
 
@@ -134,36 +168,39 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
             return { like: false, bookmark: false, repost: false };
         }
 
-        const db = this.getDb();
+        const db = requireDb();
+        const normalizedEntityId = requireId(entityId, 'entityId');
+        const normalizedUserId = requireId(userId, 'userId');
 
         const [likeSnap, bookmarkSnap, repostSnap] = await Promise.all([
-            db.getDoc(db.doc('users', userId, 'likes', entityId)),
-            db.getDoc(db.doc('users', userId, 'bookmarks', entityId)),
-            db.getDoc(db.doc('users', userId, 'reposts', entityId))
+            getDoc(doc(db, 'users', normalizedUserId, 'likes', normalizedEntityId)),
+            getDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId)),
+            getDoc(doc(db, 'users', normalizedUserId, 'reposts', normalizedEntityId)),
         ]);
 
         return {
             like: likeSnap.exists(),
             bookmark: bookmarkSnap.exists(),
-            repost: repostSnap.exists()
+            repost: repostSnap.exists(),
         };
     }
 
     async addComment(postId: string, userId: string, text: string) {
-        if (!text.trim()) return;
+        const normalizedText = text.trim();
+        if (!normalizedText) return;
 
-        const db = this.getDb();
-        const commentId = `c_${Date.now()}_${userId.substring(0, 5)}`;
-        const commentRef = db.doc('posts', postId, 'comments', commentId);
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedUserId = requireId(userId, 'userId');
 
-        await db.setDoc(commentRef, {
-            authorId: userId,
-            text: text.trim(),
-            timestamp: typeof serverTimestamp === 'function'
-                ? serverTimestamp()
-                : new Date().toISOString(),
+        const commentRef = doc(collection(db, 'posts', normalizedPostId, 'comments'));
+
+        await setDoc(commentRef, {
+            authorId: normalizedUserId,
+            text: normalizedText,
+            timestamp: serverTimestamp(),
             status: 'published',
-            version: 1
+            version: 1,
         });
     }
 
@@ -174,24 +211,25 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         reason: string,
         details?: string
     ): Promise<void> {
-        const db = this.getDb();
-        const reportId = `rep_${Date.now()}_${reporterId.substring(0, 5)}`;
-        const reportRef = db.doc('reports', reportId);
-        const now = typeof serverTimestamp === 'function'
-            ? serverTimestamp()
-            : new Date().toISOString();
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedReporterId = requireId(reporterId, 'reporterId');
+        const normalizedAuthorId = requireId(authorId, 'authorId');
+        const normalizedReason = requireId(reason, 'reason').toLowerCase();
 
-        await db.setDoc(reportRef, {
+        const reportRef = doc(collection(db, 'reports'));
+
+        await setDoc(reportRef, {
             entityType: 'post',
-            entityId: postId,
-            reportedByUid: reporterId,
-            postAuthorId: authorId,
-            reason: reason.toLowerCase(),
-            details: details || "",
+            entityId: normalizedPostId,
+            reportedByUid: normalizedReporterId,
+            postAuthorId: normalizedAuthorId,
+            reason: normalizedReason,
+            details: details?.trim() || '',
             status: 'open',
-            createdAt: now,
-            updatedAt: now,
-            version: 1
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            version: 1,
         });
     }
 
@@ -203,47 +241,53 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         reason: string,
         note?: string
     ) {
-        const db = this.getDb();
-        const reportId = `rep_c_${Date.now()}_${reporterId.substring(0, 5)}`;
-        const reportRef = db.doc('reports', reportId);
-        const now = typeof serverTimestamp === 'function'
-            ? serverTimestamp()
-            : new Date().toISOString();
+        const db = requireDb();
+        const normalizedPostId = requireId(postId, 'postId');
+        const normalizedCommentId = requireId(commentId, 'commentId');
+        const normalizedReporterId = requireId(reporterId, 'reporterId');
+        const normalizedAuthorId = requireId(authorId, 'authorId');
+        const normalizedReason = requireId(reason, 'reason');
 
-        await db.setDoc(reportRef, {
+        const reportRef = doc(collection(db, 'reports'));
+
+        await setDoc(reportRef, {
             entityType: 'comment',
-            entityId: commentId,
-            postId,
-            reportedByUid: reporterId,
-            authorId,
-            reason,
-            note: note || "",
+            entityId: normalizedCommentId,
+            postId: normalizedPostId,
+            reportedByUid: normalizedReporterId,
+            authorId: normalizedAuthorId,
+            reason: normalizedReason,
+            note: note?.trim() || '',
             status: 'open',
-            createdAt: now,
-            updatedAt: now,
-            version: 1
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+            version: 1,
         });
 
-        const signalRef = db.doc('users', reporterId, 'reports', commentId);
-        await db.setDoc(signalRef, { timestamp: now });
+        await setDoc(doc(db, 'users', normalizedReporterId, 'reports', normalizedCommentId), {
+            timestamp: serverTimestamp(),
+        });
     }
 
     async blockUser(userId: string, blockedUid: string) {
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'blocks', blockedUid);
-        await db.setDoc(ref, {
-            blockedUid,
-            timestamp: typeof serverTimestamp === 'function'
-                ? serverTimestamp()
-                : new Date().toISOString()
+        const db = requireDb();
+        const normalizedUserId = requireId(userId, 'userId');
+        const normalizedBlockedUid = requireId(blockedUid, 'blockedUid');
+
+        await setDoc(doc(db, 'users', normalizedUserId, 'blocks', normalizedBlockedUid), {
+            blockedUid: normalizedBlockedUid,
+            timestamp: serverTimestamp(),
         });
     }
 
     async isUserBlocked(userId: string, targetUid: string): Promise<boolean> {
         if (!userId) return false;
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'blocks', targetUid);
-        const snap = await db.getDoc(ref);
+
+        const db = requireDb();
+        const normalizedUserId = requireId(userId, 'userId');
+        const normalizedTargetUid = requireId(targetUid, 'targetUid');
+
+        const snap = await getDoc(doc(db, 'users', normalizedUserId, 'blocks', normalizedTargetUid));
         return snap.exists();
     }
 
@@ -252,9 +296,12 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         commentId: string
     ): Promise<boolean> {
         if (!userId) return false;
-        const db = this.getDb();
-        const ref = db.doc('users', userId, 'reports', commentId);
-        const snap = await db.getDoc(ref);
+
+        const db = requireDb();
+        const normalizedUserId = requireId(userId, 'userId');
+        const normalizedCommentId = requireId(commentId, 'commentId');
+
+        const snap = await getDoc(doc(db, 'users', normalizedUserId, 'reports', normalizedCommentId));
         return snap.exists();
     }
 }

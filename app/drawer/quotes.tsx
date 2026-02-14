@@ -17,8 +17,8 @@ const QuotesScreen: React.FC = () => {
     const { navigate, currentView } = useNavigation();
     const [searchQuery, setSearchQuery] = useState('');
 
-    const bookId = currentView.type === 'drawer' && currentView.params?.bookId ? currentView.params.bookId : undefined;
-    const authorId = currentView.type === 'drawer' && currentView.params?.authorId ? currentView.params.authorId : undefined;
+    const bookId = currentView.params?.bookId;
+    const authorId = currentView.params?.authorId;
     
     const { data: quotes, isLoading, isError } = useSearchUserQuotes(searchQuery, bookId, authorId);
     const { data: book } = useBookCatalog(bookId);

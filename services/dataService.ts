@@ -16,6 +16,8 @@ const DOMAIN_WHITELIST = [
   "marketplace", "partner", "librarySearch"
 ];
 
+const domainProxyCache = new Map<string, any>();
+
 const guardedDataService = new Proxy(rawService, {
   get(target, prop) {
     if (typeof prop !== 'string' || !DOMAIN_WHITELIST.includes(prop)) {
@@ -25,14 +27,31 @@ const guardedDataService = new Proxy(rawService, {
     const domainImplementation = (target as any)[prop];
 
     if (!domainImplementation) {
-      return new Proxy({}, {
-        get() {
-          return () => Promise.resolve([]);
-        }
-      });
+      throw new Error(`[DataService] Missing domain implementation: ${prop}`);
     }
 
-    return domainImplementation;
+    if (domainProxyCache.has(prop)) {
+      return domainProxyCache.get(prop);
+    }
+
+    const guardedDomain = new Proxy(domainImplementation, {
+      get(domainTarget, methodName) {
+        if (typeof methodName === 'symbol') {
+          return (domainTarget as any)[methodName];
+        }
+        const method = (domainTarget as any)[methodName];
+        if (typeof methodName === 'string' && !(methodName in (domainTarget as any))) {
+          throw new Error(
+            `[DataService] Missing method implementation: ${prop}.${String(methodName)}`
+          );
+        }
+        if (typeof method !== 'function') return method;
+        return method.bind(domainTarget);
+      }
+    });
+
+    domainProxyCache.set(prop, guardedDomain);
+    return guardedDomain;
   }
 });
 

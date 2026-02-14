@@ -168,6 +168,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
             >
               <BookCard
                 bookId={entry.bookId}
+                book={entry.book as any}
                 shelfId={shelf.id}
                 layout="list"
               />
@@ -212,6 +213,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
             >
               <BookCard
                 bookId={entry.bookId}
+                book={entry.book as any}
                 shelfId={shelf.id}
                 layout="row"
               />

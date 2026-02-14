@@ -3,6 +3,78 @@ import { onRequest } from "firebase-functions/v2/https";
 import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
 
+type SearchBookResponse = {
+  id: string;
+  editionId: string;
+  bookId: string;
+  externalId: string;
+  source: "googleBooks" | "openLibrary";
+  title: string;
+  titleEn: string;
+  titleAr: string;
+  authors: string[];
+  authorEn: string;
+  authorAr: string;
+  description: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  coverUrl: string;
+  language: string;
+  hasEbook: boolean;
+  downloadable: boolean;
+  isEbookAvailable: boolean;
+};
+
+function toSearchBookResponse(raw: any): SearchBookResponse | null {
+  const sourceRaw = String(raw?.source || "").trim();
+  const source =
+    sourceRaw === "googleBooks"
+      ? "googleBooks"
+      : sourceRaw === "openLibrary"
+      ? "openLibrary"
+      : null;
+  if (!source) return null;
+
+  const title = String(raw?.title || raw?.titleEn || "").trim();
+  if (!title) return null;
+
+  const editionId = String(raw?.editionId || raw?.id || "").trim();
+  const bookId = String(raw?.bookId || raw?.id || "").trim();
+  if (!editionId || !bookId) return null;
+
+  const authors = Array.isArray(raw?.authors)
+    ? raw.authors.filter((v: unknown) => typeof v === "string" && v.trim().length > 0)
+    : [];
+  const authorEn = String(raw?.authorEn || authors[0] || "Unknown");
+  const normalizedAuthors = authors.length > 0 ? authors : [authorEn];
+  const externalId = String(raw?.externalId || "").trim();
+  const hasEbook = Boolean(raw?.hasEbook);
+  const downloadable = Boolean(raw?.downloadable);
+  const ebookAvailable = hasEbook && downloadable;
+
+  return {
+    id: String(raw?.id || editionId),
+    editionId,
+    bookId,
+    externalId,
+    source,
+    title,
+    titleEn: String(raw?.titleEn || title),
+    titleAr: String(raw?.titleAr || ""),
+    authors: normalizedAuthors,
+    authorEn,
+    authorAr: String(raw?.authorAr || ""),
+    description: String(raw?.description || raw?.descriptionEn || ""),
+    descriptionEn: String(raw?.descriptionEn || raw?.description || ""),
+    descriptionAr: String(raw?.descriptionAr || ""),
+    coverUrl: String(raw?.coverUrl || ""),
+    language: String(raw?.language || "en"),
+    hasEbook: ebookAvailable,
+    downloadable: ebookAvailable,
+    isEbookAvailable: ebookAvailable,
+  };
+}
+
 const app = express();
 // FIX: Cast app to any to resolve middleware overload mismatch.
 (app as any).use(express.json());
@@ -61,10 +133,13 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       `[API][SEARCH] Query="${q}" ebookOnly=${ebookOnly} lang=${lang}`
     );
 
-    const results = await unifiedSearch(q, {
+    const resultsRaw = await unifiedSearch(q, {
       ebookOnly,
       language: lang,
     });
+    const results = resultsRaw
+      .map((row: any) => toSearchBookResponse(row))
+      .filter((row: SearchBookResponse | null): row is SearchBookResponse => row !== null);
 
     const latencyMs = Date.now() - startTime;
 
@@ -73,14 +148,16 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     // --------------------------------------------------
     try {
       const providerMix: Record<string, number> = {
-        booktown: 0,
         googleBooks: 0,
         openLibrary: 0,
+        other: 0,
       };
 
       for (const r of results) {
         if (r?.source && providerMix[r.source] !== undefined) {
           providerMix[r.source]++;
+        } else {
+          providerMix.other++;
         }
       }
 

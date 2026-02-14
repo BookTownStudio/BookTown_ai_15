@@ -306,6 +306,8 @@ export interface CatalogDataService {
   searchAuthors(query: string): Promise<Author[]>;
 
   followAuthor(uid: string, authorId: string): Promise<void>;
+  unfollowAuthor(uid: string, authorId: string): Promise<void>;
+  isAuthorFollowed(uid: string, authorId: string): Promise<boolean>;
 
   getReviews(bookId: string): Promise<Review[]>;
 

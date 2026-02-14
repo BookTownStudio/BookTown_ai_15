@@ -197,13 +197,15 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           shelfRef,
           {
             updatedAt: now,
-            [`entries.${bookId}`]: {
-              bookId,
-              addedAt,
-              snapshot: {
-                titleEn: derivedTitle,
-                titleAr: derivedTitle,
-                coverUrl: "",
+            entries: {
+              [bookId]: {
+                bookId,
+                addedAt,
+                snapshot: {
+                  titleEn: derivedTitle,
+                  titleAr: derivedTitle,
+                  coverUrl: "",
+                },
               },
             },
           },

@@ -29,6 +29,12 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.ownerId;
     }
 
+    function isBoundedString(value, maxLen) {
+      return value is string
+        && value.size() > 0
+        && value.size() <= maxLen;
+    }
+
     /* =========================
        USERS
        ========================= */
@@ -36,10 +42,27 @@ service cloud.firestore {
       allow read, create, update: if isOwner(uid);
       allow delete: if false;
 
+      match /follows_authors/{authorId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && request.resource.data.uid == uid
+          && request.resource.data.authorId == authorId;
+        allow delete: if isOwner(uid);
+      }
+
       match /{subCollection}/{docId} {
-        allow read, create, update: if isOwner(uid);
+        allow read, create, update: if isOwner(uid)
+          && subCollection != "follows_authors";
         allow delete: if false;
       }
+    }
+
+    /* =========================
+       AUTHORS (PUBLIC READ, SERVER WRITE)
+       ========================= */
+    match /authors/{authorId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
 
     /* =========================
@@ -159,6 +182,154 @@ service cloud.firestore {
         && !('status_state' in request.resource.data);
 
       allow delete: if false;
+    }
+
+    /* =========================
+       VENUES
+       ========================= */
+    match /venues/{venueId} {
+      allow get, list: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && isBoundedString(request.resource.data.name, 120)
+        && isBoundedString(request.resource.data.type, 80)
+        && isBoundedString(request.resource.data.address, 240)
+        && isBoundedString(request.resource.data.imageUrl, 1024)
+        && request.resource.data.descriptionEn is string
+        && request.resource.data.descriptionEn.size() <= 2000
+        && request.resource.data.descriptionAr is string
+        && request.resource.data.descriptionAr.size() <= 2000;
+
+      allow update: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && isBoundedString(request.resource.data.name, 120)
+        && isBoundedString(request.resource.data.type, 80)
+        && isBoundedString(request.resource.data.address, 240)
+        && isBoundedString(request.resource.data.imageUrl, 1024)
+        && request.resource.data.descriptionEn is string
+        && request.resource.data.descriptionEn.size() <= 2000
+        && request.resource.data.descriptionAr is string
+        && request.resource.data.descriptionAr.size() <= 2000;
+
+      allow delete: if false;
+
+      match /reviews/{reviewId} {
+        allow get, list: if true;
+
+        allow create: if isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.venueId == venueId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000;
+
+        allow update: if isSignedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.venueId == resource.data.venueId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000;
+
+        allow delete: if isSignedIn()
+          && resource.data.userId == request.auth.uid;
+      }
+    }
+
+    /* =========================
+       EVENTS
+       ========================= */
+    match /events/{eventId} {
+      allow get, list: if true;
+
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && isBoundedString(request.resource.data.titleEn, 120)
+        && isBoundedString(request.resource.data.titleAr, 120)
+        && isBoundedString(request.resource.data.type, 80)
+        && isBoundedString(request.resource.data.dateTime, 64)
+        && isBoundedString(request.resource.data.imageUrl, 1024)
+        && request.resource.data.privacy in ['public', 'private']
+        && request.resource.data.isOnline is bool
+        && (
+          (request.resource.data.isOnline == true
+            && isBoundedString(request.resource.data.link, 1024))
+          ||
+          (request.resource.data.isOnline == false
+            && isBoundedString(request.resource.data.venueName, 120))
+        );
+
+      allow update: if isSignedIn()
+        && resource.data.ownerId == request.auth.uid
+        && request.resource.data.ownerId == resource.data.ownerId
+        && isBoundedString(request.resource.data.titleEn, 120)
+        && isBoundedString(request.resource.data.titleAr, 120)
+        && isBoundedString(request.resource.data.type, 80)
+        && isBoundedString(request.resource.data.dateTime, 64)
+        && isBoundedString(request.resource.data.imageUrl, 1024)
+        && request.resource.data.privacy in ['public', 'private']
+        && request.resource.data.isOnline is bool
+        && (
+          (request.resource.data.isOnline == true
+            && isBoundedString(request.resource.data.link, 1024))
+          ||
+          (request.resource.data.isOnline == false
+            && isBoundedString(request.resource.data.venueName, 120))
+        );
+
+      allow delete: if false;
+
+      match /reviews/{reviewId} {
+        allow get, list: if true;
+
+        allow create: if isSignedIn()
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.venueId == eventId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000;
+
+        allow update: if isSignedIn()
+          && resource.data.userId == request.auth.uid
+          && request.resource.data.userId == resource.data.userId
+          && request.resource.data.venueId == resource.data.venueId
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.text is string
+          && request.resource.data.text.size() <= 1000;
+
+        allow delete: if isSignedIn()
+          && resource.data.userId == request.auth.uid;
+      }
+
+      match /rsvps/{uid} {
+        allow get, list: if true;
+
+        allow create, update: if isOwner(uid)
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.eventId == eventId;
+
+        allow delete: if isOwner(uid);
+      }
+    }
+
+    match /venue_stats/{venueId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
+    }
+
+    match /event_stats/{eventId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
     }
 
     /* =========================

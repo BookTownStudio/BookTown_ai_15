@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 import { Venue, Event } from '../../types/entities.ts';
+import { queryKeys } from '../queryKeys.ts';
 
 interface UpdateVenueVariables {
     venueId: string;
@@ -20,9 +21,8 @@ export const useUpdateVenue = () => {
             return dataService.venues.updateVenue(uid, venueId, data);
         },
         onSuccess: (data, variables) => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['venuesAndEvents']);
-            queryClient.invalidateQueries(['venue', variables.venueId]);
+            queryClient.invalidateQueries(queryKeys.venues.all as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.venues.detail(variables.venueId) as unknown as any[]);
         },
     });
 };

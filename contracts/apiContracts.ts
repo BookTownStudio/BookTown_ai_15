@@ -91,29 +91,42 @@ const readerInsightsDataSchema = z
 
 const searchBookSchema = z
   .object({
-    id: z.string().min(1).optional(),
-    bookId: z.string().min(1).optional(),
-    titleEn: z.string().optional(),
-    titleAr: z.string().optional(),
-    authorEn: z.string().optional(),
-    authorAr: z.string().optional(),
-    descriptionEn: z.string().optional(),
-    descriptionAr: z.string().optional(),
-    coverUrl: z.string().optional(),
-    source: z.string().optional(),
-    editionId: z.string().optional(),
-    isEbookAvailable: z.boolean().optional(),
+    id: z.string().min(1),
+    editionId: z.string().min(1),
+    bookId: z.string().min(1),
+    externalId: z.string(),
+    source: z.enum(["googleBooks", "openLibrary"]),
+    title: z.string().min(1),
+    titleEn: z.string().min(1),
+    titleAr: z.string(),
+    authors: z.array(z.string().min(1)).min(1),
+    authorEn: z.string().min(1),
+    authorAr: z.string(),
+    description: z.string(),
+    descriptionEn: z.string(),
+    descriptionAr: z.string(),
+    coverUrl: z.string(),
+    language: z.string().min(2).max(8),
+    hasEbook: z.boolean(),
+    downloadable: z.boolean(),
+    isEbookAvailable: z.boolean(),
   })
-  .passthrough()
-  .refine(
-    (v) =>
-      (typeof v.id === "string" && v.id.length > 0) ||
-      (typeof v.editionId === "string" && v.editionId.length > 0) ||
-      (typeof v.bookId === "string" && v.bookId.length > 0),
-    {
-      message: "At least one identifier (id, editionId, or bookId) is required.",
-    }
-  );
+  .strict();
+
+const quoteSchema = z
+  .object({
+    id: z.string().min(1),
+    ownerId: z.string().min(1),
+    textEn: z.string().min(1),
+    textAr: z.string().min(1),
+    sourceEn: z.string().min(1),
+    sourceAr: z.string().min(1),
+    bookId: z.string().min(1).optional(),
+    authorId: z.string().min(1).optional(),
+    createdAt: z.string().optional(),
+    updatedAt: z.string().optional(),
+  })
+  .strict();
 
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,
@@ -573,6 +586,104 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useDeletePost.ts"],
+      }
+    ),
+
+    listUserQuotes: defineContract(
+      z
+        .object({
+          ownerId: z.string().min(1).optional(),
+          limit: z.number().int().positive().max(100).optional(),
+          cursor: z.string().min(1).optional(),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          query: z.string().max(120).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          quotes: z.array(quoteSchema),
+          nextCursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/quoteService.ts", "lib/hooks/useQuotes.ts"],
+      }
+    ),
+
+    getQuoteById: defineContract(
+      z
+        .object({
+          quoteId: z.string().min(1),
+          ownerId: z.string().min(1).optional(),
+        })
+        .strict(),
+      quoteSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "services/quoteService.ts",
+          "lib/hooks/useQuoteDetails.ts",
+        ],
+      }
+    ),
+
+    createQuote: defineContract(
+      z
+        .object({
+          textEn: z.string().min(1).max(2000),
+          textAr: z.string().min(1).max(2000),
+          sourceEn: z.string().min(1).max(240),
+          sourceAr: z.string().min(1).max(240),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          isPublic: z.boolean().optional(),
+        })
+        .strict(),
+      quoteSchema,
+      "httpsCallable",
+      {
+        callSites: ["services/quoteService.ts"],
+      }
+    ),
+
+    saveQuoteFromReference: defineContract(
+      z
+        .object({
+          sourceOwnerId: z.string().min(1),
+          sourceQuoteId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          quote: quoteSchema,
+          alreadySaved: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/quoteService.ts", "lib/hooks/useSaveQuote.ts"],
+      }
+    ),
+
+    toggleQuoteBookmark: defineContract(
+      z
+        .object({
+          quoteId: z.string().min(1),
+          quoteOwnerId: z.string().min(1),
+          active: z.boolean(),
+        })
+        .strict(),
+      z
+        .object({
+          bookmarked: z.boolean(),
+          bookmarkId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/quoteService.ts", "lib/hooks/useSaveQuote.ts"],
       }
     ),
 

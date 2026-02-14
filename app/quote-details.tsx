@@ -9,15 +9,19 @@ import { useQuoteDetails } from '../lib/hooks/useQuoteDetails.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import { ShareIcon } from '../components/icons/ShareIcon.tsx';
 import { BookmarkIcon } from '../components/icons/BookmarkIcon.tsx';
+import { useSaveQuote } from '../lib/hooks/useSaveQuote.ts';
+import { useToast } from '../store/toast.tsx';
 
 const QuoteDetailsScreen: React.FC = () => {
     const { currentView, navigate, navigateToSocialAndHighlight } = useNavigation();
     const { lang } = useI18n();
+    const { showToast } = useToast();
 
     const quoteId = currentView.type === 'immersive' ? currentView.params?.quoteId : undefined;
     const ownerId = currentView.type === 'immersive' ? currentView.params?.ownerId : undefined;
 
     const { data: quote, isLoading } = useQuoteDetails(quoteId, ownerId);
+    const { mutate: saveQuote, isPending: isSaving } = useSaveQuote();
 
     const handleBack = () => {
         const fromView = currentView.params?.from;
@@ -30,6 +34,26 @@ const QuoteDetailsScreen: React.FC = () => {
         } else {
             navigate({ type: 'tab', id: 'home' });
         }
+    };
+
+    const handleSaveQuote = () => {
+        if (!quoteId || !ownerId) return;
+
+        saveQuote(
+            { quoteId, ownerId },
+            {
+                onSuccess: (result) => {
+                    showToast(
+                        result.alreadySaved
+                            ? (lang === 'en' ? 'Quote already saved.' : 'الاقتباس محفوظ بالفعل.')
+                            : (lang === 'en' ? 'Quote saved.' : 'تم حفظ الاقتباس.')
+                    );
+                },
+                onError: () => {
+                    showToast(lang === 'en' ? 'Failed to save quote.' : 'تعذر حفظ الاقتباس.');
+                }
+            }
+        );
     };
 
     return (
@@ -55,9 +79,11 @@ const QuoteDetailsScreen: React.FC = () => {
                             </BilingualText>
 
                             <div className="mt-12 flex items-center justify-center gap-4">
-                                <Button variant="primary">
+                                <Button variant="primary" onClick={handleSaveQuote} disabled={isSaving}>
                                     <BookmarkIcon className="h-5 w-5 mr-2" />
-                                    {lang === 'en' ? 'Save Quote' : 'حفظ الاقتباس'}
+                                    {isSaving
+                                        ? (lang === 'en' ? 'Saving...' : 'جارٍ الحفظ...')
+                                        : (lang === 'en' ? 'Save Quote' : 'حفظ الاقتباس')}
                                 </Button>
                                 <Button variant="ghost">
                                     <ShareIcon className="h-5 w-5 mr-2" />

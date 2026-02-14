@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 import { Venue, Event } from '../../types/entities.ts';
+import { queryKeys } from '../queryKeys.ts';
 
 type CreateVenueVariables = Omit<Venue, 'id' | 'ownerId'> | Omit<Event, 'id' | 'ownerId'>;
 
@@ -17,8 +18,7 @@ export const useCreateVenue = () => {
             return dataService.venues.createVenue(uid, data);
         },
         onSuccess: () => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['venuesAndEvents']);
+            queryClient.invalidateQueries(queryKeys.venues.all as unknown as any[]);
         },
     });
 };

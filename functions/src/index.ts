@@ -37,6 +37,13 @@ import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttach
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
 import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
+import {
+  listUserQuotes as listUserQuotesRaw,
+  getQuoteById as getQuoteByIdRaw,
+  createQuote as createQuoteRaw,
+  saveQuoteFromReference as saveQuoteFromReferenceRaw,
+  toggleQuoteBookmark as toggleQuoteBookmarkRaw,
+} from "./quotes";
 import { api as apiRaw } from "./api";
 
 // ------------------------------------------------------------------
@@ -294,6 +301,22 @@ export const transitionModerationStage = wrapCallableV2(
 export const incrementPostView = wrapCallableV2(
   "incrementPostView",
   incrementPostViewRaw
+);
+
+// Quotes
+export const listUserQuotes = wrapCallableV2(
+  "listUserQuotes",
+  listUserQuotesRaw
+);
+export const getQuoteById = wrapCallableV2("getQuoteById", getQuoteByIdRaw);
+export const createQuote = wrapCallableV2("createQuote", createQuoteRaw);
+export const saveQuoteFromReference = wrapCallableV2(
+  "saveQuoteFromReference",
+  saveQuoteFromReferenceRaw
+);
+export const toggleQuoteBookmark = wrapCallableV2(
+  "toggleQuoteBookmark",
+  toggleQuoteBookmarkRaw
 );
 
 // Write

@@ -12,7 +12,7 @@ const BooksScreen: React.FC = () => {
     const { lang } = useI18n();
     const { navigate, currentView } = useNavigation();
 
-    const authorId = currentView.type === 'drawer' && currentView.params?.authorId ? currentView.params.authorId : undefined;
+    const authorId = currentView.params?.authorId;
     
     const { data: author } = useAuthorDetails(authorId);
     const { data: books, isLoading, isError } = useBooksByAuthor(authorId);
