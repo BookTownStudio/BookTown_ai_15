@@ -144,6 +144,85 @@ const publicProfileSchema = z
   })
   .strict();
 
+const socialSearchTypeSchema = z.enum(["users", "posts", "topics"]);
+
+const socialSearchAttachmentRefSchema = z
+  .object({
+    attachmentId: z.string().min(1),
+    type: z.string().min(1),
+    role: z.string().min(1),
+    renderHint: z.string().min(1),
+  })
+  .strict();
+
+const socialSearchUserSchema = z
+  .object({
+    uid: z.string().min(1),
+    name: z.string().min(1).max(80),
+    handle: z.string().min(2).max(40),
+    avatarUrl: z.string().max(2048),
+    bannerUrl: z.string().max(2048),
+    bioEn: z.string().max(500),
+    bioAr: z.string().max(500),
+    joinDate: z.string().min(1),
+    updatedAt: z.string().min(1),
+    followers: z.number().int().nonnegative(),
+    following: z.number().int().nonnegative(),
+    score: z.number(),
+    rankReasons: z.array(z.string().min(1)).max(6),
+  })
+  .strict();
+
+const socialSearchPostSchema = z
+  .object({
+    id: z.string().min(1),
+    authorId: z.string().min(1),
+    authorName: z.string().min(1),
+    authorHandle: z.string().min(2),
+    authorAvatar: z.string().max(2048),
+    content: z
+      .object({
+        text: z.string().nullable(),
+        attachments: z.array(socialSearchAttachmentRefSchema),
+      })
+      .strict(),
+    visibility: z.literal("public"),
+    status: z.literal("published"),
+    counters: z
+      .object({
+        likes: z.number().int().nonnegative(),
+        comments: z.number().int().nonnegative(),
+        reposts: z.number().int().nonnegative(),
+        bookmarks: z.number().int().nonnegative(),
+      })
+      .strict(),
+    timestamps: z
+      .object({
+        createdAt: z.string().min(1),
+        updatedAt: z.string().nullable(),
+        publishedAt: z.string().nullable(),
+        deletedAt: z.string().nullable().optional(),
+      })
+      .strict(),
+    flags: z
+      .object({
+        edited: z.boolean(),
+        hasAttachments: z.boolean(),
+      })
+      .strict(),
+    score: z.number(),
+    rankReasons: z.array(z.string().min(1)).max(6),
+  })
+  .strict();
+
+const socialSearchTopicSchema = z
+  .object({
+    topic: z.string().min(1),
+    postCount: z.number().int().nonnegative(),
+    score: z.number(),
+  })
+  .strict();
+
 const profileUpdatePayloadSchema = z
   .object({
     name: z.string().min(1).max(80).optional(),
@@ -412,6 +491,35 @@ export const apiContracts = {
         callSites: [
           "services/firebaseDbService.ts",
           "lib/hooks/useSuggestedProfiles.ts",
+        ],
+      }
+    ),
+
+    searchSocial: defineContract(
+      z
+        .object({
+          query: z.string().min(2).max(64),
+          cursor: z.string().min(1).max(1024).optional(),
+          limit: z.number().int().min(1).max(20).optional(),
+          types: z.array(socialSearchTypeSchema).min(1).max(3).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          rankingVersion: z.literal("social_v1"),
+          queryHash: z.string().length(64),
+          users: z.array(socialSearchUserSchema),
+          posts: z.array(socialSearchPostSchema),
+          topics: z.array(socialSearchTopicSchema),
+          hasMore: z.boolean(),
+          nextCursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useSocialSearch.ts",
         ],
       }
     ),

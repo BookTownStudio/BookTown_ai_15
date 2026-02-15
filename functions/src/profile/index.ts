@@ -2,6 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
+import {
+  buildSearchFieldsFromTextParts,
+  normalizeSearchText,
+} from "../search/normalization";
 
 const db = admin.firestore();
 
@@ -25,6 +29,28 @@ type PublicProfile = {
   followers: number;
   following: number;
 };
+
+function buildProfileSearchFields(profile: {
+  name: string;
+  handle: string;
+  bioEn: string;
+  bioAr: string;
+}) {
+  const fields = buildSearchFieldsFromTextParts([
+    profile.name,
+    profile.handle,
+    profile.bioEn,
+    profile.bioAr,
+  ]);
+
+  return {
+    nameNormalized: normalizeSearchText(profile.name),
+    handleNormalized: normalizeSearchText(profile.handle),
+    bioNormalized: normalizeSearchText(`${profile.bioEn} ${profile.bioAr}`),
+    searchTokens: fields.tokens,
+    searchPrefixes: fields.prefixes,
+  };
+}
 
 function ensureUid(value: unknown, field = "uid"): string {
   if (typeof value !== "string") {
@@ -171,6 +197,7 @@ async function readOrCreatePublicProfile(uid: string): Promise<PublicProfile | n
   }
 
   const profile = normalizePublicProfile(uid, userSnap.data() || {});
+  const searchFields = buildProfileSearchFields(profile);
   await publicRef.set(
     {
       uid: profile.uid,
@@ -184,6 +211,7 @@ async function readOrCreatePublicProfile(uid: string): Promise<PublicProfile | n
       updatedAt: profile.updatedAt,
       followerCount: profile.followers,
       followingCount: profile.following,
+      ...searchFields,
     },
     { merge: true }
   );
@@ -293,6 +321,24 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
 
     const current = userSnap.data() || {};
     const normalizedCurrent = normalizePublicProfile(uid, current);
+    const resolvedName =
+      "name" in publicUpdates
+        ? String(publicUpdates.name)
+        : normalizedCurrent.name;
+    const resolvedBioEn =
+      "bioEn" in publicUpdates
+        ? String(publicUpdates.bioEn)
+        : normalizedCurrent.bioEn;
+    const resolvedBioAr =
+      "bioAr" in publicUpdates
+        ? String(publicUpdates.bioAr)
+        : normalizedCurrent.bioAr;
+    const searchFields = buildProfileSearchFields({
+      name: resolvedName,
+      handle: normalizedCurrent.handle,
+      bioEn: resolvedBioEn,
+      bioAr: resolvedBioAr,
+    });
     tx.set(userRef, userUpdates, { merge: true });
     tx.set(
       publicRef,
@@ -312,6 +358,7 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
         bioAr: "bioAr" in publicUpdates ? publicUpdates.bioAr : normalizedCurrent.bioAr,
         joinDate: normalizedCurrent.joinDate,
         updatedAt: nowIso,
+        ...searchFields,
       },
       { merge: true }
     );

@@ -1,5 +1,10 @@
 import React from 'react';
-import { useReadingPreferences, FontSize, Theme } from '../../store/reading-prefs.tsx';
+import {
+    useReadingPreferences,
+    FontSize,
+    Theme,
+    FontStyle,
+} from '../../store/reading-prefs.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { cn } from '../../lib/utils.ts';
 import { SunIcon } from '../icons/SunIcon.tsx';
@@ -11,7 +16,7 @@ interface ReaderSettingsProps {
 
 const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
     const { lang } = useI18n();
-    const { fontSize, setFontSize, theme, setTheme } = useReadingPreferences();
+    const { fontSize, setFontSize, theme, setTheme, fontStyle, setFontStyle } = useReadingPreferences();
 
     const fontSizes: { id: FontSize, label: string }[] = [
         { id: 'xs', label: 'XS' },
@@ -25,6 +30,10 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
         { id: 'light', labelEn: 'Light', labelAr: 'فاتح', icon: SunIcon, bg: 'bg-[#FBF6E8]' },
         { id: 'sepia', labelEn: 'Sepia', labelAr: 'بني داكن', bg: 'bg-[#F3E9D2]' },
         { id: 'dark', labelEn: 'Dark', labelAr: 'داكن', icon: MoonIcon, bg: 'bg-[#1E242C]' },
+    ];
+    const fontStyles: { id: FontStyle; labelEn: string; labelAr: string }[] = [
+        { id: 'default', labelEn: 'Serif', labelAr: 'تقليدي' },
+        { id: 'dyslexic', labelEn: 'Readable', labelAr: 'مقروء' },
     ];
 
     return (
@@ -78,6 +87,24 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
                                 </span>
                             </button>
                          ))}
+                    </div>
+
+                    {/* Font Style */}
+                    <div className="mt-4 flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
+                        {fontStyles.map((style) => (
+                            <button
+                                key={style.id}
+                                onClick={() => setFontStyle(style.id)}
+                                className={cn(
+                                    'flex-1 py-2 text-xs font-semibold rounded-full transition-colors',
+                                    fontStyle === style.id
+                                        ? 'bg-accent text-white'
+                                        : 'text-white/70 hover:text-white'
+                                )}
+                            >
+                                {lang === 'en' ? style.labelEn : style.labelAr}
+                            </button>
+                        ))}
                     </div>
                 </div>
             </div>

@@ -1,6 +1,11 @@
 import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    buildSearchFieldsFromTextParts,
+    extractHashtags,
+    normalizeSearchText,
+} from "../search/normalization";
 
 const db = admin.firestore();
 
@@ -26,6 +31,39 @@ function isEligibleForIndexing(data: any): boolean {
     );
 }
 
+function buildPostSearchProjection(postId: string, data: any): Record<string, unknown> {
+    const rawText =
+        typeof data?.content === "string"
+            ? data.content
+            : typeof data?.content?.text === "string"
+                ? data.content.text
+                : "";
+    const authorName = typeof data?.authorName === "string" ? data.authorName : "";
+    const authorHandle = typeof data?.authorHandle === "string" ? data.authorHandle : "";
+
+    const searchFields = buildSearchFieldsFromTextParts([
+        rawText,
+        authorName,
+        authorHandle,
+    ]);
+
+    return {
+        postId,
+        authorId: typeof data?.authorId === "string" ? data.authorId : "",
+        authorNameNormalized: normalizeSearchText(authorName),
+        authorHandleNormalized: normalizeSearchText(authorHandle),
+        textNormalized: normalizeSearchText(rawText),
+        hashtags: extractHashtags(rawText),
+        searchTokens: searchFields.tokens,
+        searchPrefixes: searchFields.prefixes,
+        createdAt: data?.timestamps?.createdAt || data?.createdAt || null,
+        status: "published",
+        visibility: "public",
+        contentType: data?.content?.attachments?.[0]?.type || "TEXT",
+        indexedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+}
+
 /**
  * syncPostToSearchIndex
  * Trigger: onUpdate (posts/{postId})
@@ -46,16 +84,7 @@ export const syncPostToSearchIndex = onDocumentUpdated("posts/{postId}", async (
     }
     
     // 2. Construct Canonical Index Document (DATA_CONTRACT_V1)
-    // POST_RANKING_POLICY_V1: Baseline is createdAt
-    const projection = {
-        postId: postId,
-        authorId: newData.authorId,
-        createdAt: newData.timestamps?.createdAt || newData.createdAt || null,
-        status: newData.status,
-        visibility: 'public', 
-        contentType: newData.content?.attachments?.[0]?.type || 'TEXT',
-        indexedAt: admin.firestore.FieldValue.serverTimestamp()
-    };
+    const projection = buildPostSearchProjection(postId, newData);
 
     try {
         await indexRef.set(projection, { merge: true });
@@ -110,16 +139,11 @@ export const initPostSearchIndex = onDocumentCreated("posts/{postId}", async (ev
     }
     
     const projection = {
-        postId: postId,
-        authorId: data.authorId,
-        createdAt: data.timestamps?.createdAt || data.createdAt || null,
-        status: data.status,
-        visibility: 'public',
+        ...buildPostSearchProjection(postId, data),
         likesCount: 0,
         commentsCount: 0,
         repostsCount: 0,
         bookmarksCount: 0,
-        indexedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 
     await db.collection('search_feed').doc(postId).set(projection);

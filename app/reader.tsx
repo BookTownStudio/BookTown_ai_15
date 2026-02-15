@@ -1,6 +1,6 @@
 // app/reader.tsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigation } from '../store/navigation.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
@@ -44,7 +44,7 @@ const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
   const { showToast } = useToast();
-  const { theme, readingMode } = useReadingPreferences();
+  const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
 
   const bookId =
     currentView.type === 'immersive' && currentView.params?.bookId
@@ -69,11 +69,58 @@ const ReaderScreen: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastProgressFingerprintRef = useRef<string>('');
+  const latestProgressPayloadRef = useRef<{
+    bookId: string;
+    currentPage: number;
+    totalPages: number;
+    percentage: number;
+    format: ReaderFormat;
+    readingMode: 'scroll' | 'page';
+  } | null>(null);
+
+  const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
+    setCurrentPage(nextPage);
+    setTotalPages(Math.max(1, pagesCount));
+  }, []);
+
+  const handleEpubLoadError = useCallback(
+    (message: string) => {
+      console.error('[READER][EPUB_RENDER_FAILED]', message);
+      setRenderError(
+        lang === 'en'
+          ? 'Unable to render this EPUB in-app. You can open the file directly.'
+          : 'تعذّر عرض ملف EPUB داخل التطبيق. يمكنك فتح الملف مباشرة.'
+      );
+    },
+    [lang]
+  );
+
+  const handlePdfLoadError = useCallback(
+    (message: string) => {
+      console.error('[READER][PDF_RENDER_FAILED]', message);
+      setRenderError(
+        lang === 'en'
+          ? 'Unable to render this PDF in-app. You can open the file directly.'
+          : 'تعذّر عرض ملف PDF داخل التطبيق. يمكنك فتح الملف مباشرة.'
+      );
+    },
+    [lang]
+  );
 
   const handleBack = useCallback(() => {
     if (currentView.params?.from) navigate(currentView.params.from);
     else navigate({ type: 'tab', id: 'read' });
   }, [navigate, currentView]);
+
+  const handleListeningClick = useCallback(() => {
+    showToast(
+      lang === 'en'
+        ? 'Audio narration is not available for this title yet.'
+        : 'السرد الصوتي غير متاح لهذا العنوان حالياً.'
+    );
+  }, [lang, showToast]);
 
   // -------------------------------------------------
   // Session bootstrap (authoritative)
@@ -162,6 +209,117 @@ const ReaderScreen: React.FC = () => {
   }, [bookId, lang, navigate, showToast]);
 
   // -------------------------------------------------
+  // Progress persistence (authoritative)
+  // -------------------------------------------------
+  const persistProgress = useCallback(
+    async (payload: {
+      bookId: string;
+      currentPage: number;
+      totalPages: number;
+      percentage: number;
+      format: ReaderFormat;
+      readingMode: 'scroll' | 'page';
+    }) => {
+      try {
+        const fn = httpsCallable(getFunctions(), 'recordReadingProgress');
+        const res = await fn({
+          bookId: payload.bookId,
+          currentPage: payload.currentPage,
+          totalPages: payload.totalPages,
+          percentage: payload.percentage,
+          lastPosition: {
+            page: payload.currentPage,
+            totalPages: payload.totalPages,
+            format: payload.format,
+            mode: payload.readingMode,
+          },
+        });
+
+        const envelope = res.data as any;
+        if (envelope?.success === false) {
+          const errorCode =
+            typeof envelope?.error?.code === 'string' ? envelope.error.code : 'UNKNOWN';
+          const errorMessage =
+            typeof envelope?.error?.message === 'string'
+              ? envelope.error.message
+              : 'Progress write rejected.';
+          throw new Error(`[${errorCode}] ${errorMessage}`);
+        }
+      } catch (error) {
+        console.warn('[READER][PROGRESS_PERSIST_FAILED]', error);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!bookId || !readerSession || loadingSession || renderError) return;
+
+    const format =
+      readerSession.format === 'unknown'
+        ? inferFormatFromUrl(readerSession.signedUrl)
+        : readerSession.format;
+    const safeTotal = Math.max(1, Math.trunc(totalPages || 1));
+    const safePage = Math.min(Math.max(1, Math.trunc(currentPage || 1)), safeTotal);
+    const percentage = Math.min(1, Math.max(0, safePage / safeTotal));
+    const payload = {
+      bookId,
+      currentPage: safePage,
+      totalPages: safeTotal,
+      percentage,
+      format,
+      readingMode,
+    };
+    latestProgressPayloadRef.current = payload;
+    const fingerprint = `${bookId}:${safePage}:${safeTotal}:${format}:${readingMode}`;
+
+    if (lastProgressFingerprintRef.current === fingerprint) return;
+
+    if (progressWriteTimerRef.current) {
+      clearTimeout(progressWriteTimerRef.current);
+    }
+
+    progressWriteTimerRef.current = setTimeout(() => {
+      void persistProgress(payload);
+      lastProgressFingerprintRef.current = fingerprint;
+      progressWriteTimerRef.current = null;
+    }, 1200);
+
+    return () => {
+      if (progressWriteTimerRef.current) {
+        clearTimeout(progressWriteTimerRef.current);
+      }
+    };
+  }, [
+    bookId,
+    currentPage,
+    loadingSession,
+    persistProgress,
+    readerSession,
+    readingMode,
+    renderError,
+    totalPages,
+  ]);
+
+  useEffect(() => {
+    return () => {
+      if (progressWriteTimerRef.current) {
+        clearTimeout(progressWriteTimerRef.current);
+        progressWriteTimerRef.current = null;
+      }
+
+      const payload = latestProgressPayloadRef.current;
+      if (!payload) return;
+
+      const fingerprint = `${payload.bookId}:${payload.currentPage}:${payload.totalPages}:${payload.format}:${payload.readingMode}`;
+      if (lastProgressFingerprintRef.current === fingerprint) return;
+
+      void persistProgress(payload);
+      lastProgressFingerprintRef.current = fingerprint;
+    };
+  }, [persistProgress]);
+
+  // -------------------------------------------------
   // Loading state
   // -------------------------------------------------
   if (isBookLoading || loadingSession) {
@@ -215,7 +373,7 @@ const ReaderScreen: React.FC = () => {
         currentPage={currentPage}
         totalPages={totalPages}
         onSettingsClick={() => setIsSettingsVisible(true)}
-        onListeningClick={() => {}}
+        onListeningClick={handleListeningClick}
       />
 
       <div
@@ -241,36 +399,20 @@ const ReaderScreen: React.FC = () => {
             initialPage={readerSession.resumePage}
             theme={theme}
             readingMode={readingMode}
-            onPageChange={(nextPage, pagesCount) => {
-              setCurrentPage(nextPage);
-              setTotalPages(Math.max(1, pagesCount));
-            }}
-            onLoadError={(message) => {
-              console.error('[READER][EPUB_RENDER_FAILED]', message);
-              setRenderError(
-                lang === 'en'
-                  ? 'Unable to render this EPUB in-app. You can open the file directly.'
-                  : 'تعذّر عرض ملف EPUB داخل التطبيق. يمكنك فتح الملف مباشرة.'
-              );
-            }}
+            fontSize={fontSize}
+            fontStyle={fontStyle}
+            onPageChange={handleReaderPageChange}
+            onLoadError={handleEpubLoadError}
           />
         ) : sessionFormat === 'pdf' ? (
           <PdfViewer
             url={readerSession.signedUrl}
             initialPage={readerSession.resumePage}
             theme={theme}
-            onPageChange={(nextPage, pagesCount) => {
-              setCurrentPage(nextPage);
-              setTotalPages(Math.max(1, pagesCount));
-            }}
-            onLoadError={(message) => {
-              console.error('[READER][PDF_RENDER_FAILED]', message);
-              setRenderError(
-                lang === 'en'
-                  ? 'Unable to render this PDF in-app. You can open the file directly.'
-                  : 'تعذّر عرض ملف PDF داخل التطبيق. يمكنك فتح الملف مباشرة.'
-              );
-            }}
+            readingMode={readingMode}
+            fontSize={fontSize}
+            onPageChange={handleReaderPageChange}
+            onLoadError={handlePdfLoadError}
           />
         ) : (
           <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">

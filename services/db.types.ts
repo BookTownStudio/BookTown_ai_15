@@ -377,7 +377,19 @@ export interface SocialDataService {
   saveDraft(uid: string, draft: Omit<PostDraft, 'updatedAt'>): Promise<PostDraft>;
   deleteDraft(uid: string, draftId: string): Promise<void>;
 
-  search(query: string): Promise<{ posts: Post[]; users: User[]; topics: string[] }>;
+  search(
+    query: string,
+    cursor?: string,
+    limit?: number
+  ): Promise<{
+    posts: Post[];
+    users: User[];
+    topics: Array<{ topic: string; postCount: number; score: number }>;
+    hasMore: boolean;
+    nextCursor?: string;
+    rankingVersion: string;
+    queryHash: string;
+  }>;
   addReaction(uid: string, entityId: string, reaction: string): Promise<void>;
 }
 

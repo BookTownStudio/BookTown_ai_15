@@ -1747,60 +1747,90 @@ class FirebaseSocialService {
     await deleteDoc(doc(db, "users", normalizedUid, "drafts", normalizedDraftId));
   }
 
-  async search(queryText: string): Promise<{ posts: Post[]; users: User[]; topics: string[] }> {
-    const db = getDb();
-    const normalizedQuery = normalizeString(queryText, 120).toLowerCase();
-    if (!db || normalizedQuery.length < 2) {
-      return { posts: [], users: [], topics: [] };
+  async search(
+    queryText: string,
+    cursor?: string,
+    limitSize = 20
+  ): Promise<{
+    posts: Post[];
+    users: User[];
+    topics: Array<{ topic: string; postCount: number; score: number }>;
+    hasMore: boolean;
+    nextCursor?: string;
+    rankingVersion: string;
+    queryHash: string;
+  }> {
+    const normalizedQuery = normalizeString(queryText, 64).toLowerCase();
+    if (normalizedQuery.length < 2) {
+      return {
+        posts: [],
+        users: [],
+        topics: [],
+        hasMore: false,
+        rankingVersion: "social_v1",
+        queryHash: "",
+      };
     }
 
-    const [postSnap, profileSnap] = await Promise.all([
-      getDocs(
-        query(
-          collection(db, "posts"),
-          where("status", "==", "published"),
-          where("visibility", "==", "public"),
-          where("isDeleted", "!=", true),
-          orderBy("isDeleted"),
-          orderBy("timestamps.createdAt", "desc"),
-          limit(60)
-        )
-      ),
-      getDocs(
-        query(
-          collection(db, "public_profiles"),
-          orderBy("updatedAt", "desc"),
-          limit(50)
-        )
-      ),
-    ]);
-
-    const posts = postSnap.docs
-      .map((postDoc) => normalizePost({ ...postDoc.data(), id: postDoc.id }))
-      .filter((post) => {
-        const haystack = `${post.authorName} ${post.authorHandle} ${post.content?.text || ""}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
-      })
-      .slice(0, 20);
-
-    const users = profileSnap.docs
-      .map((profileDoc) => toProfileUser(profileDoc.id, profileDoc.data() as Record<string, unknown>))
-      .filter((profile) => {
-        const haystack = `${profile.name} ${profile.handle}`.toLowerCase();
-        return haystack.includes(normalizedQuery);
-      })
-      .slice(0, 20);
-
-    const hashtags = new Set<string>();
-    for (const post of posts) {
-      const text = post.content?.text || "";
-      for (const match of text.matchAll(/#([A-Za-z0-9_]{2,40})/g)) {
-        hashtags.add(match[1].toLowerCase());
+    const payload = await callEndpoint<
+      {
+        query: string;
+        cursor?: string;
+        limit?: number;
+        types?: Array<"users" | "posts" | "topics">;
+      },
+      {
+        rankingVersion: string;
+        queryHash: string;
+        users: Record<string, unknown>[];
+        posts: Record<string, unknown>[];
+        topics: Array<{ topic: string; postCount: number; score: number }>;
+        hasMore: boolean;
+        nextCursor?: string;
       }
-    }
-    const topics = Array.from(hashtags).slice(0, 20);
+    >("searchSocial", {
+      query: normalizedQuery,
+      ...(cursor ? { cursor } : {}),
+      limit: Math.max(1, Math.min(20, Math.trunc(limitSize || 20))),
+      types: ["users", "posts", "topics"],
+    });
 
-    return { posts, users, topics };
+    const posts = payload.posts.map((post) =>
+      normalizePost({ ...(post as Record<string, unknown>), id: post.id })
+    );
+    const users = payload.users.map((profile) =>
+      toProfileUser(
+        normalizeString(profile.uid, 128),
+        profile as Record<string, unknown>
+      )
+    );
+    const topics = Array.isArray(payload.topics)
+      ? payload.topics
+          .filter(
+            (entry) =>
+              entry &&
+              typeof entry.topic === "string" &&
+              entry.topic.trim().length > 0
+          )
+          .map((entry) => ({
+            topic: normalizeString(entry.topic, 80),
+            postCount: toNonNegativeInt(entry.postCount),
+            score:
+              typeof entry.score === "number" && Number.isFinite(entry.score)
+                ? entry.score
+                : 0,
+          }))
+      : [];
+
+    return {
+      posts,
+      users,
+      topics,
+      hasMore: payload.hasMore === true,
+      ...(payload.nextCursor ? { nextCursor: payload.nextCursor } : {}),
+      rankingVersion: payload.rankingVersion || "social_v1",
+      queryHash: payload.queryHash || "",
+    };
   }
 
   async addReaction(uid: string, entityId: string, reaction: string): Promise<void> {

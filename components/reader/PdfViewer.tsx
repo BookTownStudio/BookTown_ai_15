@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
+import { FontSize } from '../../store/reading-prefs.tsx';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -12,23 +13,58 @@ interface PdfViewerProps {
   url: string;
   initialPage?: number;
   theme?: 'light' | 'dark' | 'sepia';
+  readingMode?: 'scroll' | 'page';
+  fontSize?: FontSize;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
+}
+
+function zoomScaleFromFontSize(fontSize: FontSize): number {
+  switch (fontSize) {
+    case 'xs':
+      return 0.9;
+    case 'sm':
+      return 0.95;
+    case 'md':
+      return 1;
+    case 'lg':
+      return 1.08;
+    case 'xl':
+      return 1.16;
+    default:
+      return 1;
+  }
+}
+
+function clampPage(page: number, total: number): number {
+  const safeTotal = Math.max(1, Math.trunc(total));
+  return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({
   url,
   initialPage = 1,
   theme = 'dark',
+  readingMode = 'scroll',
+  fontSize = 'md',
   onPageChange,
   onLoadError,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const scrollViewportRef = useRef<HTMLDivElement | null>(null);
+  const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageNumberRef = useRef<number>(1);
+  const lastWheelNavAtRef = useRef<number>(0);
+
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+
+  useEffect(() => {
+    pageNumberRef.current = pageNumber;
+  }, [pageNumber]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -48,7 +84,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     setNumPages(0);
     setLoadError(null);
     setUseIframeFallback(false);
-    setPageNumber(Math.max(1, Math.trunc(initialPage)));
+    const startPage = Math.max(1, Math.trunc(initialPage));
+    setPageNumber(startPage);
+    pageNumberRef.current = startPage;
+    pageRefs.current = [];
   }, [url, initialPage]);
 
   useEffect(() => {
@@ -65,8 +104,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     ({ numPages }: { numPages: number }) => {
       setNumPages(numPages);
       const requestedPage = Math.max(1, Math.trunc(initialPage));
-      const clamped = Math.min(requestedPage, Math.max(1, numPages));
+      const clamped = clampPage(requestedPage, numPages);
       setPageNumber(clamped);
+      pageNumberRef.current = clamped;
       onPageChange?.(clamped, numPages);
     },
     [initialPage, onPageChange]
@@ -84,7 +124,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const goNext = useCallback(() => {
     setPageNumber((p) => {
-      const next = Math.min(p + 1, numPages);
+      const next = clampPage(p + 1, numPages);
+      pageNumberRef.current = next;
       onPageChange?.(next, numPages);
       return next;
     });
@@ -92,16 +133,89 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
 
   const goPrev = useCallback(() => {
     setPageNumber((p) => {
-      const prev = Math.max(p - 1, 1);
+      const prev = clampPage(p - 1, numPages);
+      pageNumberRef.current = prev;
       onPageChange?.(prev, numPages);
       return prev;
     });
   }, [numPages, onPageChange]);
 
-  const pageWidth = useMemo(() => {
+  const handleWheelInPageMode = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (readingMode !== 'page') return;
+      if (useIframeFallback) return;
+
+      const magnitude = Math.abs(event.deltaY);
+      if (magnitude < 8) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const now = Date.now();
+      if (now - lastWheelNavAtRef.current < 220) return;
+      lastWheelNavAtRef.current = now;
+
+      if (event.deltaY > 0) goNext();
+      else goPrev();
+    },
+    [goNext, goPrev, readingMode, useIframeFallback]
+  );
+
+  const syncPageFromScroll = useCallback(() => {
+    if (readingMode !== 'scroll') return;
+    if (numPages <= 0) return;
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    const anchor = viewport.scrollTop + viewport.clientHeight * 0.3;
+    let current = 1;
+
+    for (let index = 0; index < numPages; index += 1) {
+      const node = pageRefs.current[index];
+      if (!node) continue;
+      if (node.offsetTop <= anchor) current = index + 1;
+      else break;
+    }
+
+    if (current !== pageNumberRef.current) {
+      pageNumberRef.current = current;
+      setPageNumber(current);
+      onPageChange?.(current, numPages);
+    }
+  }, [numPages, onPageChange, readingMode]);
+
+  useEffect(() => {
+    if (readingMode !== 'scroll') return;
+    if (numPages <= 0) return;
+
+    const targetPage = clampPage(initialPage, numPages);
+    const viewport = scrollViewportRef.current;
+    if (!viewport) return;
+
+    const raf = window.requestAnimationFrame(() => {
+      const targetNode = pageRefs.current[targetPage - 1];
+      if (targetNode) {
+        viewport.scrollTop = Math.max(0, targetNode.offsetTop - 8);
+      }
+
+      pageNumberRef.current = targetPage;
+      setPageNumber(targetPage);
+      onPageChange?.(targetPage, numPages);
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [initialPage, numPages, onPageChange, readingMode, url]);
+
+  const basePageWidth = useMemo(() => {
     if (!containerWidth) return undefined;
     return Math.max(280, Math.floor(containerWidth - 32));
   }, [containerWidth]);
+
+  const pageWidth = useMemo(() => {
+    if (!basePageWidth) return undefined;
+    const scaled = Math.floor(basePageWidth * zoomScaleFromFontSize(fontSize));
+    return Math.max(240, scaled);
+  }, [basePageWidth, fontSize]);
 
   const viewerBackground =
     theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#0b0f14';
@@ -111,11 +225,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       ref={containerRef}
       className="h-full w-full min-h-0 flex flex-col"
       style={{ backgroundColor: viewerBackground }}
+      onWheel={handleWheelInPageMode}
     >
-      <div className="flex-1 min-h-0 overflow-auto p-4 flex items-start justify-center">
+      <div
+        ref={scrollViewportRef}
+        onScroll={syncPageFromScroll}
+        className="flex-1 min-h-0 overflow-auto p-4 flex items-start justify-center"
+      >
         {useIframeFallback ? (
           <iframe
-            src={`${url}#page=${pageNumber}`}
+            src={readingMode === 'page' ? `${url}#page=${pageNumber}` : url}
             title="PDF Fallback Viewer"
             className="w-full h-full border-0 bg-white"
           />
@@ -129,44 +248,72 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             loading={<div className="text-white/60 p-4">Loading PDF…</div>}
             error={<div className="text-red-300 p-4">Failed to render PDF.</div>}
           >
-            <Page
-              pageNumber={pageNumber}
-              width={pageWidth}
-              renderTextLayer
-              renderAnnotationLayer
-            />
+            {readingMode === 'scroll' ? (
+              <div className="w-full flex flex-col items-center">
+                {Array.from({ length: numPages }, (_, index) => {
+                  const page = index + 1;
+                  return (
+                    <div
+                      key={page}
+                      ref={(node) => {
+                        pageRefs.current[index] = node;
+                      }}
+                      className="mb-4 last:mb-0"
+                    >
+                      <Page
+                        pageNumber={page}
+                        width={pageWidth}
+                        renderTextLayer
+                        renderAnnotationLayer
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <Page
+                pageNumber={pageNumber}
+                width={pageWidth}
+                renderTextLayer
+                renderAnnotationLayer
+              />
+            )}
           </Document>
         )}
       </div>
 
       <div className="flex items-center justify-center gap-4 py-3 text-white/70 text-sm border-t border-white/10 bg-[#111827]">
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            goPrev();
-          }}
-          type="button"
-          disabled={pageNumber <= 1}
-          className="px-3 py-1 rounded bg-white/10 disabled:opacity-30"
-        >
-          ‹
-        </button>
+        {readingMode === 'page' && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              goPrev();
+            }}
+            type="button"
+            disabled={pageNumber <= 1}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-30"
+          >
+            ‹
+          </button>
+        )}
 
         <span className="min-w-20 text-center tabular-nums">
           {pageNumber} / {numPages || '—'}
         </span>
 
-        <button
-          onClick={(event) => {
-            event.stopPropagation();
-            goNext();
-          }}
-          type="button"
-          disabled={pageNumber >= numPages}
-          className="px-3 py-1 rounded bg-white/10 disabled:opacity-30"
-        >
-          ›
-        </button>
+        {readingMode === 'page' && (
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              goNext();
+            }}
+            type="button"
+            disabled={pageNumber >= numPages}
+            className="px-3 py-1 rounded bg-white/10 disabled:opacity-30"
+          >
+            ›
+          </button>
+        )}
       </div>
     </div>
   );

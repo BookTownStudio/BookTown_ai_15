@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
+import { FontSize, FontStyle } from '../../store/reading-prefs.tsx';
 
 type ReaderTheme = 'light' | 'dark' | 'sepia';
 type ReaderMode = 'scroll' | 'page';
@@ -8,22 +9,13 @@ type EpubViewerProps = {
   initialPage?: number;
   theme?: ReaderTheme;
   readingMode?: ReaderMode;
+  fontSize?: FontSize;
+  fontStyle?: FontStyle;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
 };
 
-type EpubThemeStyles = {
-  body: {
-    background: string;
-    color: string;
-  };
-  p: {
-    color: string;
-  };
-  a: {
-    color: string;
-  };
-};
+type EpubThemeStyles = Record<string, Record<string, string>>;
 
 type EpubBook = {
   ready: Promise<unknown>;
@@ -72,24 +64,82 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
 
-function getEpubThemeStyles(theme: ReaderTheme): EpubThemeStyles {
+function getFontSizePx(fontSize: FontSize): string {
+  switch (fontSize) {
+    case 'xs':
+      return '14px';
+    case 'sm':
+      return '15px';
+    case 'md':
+      return '17px';
+    case 'lg':
+      return '19px';
+    case 'xl':
+      return '21px';
+    default:
+      return '17px';
+  }
+}
+
+function getFontFamily(fontStyle: FontStyle): string {
+  if (fontStyle === 'dyslexic') {
+    return "'Atkinson Hyperlegible', 'OpenDyslexic', Arial, sans-serif";
+  }
+  return "Georgia, 'Times New Roman', serif";
+}
+
+function getEpubThemeStyles(
+  theme: ReaderTheme,
+  fontSize: FontSize,
+  fontStyle: FontStyle
+): EpubThemeStyles {
+  const typography = {
+    'font-size': getFontSizePx(fontSize),
+    'font-family': getFontFamily(fontStyle),
+    'line-height': '1.7',
+  };
+
   if (theme === 'light') {
     return {
-      body: { background: '#ffffff', color: '#0f172a' },
+      html: { background: '#ffffff' },
+      body: { ...typography, background: '#ffffff', color: '#0f172a' },
       p: { color: '#0f172a' },
+      li: { color: '#0f172a' },
+      h1: { color: '#0f172a' },
+      h2: { color: '#0f172a' },
+      h3: { color: '#0f172a' },
+      h4: { color: '#0f172a' },
+      h5: { color: '#0f172a' },
+      h6: { color: '#0f172a' },
       a: { color: '#0ea5e9' },
     };
   }
   if (theme === 'sepia') {
     return {
-      body: { background: '#F3E9D2', color: '#433422' },
+      html: { background: '#F3E9D2' },
+      body: { ...typography, background: '#F3E9D2', color: '#433422' },
       p: { color: '#433422' },
+      li: { color: '#433422' },
+      h1: { color: '#433422' },
+      h2: { color: '#433422' },
+      h3: { color: '#433422' },
+      h4: { color: '#433422' },
+      h5: { color: '#433422' },
+      h6: { color: '#433422' },
       a: { color: '#2563eb' },
     };
   }
   return {
-    body: { background: '#0f172a', color: '#e2e8f0' },
+    html: { background: '#0f172a' },
+    body: { ...typography, background: '#0f172a', color: '#e2e8f0' },
     p: { color: '#e2e8f0' },
+    li: { color: '#e2e8f0' },
+    h1: { color: '#e2e8f0' },
+    h2: { color: '#e2e8f0' },
+    h3: { color: '#e2e8f0' },
+    h4: { color: '#e2e8f0' },
+    h5: { color: '#e2e8f0' },
+    h6: { color: '#e2e8f0' },
     a: { color: '#38bdf8' },
   };
 }
@@ -105,24 +155,37 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   initialPage = 1,
   theme = 'dark',
   readingMode = 'scroll',
+  fontSize = 'md',
+  fontStyle = 'default',
   onPageChange,
   onLoadError,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const renditionRef = useRef<ReturnType<EpubBook['renderTo']> | null>(null);
   const bookRef = useRef<EpubBook | null>(null);
+  const onPageChangeRef = useRef<EpubViewerProps["onPageChange"]>(onPageChange);
+  const onLoadErrorRef = useRef<EpubViewerProps["onLoadError"]>(onLoadError);
   const lastWheelNavAtRef = useRef<number>(0);
+  const isRenditionReadyRef = useRef<boolean>(false);
   const [pageState, setPageState] = useState({ current: 1, total: 1 });
   const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onPageChangeRef.current = onPageChange;
+  }, [onPageChange]);
+
+  useEffect(() => {
+    onLoadErrorRef.current = onLoadError;
+  }, [onLoadError]);
 
   const emitPage = useCallback(
     (current: number, total: number) => {
       const safeTotal = Math.max(1, Math.trunc(total));
       const safeCurrent = clamp(Math.trunc(current), 1, safeTotal);
       setPageState({ current: safeCurrent, total: safeTotal });
-      onPageChange?.(safeCurrent, safeTotal);
+      onPageChangeRef.current?.(safeCurrent, safeTotal);
     },
-    [onPageChange]
+    []
   );
 
   useEffect(() => {
@@ -134,6 +197,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
 
       setLoadError(null);
       setPageState({ current: 1, total: 1 });
+      isRenditionReadyRef.current = false;
 
       try {
         const epubModule = await import('epubjs');
@@ -156,7 +220,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         renditionRef.current = rendition;
 
         await book.ready;
-        rendition.themes?.default(getEpubThemeStyles(theme));
+        rendition.themes?.default(getEpubThemeStyles(theme, fontSize, fontStyle));
         rendition.themes?.select('default');
         await book.locations.generate(1200);
 
@@ -164,15 +228,20 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
 
         const totalLocations = Math.max(1, book.locations.length());
         const requestedPage = Math.max(1, Math.trunc(initialPage));
+        const effectiveRequestedPage =
+          readingMode === 'scroll'
+            ? Math.min(requestedPage, Math.max(1, totalLocations - 1))
+            : Math.min(requestedPage, totalLocations);
         const ratio =
           totalLocations <= 1
             ? 0
-            : clamp((requestedPage - 1) / (totalLocations - 1), 0, 1);
+            : clamp((effectiveRequestedPage - 1) / (totalLocations - 1), 0, 1);
 
         const startCfi = book.locations.cfiFromPercentage(ratio);
         await rendition.display(startCfi);
+        isRenditionReadyRef.current = true;
 
-        emitPage(requestedPage, totalLocations);
+        emitPage(effectiveRequestedPage, totalLocations);
 
         rendition.on('relocated', (location: any) => {
           if (cancelled) return;
@@ -192,7 +261,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         const message = error?.message || 'Failed to load EPUB.';
         if (cancelled) return;
         setLoadError(message);
-        onLoadError?.(message);
+        onLoadErrorRef.current?.(message);
       }
     }
 
@@ -213,20 +282,43 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       }
       renditionRef.current = null;
       bookRef.current = null;
+      isRenditionReadyRef.current = false;
     };
-  }, [emitPage, initialPage, onLoadError, readingMode, theme, url]);
+  }, [emitPage, fontSize, fontStyle, initialPage, readingMode, theme, url]);
+
+  const navigateRendition = useCallback(
+    (direction: 'prev' | 'next') => {
+      const rendition = renditionRef.current;
+      if (!rendition || !isRenditionReadyRef.current) return;
+      if (readingMode !== 'page') return;
+
+      try {
+        const result =
+          direction === 'prev' ? rendition.prev() : rendition.next();
+        if (result && typeof (result as Promise<void>).catch === 'function') {
+          (result as Promise<void>).catch((error) => {
+            console.warn('[READER][EPUB_NAV_FAILED]', error);
+          });
+        }
+      } catch (error) {
+        console.warn('[READER][EPUB_NAV_FAILED]', error);
+      }
+    },
+    [readingMode]
+  );
 
   const goPrev = useCallback(() => {
-    renditionRef.current?.prev().catch(() => {});
-  }, []);
+    navigateRendition('prev');
+  }, [navigateRendition]);
 
   const goNext = useCallback(() => {
-    renditionRef.current?.next().catch(() => {});
-  }, []);
+    navigateRendition('next');
+  }, [navigateRendition]);
 
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (readingMode !== 'page') return;
+      if (!isRenditionReadyRef.current) return;
 
       const magnitude = Math.abs(event.deltaY);
       if (magnitude < 8) return;
@@ -264,29 +356,33 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       </div>
 
       <div className="flex items-center justify-center gap-4 py-3 text-white/70 text-sm border-t border-white/10 bg-[#111827]">
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            goPrev();
-          }}
-          className="px-3 py-1 rounded bg-white/10"
-        >
-          ‹
-        </button>
+        {readingMode === 'page' && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              goPrev();
+            }}
+            className="px-3 py-1 rounded bg-white/10"
+          >
+            ‹
+          </button>
+        )}
         <span className="min-w-20 text-center tabular-nums">
           {pageState.current} / {pageState.total}
         </span>
-        <button
-          type="button"
-          onClick={(event) => {
-            event.stopPropagation();
-            goNext();
-          }}
-          className="px-3 py-1 rounded bg-white/10"
-        >
-          ›
-        </button>
+        {readingMode === 'page' && (
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              goNext();
+            }}
+            className="px-3 py-1 rounded bg-white/10"
+          >
+            ›
+          </button>
+        )}
       </div>
     </div>
   );

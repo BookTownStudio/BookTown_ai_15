@@ -28,6 +28,7 @@ import {
   unfollowUser as unfollowUserRaw,
   getSuggestedProfiles as getSuggestedProfilesRaw,
 } from "./profile";
+import { searchSocial as searchSocialRaw } from "./social/search";
 import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
 import {
   addSocialComment as addSocialCommentRaw,
@@ -72,6 +73,7 @@ import {
   markDirectConversationRead as markDirectConversationReadRaw,
 } from "./messaging/directMessages";
 import { api as apiRaw } from "./api";
+import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 
 // ------------------------------------------------------------------
 // Admin SDK (initialized via firebaseAdmin module)
@@ -121,6 +123,12 @@ export const onUserCreatedBootstrap = functions.auth
      * ------------------------------------------------- */
     try {
       const batch: WriteBatch = db.batch();
+      const bootstrapName = user.displayName ?? "New User";
+      const bootstrapHandle = `@${email.split("@")[0] || "user"}`;
+      const bootstrapSearchFields = buildSearchFieldsFromTextParts([
+        bootstrapName,
+        bootstrapHandle,
+      ]);
 
       // User profile (idempotent)
       batch.set(
@@ -128,8 +136,8 @@ export const onUserCreatedBootstrap = functions.auth
         {
           uid,
           email: email || null,
-          name: user.displayName ?? "New User",
-          handle: `@${email.split("@")[0] || "user"}`,
+          name: bootstrapName,
+          handle: bootstrapHandle,
           avatarUrl:
             user.photoURL ||
             `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
@@ -149,8 +157,8 @@ export const onUserCreatedBootstrap = functions.auth
         db.doc(`public_profiles/${uid}`),
         {
           uid,
-          name: user.displayName ?? "New User",
-          handle: `@${email.split("@")[0] || "user"}`,
+          name: bootstrapName,
+          handle: bootstrapHandle,
           avatarUrl:
             user.photoURL ||
             `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
@@ -161,6 +169,11 @@ export const onUserCreatedBootstrap = functions.auth
           updatedAt: bootstrapJoinDate,
           followerCount: 0,
           followingCount: 0,
+          nameNormalized: normalizeSearchText(bootstrapName),
+          handleNormalized: normalizeSearchText(bootstrapHandle),
+          bioNormalized: "",
+          searchTokens: bootstrapSearchFields.tokens,
+          searchPrefixes: bootstrapSearchFields.prefixes,
         },
         { merge: true }
       );
@@ -339,6 +352,10 @@ export const getSuggestedProfiles = wrapCallableV2(
 export const createSocialPost = wrapCallableV2(
   "createSocialPost",
   createSocialPostRaw
+);
+export const searchSocial = wrapCallableV2(
+  "searchSocial",
+  searchSocialRaw
 );
 export const addSocialComment = wrapCallableV2(
   "addSocialComment",

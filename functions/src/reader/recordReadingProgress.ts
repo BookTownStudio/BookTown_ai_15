@@ -25,6 +25,9 @@ const VALID_TRANSITIONS: Record<ReadingState, ReadingState[]> = {
 };
 
 function assertValidTransition(from: ReadingState, to: ReadingState) {
+  if (from === to) {
+    return;
+  }
   if (!VALID_TRANSITIONS[from]?.includes(to)) {
     throw new Error(`Illegal reading state transition: ${from} → ${to}`);
   }
@@ -59,15 +62,27 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
   const {
     bookId,
     progress,
+    percentage,
+    currentPage,
+    totalPages,
     lastPosition,
-    status_state: requestedState,
+    status_state: requestedStateRaw,
   } = request.data || {};
 
   if (!bookId || typeof bookId !== "string") {
     throw new HttpsError("invalid-argument", "Missing or invalid bookId.");
   }
 
-  if (typeof progress !== "number" || progress < 0 || progress > 1) {
+  const normalizedProgress =
+    typeof progress === "number" ? progress :
+      (typeof percentage === "number" ? percentage : null);
+
+  if (
+    typeof normalizedProgress !== "number" ||
+    !Number.isFinite(normalizedProgress) ||
+    normalizedProgress < 0 ||
+    normalizedProgress > 1
+  ) {
     throw new HttpsError(
       "invalid-argument",
       "Progress must be a number between 0 and 1."
@@ -75,14 +90,27 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
   }
 
   if (
-    !requestedState ||
-    !["reading", "paused", "completed"].includes(requestedState)
+    requestedStateRaw !== undefined &&
+    requestedStateRaw !== null &&
+    !["reading", "paused", "completed"].includes(requestedStateRaw)
   ) {
     throw new HttpsError(
       "invalid-argument",
-      "Invalid or missing status_state intent."
+      "Invalid status_state intent."
     );
   }
+
+  const normalizedLastPosition =
+    lastPosition ??
+    (typeof currentPage === "number" && Number.isFinite(currentPage)
+      ? {
+        page: Math.max(1, Math.trunc(currentPage)),
+        totalPages:
+          typeof totalPages === "number" && Number.isFinite(totalPages)
+            ? Math.max(1, Math.trunc(totalPages))
+            : null,
+      }
+      : null);
 
   const progressId = `${uid}_${bookId}`;
   const progressRef = db.collection("reading_progress").doc(progressId);
@@ -91,8 +119,8 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
   logger.info("[READER][PROGRESS_WRITE]", {
     uid,
     bookId,
-    progress,
-    requestedState,
+    progress: normalizedProgress,
+    requestedState: requestedStateRaw ?? "auto",
   });
 
   try {
@@ -104,7 +132,9 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
 
       const previousState: ReadingState =
         data.status_state ?? "not_started";
-      const nextState = requestedState as ReadingState;
+      const nextState: ReadingState = requestedStateRaw
+        ? (requestedStateRaw as ReadingState)
+        : (previousState === "completed" ? "completed" : "reading");
 
       // 🔒 Enforce canonical state machine
       assertValidTransition(previousState, nextState);
@@ -153,9 +183,10 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
 
       const payload: Record<string, any> = {
         uid,
+        userId: uid,
         bookId,
-        progress,
-        lastPosition: lastPosition ?? null,
+        progress: normalizedProgress,
+        lastPosition: normalizedLastPosition ?? null,
         status_state: nextState,
         lastActiveAt: now,
         totalActiveSeconds,
@@ -197,7 +228,7 @@ export const recordReadingProgress = onCall({ cors: true }, async (request) => {
           event,
           fromState: previousState,
           toState: nextState,
-          progress,
+          progress: normalizedProgress,
           occurredAt: now,
         });
 

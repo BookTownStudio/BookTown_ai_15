@@ -15,6 +15,7 @@ import { WriteIcon as ProjectIcon } from '../../components/icons/WriteIcon.tsx';
 import { SearchIcon } from '../../components/icons/SearchIcon.tsx';
 import { XCircleIcon } from '../../components/icons/XCircleIcon.tsx';
 import { useSocialSearch } from '../../lib/hooks/useSocialSearch.ts';
+import { useAuth } from '../../lib/auth.tsx';
 import UserSearchResultCard from '../../components/content/UserSearchResultCard.tsx';
 import TopicSearchResultCard from '../../components/content/TopicSearchResultCard.tsx';
 import { useDebounce } from 'use-debounce';
@@ -70,8 +71,17 @@ const SocialScreen: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedQuery] = useDebounce(searchQuery, 300);
     const searchInputRef = useRef<HTMLInputElement>(null);
-    
-    const { data: searchResults, isLoading: isSearching } = useSocialSearch(debouncedQuery);
+    const { user } = useAuth();
+
+    const {
+        results: searchResults,
+        isLoading: isSearching,
+        isError: isSearchError,
+        fetchNextPage: fetchNextSearchPage,
+        hasNextPage: hasMoreSearch,
+        isFetchingNextPage: isFetchingMoreSearch,
+        refetch: refetchSearch
+    } = useSocialSearch(debouncedQuery);
 
     const posts = useMemo(() => data?.pages.flatMap(page => (page as any).posts) ?? [], [data]);
     const activePost = useMemo(() => posts.find(p => p.id === activePostId), [posts, activePostId]);
@@ -284,20 +294,38 @@ const SocialScreen: React.FC = () => {
     }
 
     const renderSearchResults = () => {
-        const hasResults = searchResults && (searchResults.users.length > 0 || searchResults.topics.length > 0 || searchResults.posts.length > 0);
+        const hasResults =
+            searchResults.users.length > 0 ||
+            searchResults.topics.length > 0 ||
+            searchResults.posts.length > 0;
 
         return (
             <div className="fixed inset-0 top-24 z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
                 <div className="container mx-auto max-w-md px-4 py-4 space-y-6 pb-24">
                     {isSearching && <div className="flex justify-center py-8"><LoadingSpinner /></div>}
+
+                    {!user && debouncedQuery && (
+                        <div className="text-center py-10 text-white/70">
+                            <BilingualText>{lang === 'en' ? 'Sign in to search people and content.' : 'سجّل الدخول للبحث عن الأشخاص والمحتوى.'}</BilingualText>
+                        </div>
+                    )}
+
+                    {isSearchError && user && (
+                        <div className="py-8">
+                            <ErrorState
+                                onRetry={() => refetchSearch()}
+                                title={lang === 'en' ? "Search Unavailable" : "البحث غير متوفر"}
+                            />
+                        </div>
+                    )}
                     
-                    {!isSearching && !hasResults && debouncedQuery && (
+                    {!isSearching && !isSearchError && user && !hasResults && debouncedQuery && (
                         <div className="text-center py-16 text-white/60">
                             <BilingualText>No results found.</BilingualText>
                         </div>
                     )}
 
-                    {searchResults && searchResults.users.length > 0 && (
+                    {searchResults.users.length > 0 && (
                         <div>
                             <BilingualText role="Caption" className="uppercase tracking-wider text-accent mb-2 px-2">
                                 {lang === 'en' ? 'People' : 'أشخاص'}
@@ -310,20 +338,20 @@ const SocialScreen: React.FC = () => {
                         </div>
                     )}
 
-                    {searchResults && searchResults.topics.length > 0 && (
+                    {searchResults.topics.length > 0 && (
                         <div>
                             <BilingualText role="Caption" className="uppercase tracking-wider text-accent mb-2 px-2">
                                 {lang === 'en' ? 'Topics' : 'مواضيع'}
                             </BilingualText>
                             <div className="bg-slate-800/50 rounded-xl border border-white/10 overflow-hidden">
                                 {searchResults.topics.map(topic => (
-                                    <TopicSearchResultCard key={topic} topic={topic} />
+                                    <TopicSearchResultCard key={topic.topic} topic={topic} />
                                 ))}
                             </div>
                         </div>
                     )}
 
-                    {searchResults && searchResults.posts.length > 0 && (
+                    {searchResults.posts.length > 0 && (
                         <div>
                             <BilingualText role="Caption" className="uppercase tracking-wider text-accent mb-2 px-2">
                                 {lang === 'en' ? 'Posts' : 'منشورات'}
@@ -338,6 +366,21 @@ const SocialScreen: React.FC = () => {
                                     />
                                 ))}
                             </div>
+                        </div>
+                    )}
+
+                    {!isSearchError && hasMoreSearch && (
+                        <div className="pt-2">
+                            <Button
+                                onClick={() => fetchNextSearchPage()}
+                                disabled={isFetchingMoreSearch}
+                                variant="ghost"
+                                className="w-full !border !border-white/20 !text-white/90"
+                            >
+                                {isFetchingMoreSearch
+                                    ? (lang === 'en' ? 'Loading...' : 'جاري التحميل...')
+                                    : (lang === 'en' ? 'Load more results' : 'تحميل نتائج إضافية')}
+                            </Button>
                         </div>
                     )}
                 </div>

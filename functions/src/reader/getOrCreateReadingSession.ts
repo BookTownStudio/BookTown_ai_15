@@ -162,10 +162,6 @@ export const getOrCreateReadingSession = onCall({ cors: true }, async (request) 
       version: "v4",
       action: "read",
       expires: Date.now() + READER_URL_TTL_MS,
-      responseDisposition: "inline",
-      ...(format === "pdf"
-        ? { responseType: "application/pdf" }
-        : {}),
     });
     signedUrl = issuedUrl;
   } catch (error) {
