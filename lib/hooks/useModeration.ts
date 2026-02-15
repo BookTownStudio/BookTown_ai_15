@@ -1,6 +1,6 @@
 
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { callCallableEndpoint } from '../callable.ts';
 
 /**
  * useTransitionModerationStage
@@ -11,10 +11,10 @@ export const useTransitionModerationStage = () => {
 
     return useMutation<any, { reportId: string, nextStage: 'under_review' | 'action_taken' | 'dismissed' }>({
         mutationFn: async (variables) => {
-            const functions = getFunctions();
-            const transitionFn = httpsCallable(functions, 'transitionModerationStage');
-            const result = await transitionFn(variables);
-            return result.data;
+            return callCallableEndpoint<typeof variables, { success: boolean }>(
+                'transitionModerationStage',
+                variables
+            );
         },
         onSuccess: () => {
             queryClient.invalidateQueries(['admin_reports']);
@@ -32,10 +32,10 @@ export const useApplyModerationAction = () => {
 
     return useMutation<any, { postId: string, action: 'dismiss' | 'hide' | 'restrict' | 'soft_delete' | 'hard_delete', reportId?: string, note?: string }>({
         mutationFn: async (variables) => {
-            const functions = getFunctions();
-            const actionFn = httpsCallable(functions, 'applyModerationAction');
-            const result = await actionFn(variables);
-            return result.data;
+            return callCallableEndpoint<typeof variables, { success: boolean }>(
+                'applyModerationAction',
+                variables
+            );
         },
         onSuccess: () => {
             queryClient.invalidateQueries(['social']);

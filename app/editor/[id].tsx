@@ -77,6 +77,40 @@ const EditorScreen: React.FC = () => {
     const { mutate: autosave } = useAutosaveProject();
     const { mutate: createProject } = useCreateProject();
 
+    const persistSnapshot = useCallback((snapshot: EditorSnapshot, notifyOnSuccess = false) => {
+        if (!projectId || projectId === 'new' || syncStatus !== 'persistent') {
+            return;
+        }
+
+        setIsSaving(true);
+        autosave({
+            projectId: projectId as string,
+            updates: snapshot
+        }, {
+            onSuccess: () => {
+                setIsSaving(false);
+                lastSavedSnapshot.current = snapshot;
+                if (notifyOnSuccess) {
+                    showToast(lang === 'en' ? 'Saved successfully.' : 'تم الحفظ بنجاح.');
+                }
+            },
+            onError: (err: any) => {
+                setIsSaving(false);
+                if (err?.message?.includes("Revision mismatch")) {
+                    setSyncStatus('error');
+                    showToast(lang === 'en' ? 'Save conflict detected. Reload required.' : 'تم اكتشاف تعارض في الحفظ. يلزم إعادة التحميل.');
+                    return;
+                }
+                if (err?.message?.includes("not found")) {
+                    setSyncStatus('error');
+                    showToast(lang === 'en' ? 'Critical: Project authority lost.' : 'خطأ فادح: فقدت صلاحية المشروع.');
+                    return;
+                }
+                showToast(lang === 'en' ? 'Save failed. Please retry.' : 'فشل الحفظ. يرجى إعادة المحاولة.');
+            }
+        });
+    }, [autosave, lang, projectId, showToast, syncStatus]);
+
     // 1. Initial Phase: HYDRATION
     useEffect(() => {
         if (hasHydratedRef.current) return;
@@ -177,28 +211,38 @@ const EditorScreen: React.FC = () => {
             titleAr: debouncedTitleAr
         };
 
-        setIsSaving(true);
-        autosave({ 
-            projectId: projectId as string, 
-            updates: currentSnapshot 
-        }, {
-            onSuccess: () => {
-                setIsSaving(false);
-                lastSavedSnapshot.current = currentSnapshot;
-            },
-            onError: (err: any) => {
-                setIsSaving(false);
-                if (err?.message?.includes("not found")) {
-                    setSyncStatus('error');
-                    showToast(lang === 'en' ? 'Critical: Project authority lost.' : 'خطأ فادح: فقدت صلاحية المشروع.');
-                }
-            }
-        });
-    }, [debouncedContent, debouncedTitleEn, debouncedTitleAr, projectId, autosave, present.wordCount, lang, showToast, syncStatus]);
+        persistSnapshot(currentSnapshot, false);
+    }, [debouncedContent, debouncedTitleEn, debouncedTitleAr, persistSnapshot, present.wordCount, syncStatus]);
 
     // --- Handlers ---
     const handleBack = () => {
         navigate(currentView.params?.from || { type: 'tab', id: 'write' });
+    };
+
+    const handleManualSave = () => {
+        if (syncStatus !== 'persistent' || !projectId || projectId === 'new') {
+            showToast(lang === 'en' ? 'Project is not ready for server save yet.' : 'المشروع غير جاهز للحفظ على الخادم بعد.');
+            return;
+        }
+
+        const currentSnapshot: EditorSnapshot = {
+            content: present.content,
+            wordCount: present.wordCount,
+            titleEn: present.titleEn,
+            titleAr: present.titleAr
+        };
+
+        const hasChanges =
+            currentSnapshot.content !== lastSavedSnapshot.current.content ||
+            currentSnapshot.titleEn !== lastSavedSnapshot.current.titleEn ||
+            currentSnapshot.titleAr !== lastSavedSnapshot.current.titleAr;
+
+        if (!hasChanges) {
+            showToast(lang === 'en' ? 'Already up to date.' : 'تم الحفظ بالفعل.');
+            return;
+        }
+
+        persistSnapshot(currentSnapshot, true);
     };
 
     const handleEditorChange = (newHtml: string) => {
@@ -272,7 +316,19 @@ const EditorScreen: React.FC = () => {
                             {isSaving ? <span className="text-accent animate-pulse">Syncing...</span> : syncStatus === 'persistent' ? <span>Saved</span> : <span className="text-amber-500">Draft</span>}
                         </div>
                     </div>
-                    <Button variant="ghost" onClick={() => setIsMentorOpen(true)}><BrainIcon className="h-6 w-6 text-accent" /></Button>
+                    <div className="flex items-center gap-2">
+                        <Button
+                            variant="ghost"
+                            onClick={handleManualSave}
+                            disabled={isSaving || syncStatus !== 'persistent'}
+                            className="text-xs px-3 py-1"
+                        >
+                            {lang === 'en' ? 'Save' : 'حفظ'}
+                        </Button>
+                        <Button variant="ghost" onClick={() => setIsMentorOpen(true)}>
+                            <BrainIcon className="h-6 w-6 text-accent" />
+                        </Button>
+                    </div>
                 </div>
             </header>
 

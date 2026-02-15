@@ -17,7 +17,17 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     throw new HttpsError("unauthenticated", "Project materialization failed: User is not authenticated.");
   }
 
-  const { project } = request.data;
+  const { project } = request.data as {
+    project?: {
+      titleEn?: unknown;
+      titleAr?: unknown;
+      content?: unknown;
+      wordCount?: unknown;
+      status?: unknown;
+      typeEn?: unknown;
+      typeAr?: unknown;
+    };
+  };
   const uid = request.auth.uid;
 
   // 3. Validation
@@ -28,6 +38,30 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
 
   const db = admin.firestore();
   
+  const normalizeString = (value: unknown, fallback: string, max = 300): string => {
+    if (typeof value !== "string") return fallback;
+    const normalized = value.trim();
+    if (!normalized) return fallback;
+    return normalized.slice(0, max);
+  };
+
+  const normalizeContent = (value: unknown): string => {
+    if (typeof value !== "string") return "";
+    return value.slice(0, 2_000_000);
+  };
+
+  const normalizeWordCount = (value: unknown): number => {
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+    return Math.floor(value);
+  };
+
+  const normalizeStatus = (value: unknown): "Idea" | "Draft" | "Revision" | "Final" => {
+    if (value === "Idea" || value === "Draft" || value === "Revision" || value === "Final") {
+      return value;
+    }
+    return "Draft";
+  };
+
   // 4. Construct Canonical Payload (Enforcement Model)
   // Ensures server-side control over timestamps and core fields
   const now = admin.firestore.Timestamp.now();
@@ -40,19 +74,20 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     uid: uid, // Compatibility with existing fetching logic
     
     // Identity Fields
-    title: project.titleEn || project.title || 'Untitled Project',
-    titleEn: project.titleEn || 'Untitled Project',
-    titleAr: project.titleAr || 'مشروع غير معنون',
+    title: normalizeString(project.titleEn, "Untitled Project", 180),
+    titleEn: normalizeString(project.titleEn, "Untitled Project", 180),
+    titleAr: normalizeString(project.titleAr, "مشروع غير معنون", 180),
     
     // Content Data
-    content: project.content || '',
-    wordCount: project.wordCount || 0,
+    content: normalizeContent(project.content),
+    wordCount: normalizeWordCount(project.wordCount),
     
     // Lifecycle Metadata
-    status: project.status || 'Draft',
-    typeEn: project.typeEn || 'Draft',
-    typeAr: project.typeAr || 'مسودة',
+    status: normalizeStatus(project.status),
+    typeEn: normalizeString(project.typeEn, "Draft", 80),
+    typeAr: normalizeString(project.typeAr, "مسودة", 80),
     isPublished: false,
+    revision: 1,
     
     // Timestamps (Authoritative Server Source)
     createdAt: now,

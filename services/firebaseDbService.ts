@@ -16,8 +16,9 @@ import {
   serverTimestamp,
   deleteField,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
-import { getFirebaseDb } from "../lib/firebase.ts";
+import { getFirebaseDb, getFirebaseFunctions } from "../lib/firebase.ts";
 
 import {
   PostStats,
@@ -29,6 +30,8 @@ import {
 import {
   User,
   Post,
+  PostDraft,
+  Notification,
   ThreadComment,
   RecommendedShelf,
   Shelf,
@@ -37,10 +40,16 @@ import {
   Event,
   VenueReview,
   Bookmark,
+  AgentSession,
+  ChatMessage,
+  Feedback,
+  Conversation,
+  DirectMessage,
 } from "../types/entities.ts";
 
-import { normalizePost } from "../lib/data-validation.ts";
+import { normalizeNotification, normalizePost } from "../lib/data-validation.ts";
 import { FirebaseUploadService } from "./firebaseUploadService.ts";
+import { firebaseProjectService } from "./firebaseProjectService.ts";
 
 /**
  * 🔒 AUTHORITATIVE Firebase Catalog Service
@@ -60,6 +69,62 @@ const cursorRegistry = new Map<string, QueryDocumentSnapshot<DocumentData>>();
 const MAX_VENUE_SEARCH_RESULTS = 25;
 const MAX_REVIEW_LENGTH = 1000;
 const MAX_VENUE_FIELD_LENGTH = 240;
+const MAX_DM_LIST_LIMIT = 200;
+
+type SuccessEnvelope<T> = {
+  success: true;
+  data: T;
+};
+
+type FailureEnvelope = {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+};
+
+const extractCallableData = <T>(endpoint: string, payload: unknown): T => {
+  if (!payload || typeof payload !== "object") {
+    throw new Error(`[${endpoint}] Invalid callable response envelope.`);
+  }
+
+  const envelope = payload as Partial<SuccessEnvelope<T>> &
+    Partial<FailureEnvelope> & {
+      success?: boolean;
+    };
+
+  if (envelope.success === false && envelope.error) {
+    const code =
+      typeof envelope.error.code === "string"
+        ? envelope.error.code
+        : "UNKNOWN";
+    const message =
+      typeof envelope.error.message === "string"
+        ? envelope.error.message
+        : "Callable request failed.";
+    throw new Error(`[${code}] ${message}`);
+  }
+
+  if (envelope.success !== true || !("data" in envelope)) {
+    throw new Error(`[${endpoint}] Missing success envelope data.`);
+  }
+
+  return envelope.data as T;
+};
+
+const callEndpoint = async <Req, Res>(
+  endpoint: string,
+  payload: Req
+): Promise<Res> => {
+  const fn = httpsCallable<Req, SuccessEnvelope<Res> | FailureEnvelope>(
+    getFirebaseFunctions(),
+    endpoint
+  );
+  const result = await fn(payload);
+  return extractCallableData<Res>(endpoint, result.data);
+};
 
 const toIsoString = (value: any): string => {
   if (!value) return new Date().toISOString();
@@ -121,28 +186,169 @@ const stripUndefined = <T extends Record<string, any>>(value: T): T =>
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
   ) as T;
 
+const toNonNegativeInt = (value: unknown): number => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Math.max(0, Math.trunc(value));
+  }
+  return 0;
+};
+
+const toProfileUser = (uid: string, source: Record<string, unknown>): User => {
+  const normalizedUid = normalizeString(uid, 128);
+  const normalizedName = normalizeString(source.name, 80) || "New User";
+  const normalizedHandle = normalizeString(source.handle, 40) || `@${normalizedUid.slice(0, 12)}`;
+  const normalizedAvatar =
+    normalizeString(source.avatarUrl, 2048) ||
+    `https://api.dicebear.com/8.x/lorelei/svg?seed=${normalizedUid}`;
+
+  return {
+    uid: normalizedUid,
+    email: normalizeString(source.email, 320),
+    name: normalizedName,
+    displayName: normalizedName,
+    handle: normalizedHandle.startsWith("@")
+      ? normalizedHandle
+      : `@${normalizedHandle}`,
+    avatarUrl: normalizedAvatar,
+    bannerUrl: normalizeString(source.bannerUrl, 2048),
+    joinDate: toIsoString(source.joinDate || source.createdAt),
+    bioEn: normalizeString(source.bioEn, 500),
+    bioAr: normalizeString(source.bioAr, 500),
+    bio: normalizeString(source.bioEn, 500),
+    followers: toNonNegativeInt(source.followers ?? source.followerCount),
+    followerCount: toNonNegativeInt(source.followers ?? source.followerCount),
+    following: toNonNegativeInt(source.following ?? source.followingCount),
+    followingCount: toNonNegativeInt(source.following ?? source.followingCount),
+    role: "user",
+    lastActive: toIsoString(source.lastActive || source.updatedAt || source.createdAt),
+    booksRead: toNonNegativeInt(source.booksRead),
+    quotesSaved: toNonNegativeInt(source.quotesSaved),
+    shelvesCount: toNonNegativeInt(source.shelvesCount),
+    wordsWritten: toNonNegativeInt(source.wordsWritten),
+    aiConsent:
+      typeof source.aiConsent === "boolean" ? source.aiConsent : undefined,
+    reportsCount: toNonNegativeInt(source.reportsCount),
+    isSuspended: source.isSuspended === true,
+  };
+};
+
 /* =========================
    USERS
 ========================= */
 class FirebaseUserService {
   async getProfile(uid: string): Promise<User> {
-    const db = getDb();
-    if (!db) throw new Error("Firebase not initialized");
-    const snap = await getDoc(doc(db, "users", uid));
-    if (!snap.exists()) throw new Error("User not found");
-    return snap.data() as User;
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const profile = await callEndpoint<{ uid: string }, Record<string, unknown>>(
+      "getPublicProfile",
+      { uid: normalizedUid }
+    );
+    return toProfileUser(normalizedUid, profile);
   }
 
   async createProfile(uid: string, user: User): Promise<void> {
     const db = getDb();
     if (!db) return;
-    await setDoc(doc(db, "users", uid), user);
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    await setDoc(doc(db, "users", normalizedUid), user, { merge: true });
+    await setDoc(
+      doc(db, "public_profiles", normalizedUid),
+      {
+        uid: normalizedUid,
+        name: normalizeString(user.name, 80) || "New User",
+        handle: normalizeString(user.handle, 40) || `@${normalizedUid.slice(0, 12)}`,
+        avatarUrl:
+          normalizeString(user.avatarUrl, 2048) ||
+          `https://api.dicebear.com/8.x/lorelei/svg?seed=${normalizedUid}`,
+        bannerUrl: normalizeString(user.bannerUrl, 2048),
+        bioEn: normalizeString(user.bioEn, 500),
+        bioAr: normalizeString(user.bioAr, 500),
+        joinDate: toIsoString(user.joinDate),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   }
 
   async updateProfile(uid: string, data: Partial<User>): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    await updateDoc(doc(db, "users", uid), data);
+    ensureNonEmptyString(uid, "uid", 128);
+
+    const allowedKeys = new Set([
+      "name",
+      "bioEn",
+      "bioAr",
+      "avatarUrl",
+      "bannerUrl",
+      "aiConsent",
+    ]);
+
+    const updates = Object.fromEntries(
+      Object.entries(data).filter(
+        ([key, value]) => allowedKeys.has(key) && value !== undefined
+      )
+    );
+
+    if (Object.keys(updates).length === 0) {
+      return;
+    }
+
+    await callEndpoint<
+      { updates: Record<string, unknown> },
+      { updated: boolean; changedFields: string[]; updatedAt: string }
+    >("updateOwnProfile", { updates });
+  }
+
+  async getSuggestedProfiles(uid: string): Promise<User[]> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const profiles = await callEndpoint<
+      { limit: number },
+      Record<string, unknown>[]
+    >("getSuggestedProfiles", { limit: 20 });
+
+    return profiles
+      .map((profile) => ({
+        uid: normalizeString(profile.uid, 128),
+        profile,
+      }))
+      .filter(
+        (entry) => entry.uid.length > 0 && entry.uid !== normalizedUid
+      )
+      .map((entry) => toProfileUser(entry.uid, entry.profile));
+  }
+
+  async followUser(followerId: string, targetId: string): Promise<void> {
+    const normalizedFollowerId = ensureNonEmptyString(
+      followerId,
+      "followerId",
+      128
+    );
+    const normalizedTargetId = ensureNonEmptyString(targetId, "targetId", 128);
+
+    if (normalizedFollowerId === normalizedTargetId) {
+      throw new Error("INVALID_ARGUMENT: Cannot follow yourself.");
+    }
+
+    await callEndpoint<
+      { targetUid: string },
+      { targetUid: string; following: boolean }
+    >("followUser", { targetUid: normalizedTargetId });
+  }
+
+  async unfollowUser(followerId: string, targetId: string): Promise<void> {
+    const normalizedFollowerId = ensureNonEmptyString(
+      followerId,
+      "followerId",
+      128
+    );
+    const normalizedTargetId = ensureNonEmptyString(targetId, "targetId", 128);
+
+    if (normalizedFollowerId === normalizedTargetId) {
+      throw new Error("INVALID_ARGUMENT: Cannot unfollow yourself.");
+    }
+
+    await callEndpoint<
+      { targetUid: string },
+      { targetUid: string; following: boolean }
+    >("unfollowUser", { targetUid: normalizedTargetId });
   }
 
   async getStats(uid: string): Promise<UserStats> {
@@ -179,18 +385,21 @@ class FirebaseUserService {
       };
     }
 
-    const data = snap.data() as Partial<UserStats>;
+    const data = snap.data() as Partial<UserStats> & {
+      counters?: Record<string, unknown>;
+    };
+    const counters = data.counters || {};
 
     return {
-      followers: data.followers || 0,
-      following: data.following || 0,
+      followers: toNonNegativeInt(data.followers ?? counters.followers),
+      following: toNonNegativeInt(data.following ?? counters.following),
       posts: data.posts || 0,
       reviews: data.reviews || 0,
-      booksRead: data.booksRead || 0,
+      booksRead: toNonNegativeInt(data.booksRead ?? counters.totalBooks),
       booksPublished: data.booksPublished || 0,
       wordsWritten: data.wordsWritten || 0,
       postsPublished: data.postsPublished || 0,
-      shelvesCreated: data.shelvesCreated || 0,
+      shelvesCreated: toNonNegativeInt(data.shelvesCreated ?? counters.totalShelves),
       quotesAuthored: data.quotesAuthored || 0,
       profileCompletionScore: data.profileCompletionScore,
     };
@@ -232,6 +441,169 @@ class FirebaseUserService {
         } satisfies Bookmark;
       })
       .filter((bookmark): bookmark is Bookmark => bookmark !== null);
+  }
+
+  async getAgentSessions(uid: string): Promise<AgentSession[]> {
+    const db = getDb();
+    if (!db) return [];
+
+    const sessionsQuery = query(
+      collection(db, "users", uid, "agent_sessions"),
+      orderBy("timestamp", "desc"),
+      limit(100)
+    );
+    const snap = await getDocs(sessionsQuery);
+
+    return snap.docs
+      .map((sessionDoc) => {
+        const data = sessionDoc.data() as Record<string, unknown>;
+        if (typeof data.agentId !== "string" || !data.agentId.trim()) return null;
+        return {
+          id: sessionDoc.id,
+          agentId: data.agentId.trim(),
+          title:
+            typeof data.title === "string" && data.title.trim()
+              ? data.title.trim()
+              : "Conversation",
+          lastMessage:
+            typeof data.lastMessage === "string" ? data.lastMessage : "",
+          timestamp: toIsoString(data.timestamp),
+          ...(data.isPinned === true ? { isPinned: true } : {}),
+        } satisfies AgentSession;
+      })
+      .filter((session): session is AgentSession => session !== null);
+  }
+
+  async getChatHistory(uid: string, sessionId: string): Promise<ChatMessage[]> {
+    const db = getDb();
+    if (!db) return [];
+
+    const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
+    const historyQuery = query(
+      collection(db, "users", uid, "agent_sessions", normalizedSessionId, "messages"),
+      orderBy("timestamp", "asc"),
+      limit(500)
+    );
+    const snap = await getDocs(historyQuery);
+
+    return snap.docs
+      .map((messageDoc) => {
+        const data = messageDoc.data() as Record<string, unknown>;
+        if (data.role !== "user" && data.role !== "model") return null;
+        if (typeof data.text !== "string" || !data.text.trim()) return null;
+
+        return {
+          id: messageDoc.id,
+          role: data.role,
+          text: data.text,
+          timestamp: toIsoString(data.timestamp),
+        } satisfies ChatMessage;
+      })
+      .filter((message): message is ChatMessage => message !== null);
+  }
+
+  async saveAgentMessage(
+    uid: string,
+    sessionId: string,
+    message: Omit<ChatMessage, "id">
+  ): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+
+    const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
+    const role = message.role === "model" ? "model" : "user";
+    const text = ensureNonEmptyString(message.text, "text", 10_000);
+    const timestamp =
+      typeof message.timestamp === "string" && message.timestamp.trim()
+        ? message.timestamp
+        : new Date().toISOString();
+
+    const messageRef = doc(
+      collection(db, "users", uid, "agent_sessions", normalizedSessionId, "messages")
+    );
+
+    await setDoc(messageRef, {
+      role,
+      text,
+      timestamp,
+      createdAt: serverTimestamp(),
+    });
+  }
+
+  async updateAgentSession(
+    uid: string,
+    sessionId: string,
+    data: Partial<AgentSession>
+  ): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+
+    const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
+    const agentId = normalizeOptionalString(data.agentId, 64);
+    const title = normalizeOptionalString(data.title, 180);
+    const lastMessage = normalizeOptionalString(data.lastMessage, 500);
+    const timestamp = normalizeOptionalString(data.timestamp, 64) ?? new Date().toISOString();
+
+    await setDoc(
+      doc(db, "users", uid, "agent_sessions", normalizedSessionId),
+      stripUndefined({
+        agentId,
+        title: title || "Conversation",
+        lastMessage,
+        timestamp,
+        isPinned: data.isPinned === true,
+        updatedAt: serverTimestamp(),
+      }),
+      { merge: true }
+    );
+  }
+
+  async createAgentSession(uid: string, session: AgentSession): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+
+    const normalizedSessionId = ensureNonEmptyString(session.id, "session.id", 128);
+    const agentId = ensureNonEmptyString(session.agentId, "session.agentId", 64);
+    const title = normalizeOptionalString(session.title, 180) || "Conversation";
+    const lastMessage = normalizeOptionalString(session.lastMessage, 500) || "";
+    const timestamp = normalizeOptionalString(session.timestamp, 64) || new Date().toISOString();
+
+    await setDoc(
+      doc(db, "users", uid, "agent_sessions", normalizedSessionId),
+      {
+        agentId,
+        title,
+        lastMessage,
+        timestamp,
+        isPinned: session.isPinned === true,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  async submitFeedback(
+    uid: string,
+    feedback: Omit<Feedback, "id" | "userId" | "timestamp">
+  ): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+
+    const text = ensureNonEmptyString(feedback.text, "feedback.text", 4000);
+    const type = feedback.type === "praise-general" ? "praise-general" : "action-required";
+    const email = normalizeOptionalString(feedback.email, 320);
+
+    const feedbackRef = doc(collection(db, "feedback"));
+    await setDoc(feedbackRef, {
+      userId: uid,
+      text,
+      type,
+      email: email || null,
+      timestamp: new Date().toISOString(),
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
   }
 }
 
@@ -764,9 +1136,232 @@ class FirebaseVenueService {
 }
 
 /* =========================
+   MESSAGING
+========================= */
+class FirebaseMessagingService {
+  async createConversation(uid: string, peerUid: string): Promise<string> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPeerUid = ensureNonEmptyString(peerUid, "peerUid", 128);
+
+    const data = await callEndpoint<
+      { peerUid: string },
+      { conversationId: string }
+    >("createDirectConversation", {
+      peerUid: normalizedPeerUid,
+    });
+
+    if (!data?.conversationId || typeof data.conversationId !== "string") {
+      throw new Error("[createDirectConversation] Missing conversationId.");
+    }
+
+    return data.conversationId;
+  }
+
+  async getConversations(uid: string): Promise<Conversation[]> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const data = await callEndpoint<
+      { limit: number },
+      { conversations: Conversation[] }
+    >("listDirectConversations", {
+      limit: 50,
+    });
+
+    if (!Array.isArray(data.conversations)) {
+      throw new Error("[listDirectConversations] Invalid conversations payload.");
+    }
+
+    return data.conversations.map((conversation) => ({
+      id: ensureNonEmptyString(conversation.id, "conversation.id", 128),
+      contactId: ensureNonEmptyString(conversation.contactId, "conversation.contactId", 128),
+      contactName: ensureNonEmptyString(conversation.contactName, "conversation.contactName", 120),
+      contactAvatar:
+        typeof conversation.contactAvatar === "string"
+          ? conversation.contactAvatar
+          : "",
+      lastMessage:
+        typeof conversation.lastMessage === "string"
+          ? conversation.lastMessage
+          : "",
+      timestamp: toIsoString(conversation.timestamp),
+      unreadCount:
+        typeof conversation.unreadCount === "number" && conversation.unreadCount > 0
+          ? Math.floor(conversation.unreadCount)
+          : 0,
+    }));
+  }
+
+  async getChatHistory(conversationId: string): Promise<DirectMessage[]> {
+    const normalizedConversationId = ensureNonEmptyString(
+      conversationId,
+      "conversationId",
+      190
+    );
+
+    const data = await callEndpoint<
+      { conversationId: string; limit: number },
+      { messages: DirectMessage[] }
+    >("listDirectMessages", {
+      conversationId: normalizedConversationId,
+      limit: MAX_DM_LIST_LIMIT,
+    });
+
+    if (!Array.isArray(data.messages)) {
+      throw new Error("[listDirectMessages] Invalid messages payload.");
+    }
+
+    return data.messages.map((message) => ({
+      id: ensureNonEmptyString(message.id, "message.id", 128),
+      senderId: ensureNonEmptyString(message.senderId, "message.senderId", 128),
+      text: ensureNonEmptyString(message.text, "message.text", 2000),
+      timestamp: toIsoString(message.timestamp),
+      ...(typeof message.readByPeer === "boolean"
+        ? { readByPeer: message.readByPeer }
+        : {}),
+    }));
+  }
+
+  async sendMessage(
+    uid: string,
+    conversationId: string,
+    text: string,
+    idempotencyKey: string
+  ): Promise<{ conversationId: string; messageId: string }> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedConversationId = ensureNonEmptyString(
+      conversationId,
+      "conversationId",
+      190
+    );
+    const normalizedText = ensureNonEmptyString(text, "text", 2000);
+    const normalizedIdempotencyKey = ensureNonEmptyString(
+      idempotencyKey,
+      "idempotencyKey",
+      96
+    );
+
+    const data = await callEndpoint<
+      { conversationId: string; text: string; idempotencyKey: string },
+      { conversationId: string; messageId: string }
+    >("sendDirectMessage", {
+      conversationId: normalizedConversationId,
+      text: normalizedText,
+      idempotencyKey: normalizedIdempotencyKey,
+    });
+
+    if (!data?.conversationId || typeof data.conversationId !== "string") {
+      throw new Error("[sendDirectMessage] Missing conversationId.");
+    }
+    if (!data?.messageId || typeof data.messageId !== "string") {
+      throw new Error("[sendDirectMessage] Missing messageId.");
+    }
+
+    return {
+      conversationId: data.conversationId,
+      messageId: data.messageId,
+    };
+  }
+
+  async markConversationRead(uid: string, conversationId: string): Promise<void> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedConversationId = ensureNonEmptyString(
+      conversationId,
+      "conversationId",
+      190
+    );
+
+    await callEndpoint<{ conversationId: string }, { conversationId: string; unreadCount: number }>(
+      "markDirectConversationRead",
+      {
+        conversationId: normalizedConversationId,
+      }
+    );
+  }
+}
+
+/* =========================
    SOCIAL
 ========================= */
 class FirebaseSocialService {
+  private isGuestIdentity(uid: string): boolean {
+    const normalized = (uid || "").trim().toLowerCase();
+    return normalized.length === 0 || normalized === "guest" || normalized === "anonymous";
+  }
+
+  private normalizeAttachmentRef(attachment: any): { attachmentId: string; type: string } | null {
+    if (!attachment || typeof attachment !== "object") {
+      return null;
+    }
+    const rawId =
+      typeof attachment.attachmentId === "string"
+        ? attachment.attachmentId
+        : typeof attachment.id === "string"
+          ? attachment.id
+          : "";
+    const attachmentId = rawId.trim();
+    if (!attachmentId) {
+      return null;
+    }
+    const type =
+      typeof attachment.type === "string" && attachment.type.trim()
+        ? attachment.type.trim()
+        : "IMAGE";
+    return { attachmentId, type };
+  }
+
+  private matchesFeedFilters(post: Post, filters: string[]): boolean {
+    if (!Array.isArray(filters) || filters.length === 0) {
+      return true;
+    }
+
+    const normalizedFilters = filters.map((filter) => (filter || "").toLowerCase());
+    const text = (post.content?.text || "").trim();
+    const attachments = Array.isArray(post.content?.attachments)
+      ? post.content.attachments
+      : [];
+    const attachmentTypes = new Set(
+      attachments.map((attachment) => String(attachment?.type || "").toLowerCase())
+    );
+
+    return normalizedFilters.every((filter) => {
+      if (filter === "text") return text.length > 0;
+      if (filter === "media") return attachments.length > 0;
+      if (filter === "book") return attachmentTypes.has("book_reference") || attachmentTypes.has("book");
+      if (filter === "quote") return attachmentTypes.has("quote_reference") || attachmentTypes.has("quote");
+      if (filter === "project") return attachmentTypes.has("project");
+      return true;
+    });
+  }
+
+  private async getFollowingAuthorIds(uid: string): Promise<Set<string>> {
+    const db = getDb();
+    const ids = new Set<string>();
+    if (!db) return ids;
+
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    ids.add(normalizedUid);
+
+    const followSnap = await getDocs(
+      query(
+        collection(db, "users", normalizedUid, "following"),
+        orderBy("createdAt", "desc"),
+        limit(500)
+      )
+    );
+
+    for (const followDoc of followSnap.docs) {
+      ids.add(followDoc.id);
+      const data = followDoc.data() as Record<string, unknown>;
+      if (typeof data.targetUid === "string" && data.targetUid.trim()) {
+        ids.add(data.targetUid.trim());
+      }
+      if (typeof data.uid === "string" && data.uid.trim()) {
+        ids.add(data.uid.trim());
+      }
+    }
+
+    return ids;
+  }
+
   async getFeed(
     uid: string,
     scope: string,
@@ -777,10 +1372,16 @@ class FirebaseSocialService {
     if (!db) return { posts: [], nextCursor: undefined };
 
     const PAGE_SIZE = 20;
+    const normalizedUid = normalizeString(uid, 128);
 
     try {
       const postsRef = collection(db, "posts");
       const normScope = (scope || "explore").toLowerCase();
+      const isGuest = this.isGuestIdentity(normalizedUid);
+      const followingAuthorIds =
+        normScope === "following" && !isGuest
+          ? await this.getFollowingAuthorIds(normalizedUid)
+          : null;
 
       let baseConstraints: any[] = [
         where("status", "==", "published"),
@@ -790,9 +1391,11 @@ class FirebaseSocialService {
       if (normScope === "explore" || normScope === "discover") {
         baseConstraints.push(where("visibility", "==", "public"));
       } else if (normScope === "following") {
-        baseConstraints.push(
-          where("visibility", "in", ["public", "followers"])
-        );
+        if (isGuest) {
+          baseConstraints.push(where("visibility", "==", "public"));
+        } else {
+          baseConstraints.push(where("visibility", "in", ["public", "followers"]));
+        }
       } else if (normScope === "books") {
         baseConstraints.push(where("visibility", "==", "public"));
         baseConstraints.push(where("flags.hasAttachments", "==", true));
@@ -813,9 +1416,17 @@ class FirebaseSocialService {
       }
 
       const snap = await getDocs(q);
-      const posts = snap.docs.map((docRef) =>
+      const normalizedPosts = snap.docs.map((docRef) =>
         normalizePost({ ...docRef.data(), id: docRef.id })
       );
+      const posts = normalizedPosts
+        .filter((post) => {
+          if (followingAuthorIds && !followingAuthorIds.has(post.authorId)) {
+            return false;
+          }
+          return this.matchesFeedFilters(post, filters);
+        })
+        .slice(0, PAGE_SIZE);
 
       const lastDoc = snap.docs[snap.docs.length - 1];
       let nextCursor: string | undefined;
@@ -837,10 +1448,11 @@ class FirebaseSocialService {
   ): Promise<{ comments: ThreadComment[]; hasMore: boolean; nextCursor?: string }> {
     const db = getDb();
     if (!db) return { comments: [], hasMore: false };
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
 
     const PAGE_SIZE = 20;
 
-    const commentsRef = collection(db, "posts", postId, "comments");
+    const commentsRef = collection(db, "posts", normalizedPostId, "comments");
     let q = query(
       commentsRef,
       where("status", "==", "published"),
@@ -872,11 +1484,375 @@ class FirebaseSocialService {
       } as ThreadComment;
     });
 
+    const lastDoc = snap.docs[snap.docs.length - 1];
+    const nextCursor = lastDoc?.id;
+    if (lastDoc && nextCursor) {
+      cursorRegistry.set(nextCursor, lastDoc);
+    }
+
     return {
       comments,
       hasMore: snap.docs.length === PAGE_SIZE,
-      nextCursor: snap.docs.at(-1)?.id,
+      nextCursor,
     };
+  }
+
+  async getPost(postId: string): Promise<Post> {
+    const db = getDb();
+    if (!db) {
+      throw new Error("Firebase not initialized");
+    }
+
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    const snap = await getDoc(doc(db, "posts", normalizedPostId));
+    if (!snap.exists()) {
+      throw new Error("NOT_FOUND: Post not found.");
+    }
+
+    return normalizePost({ ...snap.data(), id: snap.id });
+  }
+
+  async getPostStats(postId: string): Promise<PostStats> {
+    const db = getDb();
+    if (!db) {
+      return {
+        likesCount: 0,
+        bookmarksCount: 0,
+        repostsCount: 0,
+        commentsCount: 0,
+      };
+    }
+
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    const snap = await getDoc(doc(db, "post_stats", normalizedPostId));
+    if (!snap.exists()) {
+      return {
+        likesCount: 0,
+        bookmarksCount: 0,
+        repostsCount: 0,
+        commentsCount: 0,
+      };
+    }
+
+    const data = snap.data() as Record<string, unknown>;
+    const counters =
+      data.counters && typeof data.counters === "object"
+        ? (data.counters as Record<string, unknown>)
+        : {};
+
+    return {
+      likesCount: toNonNegativeInt(data.likesCount ?? counters.likes),
+      bookmarksCount: toNonNegativeInt(
+        data.bookmarksCount ?? counters.bookmarks
+      ),
+      repostsCount: toNonNegativeInt(data.repostsCount ?? counters.reposts),
+      commentsCount: toNonNegativeInt(data.commentsCount ?? counters.comments),
+    };
+  }
+
+  async createPost(uid: string, post: any): Promise<Post> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const text =
+      typeof post?.content?.text === "string" ? post.content.text.trim() : "";
+    const visibility =
+      post?.visibility === "public" ||
+      post?.visibility === "followers" ||
+      post?.visibility === "private" ||
+      post?.visibility === "restricted"
+        ? post.visibility
+        : "public";
+    const publishToken =
+      typeof post?.publishToken === "string" ? post.publishToken.trim() : "";
+
+    if (!publishToken) {
+      throw new Error("INVALID_ARGUMENT: publishToken is required.");
+    }
+
+    const mappedAttachments = Array.isArray(post?.attachments)
+      ? post.attachments
+          .map((attachment: any) => this.normalizeAttachmentRef(attachment))
+          .filter(
+            (
+              attachment
+            ): attachment is {
+              attachmentId: string;
+              type: string;
+            } => attachment !== null
+          )
+      : [];
+
+    const result = await callEndpoint<
+      {
+        content: { text?: string; attachments?: { attachmentId: string; type: string }[] };
+        attachments: { attachmentId: string; type: string }[];
+        visibility: string;
+        publishToken: string;
+      },
+      { success: boolean; postId: string; isDuplicate: boolean }
+    >("createSocialPost", {
+      content: {
+        ...(text ? { text } : {}),
+        ...(mappedAttachments.length > 0 ? { attachments: mappedAttachments } : {}),
+      },
+      attachments: mappedAttachments,
+      visibility,
+      publishToken,
+    });
+
+    if (!result?.success || typeof result.postId !== "string" || !result.postId.trim()) {
+      throw new Error("[createSocialPost] Invalid response payload.");
+    }
+
+    const createdPost = await this.getPost(result.postId.trim());
+    if (createdPost.authorId !== normalizedUid) {
+      throw new Error("FAILED_PRECONDITION: Created post author mismatch.");
+    }
+    return createdPost;
+  }
+
+  async likePost(uid: string, postId: string): Promise<void> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    await callEndpoint<{ postId: string }, { success: boolean; liked?: boolean }>(
+      "likeSocialPost",
+      { postId: normalizedPostId }
+    );
+  }
+
+  async unlikePost(uid: string, postId: string): Promise<void> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    const isLiked = await this.hasUserLikedPost(normalizedUid, normalizedPostId);
+    if (isLiked) {
+      await this.likePost(normalizedUid, normalizedPostId);
+    }
+  }
+
+  async repostPost(uid: string, postId: string): Promise<void> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    await callEndpoint<{ postId: string }, { success: boolean; reposted?: boolean }>(
+      "repostSocialPost",
+      { postId: normalizedPostId }
+    );
+  }
+
+  async unrepostPost(uid: string, postId: string): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    const repostSnap = await getDoc(
+      doc(db, "users", normalizedUid, "reposts", normalizedPostId)
+    );
+    if (repostSnap.exists()) {
+      await this.repostPost(normalizedUid, normalizedPostId);
+    }
+  }
+
+  async hasUserLikedPost(uid: string, postId: string): Promise<boolean> {
+    const db = getDb();
+    if (!db) return false;
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
+    const snap = await getDoc(
+      doc(db, "users", normalizedUid, "likes", normalizedPostId)
+    );
+    return snap.exists();
+  }
+
+  async getDrafts(uid: string): Promise<PostDraft[]> {
+    const db = getDb();
+    if (!db) return [];
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+
+    const draftSnap = await getDocs(
+      query(
+        collection(db, "users", normalizedUid, "drafts"),
+        orderBy("updatedAt", "desc"),
+        limit(100)
+      )
+    );
+
+    return draftSnap.docs.map((draftDoc) => {
+      const data = draftDoc.data() as Record<string, unknown>;
+      return {
+        id: draftDoc.id,
+        userId: normalizedUid,
+        content: normalizeString(data.content, 5000),
+        attachment: (data.attachment as any) || undefined,
+        updatedAt: toIsoString(data.updatedAt),
+      };
+    });
+  }
+
+  async getDraft(uid: string, draftId: string): Promise<PostDraft> {
+    const db = getDb();
+    if (!db) throw new Error("Firebase not initialized");
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedDraftId = ensureNonEmptyString(draftId, "draftId", 128);
+    const snap = await getDoc(
+      doc(db, "users", normalizedUid, "drafts", normalizedDraftId)
+    );
+    if (!snap.exists()) {
+      throw new Error("NOT_FOUND: Draft not found.");
+    }
+    const data = snap.data() as Record<string, unknown>;
+    return {
+      id: snap.id,
+      userId: normalizedUid,
+      content: normalizeString(data.content, 5000),
+      attachment: (data.attachment as any) || undefined,
+      updatedAt: toIsoString(data.updatedAt),
+    };
+  }
+
+  async saveDraft(uid: string, draft: Omit<PostDraft, "updatedAt">): Promise<PostDraft> {
+    const db = getDb();
+    if (!db) throw new Error("Firebase not initialized");
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const nowIso = new Date().toISOString();
+    const draftId =
+      typeof draft?.id === "string" && draft.id.trim()
+        ? draft.id.trim()
+        : doc(collection(db, "users", normalizedUid, "drafts")).id;
+    const content = normalizeString(draft?.content, 5000);
+
+    await setDoc(
+      doc(db, "users", normalizedUid, "drafts", draftId),
+      {
+        userId: normalizedUid,
+        content,
+        attachment: draft?.attachment || null,
+        updatedAt: nowIso,
+        createdAt: nowIso,
+      },
+      { merge: true }
+    );
+
+    return {
+      id: draftId,
+      userId: normalizedUid,
+      content,
+      attachment: draft?.attachment,
+      updatedAt: nowIso,
+    };
+  }
+
+  async deleteDraft(uid: string, draftId: string): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedDraftId = ensureNonEmptyString(draftId, "draftId", 128);
+    await deleteDoc(doc(db, "users", normalizedUid, "drafts", normalizedDraftId));
+  }
+
+  async search(queryText: string): Promise<{ posts: Post[]; users: User[]; topics: string[] }> {
+    const db = getDb();
+    const normalizedQuery = normalizeString(queryText, 120).toLowerCase();
+    if (!db || normalizedQuery.length < 2) {
+      return { posts: [], users: [], topics: [] };
+    }
+
+    const [postSnap, profileSnap] = await Promise.all([
+      getDocs(
+        query(
+          collection(db, "posts"),
+          where("status", "==", "published"),
+          where("visibility", "==", "public"),
+          where("isDeleted", "!=", true),
+          orderBy("isDeleted"),
+          orderBy("timestamps.createdAt", "desc"),
+          limit(60)
+        )
+      ),
+      getDocs(
+        query(
+          collection(db, "public_profiles"),
+          orderBy("updatedAt", "desc"),
+          limit(50)
+        )
+      ),
+    ]);
+
+    const posts = postSnap.docs
+      .map((postDoc) => normalizePost({ ...postDoc.data(), id: postDoc.id }))
+      .filter((post) => {
+        const haystack = `${post.authorName} ${post.authorHandle} ${post.content?.text || ""}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      })
+      .slice(0, 20);
+
+    const users = profileSnap.docs
+      .map((profileDoc) => toProfileUser(profileDoc.id, profileDoc.data() as Record<string, unknown>))
+      .filter((profile) => {
+        const haystack = `${profile.name} ${profile.handle}`.toLowerCase();
+        return haystack.includes(normalizedQuery);
+      })
+      .slice(0, 20);
+
+    const hashtags = new Set<string>();
+    for (const post of posts) {
+      const text = post.content?.text || "";
+      for (const match of text.matchAll(/#([A-Za-z0-9_]{2,40})/g)) {
+        hashtags.add(match[1].toLowerCase());
+      }
+    }
+    const topics = Array.from(hashtags).slice(0, 20);
+
+    return { posts, users, topics };
+  }
+
+  async addReaction(uid: string, entityId: string, reaction: string): Promise<void> {
+    const normalizedReaction = normalizeString(reaction, 32).toLowerCase();
+    if (normalizedReaction !== "like") {
+      throw new Error("INVALID_ARGUMENT: Unsupported reaction type.");
+    }
+    await this.likePost(uid, entityId);
+  }
+}
+
+class FirebaseNotificationService {
+  async getNotifications(uid: string): Promise<Notification[]> {
+    const db = getDb();
+    if (!db) return [];
+
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const snap = await getDocs(
+      query(
+        collection(db, "notifications"),
+        where("uid", "==", normalizedUid),
+        orderBy("createdAt", "desc"),
+        limit(100)
+      )
+    );
+
+    return snap.docs.map((notificationDoc) =>
+      normalizeNotification({ id: notificationDoc.id, ...notificationDoc.data() })
+    );
+  }
+
+  async markAllAsRead(uid: string): Promise<void> {
+    const db = getDb();
+    if (!db) return;
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const unreadSnap = await getDocs(
+      query(
+        collection(db, "notifications"),
+        where("uid", "==", normalizedUid),
+        where("read", "==", false),
+        limit(100)
+      )
+    );
+
+    await Promise.all(
+      unreadSnap.docs.map((notificationDoc) =>
+        updateDoc(notificationDoc.ref, {
+          read: true,
+          readAt: serverTimestamp(),
+        })
+      )
+    );
   }
 }
 
@@ -885,9 +1861,12 @@ class FirebaseSocialService {
 ========================= */
 export const firebaseDbService: any = {
   users: new FirebaseUserService(),
+  projects: firebaseProjectService,
   social: new FirebaseSocialService(),
   shelves: new FirebaseShelfService(),
   venues: new FirebaseVenueService(),
+  messaging: new FirebaseMessagingService(),
+  notifications: new FirebaseNotificationService(),
   upload: new FirebaseUploadService(),
 
   /**

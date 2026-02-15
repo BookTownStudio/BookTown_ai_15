@@ -1,7 +1,12 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useChatHistory, useSendMessage } from '../../lib/hooks/useMessenger.ts';
+import {
+    useChatHistory,
+    useSendMessage,
+    useMarkConversationRead,
+    createMessageIdempotencyKey
+} from '../../lib/hooks/useMessenger.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -17,6 +22,11 @@ const ChatBubble: React.FC<{ message: DirectMessage; isMe: boolean; }> = ({ mess
         <div className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-md lg:max-w-lg px-4 py-3 rounded-2xl shadow-sm ${isMe ? 'bg-gradient-to-br from-primary to-sky-500 text-white rounded-br-lg' : 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-white/90 rounded-bl-lg'}`}>
                 <p className={`${isRTL ? 'text-right' : 'text-left'} leading-relaxed`}>{message.text}</p>
+                {isMe && (
+                    <p className={`mt-1 text-[11px] ${isRTL ? 'text-right' : 'text-left'} ${isMe ? 'text-white/80' : 'text-slate-500'}`}>
+                        {message.readByPeer ? 'Read' : 'Sent'}
+                    </p>
+                )}
             </div>
         </div>
     );
@@ -28,26 +38,47 @@ const MessengerChatScreen: React.FC = () => {
     const { user } = useAuth();
     const { navigate, currentView } = useNavigation();
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const markedReadRef = useRef<string | null>(null);
     const [input, setInput] = useState('');
     
     const conversationId = currentView.type === 'immersive' ? currentView.params?.conversationId : undefined;
     const contactName = currentView.type === 'immersive' ? currentView.params?.contactName : 'Chat';
 
     const { data: messages, isLoading, isError } = useChatHistory(conversationId);
-    const { mutate: sendMessage, isLoading: isSending } = useSendMessage(conversationId);
+    const sendMutation = useSendMessage(conversationId);
+    const markReadMutation = useMarkConversationRead();
+    const isSending = sendMutation.isLoading;
 
     const handleBack = () => navigate(currentView.params?.from || { type: 'immersive', id: 'messengerList' });
 
     const handleSend = () => {
         if (input.trim() && !isSending) {
-            sendMessage(input.trim());
-            setInput('');
+            const text = input.trim();
+            sendMutation.mutate(
+                {
+                    text,
+                    idempotencyKey: createMessageIdempotencyKey(),
+                },
+                {
+                    onSuccess: () => setInput(''),
+                }
+            );
         }
     };
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
+
+    useEffect(() => {
+        if (!conversationId || !messages || messages.length === 0) return;
+        if (markedReadRef.current && markedReadRef.current !== conversationId) {
+            markedReadRef.current = null;
+        }
+        if (markedReadRef.current === conversationId) return;
+        markedReadRef.current = conversationId;
+        markReadMutation.mutate(conversationId);
+    }, [conversationId, messages]);
 
     return (
         <div className="h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-900">
@@ -80,7 +111,7 @@ const MessengerChatScreen: React.FC = () => {
                             dir={isRTL ? 'rtl' : 'ltr'}
                             value={input}
                             onChange={(e) => setInput(e.target.value)}
-                            onKeyPress={(e) => e.key === 'Enter' && handleSend()}
+                            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             disabled={isSending}
                             className="w-full bg-slate-200 dark:bg-slate-800 rounded-full py-3 pl-4 pr-12 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
                         />

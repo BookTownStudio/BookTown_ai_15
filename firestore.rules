@@ -13,6 +13,19 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isAdminUser() {
+      return isSignedIn()
+        && (
+          request.auth.token.admin == true
+          || request.auth.token.role in ['superadmin', 'superuser', 'moderator']
+          || request.auth.token.email in [
+            'booktown10@gmail.com',
+            'test@booktown.com',
+            'admin@booktown.com'
+          ]
+        );
+    }
+
     function isSystemShelfId(shelfId) {
       return shelfId == 'currently-reading'
           || shelfId == 'want-to-read'
@@ -35,11 +48,33 @@ service cloud.firestore {
         && value.size() <= maxLen;
     }
 
+    function isAllowedUserProfilePatch() {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          "name",
+          "bioEn",
+          "bioAr",
+          "avatarUrl",
+          "bannerUrl",
+          "lastActive",
+          "updatedAt",
+          "aiConsent"
+        ])
+        && request.resource.data.uid == resource.data.uid
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.handle == resource.data.handle
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.status == resource.data.status
+        && request.resource.data.isSuspended == resource.data.isSuspended;
+    }
+
     /* =========================
        USERS
        ========================= */
     match /users/{uid} {
-      allow read, create, update: if isOwner(uid);
+      allow get: if isOwner(uid);
+      allow list: if false;
+      allow create: if false;
+      allow update: if isOwner(uid) && isAllowedUserProfilePatch();
       allow delete: if false;
 
       match /follows_authors/{authorId} {
@@ -51,10 +86,23 @@ service cloud.firestore {
       }
 
       match /{subCollection}/{docId} {
-        allow read, create, update: if isOwner(uid)
-          && subCollection != "follows_authors";
-        allow delete: if false;
+        allow read: if isOwner(uid);
+        allow create, update: if isOwner(uid)
+          && subCollection != "follows_authors"
+          && subCollection != "followers"
+          && subCollection != "following";
+        allow delete: if isOwner(uid)
+          && subCollection != "followers"
+          && subCollection != "following";
       }
+    }
+
+    /* =========================
+       PUBLIC PROFILES
+       ========================= */
+    match /public_profiles/{uid} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
     }
 
     /* =========================
@@ -69,6 +117,14 @@ service cloud.firestore {
        USER STATS
        ========================= */
     match /user_stats/{uid} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
+       NOTIFICATION PREFERENCES
+       ========================= */
+    match /notification_preferences/{uid} {
       allow read, create, update: if isOwner(uid);
       allow delete: if false;
     }
@@ -333,23 +389,98 @@ service cloud.firestore {
     }
 
     /* =========================
+       NOTIFICATIONS
+       ========================= */
+    match /notifications/{notificationId} {
+      allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow update: if isSignedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == resource.data.uid;
+      allow create, delete: if false;
+    }
+
+    match /search_notifications/{notificationId} {
+      allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create, update, delete: if false;
+    }
+
+    match /post_stats/{postId} {
+      allow get, list: if true;
+      allow create, update, delete: if false;
+    }
+
+    match /post_analytics/{postId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if false;
+
+      match /viewers/{viewerUid} {
+        allow read, create, update, delete: if false;
+      }
+    }
+
+    match /reports/{reportId} {
+      allow get: if isSignedIn()
+        && (
+          isAdminUser()
+          || resource.data.reportedByUid == request.auth.uid
+        );
+      allow list: if isAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    match /moderation_log/{logId} {
+      allow get, list: if isAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    match /activity_log/{activityId} {
+      allow get, list: if isAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
+       DIRECT MESSAGING (SERVER WRITE, PARTICIPANT READ)
+       ========================= */
+    match /conversations/{conversationId} {
+      allow get, list: if isSignedIn()
+        && resource.data.participantSet[request.auth.uid] == true;
+
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn()
+          && get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantSet[request.auth.uid] == true;
+        allow create, update, delete: if false;
+      }
+
+      match /idempotency/{idempotencyId} {
+        allow read, write: if false;
+      }
+    }
+
+    /* =========================
        SOCIAL
        ========================= */
     match /posts/{postId} {
       allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow create, update, delete: if false;
+
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create, update, delete: if false;
+      }
     }
 
     match /comments/{commentId} {
-      allow read: if true;
-      allow create, update, delete: if isSignedIn();
+      allow read: if false;
+      allow create, update, delete: if false;
     }
 
     /* =========================
        WRITE PROJECTS
        ========================= */
     match /projects/{projectId} {
-      allow read, create, update, delete: if isSignedIn();
+      allow read, create, update, delete: if false;
     }
 
     /* =========================

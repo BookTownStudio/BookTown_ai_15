@@ -44,6 +44,19 @@ export const WriteRepository = {
     },
 
     /**
+     * getProject
+     * Direct authoritative point-read by canonical ID.
+     * Avoids list scans and preserves bounded read cost.
+     */
+    async getProject(uid: string, projectId: string): Promise<Project> {
+        if (!projectId || projectId === 'new') {
+            throw new Error("AUTHORITY_VIOLATION: Invalid project ID for persistent read.");
+        }
+        const project = await dataService.projects.getProject(uid, projectId);
+        return normalizeProject(project);
+    },
+
+    /**
      * updateProject
      * Structural Rule: Strict check - document MUST exist in Firestore.
      */

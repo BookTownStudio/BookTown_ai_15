@@ -2,6 +2,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
+import { queryKeys } from '../queryKeys.ts';
 
 export const useUpdateAiConsent = () => {
     const queryClient = useQueryClient();
@@ -14,8 +15,8 @@ export const useUpdateAiConsent = () => {
             return dataService.users.updateProfile(uid, { aiConsent: consent });
         },
         onSuccess: () => {
-            // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['userProfile', uid]);
+            if (!uid) return;
+            queryClient.invalidateQueries(queryKeys.user.profile(uid) as unknown as any[]);
         },
     });
 };

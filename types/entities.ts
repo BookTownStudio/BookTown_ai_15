@@ -180,22 +180,20 @@ export interface User {
 }
 
 export interface NotificationPreferences {
-    global: {
-        enabled: boolean;
-    };
     channels: {
         in_app: boolean;
         email: boolean;
         push: boolean;
     };
-    types: {
-        like: boolean;
-        comment: boolean;
-        follow: boolean;
-        repost: boolean;
-        mention: boolean;
-        replies: boolean;
+    categories: {
+        likes: boolean;
+        comments: boolean;
+        follows: boolean;
+        reposts: boolean;
+        mentions: boolean;
+        quotes: boolean;
         system: boolean;
+        messages: boolean;
     };
     updatedAt: any;
 }
@@ -316,6 +314,8 @@ export interface Project {
     content: string; 
     isPublished?: boolean;
     publishedBookId?: string;
+    revision?: number;
+    coverUrl?: string;
 }
 
 export type AttachmentTypeV1 = 
@@ -636,6 +636,7 @@ export interface DirectMessage {
     senderId: string;
     text: string;
     timestamp: string; // ISO string
+    readByPeer?: boolean;
 }
 
 export interface Conversation {
@@ -651,7 +652,7 @@ export interface Conversation {
 export interface Notification {
     id: string;
     uid: string; // Recipient
-    type: 'like' | 'comment' | 'repost' | 'follow' | 'mention' | 'system';
+    type: 'like' | 'comment' | 'repost' | 'follow' | 'mention' | 'system' | 'dm';
     priority: 'low' | 'medium' | 'high';
     actor: {
         uid: string;
@@ -663,7 +664,7 @@ export interface Notification {
     };
     actorId: string;
     actorType: 'user' | 'system';
-    entityType: 'post' | 'book' | 'quote' | 'shelf' | 'profile';
+    entityType: 'post' | 'book' | 'quote' | 'shelf' | 'profile' | 'conversation';
     entityId: string;
     postId: string | null;
     message: string; // Pre-rendered server-side

@@ -51,7 +51,7 @@ const CommentItem: React.FC<{
     const handleReport = () => {
         const reason = prompt(lang === 'en' ? "Reason for reporting:" : "سبب الإبلاغ:");
         if (!reason) return;
-        report({ commentId: comment.id, authorId: comment.authorId, reason });
+        report({ commentId: comment.id, reason });
         setIsMenuOpen(false);
     };
 

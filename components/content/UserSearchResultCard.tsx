@@ -5,6 +5,7 @@ import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import Button from '../ui/Button.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
+import { useFollowStatus, useFollowUser, useUnfollowUser } from '../../lib/hooks/useFollowUser.ts';
 
 interface UserSearchResultCardProps {
     user: User;
@@ -13,11 +14,22 @@ interface UserSearchResultCardProps {
 const UserSearchResultCard: React.FC<UserSearchResultCardProps> = ({ user }) => {
     const { lang, isRTL } = useI18n();
     const { navigate, currentView } = useNavigation();
+    const { data: isFollowed } = useFollowStatus(user.uid);
+    const { mutate: followUser, isLoading: isFollowing } = useFollowUser();
+    const { mutate: unfollowUser, isLoading: isUnfollowing } = useUnfollowUser();
 
     const handlePress = () => {
         navigate({ type: 'immersive', id: 'profile', params: { userId: user.uid, from: currentView } });
     };
 
+    const handleToggleFollow = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (isFollowed) {
+            unfollowUser(user.uid);
+            return;
+        }
+        followUser(user.uid);
+    };
 
     return (
         <button onClick={handlePress} className="w-full text-left hover:bg-slate-800 transition-colors">
@@ -30,8 +42,15 @@ const UserSearchResultCard: React.FC<UserSearchResultCardProps> = ({ user }) => 
                         {lang === 'en' ? user.bioEn : user.bioAr}
                     </BilingualText>
                 </div>
-                <Button variant="primary" className="!px-4 !py-1 !text-sm flex-shrink-0">
-                    {lang === 'en' ? 'Follow' : 'متابعة'}
+                <Button
+                    variant={isFollowed ? 'ghost' : 'primary'}
+                    className="!px-4 !py-1 !text-sm flex-shrink-0"
+                    onClick={handleToggleFollow}
+                    disabled={isFollowing || isUnfollowing}
+                >
+                    {isFollowed
+                        ? (lang === 'en' ? 'Following' : 'تتابعه')
+                        : (lang === 'en' ? 'Follow' : 'متابعة')}
                 </Button>
             </div>
         </button>

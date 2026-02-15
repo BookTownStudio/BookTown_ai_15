@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { PostVisibilityScope, PostAttachment } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
+import { callCallableEndpoint } from '../callable.ts';
 
 interface EditPostVariables {
     postId: string;
@@ -19,10 +19,10 @@ export const useEditPost = () => {
 
     return useMutation({
         mutationFn: async (variables: EditPostVariables) => {
-            const functions = getFunctions();
-            const editPostFn = httpsCallable(functions, 'editSocialPost');
-            const result = await editPostFn(variables);
-            return result.data;
+            return callCallableEndpoint<EditPostVariables, { success: boolean }>(
+                'editSocialPost',
+                variables
+            );
         },
         onSuccess: (_, variables) => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.

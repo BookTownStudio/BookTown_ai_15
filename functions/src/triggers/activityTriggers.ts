@@ -37,16 +37,8 @@ export const onActivityPostCreated = onDocumentCreated("posts/{postId}", async (
 });
 
 export const onActivityPostLiked = onDocumentCreated("users/{userId}/likes/{postId}", async (event) => {
-    const postSnap = await db.collection('posts').doc(event.params.postId).get();
-    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
-
-    await emitActivityLog({
-        actor: { uid: event.params.userId, type: 'user' },
-        verb: 'post_liked',
-        object: { entity_type: 'post', entity_id: event.params.postId },
-        context: { target_owner_uid: targetOwner, visibility: 'public' },
-        metadata: { source: 'web', ui_surface: 'feed' }
-    });
+    // Intentionally no-op: likeSocialPost callable is the single source of truth for this verb.
+    return;
 });
 
 export const onActivityPostBookmarked = onDocumentCreated("users/{userId}/bookmarks/{postId}", async (event) => {
@@ -63,33 +55,15 @@ export const onActivityPostBookmarked = onDocumentCreated("users/{userId}/bookma
 });
 
 export const onActivityPostCommented = onDocumentCreated("posts/{postId}/comments/{commentId}", async (event) => {
-    const commentData = event.data?.data();
-    if (!commentData) return;
-    const postSnap = await db.collection('posts').doc(event.params.postId).get();
-    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
-
-    await emitActivityLog({
-        actor: { uid: commentData.authorId, type: 'user' },
-        verb: 'post_commented',
-        object: { entity_type: 'post', entity_id: event.params.postId },
-        context: { target_owner_uid: targetOwner, visibility: 'public' },
-        metadata: { source: 'web', ui_surface: 'feed' }
-    });
+    // Intentionally no-op: addSocialComment callable is the single source of truth for this verb.
+    return;
 });
 
 export const onActivityPostReposted = onDocumentCreated(
   { document: "users/{userId}/reposts/{postId}" },
   async (event) => {
-    const postSnap = await db.collection('posts').doc(event.params.postId).get();
-    const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
-
-    await emitActivityLog({
-        actor: { uid: event.params.userId, type: 'user' },
-        verb: 'post_reposted',
-        object: { entity_type: 'post', entity_id: event.params.postId },
-        context: { target_owner_uid: targetOwner, visibility: 'public' },
-        metadata: { source: 'web', ui_surface: 'feed' }
-    });
+    // Intentionally no-op: repostSocialPost callable is the single source of truth for this verb.
+    return;
 });
 
 export const onActivityPostDeleted = onDocumentDeleted("posts/{postId}", async (event) => {

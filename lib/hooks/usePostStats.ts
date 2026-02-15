@@ -12,18 +12,13 @@ export const usePostStats = (postId: string | undefined) => {
     return useQuery<PostStats>({
         queryKey: [...queryKeys.social.all, 'stats', postId],
         queryFn: async () => {
-            try {
-                const stats = await dataService.social.getPostStats(postId!);
-                return {
-                    likesCount: stats.likesCount ?? 0,
-                    bookmarksCount: stats.bookmarksCount ?? 0,
-                    repostsCount: stats.repostsCount ?? 0,
-                    commentsCount: stats.commentsCount ?? 0
-                };
-            } catch (e) {
-                console.warn(`[STATS][FETCH_FAIL] Failed to load stats for ${postId}.`);
-                return { likesCount: 0, bookmarksCount: 0, repostsCount: 0, commentsCount: 0 };
-            }
+            const stats = await dataService.social.getPostStats(postId!);
+            return {
+                likesCount: stats.likesCount ?? 0,
+                bookmarksCount: stats.bookmarksCount ?? 0,
+                repostsCount: stats.repostsCount ?? 0,
+                commentsCount: stats.commentsCount ?? 0
+            };
         },
         enabled: !!postId,
         staleTime: 1000 * 15,

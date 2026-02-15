@@ -10,12 +10,11 @@ import { FlagIcon } from '../icons/FlagIcon.tsx';
 
 interface ReportPostModalProps {
     postId: string;
-    authorId: string;
     isOpen: boolean;
     onClose: () => void;
 }
 
-const ReportPostModal: React.FC<ReportPostModalProps> = ({ postId, authorId, isOpen, onClose }) => {
+const ReportPostModal: React.FC<ReportPostModalProps> = ({ postId, isOpen, onClose }) => {
     const { lang } = useI18n();
     const { showToast } = useToast();
     const [reason, setReason] = useState<string | null>(null);
@@ -35,7 +34,7 @@ const ReportPostModal: React.FC<ReportPostModalProps> = ({ postId, authorId, isO
     const handleReport = () => {
         if (!reason) return;
 
-        reportPost({ postId, authorId, reason, details: details.trim() }, {
+        reportPost({ postId, reason, details: details.trim() }, {
             onSuccess: (data) => {
                 if (data.alreadyReported) {
                     showToast(lang === 'en' ? 'You have already reported this post.' : 'لقد أبلغت عن هذا المنشور بالفعل.');

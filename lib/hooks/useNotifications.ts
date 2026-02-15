@@ -23,6 +23,85 @@ import { dataService } from '../../services/dataService.ts';
 
 const cursorRegistry = new Map<string, QueryDocumentSnapshot<DocumentData>>();
 
+const toIsoDate = (value: any): string => {
+    if (typeof value === 'string' && value.trim()) return value;
+    if (value?.toDate) return value.toDate().toISOString();
+    return new Date().toISOString();
+};
+
+const mapNotification = (id: string, data: Record<string, any>): Notification => {
+    const actorUid =
+        (typeof data.actorId === 'string' && data.actorId) ||
+        (typeof data.actor?.uid === 'string' ? data.actor.uid : '');
+    const actorType =
+        (typeof data.actorType === 'string' && data.actorType === 'system')
+            ? 'system'
+            : 'user';
+    const entityTypeRaw =
+        (typeof data.entityType === 'string' && data.entityType) ||
+        (typeof data.target?.entity_type === 'string' ? data.target.entity_type : 'post');
+    const entityType =
+        entityTypeRaw === 'post' ||
+        entityTypeRaw === 'book' ||
+        entityTypeRaw === 'quote' ||
+        entityTypeRaw === 'shelf' ||
+        entityTypeRaw === 'profile' ||
+        entityTypeRaw === 'conversation'
+            ? entityTypeRaw
+            : 'post';
+    const entityId =
+        (typeof data.entityId === 'string' && data.entityId) ||
+        (typeof data.target?.entity_id === 'string' ? data.target.entity_id : '');
+    const typeRaw = typeof data.type === 'string' ? data.type : 'system';
+    const type =
+        typeRaw === 'like' ||
+        typeRaw === 'comment' ||
+        typeRaw === 'repost' ||
+        typeRaw === 'follow' ||
+        typeRaw === 'mention' ||
+        typeRaw === 'system' ||
+        typeRaw === 'dm'
+            ? typeRaw
+            : 'system';
+    const priorityRaw = typeof data.priority === 'string' ? data.priority : 'medium';
+    const priority =
+        priorityRaw === 'low' || priorityRaw === 'medium' || priorityRaw === 'high'
+            ? priorityRaw
+            : 'medium';
+
+    return {
+        id,
+        uid: typeof data.uid === 'string' ? data.uid : '',
+        type,
+        priority,
+        actor: {
+            uid: actorUid,
+            name: typeof data.actor?.name === 'string' ? data.actor.name : undefined,
+        },
+        target: {
+            entity_type: entityType,
+            entity_id: entityId,
+        },
+        actorId: actorUid,
+        actorType,
+        entityType,
+        entityId,
+        postId:
+            typeof data.postId === 'string'
+                ? data.postId
+                : entityType === 'post'
+                    ? entityId
+                    : null,
+        message: typeof data.message === 'string' ? data.message : '',
+        createdAt: toIsoDate(data.createdAt),
+        readAt: data.readAt || null,
+        read: data.read === true,
+        sourceActivityId: typeof data.sourceActivityId === 'string' ? data.sourceActivityId : '',
+        dedupeId: typeof data.dedupeId === 'string' ? data.dedupeId : id,
+        count: typeof data.count === 'number' ? data.count : undefined,
+    };
+};
+
 /**
  * useInfiniteNotifications
  * Authoritative paged read path for user notifications.
@@ -46,7 +125,7 @@ export const useInfiniteNotifications = () => {
 
             try {
                 let q = query(
-                    collection(db, 'search_notifications'),
+                    collection(db, 'notifications'),
                     where('uid', '==', uid),
                     orderBy('createdAt', 'desc'),
                     limit(20)
@@ -58,30 +137,11 @@ export const useInfiniteNotifications = () => {
                 }
 
                 const snap = await getDocs(q);
-
-                const notifications = await Promise.all(
-                    snap.docs.map(async (indexDoc) => {
-                        const primarySnap = await getDoc(
-                            doc(db, 'notifications', indexDoc.id)
-                        );
-
-                        if (primarySnap.exists()) {
-                            const data = primarySnap.data();
-                            return {
-                                id: indexDoc.id,
-                                ...data,
-                                createdAt:
-                                    data.createdAt?.toDate?.()?.toISOString() ||
-                                    data.createdAt ||
-                                    new Date().toISOString()
-                            } as Notification;
-                        }
-                        return null;
-                    })
-                );
-
-                const validNotifications = notifications.filter(
-                    (n): n is Notification => n !== null
+                const validNotifications = snap.docs.map((notificationDoc) =>
+                    mapNotification(
+                        notificationDoc.id,
+                        notificationDoc.data() as Record<string, any>
+                    )
                 );
 
                 const lastDoc = snap.docs[snap.docs.length - 1];

@@ -42,7 +42,7 @@ const ProjectPreviewScreen: React.FC = () => {
             metadata: {
                 title: lang === 'en' ? project.titleEn : project.titleAr,
                 description: 'Published via BookTown',
-                coverUrl: (project as any).coverUrl
+                coverUrl: project.coverUrl
             },
             files: stagedFiles
         }, {
@@ -72,8 +72,8 @@ const ProjectPreviewScreen: React.FC = () => {
                 <div className="w-full md:w-80 flex-shrink-0 bg-slate-800/50 border-r border-white/10 overflow-y-auto p-6 flex flex-col gap-6">
                     {/* Cover */}
                     <div className="w-full aspect-[2/3] bg-slate-700 rounded-lg shadow-xl overflow-hidden relative group">
-                        {(project as any).coverUrl ? (
-                            <img src={(project as any).coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                        {project.coverUrl ? (
+                            <img src={project.coverUrl} alt="Cover" className="w-full h-full object-cover" />
                         ) : (
                             <div className="flex items-center justify-center h-full"><BookIcon className="h-12 w-12 text-slate-500"/></div>
                         )}

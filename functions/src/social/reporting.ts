@@ -14,16 +14,15 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
         throw new HttpsError("unauthenticated", "Authentication required to report content.");
     }
 
-    const { postId, authorId, reason, details } = request.data;
+    const { postId, reason, details } = request.data as {
+        postId?: string;
+        reason?: string;
+        details?: string;
+    };
     const uid = request.auth.uid;
 
-    if (!postId || !authorId || !reason) {
+    if (!postId || !reason) {
         throw new HttpsError("invalid-argument", "Missing required fields.");
-    }
-
-    // 1. Forbidden Behavior: Reporting own post
-    if (uid === authorId) {
-        throw new HttpsError("failed-precondition", "POST_REPORT_FORBIDDEN: You cannot report your own content.");
     }
 
     // 2. Canonical Report Type Validation (POST_REPORTING_POLICY_V1)
@@ -37,6 +36,26 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
 
     try {
         return await db.runTransaction(async (transaction) => {
+            const postRef = db.collection('posts').doc(postId);
+            const postSnap = await transaction.get(postRef);
+            if (!postSnap.exists) {
+                throw new HttpsError("not-found", "Post not found.");
+            }
+            const post = postSnap.data() || {};
+            const authorId =
+                typeof post.authorId === "string" && post.authorId.trim()
+                    ? post.authorId.trim()
+                    : null;
+
+            if (!authorId) {
+                throw new HttpsError("failed-precondition", "Post author is missing.");
+            }
+
+            // 1. Forbidden Behavior: Reporting own post
+            if (uid === authorId) {
+                throw new HttpsError("failed-precondition", "POST_REPORT_FORBIDDEN: You cannot report your own content.");
+            }
+
             // 3. Rate Limit Enforcement: Max 10 per day
             const userReportsSnap = await transaction.get(
                 db.collection('reports')
@@ -45,7 +64,7 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
             );
 
             if (userReportsSnap.size >= 10) {
-                throw new HttpsError("resource-exhausted", "REPORT_LIMIT_EXCEADY: You can only submit 10 reports per 24 hours.");
+                throw new HttpsError("resource-exhausted", "REPORT_LIMIT_EXCEEDED: You can only submit 10 reports per 24 hours.");
             }
 
             // 4. Deduplication: One report per user per post
@@ -76,7 +95,6 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
             
             // Note: +1 for the one we are currently adding
             if (postReportsSnap.size + 1 >= 5) {
-                const postRef = db.collection('posts').doc(postId);
                 transaction.update(postRef, {
                     visibility: 'restricted',
                     'moderation.autoHidden': true,
@@ -102,6 +120,107 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
     } catch (error: any) {
         if (error instanceof HttpsError) throw error;
         logger.error(`[MODERATION][REPORT_ERROR] ${error.message}`);
+        throw new HttpsError("internal", "Failed to process report.");
+    }
+});
+
+/**
+ * reportSocialComment
+ * Authority: POST_REPORTING_POLICY_V1 (comments)
+ * Enforces: rate limit, dedupe and server-derived target ownership.
+ */
+export const reportSocialComment = onCall({ cors: true }, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Authentication required to report content.");
+    }
+
+    const { postId, commentId, reason, note } = request.data as {
+        postId?: string;
+        commentId?: string;
+        reason?: string;
+        note?: string;
+    };
+    const uid = request.auth.uid;
+
+    if (!postId || !commentId || !reason) {
+        throw new HttpsError("invalid-argument", "Missing required fields.");
+    }
+
+    const CANONICAL_REASONS = ["spam", "harassment", "hate_speech", "copyright", "misinformation", "other"];
+    if (!CANONICAL_REASONS.includes(reason.toLowerCase())) {
+        throw new HttpsError("invalid-argument", "INVALID_REPORT_TYPE: Reason must be one of " + CANONICAL_REASONS.join(", "));
+    }
+
+    const now = admin.firestore.Timestamp.now();
+    const dayAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);
+
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
+            const commentSnap = await transaction.get(commentRef);
+            if (!commentSnap.exists) {
+                throw new HttpsError("not-found", "Comment not found.");
+            }
+
+            const comment = commentSnap.data() || {};
+            const authorId =
+                typeof comment.authorId === "string" && comment.authorId.trim()
+                    ? comment.authorId.trim()
+                    : null;
+
+            if (!authorId) {
+                throw new HttpsError("failed-precondition", "Comment author is missing.");
+            }
+
+            if (uid === authorId) {
+                throw new HttpsError("failed-precondition", "COMMENT_REPORT_FORBIDDEN: You cannot report your own content.");
+            }
+
+            const userReportsSnap = await transaction.get(
+                db.collection('reports')
+                    .where('reportedByUid', '==', uid)
+                    .where('createdAt', '>', dayAgo)
+            );
+            if (userReportsSnap.size >= 10) {
+                throw new HttpsError("resource-exhausted", "REPORT_LIMIT_EXCEEDED: You can only submit 10 reports per 24 hours.");
+            }
+
+            const reportId = `${uid}_${postId}_${commentId}`;
+            const reportRef = db.collection('reports').doc(reportId);
+            const existingSnap = await transaction.get(reportRef);
+            if (existingSnap.exists) {
+                return { success: true, alreadyReported: true };
+            }
+
+            transaction.set(reportRef, {
+                entityType: 'comment',
+                entityId: commentId,
+                postId,
+                reportedByUid: uid,
+                authorId,
+                reason: reason.toLowerCase(),
+                details: typeof note === "string" ? note.trim() : "",
+                status: 'open',
+                createdAt: now,
+                updatedAt: now,
+                version: "1.0"
+            });
+
+            const activityRef = db.collection('activity_log').doc();
+            transaction.set(activityRef, {
+                verb: 'comment_reported',
+                actor: { uid, type: 'user' },
+                object: { entity_type: 'comment', entity_id: commentId },
+                context: { target_owner_uid: authorId, reason: reason.toLowerCase(), postId },
+                createdAt: now,
+                version: "1.0"
+            });
+
+            return { success: true };
+        });
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
+        logger.error(`[MODERATION][COMMENT_REPORT_ERROR] ${error.message}`);
         throw new HttpsError("internal", "Failed to process report.");
     }
 });

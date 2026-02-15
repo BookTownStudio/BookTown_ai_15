@@ -128,6 +128,81 @@ const quoteSchema = z
   })
   .strict();
 
+const publicProfileSchema = z
+  .object({
+    uid: z.string().min(1),
+    name: z.string().min(1).max(80),
+    handle: z.string().min(2).max(40),
+    avatarUrl: z.string().max(2048),
+    bannerUrl: z.string().max(2048),
+    bioEn: z.string().max(500),
+    bioAr: z.string().max(500),
+    joinDate: z.string().min(1),
+    updatedAt: z.string().min(1),
+    followers: z.number().int().nonnegative(),
+    following: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const profileUpdatePayloadSchema = z
+  .object({
+    name: z.string().min(1).max(80).optional(),
+    bioEn: z.string().max(500).optional(),
+    bioAr: z.string().max(500).optional(),
+    avatarUrl: z.string().max(2048).optional(),
+    bannerUrl: z.string().max(2048).optional(),
+    aiConsent: z.boolean().optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one profile field must be provided.",
+  });
+
+const writeProjectStatusSchema = z.enum([
+  "Idea",
+  "Draft",
+  "Revision",
+  "Final",
+]);
+
+const writeProjectUpdatesSchema = z
+  .object({
+    titleEn: z.string().min(1).max(180).optional(),
+    titleAr: z.string().min(1).max(180).optional(),
+    content: z.string().max(2_000_000).optional(),
+    wordCount: z.number().int().nonnegative().optional(),
+    status: writeProjectStatusSchema.optional(),
+    typeEn: z.string().min(1).max(80).optional(),
+    typeAr: z.string().min(1).max(80).optional(),
+    coverUrl: z.string().url().max(2048).optional(),
+  })
+  .strict()
+  .refine((value) => Object.keys(value).length > 0, {
+    message: "At least one writable field must be provided.",
+  });
+
+const directConversationSchema = z
+  .object({
+    id: z.string().min(1),
+    contactId: z.string().min(1),
+    contactName: z.string().min(1).max(120),
+    contactAvatar: z.string().max(2048),
+    lastMessage: z.string().max(2000),
+    timestamp: z.string().min(1),
+    unreadCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const directMessageSchema = z
+  .object({
+    id: z.string().min(1),
+    senderId: z.string().min(1),
+    text: z.string().min(1).max(2000),
+    timestamp: z.string().min(1),
+    readByPeer: z.boolean().optional(),
+  })
+  .strict();
+
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,
   dataSchema: Data,
@@ -160,6 +235,184 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: [],
+      }
+    ),
+
+    createDirectConversation: defineContract(
+      z
+        .object({
+          peerUid: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          conversationId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "app/drawer/profile.tsx"],
+      }
+    ),
+
+    listDirectConversations: defineContract(
+      z
+        .object({
+          limit: z.number().int().positive().max(50).optional(),
+        })
+        .strict()
+        .optional(),
+      z
+        .object({
+          conversations: z.array(directConversationSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    listDirectMessages: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+          limit: z.number().int().positive().max(200).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          messages: z.array(directMessageSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    sendDirectMessage: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+          text: z.string().min(1).max(2000),
+          idempotencyKey: z
+            .string()
+            .regex(/^[A-Za-z0-9_-]{8,96}$/),
+        })
+        .strict(),
+      z
+        .object({
+          conversationId: z.string().min(1),
+          messageId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    markDirectConversationRead: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          conversationId: z.string().min(1),
+          unreadCount: z.number().int().nonnegative(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "app/messenger/[id].tsx"],
+      }
+    ),
+
+    getPublicProfile: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+        })
+        .strict(),
+      publicProfileSchema,
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    updateOwnProfile: defineContract(
+      z
+        .object({
+          updates: profileUpdatePayloadSchema,
+        })
+        .strict(),
+      z
+        .object({
+          updated: z.boolean(),
+          changedFields: z.array(z.string().min(1)),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    followUser: defineContract(
+      z
+        .object({
+          targetUid: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          targetUid: z.string().min(1),
+          following: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    unfollowUser: defineContract(
+      z
+        .object({
+          targetUid: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          targetUid: z.string().min(1),
+          following: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    getSuggestedProfiles: defineContract(
+      z
+        .object({
+          limit: z.number().int().min(1).max(30).optional(),
+        })
+        .strict()
+        .optional(),
+      z.array(publicProfileSchema),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useSuggestedProfiles.ts",
+        ],
       }
     ),
 
@@ -390,6 +643,7 @@ export const apiContracts = {
         .object({
           signedUrl: z.string().url(),
           resumePage: z.number().int().nonnegative(),
+          format: z.enum(["pdf", "epub", "unknown"]),
         })
         .strict(),
       "httpsCallable",
@@ -454,11 +708,29 @@ export const apiContracts = {
     ),
 
     createSocialPost: defineContract(
-      z.unknown(),
-      z.unknown(),
+      z
+        .object({
+          content: z
+            .object({
+              text: z.string().max(5000).optional(),
+              attachments: z.array(socialAttachmentSchema).optional(),
+            })
+            .strict(),
+          attachments: z.array(socialAttachmentSchema).optional(),
+          visibility: postVisibilitySchema.optional(),
+          publishToken: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+          postId: z.string().min(1),
+          isDuplicate: z.boolean(),
+        })
+        .strict(),
       "httpsCallable",
       {
-        callSites: [],
+        callSites: ["lib/hooks/useCreatePost.ts"],
       }
     ),
 
@@ -502,6 +774,7 @@ export const apiContracts = {
     likeSocialComment: defineContract(
       z
         .object({
+          postId: z.string().min(1),
           commentId: z.string().min(1),
         })
         .strict(),
@@ -520,6 +793,7 @@ export const apiContracts = {
     deleteSocialComment: defineContract(
       z
         .object({
+          postId: z.string().min(1),
           commentId: z.string().min(1),
         })
         .strict(),
@@ -537,6 +811,7 @@ export const apiContracts = {
     editSocialComment: defineContract(
       z
         .object({
+          postId: z.string().min(1),
           commentId: z.string().min(1),
           text: z.string().min(1),
         })
@@ -643,6 +918,27 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useReportPost.ts"],
+      }
+    ),
+
+    reportSocialComment: defineContract(
+      z
+        .object({
+          postId: z.string().min(1),
+          commentId: z.string().min(1),
+          reason: z.string().min(1),
+          note: z.string().optional(),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+          alreadyReported: z.boolean().optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useCommentActions.ts"],
       }
     ),
 
@@ -764,20 +1060,85 @@ export const apiContracts = {
     ),
 
     createWriteProject: defineContract(
-      z.unknown(),
-      z.unknown(),
+      z
+        .object({
+          project: z
+            .object({
+              titleEn: z.string().min(1).max(180).optional(),
+              titleAr: z.string().min(1).max(180).optional(),
+              content: z.string().max(2_000_000).optional(),
+              wordCount: z.number().int().nonnegative().optional(),
+              status: writeProjectStatusSchema.optional(),
+              typeEn: z.string().min(1).max(80).optional(),
+              typeAr: z.string().min(1).max(80).optional(),
+            })
+            .strict(),
+        })
+        .strict(),
+      z
+        .object({
+          id: z.string().min(1),
+          canonicalId: z.string().min(1),
+          path: z.string().min(1),
+          ownerId: z.string().min(1),
+          uid: z.string().min(1),
+          title: z.string().min(1),
+          titleEn: z.string().min(1),
+          titleAr: z.string().min(1),
+          content: z.string(),
+          wordCount: z.number().int().nonnegative(),
+          status: writeProjectStatusSchema,
+          typeEn: z.string().min(1),
+          typeAr: z.string().min(1),
+          isPublished: z.boolean(),
+          revision: z.number().int().positive(),
+          source: z.string().min(1),
+          version: z.number().int().positive(),
+          createdAt: z.string().min(1),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
       "httpsCallable",
       {
-        callSites: [],
+        callSites: ["services/firebaseProjectService.ts"],
       }
     ),
 
     deleteWriteProject: defineContract(
-      z.unknown(),
-      z.unknown(),
+      z
+        .object({
+          projectId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+        })
+        .strict(),
       "httpsCallable",
       {
-        callSites: [],
+        callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
+    updateWriteProject: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+          expectedRevision: z.number().int().positive(),
+          updates: writeProjectUpdatesSchema,
+        })
+        .strict(),
+      z
+        .object({
+          projectId: z.string().min(1),
+          revision: z.number().int().positive(),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseProjectService.ts"],
       }
     ),
 

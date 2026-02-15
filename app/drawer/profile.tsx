@@ -13,6 +13,8 @@ import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { EditIcon } from '../../components/icons/EditIcon.tsx';
 import { CalendarIcon } from '../../components/icons/CalendarIcon.tsx';
 import { useUpdateProfile } from '../../lib/hooks/useUpdateProfile.ts';
+import { useStartConversation } from '../../lib/hooks/useMessenger.ts';
+import { useFollowStatus, useFollowUser, useUnfollowUser } from '../../lib/hooks/useFollowUser.ts';
 import EditProfileModal, {
   ProfileEditData,
 } from '../../components/modals/EditProfileModal.tsx';
@@ -115,6 +117,11 @@ const ProfileScreen: React.FC = () => {
   const profile = isGuestView ? MOCK_GUEST_PROFILE : fetchedProfile;
 
   const { mutate: updateProfile, isLoading: isUpdating } = useUpdateProfile();
+  const { mutate: startConversation, isLoading: isStartingConversation } =
+    useStartConversation();
+  const { data: isFollowed } = useFollowStatus(effectiveProfileUserId);
+  const { mutate: followUser, isLoading: isFollowingUser } = useFollowUser();
+  const { mutate: unfollowUser, isLoading: isUnfollowingUser } = useUnfollowUser();
 
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [bannerError, setBannerError] = useState(false);
@@ -281,6 +288,51 @@ const ProfileScreen: React.FC = () => {
               {lang === 'en' ? profile.bioEn : profile.bioAr}
             </BilingualText>
           </div>
+
+          {!isOwnProfile && authUser?.uid && effectiveProfileUserId && (
+            <div className="mt-3 flex items-center gap-2">
+              <Button
+                variant={isFollowed ? 'ghost' : 'primary'}
+                disabled={isFollowingUser || isUnfollowingUser}
+                onClick={() => {
+                  if (isFollowed) {
+                    unfollowUser(effectiveProfileUserId);
+                    return;
+                  }
+                  followUser(effectiveProfileUserId);
+                }}
+              >
+                <BilingualText>
+                  {isFollowed
+                    ? (lang === 'en' ? 'Following' : 'تتابعه')
+                    : (lang === 'en' ? 'Follow' : 'متابعة')}
+                </BilingualText>
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={isStartingConversation}
+                onClick={() => {
+                  startConversation(effectiveProfileUserId, {
+                    onSuccess: (conversationId) => {
+                      navigate({
+                        type: 'immersive',
+                        id: 'messengerChat',
+                        params: {
+                          from: currentView,
+                          conversationId,
+                          contactName: profile.name,
+                        },
+                      });
+                    },
+                  });
+                }}
+              >
+                <BilingualText>
+                  {lang === 'en' ? 'Message' : 'راسل'}
+                </BilingualText>
+              </Button>
+            </div>
+          )}
 
           {isOwnProfile && userStats?.profileCompletionScore !== undefined && (
             <div className="mt-3">

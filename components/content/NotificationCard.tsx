@@ -66,6 +66,17 @@ const NotificationCard: React.FC<{ notification: Notification | GroupedNotificat
                 case 'shelf':
                     navigate({ type: 'immersive', id: 'shelfDetails', params: { shelfId: notification.entityId, ownerId: notification.uid, from: currentView } });
                     break;
+                case 'conversation':
+                    navigate({
+                        type: 'immersive',
+                        id: 'messengerChat',
+                        params: {
+                            from: currentView,
+                            conversationId: notification.entityId,
+                            contactName: primaryActor?.name || 'Chat'
+                        }
+                    });
+                    break;
                 default: break;
             }
         };
@@ -97,6 +108,7 @@ const NotificationCard: React.FC<{ notification: Notification | GroupedNotificat
                 case 'comment': return lang === 'en' ? `${actorName} commented on your post` : `علق ${actorName} على منشورك`;
                 case 'follow': return lang === 'en' ? `${actorName} followed you` : `تابعك ${actorName}`;
                 case 'repost': return lang === 'en' ? `${actorName} reposted your post` : `أعاد ${actorName} نشر منشورك`;
+                case 'dm': return lang === 'en' ? `${actorName} sent you a message` : `أرسل لك ${actorName} رسالة`;
                 default: return notification.message;
             }
         }

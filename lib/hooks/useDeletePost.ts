@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { queryKeys } from '../queryKeys.ts';
+import { callCallableEndpoint } from '../callable.ts';
 
 interface DeletePostVariables {
     postId: string;
@@ -17,11 +17,10 @@ export const useDeletePost = () => {
 
     return useMutation({
         mutationFn: async (variables: DeletePostVariables) => {
-            // 🔒 Correct: rely on default Firebase app initialization
-            const functions = getFunctions();
-            const deletePostFn = httpsCallable(functions, 'deleteSocialPost');
-            const result = await deletePostFn(variables);
-            return result.data;
+            return callCallableEndpoint<DeletePostVariables, { success: boolean; mode?: 'soft' | 'hard' }>(
+                'deleteSocialPost',
+                variables
+            );
         },
         onSuccess: (_, variables) => {
             // Invalidate strictly

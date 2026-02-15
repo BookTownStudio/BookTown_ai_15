@@ -26,13 +26,16 @@ export const useAutosaveProject = () => {
                 throw new Error("WRITE_PERSISTENCE_VIOLATION: Ephemeral document cannot be autosaved.");
             }
             
-            const updatesWithTimestamp = {
+            const currentProject = queryClient.getQueryData<Project>(
+                queryKeys.user.project(uid, projectId) as unknown as any[]
+            );
+
+            const updatesWithRevision: Partial<Project> = {
                 ...updates,
-                updatedAt: new Date().toISOString()
+                ...(typeof currentProject?.revision === 'number' ? { revision: currentProject.revision } : {})
             };
 
-            // This service method uses `updateDoc` which throws if doc doesn't exist
-            await dataService.projects.updateProject(uid, projectId, updatesWithTimestamp);
+            await dataService.projects.updateProject(uid, projectId, updatesWithRevision);
             return { success: true };
         },
         onSuccess: (_, { projectId, updates }) => {
@@ -40,7 +43,11 @@ export const useAutosaveProject = () => {
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.setQueryData<Project>(queryKeys.user.project(uid, projectId) as unknown as any[], (old) => {
                     if (!old) return old;
-                    return { ...old, ...updates, updatedAt: new Date().toISOString() };
+                    const nextRevision =
+                        typeof old.revision === 'number' && Number.isInteger(old.revision)
+                            ? old.revision + 1
+                            : 2;
+                    return { ...old, ...updates, revision: nextRevision, updatedAt: new Date().toISOString() };
                 });
             }
         },
@@ -48,6 +55,8 @@ export const useAutosaveProject = () => {
             if (uid) {
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+                // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
+                queryClient.invalidateQueries(queryKeys.user.project(uid, projectId) as unknown as any[]);
             }
             if (error) {
                 console.error(`[WRITE][BLOCKED_AUTOSAVE] Persistence failure for ${projectId}:`, error);

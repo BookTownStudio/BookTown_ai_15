@@ -7,15 +7,44 @@ import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
 import ReaderSettings from '../components/reader/ReaderSettings.tsx';
+import PdfViewer from '../components/reader/PdfViewer.tsx';
+import EpubViewer from '../components/reader/EpubViewer.tsx';
 import { useToast } from '../store/toast.tsx';
+import { useReadingPreferences } from '../store/reading-prefs.tsx';
 
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
+
+type ReaderFormat = 'pdf' | 'epub' | 'unknown';
+
+function inferFormatFromUrl(signedUrl: string): ReaderFormat {
+  try {
+    const parsed = new URL(signedUrl);
+    const path = decodeURIComponent(parsed.pathname).toLowerCase();
+
+    if (path.endsWith('.pdf')) return 'pdf';
+    if (path.endsWith('.epub')) return 'epub';
+
+    const objectPath = decodeURIComponent(
+      (parsed.pathname.split('/o/')[1] || '').split('?')[0] || ''
+    ).toLowerCase();
+    if (objectPath.endsWith('.pdf')) return 'pdf';
+    if (objectPath.endsWith('.epub')) return 'epub';
+  } catch {
+    // ignore parse errors and use fallback below
+  }
+
+  const lower = signedUrl.toLowerCase();
+  if (lower.includes('.pdf')) return 'pdf';
+  if (lower.includes('.epub')) return 'epub';
+  return 'unknown';
+}
 
 const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
   const { showToast } = useToast();
+  const { theme, readingMode } = useReadingPreferences();
 
   const bookId =
     currentView.type === 'immersive' && currentView.params?.bookId
@@ -33,9 +62,13 @@ const ReaderScreen: React.FC = () => {
   const [readerSession, setReaderSession] = useState<{
     signedUrl: string;
     resumePage: number;
+    format: ReaderFormat;
   } | null>(null);
 
   const [loadingSession, setLoadingSession] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [renderError, setRenderError] = useState<string | null>(null);
 
   const handleBack = useCallback(() => {
     if (currentView.params?.from) navigate(currentView.params.from);
@@ -93,9 +126,19 @@ const ReaderScreen: React.FC = () => {
             ? Math.trunc(data.resumePage)
             : 1;
 
+        const format =
+          data.format === 'pdf' || data.format === 'epub' || data.format === 'unknown'
+            ? (data.format as ReaderFormat)
+            : inferFormatFromUrl(data.signedUrl);
+
+        setCurrentPage(resumePage);
+        setTotalPages(1);
+        setRenderError(null);
+
         setReaderSession({
           signedUrl: data.signedUrl,
           resumePage,
+          format,
         });
       } catch (err) {
         console.error('[READER][SESSION_INIT_FAILED]', err);
@@ -150,30 +193,103 @@ const ReaderScreen: React.FC = () => {
     );
   }
 
+  const inferredFormat = inferFormatFromUrl(readerSession.signedUrl);
+  const sessionFormat =
+    readerSession.format === 'unknown' ? inferredFormat : readerSession.format;
+  const progressPercent =
+    totalPages > 0 ? Math.min(100, Math.max(0, (currentPage / totalPages) * 100)) : 0;
+
   return (
-    <div className="reader-container h-screen w-full flex flex-col bg-black overflow-hidden">
+    <div
+      className="reader-container h-screen w-full flex flex-col overflow-hidden"
+      style={{
+        backgroundColor:
+          theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000',
+      }}
+    >
       <ReaderChrome
         isVisible={isChromeVisible}
         book={book}
         onBack={handleBack}
-        progress={0}          // progress now derives from session pipeline (future phase)
-        currentPage={readerSession.resumePage}
-        totalPages={1}        // placeholder until surfaced by reader engine
+        progress={progressPercent}
+        currentPage={currentPage}
+        totalPages={totalPages}
         onSettingsClick={() => setIsSettingsVisible(true)}
         onListeningClick={() => {}}
       />
 
-      {/* 🔒 PDF RENDER (CANONICAL, MEDIATED) */}
       <div
-        className="flex-grow relative"
+        className="flex-grow min-h-0 relative"
         onClick={() => setIsChromeVisible((v) => !v)}
       >
-        <iframe
-          src={`${readerSession.signedUrl}#page=${readerSession.resumePage}`}
-          title={lang === 'en' ? book.titleEn : book.titleAr}
-          className="w-full h-full border-0"
-          sandbox="allow-scripts allow-same-origin"
-        />
+        {renderError ? (
+          <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
+            <p className="text-sm text-white/70 max-w-md">{renderError}</p>
+            <a
+              href={readerSession.signedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {lang === 'en' ? 'Open File' : 'فتح الملف'}
+            </a>
+          </div>
+        ) : sessionFormat === 'epub' ? (
+          <EpubViewer
+            url={readerSession.signedUrl}
+            initialPage={readerSession.resumePage}
+            theme={theme}
+            readingMode={readingMode}
+            onPageChange={(nextPage, pagesCount) => {
+              setCurrentPage(nextPage);
+              setTotalPages(Math.max(1, pagesCount));
+            }}
+            onLoadError={(message) => {
+              console.error('[READER][EPUB_RENDER_FAILED]', message);
+              setRenderError(
+                lang === 'en'
+                  ? 'Unable to render this EPUB in-app. You can open the file directly.'
+                  : 'تعذّر عرض ملف EPUB داخل التطبيق. يمكنك فتح الملف مباشرة.'
+              );
+            }}
+          />
+        ) : sessionFormat === 'pdf' ? (
+          <PdfViewer
+            url={readerSession.signedUrl}
+            initialPage={readerSession.resumePage}
+            theme={theme}
+            onPageChange={(nextPage, pagesCount) => {
+              setCurrentPage(nextPage);
+              setTotalPages(Math.max(1, pagesCount));
+            }}
+            onLoadError={(message) => {
+              console.error('[READER][PDF_RENDER_FAILED]', message);
+              setRenderError(
+                lang === 'en'
+                  ? 'Unable to render this PDF in-app. You can open the file directly.'
+                  : 'تعذّر عرض ملف PDF داخل التطبيق. يمكنك فتح الملف مباشرة.'
+              );
+            }}
+          />
+        ) : (
+          <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
+            <p className="text-sm text-white/70 max-w-md">
+              {lang === 'en'
+                ? 'This ebook format is not recognized by the in-app reader yet.'
+                : 'صيغة هذا الكتاب الإلكتروني غير معروفة للقارئ داخل التطبيق حالياً.'}
+            </p>
+            <a
+              href={readerSession.signedUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {lang === 'en' ? 'Open File' : 'فتح الملف'}
+            </a>
+          </div>
+        )}
       </div>
 
       {isSettingsVisible && (

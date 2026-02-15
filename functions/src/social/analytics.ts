@@ -46,6 +46,6 @@ export const incrementPostView = onCall({ cors: true }, async (request) => {
         return { success: true };
     } catch (error: any) {
         logger.error(`[ANALYTICS][VIEW_FAIL] ${error.message}`);
-        return { success: false }; // Silent failure to avoid breaking UI
+        throw new HttpsError("internal", "Failed to track view.");
     }
 });

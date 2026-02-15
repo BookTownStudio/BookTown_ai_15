@@ -24,7 +24,13 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
   }
 
   const text = typeof content === 'string' ? content.trim() : (content?.text?.trim() || null);
-  const attachments = Array.isArray(clientAttachments) ? clientAttachments : [];
+  const contentAttachments = Array.isArray(content?.attachments) ? content.attachments : [];
+  const attachments = Array.isArray(clientAttachments)
+    ? clientAttachments
+    : contentAttachments;
+  const visibility = ["public", "followers", "private", "restricted"].includes(clientVisibility)
+    ? clientVisibility
+    : "public";
 
   if (!text && attachments.length === 0) {
     throw new HttpsError("invalid-argument", "Text or attachments required.");
@@ -42,7 +48,7 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
     
     content: {
         text: text,
-        attachments: attachments.map((a, index) => ({
+        attachments: attachments.map((a: Record<string, any>, index: number) => ({
             attachmentId: a.attachmentId || a.id || 'missing_id',
             type: a.type || 'IMAGE',
             role: index === 0 ? 'primary' : 'secondary',
@@ -50,8 +56,9 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         }))
     },
 
-    visibility: clientVisibility || 'public',
+    visibility,
     status: "published",
+    isDeleted: false,
 
     counters: { 
         likes: 0, 

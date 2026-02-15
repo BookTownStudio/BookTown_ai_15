@@ -45,6 +45,22 @@ function resolveResumePage(lastPosition: unknown): number {
   return 1;
 }
 
+function inferFormatFromPath(storagePath: string): "pdf" | "epub" | "unknown" {
+  const lower = storagePath.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.endsWith(".epub")) return "epub";
+  return "unknown";
+}
+
+function inferFormatFromContentType(
+  contentType: string | undefined
+): "pdf" | "epub" | "unknown" {
+  const value = (contentType || "").toLowerCase();
+  if (value.includes("application/pdf")) return "pdf";
+  if (value.includes("application/epub+zip")) return "epub";
+  return "unknown";
+}
+
 /**
  * Canonical Reader Session (V2)
  * Returns a mediated signed URL + deterministic resume page.
@@ -127,11 +143,29 @@ export const getOrCreateReadingSession = onCall({ cors: true }, async (request) 
   }
 
   let signedUrl: string;
+  let format = inferFormatFromPath(storagePath);
+  if (format === "unknown") {
+    try {
+      const [meta] = await file.getMetadata();
+      format = inferFormatFromContentType(meta.contentType);
+    } catch (error) {
+      logger.warn("[READER][FORMAT_INFER_METADATA_FAILED]", {
+        uid,
+        bookId,
+        storagePath,
+        error: String(error),
+      });
+    }
+  }
   try {
     const [issuedUrl] = await file.getSignedUrl({
       version: "v4",
       action: "read",
       expires: Date.now() + READER_URL_TTL_MS,
+      responseDisposition: "inline",
+      ...(format === "pdf"
+        ? { responseType: "application/pdf" }
+        : {}),
     });
     signedUrl = issuedUrl;
   } catch (error) {
@@ -172,11 +206,13 @@ export const getOrCreateReadingSession = onCall({ cors: true }, async (request) 
     bookId,
     sessionId,
     resumePage,
+    format,
     pathPrefix: storagePath.split("/").slice(0, 2).join("/"),
   });
 
   return {
     signedUrl,
     resumePage,
+    format,
   };
 });

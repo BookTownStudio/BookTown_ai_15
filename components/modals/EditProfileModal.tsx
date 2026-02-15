@@ -117,7 +117,7 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
                 <div>
                     <label htmlFor="bioEn">
                         <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-1 block">
-                            {lang === 'en' ? 'Bio' : 'النبذة التعريفية'}
+                            {lang === 'en' ? 'Bio (English)' : 'النبذة (إنجليزي)'}
                         </BilingualText>
                     </label>
                     <textarea
@@ -126,6 +126,23 @@ const EditProfileModal: React.FC<EditProfileModalProps> = ({
                         value={profileData.bioEn}
                         onChange={handleChange}
                         rows={4}
+                        className="w-full bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 rounded-md px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-200 resize-none"
+                    />
+                </div>
+
+                <div>
+                    <label htmlFor="bioAr">
+                        <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-1 block">
+                            {lang === 'en' ? 'Bio (Arabic)' : 'النبذة (عربي)'}
+                        </BilingualText>
+                    </label>
+                    <textarea
+                        id="bioAr"
+                        name="bioAr"
+                        value={profileData.bioAr}
+                        onChange={handleChange}
+                        rows={4}
+                        dir="rtl"
                         className="w-full bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 rounded-md px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-200 resize-none"
                     />
                 </div>

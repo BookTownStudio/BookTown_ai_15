@@ -16,7 +16,11 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
         throw new Error("unauthenticated");
     }
     
-    const { postId, text } = request.data;
+    const { postId, text, parentId } = request.data as {
+        postId?: string;
+        text?: string;
+        parentId?: string;
+    };
     const uid = auth.uid;
     const email = auth.token ? (auth.token.email || "") : "";
 
@@ -45,6 +49,8 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
                 authorAvatar: auth.token?.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
                 text: text.trim(),
                 timestamp: now,
+                parentId: typeof parentId === "string" && parentId.trim() ? parentId.trim() : null,
+                likesCount: 0,
                 status: 'published',
                 version: 1
             });
@@ -82,7 +88,11 @@ export const editSocialComment = onCall({ cors: true }, async (request) => {
         throw new Error("unauthenticated");
     }
     
-    const { postId, commentId, text } = request.data;
+    const { postId, commentId, text } = request.data as {
+        postId?: string;
+        commentId?: string;
+        text?: string;
+    };
     const uid = auth.uid;
 
     if (!postId || !commentId || !text) {
@@ -134,7 +144,13 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
         throw new Error("unauthenticated");
     }
 
-    const { postId, commentId } = request.data;
+    const { postId, commentId } = request.data as {
+        postId?: string;
+        commentId?: string;
+    };
+    if (!postId || !commentId) {
+        throw new HttpsError("invalid-argument", "postId and commentId are required.");
+    }
     const uid = auth.uid;
     const isAdmin = auth.token ? (auth.token.admin === true) : false;
 
@@ -150,4 +166,67 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
 
     await commentRef.delete();
     return { success: true };
+});
+
+/**
+ * likeSocialComment
+ * Authority: POST_INTERACTION_V1
+ * Effects: Toggles user like signal and updates comment likes counter.
+ */
+export const likeSocialComment = onCall({ cors: true }, async (request) => {
+    if (!request.auth) {
+        throw new HttpsError("unauthenticated", "Auth required.");
+    }
+
+    const { postId, commentId } = request.data as {
+        postId?: string;
+        commentId?: string;
+    };
+    const uid = request.auth.uid;
+
+    if (!postId || !commentId) {
+        throw new HttpsError("invalid-argument", "postId and commentId are required.");
+    }
+
+    const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
+    const likeRef = db.collection('users').doc(uid).collection('comment_likes').doc(`${postId}_${commentId}`);
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    try {
+        return await db.runTransaction(async (transaction) => {
+            const [commentSnap, likeSnap] = await Promise.all([
+                transaction.get(commentRef),
+                transaction.get(likeRef),
+            ]);
+
+            if (!commentSnap.exists) {
+                throw new HttpsError("not-found", "Comment not found.");
+            }
+
+            const liked = !likeSnap.exists;
+            const delta = liked ? 1 : -1;
+
+            if (liked) {
+                transaction.set(likeRef, {
+                    postId,
+                    commentId,
+                    createdAt: now,
+                    version: 1,
+                });
+            } else {
+                transaction.delete(likeRef);
+            }
+
+            transaction.update(commentRef, {
+                likesCount: admin.firestore.FieldValue.increment(delta),
+                updatedAt: now,
+            });
+
+            return { success: true, liked };
+        });
+    } catch (error: any) {
+        if (error instanceof HttpsError) throw error;
+        logger.error(`[SOCIAL][COMMENT_LIKE_FAIL] ${error.message}`);
+        throw new HttpsError("internal", "Failed to update comment interaction.");
+    }
 });

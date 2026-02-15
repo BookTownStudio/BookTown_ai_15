@@ -190,6 +190,9 @@ const SettingsScreen: React.FC = () => {
                                                 <BilingualText role="Label" className="!text-accent !text-[10px] mb-2 px-1">
                                                     {lang === 'en' ? 'Connections' : 'الاتصالات'}
                                                 </BilingualText>
+                                                <SettingsItem label={lang === 'en' ? 'Messages' : 'الرسائل'}>
+                                                    <ToggleField checked={!!preferences?.categories.messages} onChange={(v) => toggleCategory('messages', v)} />
+                                                </SettingsItem>
                                                 <SettingsItem label={lang === 'en' ? 'Followers' : 'المتابعون'}>
                                                     <ToggleField checked={!!preferences?.categories.follows} onChange={(v) => toggleCategory('follows', v)} />
                                                 </SettingsItem>

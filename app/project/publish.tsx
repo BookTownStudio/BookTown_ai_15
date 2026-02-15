@@ -55,7 +55,7 @@ const ProjectPublishScreen: React.FC = () => {
             
             const bookContent = parseContent(project.content, title, authorName);
 
-            const coverUrl = (project as any).coverUrl;
+            const coverUrl = project.coverUrl;
             let coverBlob: Blob | undefined = undefined;
             if (coverUrl) {
                 coverBlob = await fetchCoverBlob(coverUrl);
@@ -119,8 +119,8 @@ const ProjectPublishScreen: React.FC = () => {
                     
                     <div className="flex flex-col md:flex-row gap-8 items-start mb-8">
                         <div className="w-full md:w-48 aspect-[2/3] bg-slate-800 rounded-lg shadow-2xl flex items-center justify-center text-slate-600 border border-white/10 overflow-hidden">
-                            {(project as any).coverUrl ? (
-                                <img src={(project as any).coverUrl} alt="Cover" className="w-full h-full object-cover" />
+                            {project.coverUrl ? (
+                                <img src={project.coverUrl} alt="Cover" className="w-full h-full object-cover" />
                             ) : (
                                 <BookIcon className="h-12 w-12 opacity-50" />
                             )}

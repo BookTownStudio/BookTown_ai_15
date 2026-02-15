@@ -1,0 +1,12 @@
+[
+  {
+    "origin": [
+      "https://booktown-ai.web.app",
+      "https://booktown-ai.firebaseapp.com",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "HEAD", "OPTIONS"],
+    "responseHeader": ["Content-Type", "Accept-Ranges", "Content-Range"],
+    "maxAgeSeconds": 3600
+  }
+]

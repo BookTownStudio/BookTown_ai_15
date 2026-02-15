@@ -6,8 +6,8 @@ import { queryKeys } from '../queryKeys.ts';
 import { Project } from '../../types/entities.ts';
 
 export const useUserProjects = () => {
-    const { user, isGuest } = useAuth();
-    const uid = isGuest ? 'alex_doe' : user?.uid;
+    const { user } = useAuth();
+    const uid = user?.uid;
 
     return useQuery<Project[]>({
         // FIX: Cast readonly queryKey tuple to mutable any[] through unknown to satisfy signature requirements.
@@ -15,7 +15,7 @@ export const useUserProjects = () => {
         queryFn: async () => {
             if (!uid) return [];
             // RULE: Use WriteRepository as the only path to project data
-            return await WriteRepository.loadProjects(uid, isGuest);
+            return await WriteRepository.loadProjects(uid, false);
         },
         enabled: !!uid,
         // Ensure we don't stale-out authoritative syncs too quickly

@@ -38,7 +38,7 @@ const ProjectEditScreen: React.FC = () => {
                 titleAr: project.titleAr,
                 typeEn: project.typeEn,
                 content: project.content,
-                coverUrl: '' // In real app, load from project.coverUrl
+                coverUrl: project.coverUrl || ''
             });
         }
     }, [project]);
@@ -69,7 +69,7 @@ const ProjectEditScreen: React.FC = () => {
                 titleEn: formData.titleEn,
                 titleAr: formData.titleAr,
                 typeEn: formData.typeEn,
-                // In a real app, we'd save coverUrl too
+                coverUrl: formData.coverUrl,
             }
         }, {
             onSuccess: () => handleBack()

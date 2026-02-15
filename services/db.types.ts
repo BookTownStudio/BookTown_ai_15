@@ -401,9 +401,16 @@ export interface VenueDataService {
    MESSAGING
    ========================= */
 export interface MessagingDataService {
+  createConversation(uid: string, peerUid: string): Promise<string>;
   getConversations(uid: string): Promise<Conversation[]>;
   getChatHistory(conversationId: string): Promise<DirectMessage[]>;
-  sendMessage(uid: string, conversationId: string, text: string): Promise<void>;
+  sendMessage(
+    uid: string,
+    conversationId: string,
+    text: string,
+    idempotencyKey: string
+  ): Promise<{ conversationId: string; messageId: string }>;
+  markConversationRead(uid: string, conversationId: string): Promise<void>;
 }
 
 /* =========================

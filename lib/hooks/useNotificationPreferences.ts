@@ -20,7 +20,8 @@ const CANONICAL_DEFAULTS = {
         follows: true,
         mentions: true,
         quotes: true,
-        system: true
+        system: true,
+        messages: true
     }
 };
 

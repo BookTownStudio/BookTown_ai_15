@@ -27,6 +27,7 @@ import { LockIcon } from '../icons/LockIcon.tsx';
 import { EyeOffIcon } from '../icons/EyeOffIcon.tsx';
 import { UsersIcon } from '../icons/UsersIcon.tsx';
 import { FlagIcon } from '../icons/FlagIcon.tsx';
+import { callCallableEndpoint } from '../../lib/callable.ts';
 
 interface PostCardProps {
     post: Post;
@@ -83,9 +84,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             (entries) => {
                 if (entries[0].isIntersecting) {
                     viewTrackedRef.current = true;
-                    const functions = getFunctions();
-                    const trackView = httpsCallable(functions, 'incrementPostView');
-                    trackView({ postId: post.id }).catch(() => {});
+                    callCallableEndpoint<{ postId: string }, { success: boolean }>(
+                        'incrementPostView',
+                        { postId: post.id }
+                    ).catch(() => {});
                     observer.disconnect();
                 }
             },
@@ -318,7 +320,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             </div>
             {isEditModalOpen && post && <EditPostModal post={post} isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} />}
             {isDeleteModalOpen && post && <ConfirmDeleteModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={() => deletePost({ postId: post.id })} isDeleting={isDeleting} itemName={post.content.text || 'this post'} itemType="post" />}
-            {isReportModalOpen && post && <ReportPostModal postId={post.id} authorId={post.authorId} isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} />}
+            {isReportModalOpen && post && <ReportPostModal postId={post.id} isOpen={isReportModalOpen} onClose={() => setIsReportModalOpen(false)} />}
         </GlassCard>
     );
 };

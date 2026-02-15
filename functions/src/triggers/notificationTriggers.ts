@@ -6,7 +6,7 @@ const db = admin.firestore();
 
 // CANONICAL V1 DEFAULTS
 const CANONICAL_PREFS = {
-    channels: { in_app: true, email: false, format: false },
+    channels: { in_app: true, email: false, push: false },
     categories: {
         likes: true,
         comments: true,
@@ -14,7 +14,8 @@ const CANONICAL_PREFS = {
         follows: true,
         mentions: true,
         quotes: true,
-        system: true
+        system: true,
+        messages: true
     }
 };
 
@@ -93,7 +94,11 @@ export const projectActivityToNotification = onDocumentCreated("activity_log/{ac
                     count: admin.firestore.FieldValue.increment(1),
                     lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                     read: false,
-                    readAt: null
+                    readAt: null,
+                    actorId: activity.actor.uid,
+                    entityType,
+                    entityId: activity.object.entity_id,
+                    postId: entityType === 'post' ? activity.object.entity_id : null,
                 });
                 if (data?.read === true) incrementNeeded = true;
             } else {
@@ -105,7 +110,14 @@ export const projectActivityToNotification = onDocumentCreated("activity_log/{ac
                     priority,
                     actor: { uid: activity.actor.uid, name: actorName },
                     target: { entity_type: entityType, entity_id: activity.object.entity_id },
-                    message: `${actorName} interact with your ${entityType}`, // Fallback; UI renders specific text
+                    actorId: activity.actor.uid,
+                    actorType: 'user',
+                    entityType,
+                    entityId: activity.object.entity_id,
+                    postId: entityType === 'post' ? activity.object.entity_id : null,
+                    sourceActivityId: event.params.activityId,
+                    dedupeId,
+                    message: `${actorName} interacted with your ${entityType}`,
                     createdAt: admin.firestore.FieldValue.serverTimestamp(),
                     readAt: null,
                     read: false,
@@ -121,6 +133,13 @@ export const projectActivityToNotification = onDocumentCreated("activity_log/{ac
                 priority,
                 actor: { uid: activity.actor.uid, name: actorName },
                 target: { entity_type: entityType, entity_id: activity.object.entity_id },
+                actorId: activity.actor.uid,
+                actorType: 'user',
+                entityType,
+                entityId: activity.object.entity_id,
+                postId: entityType === 'post' ? activity.object.entity_id : null,
+                sourceActivityId: event.params.activityId,
+                dedupeId,
                 createdAt: admin.firestore.FieldValue.serverTimestamp(),
                 readAt: null,
                 read: false,

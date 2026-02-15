@@ -22,6 +22,7 @@ import type { User as FirebaseUser } from "firebase/auth";
 import { getFirebaseAuth } from './firebase.ts';
 import { UserRole } from '../types/entities.ts';
 import { queryClient } from './query-client.ts';
+import { deriveUserRole, isAdminRole } from './auth/roles.ts';
 
 interface AuthContextType {
     user: FirebaseUser | null;
@@ -59,7 +60,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
-    const role: UserRole = 'user';
+    const role: UserRole = deriveUserRole({
+        authUser: user
+            ? {
+                uid: user.uid,
+                email: user.email
+            }
+            : null
+    });
     const lastIdentityRef = useRef<string | null>(null);
 
     const firebaseAuth = getFirebaseAuth();
@@ -103,7 +111,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [firebaseAuth, guestId, isGuest]);
 
-    const isAdmin = false;
+    const isAdmin = isAdminRole(role);
 
     // -----------------------
     // Guest Mode

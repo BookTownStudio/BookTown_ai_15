@@ -9,8 +9,7 @@ export const usePosts = () => {
     return useQuery<Post[]>({
         queryKey: ['posts'],
         queryFn: async () => {
-            // FIX: Pass the required 'filters' argument (empty array) and use 'EXPLORE' as scope to satisfy the getFeed contract.
-            const result = await dataService.social.getFeed(uid || 'guest', 'EXPLORE', []);
+            const result = await dataService.social.getFeed(uid || 'guest', 'explore', []);
             return result.posts;
         },
     });

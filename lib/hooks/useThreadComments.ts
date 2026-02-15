@@ -2,8 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { ThreadComment } from '../../types/entities.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useQuery, useMutation, useQueryClient } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../auth.tsx';
+import { callCallableEndpoint } from '../callable.ts';
 
 interface UseThreadCommentsResult {
     comments: ThreadComment[];
@@ -73,10 +73,10 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
 
     const { mutate: submitComment, isLoading: isSubmitting } = useMutation({
         mutationFn: async ({ text, parentId }: { text: string; parentId?: string }) => {
-            const functions = getFunctions();
-            const addCommentFn = httpsCallable(functions, 'addSocialComment');
-            const result = await addCommentFn({ postId, text, parentId });
-            return result.data;
+            return callCallableEndpoint<
+                { postId: string; text: string; parentId?: string },
+                { success: boolean; commentId?: string }
+            >('addSocialComment', { postId, text, parentId });
         },
         onSuccess: () => {
             queryClient.invalidateQueries(queryKey);
@@ -93,9 +93,10 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         ));
         
         try {
-            const functions = getFunctions();
-            const likeFn = httpsCallable(functions, 'likeSocialComment');
-            await likeFn({ commentId });
+            await callCallableEndpoint<
+                { postId: string; commentId: string },
+                { success: boolean; liked?: boolean }
+            >('likeSocialComment', { postId, commentId });
         } catch (e) {
             // Rollback on failure
             queryClient.invalidateQueries(queryKey);
@@ -106,9 +107,10 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         // Optimistic hide
         setComments(prev => prev.filter(c => c.id !== commentId));
         try {
-            const functions = getFunctions();
-            const deleteFn = httpsCallable(functions, 'deleteSocialComment');
-            await deleteFn({ commentId });
+            await callCallableEndpoint<
+                { postId: string; commentId: string },
+                { success: boolean }
+            >('deleteSocialComment', { postId, commentId });
         } catch (e) {
             queryClient.invalidateQueries(queryKey);
         }
@@ -116,9 +118,10 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
 
     const editComment = useCallback(async (commentId: string, text: string) => {
         try {
-            const functions = getFunctions();
-            const editFn = httpsCallable(functions, 'editSocialComment');
-            await editFn({ commentId, text });
+            await callCallableEndpoint<
+                { postId: string; commentId: string; text: string },
+                { success: boolean }
+            >('editSocialComment', { postId, commentId, text });
             queryClient.invalidateQueries(queryKey);
         } catch (e) {
             console.error("Edit failed", e);

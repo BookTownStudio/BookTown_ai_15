@@ -1,13 +1,13 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { queryKeys } from '../queryKeys.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { usePostStats } from './usePostStats.ts';
 import { useInteractionStatus } from './useInteractionStatus.ts';
 import { useBookmarkToggle } from './useBookmarkToggle.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import { Post } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
+import { callCallableEndpoint } from '../callable.ts';
 
 /**
  * usePostInteractions
@@ -35,11 +35,10 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     const likeMutation = useMutation({
         mutationFn: async (id: string) => {
             if (isGuest || !uid) throw new Error("AUTH_REQUIRED");
-
-            const functions = getFunctions();
-            const likeFn = httpsCallable(functions, 'likeSocialPost');
-            const result = await likeFn({ postId: id });
-            return result.data;
+            return callCallableEndpoint<{ postId: string }, { success: boolean; liked?: boolean }>(
+                'likeSocialPost',
+                { postId: id }
+            );
         },
         onMutate: async (id) => {
             if (isGuest || !uid || isDeleted) return;
@@ -106,11 +105,10 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
         mutationFn: async (id: string) => {
             if (isGuest || !uid) throw new Error("AUTH_REQUIRED");
             if (isOwner) throw new Error("OWNER_REPOST_BLOCKED");
-
-            const functions = getFunctions();
-            const repostFn = httpsCallable(functions, 'repostSocialPost');
-            const result = await repostFn({ postId: id });
-            return result.data;
+            return callCallableEndpoint<{ postId: string }, { success: boolean; reposted?: boolean }>(
+                'repostSocialPost',
+                { postId: id }
+            );
         },
         onMutate: async (id) => {
             if (isGuest || !uid || isOwner || isDeleted) return;

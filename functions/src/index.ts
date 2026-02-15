@@ -21,15 +21,30 @@ import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderPro
 import { getReaderInsights as getReaderInsightsRaw } from "./reader/getReaderInsights";
 import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "./reader/getOrCreateReadingSession";
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "./reader/requestEbookOfflineAccess";
+import {
+  getPublicProfile as getPublicProfileRaw,
+  updateOwnProfile as updateOwnProfileRaw,
+  followUser as followUserRaw,
+  unfollowUser as unfollowUserRaw,
+  getSuggestedProfiles as getSuggestedProfilesRaw,
+} from "./profile";
 import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
 import {
   addSocialComment as addSocialCommentRaw,
+  likeSocialComment as likeSocialCommentRaw,
   editSocialComment as editSocialCommentRaw,
   deleteSocialComment as deleteSocialCommentRaw,
 } from "./social/comments";
 import { editSocialPost as editSocialPostRaw } from "./social/editPost";
+import {
+  deleteSocialPost as deleteSocialPostRaw,
+  restoreSocialPost as restoreSocialPostRaw,
+} from "./social/deletePost";
 import { likeSocialPost as likeSocialPostRaw, repostSocialPost as repostSocialPostRaw } from "./social/interactions";
-import { reportSocialPost as reportSocialPostRaw } from "./social/reporting";
+import {
+  reportSocialComment as reportSocialCommentRaw,
+  reportSocialPost as reportSocialPostRaw,
+} from "./social/reporting";
 import {
   applyModerationAction as applyModerationActionRaw,
   transitionModerationStage as transitionModerationStageRaw,
@@ -37,6 +52,7 @@ import {
 import { incrementPostView as incrementPostViewRaw } from "./social/analytics";
 import { createWriteProject as createWriteProjectRaw } from "./createWriteProject";
 import { deleteWriteProject as deleteWriteProjectRaw } from "./deleteWriteProject";
+import { updateWriteProject as updateWriteProjectRaw } from "./updateWriteProject";
 import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
@@ -48,6 +64,13 @@ import {
   saveQuoteFromReference as saveQuoteFromReferenceRaw,
   toggleQuoteBookmark as toggleQuoteBookmarkRaw,
 } from "./quotes";
+import {
+  createDirectConversation as createDirectConversationRaw,
+  listDirectConversations as listDirectConversationsRaw,
+  listDirectMessages as listDirectMessagesRaw,
+  sendDirectMessage as sendDirectMessageRaw,
+  markDirectConversationRead as markDirectConversationReadRaw,
+} from "./messaging/directMessages";
 import { api as apiRaw } from "./api";
 
 // ------------------------------------------------------------------
@@ -117,6 +140,27 @@ export const onUserCreatedBootstrap = functions.auth
           status: "active",
           isSuspended: false,
           initializationVersion: 4, // 🔒 bumped due to shelf model change
+        },
+        { merge: true }
+      );
+
+      const bootstrapJoinDate = new Date().toISOString();
+      batch.set(
+        db.doc(`public_profiles/${uid}`),
+        {
+          uid,
+          name: user.displayName ?? "New User",
+          handle: `@${email.split("@")[0] || "user"}`,
+          avatarUrl:
+            user.photoURL ||
+            `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
+          bannerUrl: "",
+          bioEn: "",
+          bioAr: "",
+          joinDate: bootstrapJoinDate,
+          updatedAt: bootstrapJoinDate,
+          followerCount: 0,
+          followingCount: 0,
         },
         { merge: true }
       );
@@ -270,6 +314,24 @@ export const requestEbookOfflineAccess = wrapCallableV2(
 );
 
 // ------------------------------------------------------------------
+// 👤 PROFILE / IDENTITY
+// ------------------------------------------------------------------
+export const getPublicProfile = wrapCallableV2(
+  "getPublicProfile",
+  getPublicProfileRaw
+);
+export const updateOwnProfile = wrapCallableV2(
+  "updateOwnProfile",
+  updateOwnProfileRaw
+);
+export const followUser = wrapCallableV2("followUser", followUserRaw);
+export const unfollowUser = wrapCallableV2("unfollowUser", unfollowUserRaw);
+export const getSuggestedProfiles = wrapCallableV2(
+  "getSuggestedProfiles",
+  getSuggestedProfilesRaw
+);
+
+// ------------------------------------------------------------------
 // Authoritative Service Exports
 // ------------------------------------------------------------------
 
@@ -281,6 +343,10 @@ export const createSocialPost = wrapCallableV2(
 export const addSocialComment = wrapCallableV2(
   "addSocialComment",
   addSocialCommentRaw
+);
+export const likeSocialComment = wrapCallableV2(
+  "likeSocialComment",
+  likeSocialCommentRaw
 );
 export const editSocialComment = wrapCallableV2(
   "editSocialComment",
@@ -294,6 +360,14 @@ export const editSocialPost = wrapCallableV2(
   "editSocialPost",
   editSocialPostRaw
 );
+export const deleteSocialPost = wrapCallableV2(
+  "deleteSocialPost",
+  deleteSocialPostRaw
+);
+export const restoreSocialPost = wrapCallableV2(
+  "restoreSocialPost",
+  restoreSocialPostRaw
+);
 export const likeSocialPost = wrapCallableV2(
   "likeSocialPost",
   likeSocialPostRaw
@@ -305,6 +379,10 @@ export const repostSocialPost = wrapCallableV2(
 export const reportSocialPost = wrapCallableV2(
   "reportSocialPost",
   reportSocialPostRaw
+);
+export const reportSocialComment = wrapCallableV2(
+  "reportSocialComment",
+  reportSocialCommentRaw
 );
 export const applyModerationAction = wrapCallableV2(
   "applyModerationAction",
@@ -335,6 +413,28 @@ export const toggleQuoteBookmark = wrapCallableV2(
   toggleQuoteBookmarkRaw
 );
 
+// Messaging
+export const createDirectConversation = wrapCallableV2(
+  "createDirectConversation",
+  createDirectConversationRaw
+);
+export const listDirectConversations = wrapCallableV2(
+  "listDirectConversations",
+  listDirectConversationsRaw
+);
+export const listDirectMessages = wrapCallableV2(
+  "listDirectMessages",
+  listDirectMessagesRaw
+);
+export const sendDirectMessage = wrapCallableV2(
+  "sendDirectMessage",
+  sendDirectMessageRaw
+);
+export const markDirectConversationRead = wrapCallableV2(
+  "markDirectConversationRead",
+  markDirectConversationReadRaw
+);
+
 // Write
 export const createWriteProject = wrapCallableV2(
   "createWriteProject",
@@ -343,6 +443,10 @@ export const createWriteProject = wrapCallableV2(
 export const deleteWriteProject = wrapCallableV2(
   "deleteWriteProject",
   deleteWriteProjectRaw
+);
+export const updateWriteProject = wrapCallableV2(
+  "updateWriteProject",
+  updateWriteProjectRaw
 );
 
 // Attachments

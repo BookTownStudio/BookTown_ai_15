@@ -267,6 +267,21 @@ export const onUserFollowCreated = onDocumentCreated(
       "following",
       1
     );
+
+    await db.collection("public_profiles").doc(event.params.userId).set(
+      {
+        followerCount: admin.firestore.FieldValue.increment(1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    await db.collection("public_profiles").doc(event.params.followerId).set(
+      {
+        followingCount: admin.firestore.FieldValue.increment(1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
   }
 );
 
@@ -284,6 +299,21 @@ export const onUserFollowDeleted = onDocumentDeleted(
       event.params.followerId,
       "following",
       -1
+    );
+
+    await db.collection("public_profiles").doc(event.params.userId).set(
+      {
+        followerCount: admin.firestore.FieldValue.increment(-1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
+    );
+    await db.collection("public_profiles").doc(event.params.followerId).set(
+      {
+        followingCount: admin.firestore.FieldValue.increment(-1),
+        updatedAt: new Date().toISOString(),
+      },
+      { merge: true }
     );
   }
 );

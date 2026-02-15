@@ -55,7 +55,7 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
 
             // Update Report State
             if (reportId) {
-                transaction.update(db.collection('admin_reports').doc(reportId), {
+                transaction.update(db.collection('reports').doc(reportId), {
                     status: action === 'dismiss' ? 'dismissed' : 'action_taken',
                     resolution: action,
                     resolvedBy: request.auth?.uid,
@@ -97,7 +97,7 @@ export const transitionModerationStage = onCall({ cors: true }, async (request) 
         throw new HttpsError("invalid-argument", "Invalid stage transition.");
     }
 
-    await db.collection('admin_reports').doc(reportId).update({
+    await db.collection('reports').doc(reportId).update({
         status: nextStage,
         moderatorId: request.auth.uid,
         updatedAt: admin.firestore.FieldValue.serverTimestamp()

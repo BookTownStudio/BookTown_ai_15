@@ -9,11 +9,20 @@ const db = admin.firestore();
  * Internal utility to verify if a post meets POST_INDEXING_POLICY_V1 criteria.
  */
 function isEligibleForIndexing(data: any): boolean {
+    const visibility =
+        typeof data.visibility === "string"
+            ? data.visibility
+            : data.visibility?.scope;
+    const isDeleted =
+        data.isDeleted === true
+        || data.status === "deleted"
+        || data.deletedAt != null
+        || data.timestamps?.deletedAt != null;
+
     return (
-        data.visibility?.scope === 'public' && 
-        data.visibility?.suppressed === false &&
+        visibility === 'public' &&
         data.status === 'published' &&
-        data.deletedAt == null
+        !isDeleted
     );
 }
 
@@ -41,7 +50,7 @@ export const syncPostToSearchIndex = onDocumentUpdated("posts/{postId}", async (
     const projection = {
         postId: postId,
         authorId: newData.authorId,
-        createdAt: newData.createdAt,
+        createdAt: newData.timestamps?.createdAt || newData.createdAt || null,
         status: newData.status,
         visibility: 'public', 
         contentType: newData.content?.attachments?.[0]?.type || 'TEXT',
@@ -103,7 +112,7 @@ export const initPostSearchIndex = onDocumentCreated("posts/{postId}", async (ev
     const projection = {
         postId: postId,
         authorId: data.authorId,
-        createdAt: data.createdAt,
+        createdAt: data.timestamps?.createdAt || data.createdAt || null,
         status: data.status,
         visibility: 'public',
         likesCount: 0,
@@ -165,10 +174,12 @@ export const syncNotificationToSearchIndex = onDocumentCreated("notifications/{i
     const projection = {
         uid: data.uid,
         type: data.type,
-        actorId: data.actorId,
-        entityId: data.entityId,
+        actorId: data.actorId || data.actor?.uid || null,
+        entityId: data.entityId || data.target?.entity_id || null,
+        entityType: data.entityType || data.target?.entity_type || null,
+        postId: data.postId || null,
         createdAt: data.createdAt,
-        read: data.isRead || false,
+        read: data.read === true,
         indexedAt: admin.firestore.FieldValue.serverTimestamp()
     };
 

@@ -3,6 +3,7 @@ import { useAuth } from '../auth.tsx';
 import { socialActionRepository } from '../../services/socialActionRepository.ts';
 import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
+import { callCallableEndpoint } from '../callable.ts';
 
 /**
  * useCommentActions
@@ -16,13 +17,21 @@ export const useCommentActions = (postId: string) => {
     const queryClient = useQueryClient();
 
     const reportMutation = useMutation({
-        mutationFn: async (vars: { commentId: string; authorId: string; reason: string; note?: string }) => {
+        mutationFn: async (vars: { commentId: string; reason: string; note?: string }) => {
             if (!uid) throw new Error("AUTH_REQUIRED");
-            return socialActionRepository.reportComment(postId, vars.commentId, uid, vars.authorId, vars.reason, vars.note);
+            return callCallableEndpoint<
+                { postId: string; commentId: string; reason: string; note?: string },
+                { success: boolean; alreadyReported?: boolean }
+            >('reportSocialComment', {
+                postId,
+                commentId: vars.commentId,
+                reason: vars.reason,
+                note: vars.note
+            });
         },
         onSuccess: () => {
             showToast(lang === 'en' ? "Report submitted. Content hidden for you." : "تم إرسال البلاغ. المحتوى مخفي بالنسبة لك.");
-            queryClient.invalidateQueries(['thread_comments', postId]);
+            queryClient.invalidateQueries(['comments', 'byPostId', postId]);
         }
     });
 
@@ -33,7 +42,7 @@ export const useCommentActions = (postId: string) => {
         },
         onSuccess: () => {
             showToast(lang === 'en' ? "User blocked." : "تم حظر المستخدم.");
-            queryClient.invalidateQueries(['thread_comments', postId]);
+            queryClient.invalidateQueries(['comments', 'byPostId', postId]);
         }
     });
 

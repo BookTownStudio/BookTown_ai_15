@@ -125,7 +125,7 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({ isOpen, o
 
 const WriteScreen: React.FC = () => {
     const { lang } = useI18n();
-    const { data: projects, isLoading } = useUserProjects();
+    const { data: projects, isLoading, isError, error } = useUserProjects();
     const { navigate, currentView, resetTokens } = useNavigation();
     const [isPanelOpen, setPanelOpen] = useState(false);
     const isInitialMount = useRef(true);
@@ -224,6 +224,19 @@ const WriteScreen: React.FC = () => {
     const renderContent = () => {
         if (isLoading) {
             return <div className="flex-grow flex items-center justify-center pt-16"><LoadingSpinner /></div>;
+        }
+
+        if (isError) {
+            return (
+                <div className="flex-grow flex flex-col items-center justify-center pt-16 text-center">
+                    <BilingualText role="H1" className="!text-2xl text-red-500">
+                        {lang === 'en' ? 'Projects Unavailable' : 'المشاريع غير متاحة'}
+                    </BilingualText>
+                    <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
+                        {error instanceof Error ? error.message : (lang === 'en' ? 'Failed to load projects.' : 'فشل تحميل المشاريع.')}
+                    </BilingualText>
+                </div>
+            );
         }
 
         // Rule: STATE_INITIALIZATION_SAFETY

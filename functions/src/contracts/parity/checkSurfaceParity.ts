@@ -6,7 +6,6 @@ const indexPath = path.resolve(__dirname, "..", "..", "index.ts");
 const indexSource = fs.readFileSync(indexPath, "utf8");
 
 const KNOWN_UNIMPLEMENTED_ENDPOINTS = new Set([
-  "likeSocialComment",
   "logAttachmentEvents",
 ]);
 

@@ -1,8 +1,28 @@
-import { useMutation, useQueryClient } from '../react-query.ts';
+import { useMutation, useQueryClient, useQuery } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
+import { queryKeys } from '../queryKeys.ts';
+import { db } from '../firebase.ts';
+import { doc, getDoc } from 'firebase/firestore';
+
+export const useFollowStatus = (targetUid: string | undefined) => {
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useQuery<boolean>({
+        queryKey: [...queryKeys.user.all(uid), 'followStatus', uid, targetUid],
+        queryFn: async () => {
+            if (!uid || !targetUid) return false;
+            const snap = await getDoc(doc(db.raw, 'users', uid, 'following', targetUid));
+            return snap.exists();
+        },
+        enabled: !!uid && !!targetUid,
+        staleTime: 30_000,
+    });
+};
 
 export const useFollowUser = () => {
+    const queryClient = useQueryClient();
     const { user } = useAuth();
     const uid = user?.uid;
     
@@ -12,12 +32,16 @@ export const useFollowUser = () => {
             return dataService.users.followUser(uid, userIdToFollow);
         },
         onSuccess: (data, userId) => {
-            console.log(`Successfully followed user ${userId}`);
+            queryClient.invalidateQueries([...queryKeys.user.all(uid), 'followStatus', uid, userId]);
+            queryClient.invalidateQueries(['suggestedProfiles', uid]);
+            queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
         },
     });
 };
 
 export const useUnfollowUser = () => {
+    const queryClient = useQueryClient();
     const { user } = useAuth();
     const uid = user?.uid;
 
@@ -27,7 +51,10 @@ export const useUnfollowUser = () => {
             return dataService.users.unfollowUser(uid, userIdToUnfollow);
         },
         onSuccess: (data, userId) => {
-            console.log(`Successfully unfollowed user ${userId}`);
+            queryClient.invalidateQueries([...queryKeys.user.all(uid), 'followStatus', uid, userId]);
+            queryClient.invalidateQueries(['suggestedProfiles', uid]);
+            queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
         },
     });
 };

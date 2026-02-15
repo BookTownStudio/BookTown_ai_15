@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { queryKeys } from '../queryKeys.ts';
+import { callCallableEndpoint } from '../callable.ts';
 
 /**
  * useRestorePost
@@ -11,10 +11,10 @@ export const useRestorePost = () => {
 
     return useMutation({
         mutationFn: async (postId: string) => {
-            const functions = getFunctions();
-            const restorePostFn = httpsCallable(functions, 'restoreSocialPost');
-            const result = await restorePostFn({ postId });
-            return result.data;
+            return callCallableEndpoint<{ postId: string }, { success: boolean }>(
+                'restoreSocialPost',
+                { postId }
+            );
         },
         onSuccess: (_, postId) => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.

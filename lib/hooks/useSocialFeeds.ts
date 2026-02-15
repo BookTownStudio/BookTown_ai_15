@@ -26,20 +26,7 @@ export const useSocialFeeds = (
     return useInfiniteQuery({
         // Authoritative Keying Structure: feed:{scope}:{filters}:{uid}
         queryKey: ['feed', scope, filters, uid],
-        queryFn: async ({ pageParam }) => {
-            try {
-                // Execution delegated to backend service which enforces PAGE_SIZE=20 and sorting
-                return await dataService.social.getFeed(uid, scope, filters, pageParam);
-            } catch (error: any) {
-                // FIRESTORE_QUERY_GUARD_V1: Return empty state on index or permission errors to unblock UI
-                const isConfigError = error?.code === 'failed-precondition' || error?.message?.includes("index");
-                if (isConfigError) {
-                    console.error("[SOCIAL][INDEX_MISSING] Returning empty state for stability:", error.message);
-                    return { posts: [], nextCursor: undefined };
-                }
-                throw error;
-            }
-        },
+        queryFn: ({ pageParam }) => dataService.social.getFeed(uid, scope, filters, pageParam),
         getNextPageParam: (lastPage: any) => lastPage.nextCursor,
         // Caching constraints per V1 Spec: stale_time_ms: 30000
         staleTime: 30000, 

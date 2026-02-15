@@ -10,16 +10,18 @@ import { SendIcon } from '../components/icons/SendIcon.tsx';
 import { useAgentChat } from '../lib/hooks/useAgentChat.ts';
 import { mockAgents } from '../data/mocks.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
+import { useAuth } from '../lib/auth.tsx';
 
 const AgentChatScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang, isRTL } = useI18n();
+    const { user } = useAuth();
     const [input, setInput] = useState('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const agentId = currentView.type === 'immersive' && currentView.params?.agentId ? currentView.params.agentId : undefined;
-    // For this mock, we'll use a hardcoded session ID per agent
-    const sessionId = agentId ? `session_${agentId}_123` : undefined;
+    const sessionId = agentId && user?.uid ? `${user.uid}_${agentId}_primary` : undefined;
+    const fromView = currentView.type === 'immersive' ? currentView.params?.from : undefined;
     
     const { messages, isLoading, isError, sendMessage, isSending } = useAgentChat(agentId, sessionId);
     const agent = mockAgents.find(a => a.id === agentId);
@@ -31,8 +33,7 @@ const AgentChatScreen: React.FC = () => {
     useEffect(scrollToBottom, [messages]);
 
     const handleBack = () => {
-        // A better back navigation would use the 'from' param if available
-        navigate({ type: 'tab', id: 'discover' }); 
+        navigate(fromView || { type: 'tab', id: 'discover' }); 
     };
 
     const handleSend = () => {

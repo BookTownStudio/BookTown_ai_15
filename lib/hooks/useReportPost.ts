@@ -1,5 +1,5 @@
 import { useMutation } from '../react-query.ts';
-import { getFunctions, httpsCallable } from 'firebase/functions';
+import { callCallableEndpoint } from '../callable.ts';
 
 interface ReportPostVariables {
     postId: string;
@@ -15,10 +15,10 @@ interface ReportPostVariables {
 export const useReportPost = () => {
     return useMutation({
         mutationFn: async (variables: ReportPostVariables) => {
-            const functions = getFunctions();
-            const reportPostFn = httpsCallable(functions, 'reportSocialPost');
-            const result = await reportPostFn(variables);
-            return result.data;
+            return callCallableEndpoint<ReportPostVariables, { success: boolean; alreadyReported?: boolean }>(
+                'reportSocialPost',
+                variables
+            );
         }
     });
 };
