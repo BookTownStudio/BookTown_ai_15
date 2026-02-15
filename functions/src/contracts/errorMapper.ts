@@ -60,19 +60,32 @@ export function fromValidationFailure(
 }
 
 export function fromError(error: unknown): CanonicalError {
+  const message = asMessage(error);
   const rawCode = asCode(error);
   const mappedCode = rawCode ? FIREBASE_TO_CANONICAL[rawCode] : undefined;
 
   if (mappedCode) {
     return {
       code: mappedCode,
-      message: asMessage(error) ?? DEFAULT_ERROR_MESSAGES[mappedCode],
+      message: message ?? DEFAULT_ERROR_MESSAGES[mappedCode],
+    };
+  }
+
+  const normalizedMessage = message?.toLowerCase() ?? "";
+  if (
+    normalizedMessage.includes("iam.serviceaccounts.signblob") ||
+    (normalizedMessage.includes("permission") &&
+      normalizedMessage.includes("signblob"))
+  ) {
+    return {
+      code: "INTERNAL",
+      message: "Storage URL signing is not configured for this environment.",
     };
   }
 
   return {
     code: "UNKNOWN",
-    message: asMessage(error) ?? DEFAULT_ERROR_MESSAGES.UNKNOWN,
+    message: message ?? DEFAULT_ERROR_MESSAGES.UNKNOWN,
   };
 }
 

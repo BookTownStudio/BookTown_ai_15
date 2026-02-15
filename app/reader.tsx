@@ -8,7 +8,6 @@ import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
 import ReaderSettings from '../components/reader/ReaderSettings.tsx';
 import { useToast } from '../store/toast.tsx';
-import { useEbookReaderAccess } from '../lib/hooks/useEbookReaderAccess';
 
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
@@ -62,24 +61,49 @@ const ReaderScreen: React.FC = () => {
 
         if (!isMounted) return;
 
-        const data = res.data as {
-          signedUrl: string;
-          resumePage: number;
-        };
+        const payload = res.data as any;
+        if (payload?.success === false) {
+          const errorCode =
+            typeof payload?.error?.code === 'string' ? payload.error.code : 'UNKNOWN';
+          const errorMessage =
+            typeof payload?.error?.message === 'string'
+              ? payload.error.message
+              : 'Reader session request failed.';
+          throw new Error(`[${errorCode}] ${errorMessage}`);
+        }
 
-        setReaderSession(data);
-      } catch (err) {
-        showToast({
-          title:
-            lang === 'en'
-              ? 'Unable to open book'
-              : 'تعذّر فتح الكتاب',
-          description:
-            lang === 'en'
-              ? 'Please try again later.'
-              : 'يرجى المحاولة لاحقًا.',
-          variant: 'destructive',
+        const data =
+          payload?.success === true && payload.data
+            ? payload.data
+            : payload;
+
+        if (
+          !data ||
+          typeof data.signedUrl !== 'string' ||
+          data.signedUrl.trim().length === 0
+        ) {
+          console.error('[READER][SESSION_INVALID_PAYLOAD]', payload);
+          throw new Error('Invalid reader session payload.');
+        }
+
+        const resumePage =
+          typeof data.resumePage === 'number' &&
+          Number.isFinite(data.resumePage) &&
+          data.resumePage > 0
+            ? Math.trunc(data.resumePage)
+            : 1;
+
+        setReaderSession({
+          signedUrl: data.signedUrl,
+          resumePage,
         });
+      } catch (err) {
+        console.error('[READER][SESSION_INIT_FAILED]', err);
+        showToast(
+          lang === 'en'
+            ? 'Unable to open book. Please try again later.'
+            : 'تعذّر فتح الكتاب. يرجى المحاولة لاحقًا.'
+        );
 
         navigate({ type: 'back' });
       } finally {
