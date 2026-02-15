@@ -111,6 +111,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const renditionRef = useRef<ReturnType<EpubBook['renderTo']> | null>(null);
   const bookRef = useRef<EpubBook | null>(null);
+  const lastWheelNavAtRef = useRef<number>(0);
   const [pageState, setPageState] = useState({ current: 1, total: 1 });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -223,10 +224,31 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     renditionRef.current?.next().catch(() => {});
   }, []);
 
+  const handleWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      if (readingMode !== 'page') return;
+
+      const magnitude = Math.abs(event.deltaY);
+      if (magnitude < 8) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+
+      const now = Date.now();
+      if (now - lastWheelNavAtRef.current < 220) return;
+      lastWheelNavAtRef.current = now;
+
+      if (event.deltaY > 0) goNext();
+      else goPrev();
+    },
+    [goNext, goPrev, readingMode]
+  );
+
   return (
     <div
       className="h-full w-full min-h-0 flex flex-col"
       style={{ backgroundColor: getContainerBackground(theme) }}
+      onWheel={handleWheel}
     >
       <div className="flex-1 min-h-0 overflow-auto">
         {loadError ? (
