@@ -155,6 +155,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         }
     };
 
+    const handleOpenAuthorProfile = (e: React.MouseEvent) => {
+        e.stopPropagation();
+        if (!post?.authorId) return;
+        if (isRestricted && !isOwner) return;
+
+        navigate({
+            type: 'immersive',
+            id: 'profile',
+            params: {
+                userId: post.authorId,
+                from: currentView
+            }
+        });
+    };
+
     /**
      * handleOpenTextOverlay
      * Implementation of POST_TEXT_OVERLAY_VIEW_V1 trigger with POST_TEXT_OVERLAY_GUARD_V1 safety.
@@ -199,7 +214,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
                 <div className="absolute top-32 left-0 right-0 z-20 px-6 flex items-center justify-between">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 cursor-pointer" onClick={handleOpenAuthorProfile}>
                         <img src={authorAvatar} alt={authorName} className="h-10 w-10 rounded-full border-2 border-white/30 bg-slate-800" />
                         <div>
                             <div className="flex items-center gap-2">
@@ -228,11 +243,20 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     if (viewMode === 'discussion') {
         return (
             <div className="flex items-start gap-3 py-1">
-                <img src={authorAvatar} alt={authorName} className="h-10 w-10 rounded-full flex-shrink-0 object-cover border border-black/5 dark:border-white/10" />
+                <button
+                    type="button"
+                    onClick={handleOpenAuthorProfile}
+                    className="flex-shrink-0"
+                    aria-label={lang === 'en' ? 'Open profile' : 'فتح الملف الشخصي'}
+                >
+                    <img src={authorAvatar} alt={authorName} className="h-10 w-10 rounded-full object-cover border border-black/5 dark:border-white/10" />
+                </button>
                 <div className="flex-grow min-w-0">
                     <div className="flex items-center justify-between">
                         <div className="flex items-baseline gap-2 overflow-hidden">
-                            <BilingualText className="font-bold text-sm truncate">{authorName}</BilingualText>
+                            <button type="button" onClick={handleOpenAuthorProfile} className="truncate">
+                                <BilingualText className="font-bold text-sm truncate">{authorName}</BilingualText>
+                            </button>
                             <BilingualText role="Caption" className="truncate !text-[11px] opacity-60">
                                 {post?.authorHandle} • {timeAgo(post?.timestamps?.createdAt || "")}
                             </BilingualText>
@@ -259,12 +283,21 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     return (
         <GlassCard className="!p-4 relative">
             <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                <img src={authorAvatar} alt={authorName} className="h-12 w-12 rounded-full flex-shrink-0 bg-slate-800" />
+                <button
+                    type="button"
+                    onClick={handleOpenAuthorProfile}
+                    className="flex-shrink-0"
+                    aria-label={lang === 'en' ? 'Open profile' : 'فتح الملف الشخصي'}
+                >
+                    <img src={authorAvatar} alt={authorName} className="h-12 w-12 rounded-full bg-slate-800" />
+                </button>
                 <div className="flex-grow">
                     <div className="flex justify-between items-start">
                         <div className="flex-grow text-left">
                             <div className={`flex items-baseline gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                                <BilingualText className="font-bold">{authorName}</BilingualText>
+                                <button type="button" onClick={handleOpenAuthorProfile}>
+                                    <BilingualText className="font-bold">{authorName}</BilingualText>
+                                </button>
                                 <BilingualText role="Caption">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
                                 <VisibilityBadge />
                             </div>

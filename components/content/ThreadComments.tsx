@@ -11,6 +11,7 @@ import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import Button from '../ui/Button.tsx';
 import { useCommentActions } from '../../lib/hooks/useCommentActions.ts';
 import { useAuth } from '../../lib/auth.tsx';
+import { useToast } from '../../store/toast.tsx';
 import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
 import { FlagIcon } from '../icons/FlagIcon.tsx';
 import { LikeIcon } from '../icons/LikeIcon.tsx';
@@ -142,6 +143,7 @@ const CommentItem: React.FC<{
 const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) => {
     const { lang, isRTL } = useI18n();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const [commentText, setCommentText] = useState('');
     const [replyingTo, setReplyingTo] = useState<ThreadComment | null>(null);
     const loadMoreRef = useRef<HTMLDivElement>(null);
@@ -157,8 +159,14 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
             await addComment(commentText, replyingTo?.id);
             setCommentText('');
             setReplyingTo(null);
-        } catch (error) {
+        } catch (error: any) {
             console.error("[DISCUSSION] Submission failed:", error);
+            showToast(
+                error?.message ||
+                (lang === 'en'
+                    ? 'Failed to send comment. Please retry.'
+                    : 'فشل إرسال التعليق. حاول مرة أخرى.')
+            );
         }
     };
 

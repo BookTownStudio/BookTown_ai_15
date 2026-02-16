@@ -35,17 +35,11 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     const { isLoading, isError, refetch } = useQuery<any>({
         queryKey,
         queryFn: async () => {
-            if (isFetchingRef.current) return;
-            isFetchingRef.current = true;
-            try {
-                const result = await dataService.social.getComments(postId);
-                setComments(result.comments);
-                setHasMore(result.hasMore);
-                cursorRef.current = result.nextCursor;
-                return result;
-            } finally {
-                isFetchingRef.current = false;
-            }
+            const result = await dataService.social.getComments(postId);
+            setComments(result.comments);
+            setHasMore(result.hasMore);
+            cursorRef.current = result.nextCursor;
+            return result;
         },
         staleTime: 30000,
     });
@@ -71,7 +65,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
 
     // --- Write Handlers (Interactions V1) ---
 
-    const { mutate: submitComment, isLoading: isSubmitting } = useMutation({
+    const { mutateAsync: submitComment, isLoading: isSubmitting } = useMutation({
         mutationFn: async ({ text, parentId }: { text: string; parentId?: string }) => {
             return callCallableEndpoint<
                 { postId: string; text: string; parentId?: string },
@@ -134,7 +128,9 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         hasMore,
         fetchNextPage,
         retry: refetch,
-        addComment: (text: string, parentId?: string) => submitComment({ text, parentId }),
+        addComment: async (text: string, parentId?: string) => {
+            await submitComment({ text, parentId });
+        },
         likeComment,
         deleteComment,
         editComment,
