@@ -65,7 +65,7 @@ function inferFormatFromContentType(
  * Canonical Reader Session (V2)
  * Returns a mediated signed URL + deterministic resume page.
  */
-export const getOrCreateReadingSession = onCall({ cors: true }, async (request) => {
+export const getOrCreateReadingSessionHandler = async (request: any) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Auth required");
   }
@@ -77,138 +77,158 @@ export const getOrCreateReadingSession = onCall({ cors: true }, async (request) 
     throw new HttpsError("invalid-argument", "bookId is required");
   }
 
+  logger.info("[READER][SESSION_INIT_REQUEST]", {
+    uid,
+    bookId,
+  });
+
   const sessionId = `${uid}_${bookId}`;
   const sessionRef = db.collection("reading_sessions").doc(sessionId);
   const progressRef = db.collection("reading_progress").doc(`${uid}_${bookId}`);
   const bookRef = db.collection("books").doc(bookId);
 
-  const [bookSnap, progressSnap] = await Promise.all([bookRef.get(), progressRef.get()]);
-  if (!bookSnap.exists) {
-    throw new HttpsError("not-found", "Book not found.");
-  }
-
-  const book = bookSnap.data() as Record<string, unknown>;
-
-  // Prefer canonical attachment path; fallback to legacy user-upload path.
-  let storagePath: string | null = null;
-  const attachment = await resolveBookToEbookAttachment(bookId);
-  if (attachment?.storagePath) {
-    storagePath = attachment.storagePath;
-  } else {
-    const legacyStoragePath = asNonEmptyString(book.storagePath);
-    const legacyOwnerUid = resolveLegacyOwnerUid(book);
-    const source = asNonEmptyString(book.source);
-    const likelyUserUpload =
-      source === "user_upload" ||
-      (legacyStoragePath
-        ? legacyStoragePath.startsWith(`books/${bookId}/original/`)
-        : false);
-
-    if (legacyStoragePath && !isCanonicalStoragePath(bookId, legacyStoragePath)) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Book storage path is outside canonical reader scope."
-      );
+  try {
+    const [bookSnap, progressSnap] = await Promise.all([bookRef.get(), progressRef.get()]);
+    if (!bookSnap.exists) {
+      throw new HttpsError("not-found", "Book not found.");
     }
 
-    if (
-      legacyStoragePath &&
-      (legacyOwnerUid === uid || (legacyOwnerUid === null && likelyUserUpload))
-    ) {
-      storagePath = legacyStoragePath;
+    const book = bookSnap.data() as Record<string, unknown>;
+
+    // Prefer canonical attachment path; fallback to legacy user-upload path.
+    let storagePath: string | null = null;
+    const attachment = await resolveBookToEbookAttachment(bookId);
+    if (attachment?.storagePath) {
+      storagePath = attachment.storagePath;
+    } else {
+      const legacyStoragePath = asNonEmptyString(book.storagePath);
+      const legacyOwnerUid = resolveLegacyOwnerUid(book);
+      const source = asNonEmptyString(book.source);
+      const likelyUserUpload =
+        source === "user_upload" ||
+        (legacyStoragePath
+          ? legacyStoragePath.startsWith(`books/${bookId}/original/`)
+          : false);
+
+      if (legacyStoragePath && !isCanonicalStoragePath(bookId, legacyStoragePath)) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Book storage path is outside canonical reader scope."
+        );
+      }
+
+      if (
+        legacyStoragePath &&
+        (legacyOwnerUid === uid || (legacyOwnerUid === null && likelyUserUpload))
+      ) {
+        storagePath = legacyStoragePath;
+      }
     }
-  }
 
-  if (!storagePath) {
-    logger.warn("[READER][NO_STORAGE_PATH]", {
-      uid,
-      bookId,
-      hasAttachment: Boolean(attachment?.storagePath),
-      hasLegacyPath: Boolean(asNonEmptyString(book.storagePath)),
-      legacyOwnerUid: resolveLegacyOwnerUid(book),
-      source: asNonEmptyString(book.source),
-    });
-    throw new HttpsError("not-found", "No readable ebook file found for this book.");
-  }
+    if (!storagePath) {
+      logger.warn("[READER][NO_STORAGE_PATH]", {
+        uid,
+        bookId,
+        hasAttachment: Boolean(attachment?.storagePath),
+        hasLegacyPath: Boolean(asNonEmptyString(book.storagePath)),
+        legacyOwnerUid: resolveLegacyOwnerUid(book),
+        source: asNonEmptyString(book.source),
+      });
+      throw new HttpsError("not-found", "No readable ebook file found for this book.");
+    }
 
-  const file = storage.bucket().file(storagePath);
-  const [exists] = await file.exists();
-  if (!exists) {
-    logger.error("[READER][MISSING_STORAGE_FILE]", {
-      uid,
-      bookId,
-      storagePath,
-    });
-    throw new HttpsError("not-found", "Ebook file missing from storage.");
-  }
+    const file = storage.bucket().file(storagePath);
+    const [exists] = await file.exists();
+    if (!exists) {
+      logger.error("[READER][MISSING_STORAGE_FILE]", {
+        uid,
+        bookId,
+        storagePath,
+      });
+      throw new HttpsError("not-found", "Ebook file missing from storage.");
+    }
 
-  let signedUrl: string;
-  let format = inferFormatFromPath(storagePath);
-  if (format === "unknown") {
+    let signedUrl: string;
+    let format = inferFormatFromPath(storagePath);
+    if (format === "unknown") {
+      try {
+        const [meta] = await file.getMetadata();
+        format = inferFormatFromContentType(meta.contentType);
+      } catch (error) {
+        logger.warn("[READER][FORMAT_INFER_METADATA_FAILED]", {
+          uid,
+          bookId,
+          storagePath,
+          error: String(error),
+        });
+      }
+    }
     try {
-      const [meta] = await file.getMetadata();
-      format = inferFormatFromContentType(meta.contentType);
+      const [issuedUrl] = await file.getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: Date.now() + READER_URL_TTL_MS,
+      });
+      signedUrl = issuedUrl;
     } catch (error) {
-      logger.warn("[READER][FORMAT_INFER_METADATA_FAILED]", {
+      logger.error("[READER][SIGNED_URL_ISSUE_FAILED]", {
         uid,
         bookId,
         storagePath,
         error: String(error),
       });
+      throw new HttpsError(
+        "internal",
+        "Reader URL signing is not configured for this environment."
+      );
     }
-  }
-  try {
-    const [issuedUrl] = await file.getSignedUrl({
-      version: "v4",
-      action: "read",
-      expires: Date.now() + READER_URL_TTL_MS,
-    });
-    signedUrl = issuedUrl;
-  } catch (error) {
-    logger.error("[READER][SIGNED_URL_ISSUE_FAILED]", {
+
+    const progressData = progressSnap.exists
+      ? (progressSnap.data() as { lastPosition?: unknown; progress?: unknown })
+      : null;
+
+    const resumePage = resolveResumePage(progressData?.lastPosition);
+    const now = FieldValue.serverTimestamp();
+
+    await sessionRef.set(
+      {
+        userId: uid,
+        bookId,
+        status: "reading",
+        resumePage,
+        storagePath,
+        updatedAt: now,
+        createdAt: now,
+      },
+      { merge: true }
+    );
+
+    logger.info("[READER][SESSION_READY]", {
       uid,
       bookId,
-      storagePath,
-      error: String(error),
-    });
-    throw new HttpsError(
-      "internal",
-      "Reader URL signing is not configured for this environment."
-    );
-  }
-
-  const progressData = progressSnap.exists
-    ? (progressSnap.data() as { lastPosition?: unknown; progress?: unknown })
-    : null;
-
-  const resumePage = resolveResumePage(progressData?.lastPosition);
-  const now = FieldValue.serverTimestamp();
-
-  await sessionRef.set(
-    {
-      userId: uid,
-      bookId,
-      status: "reading",
+      sessionId,
       resumePage,
-      storagePath,
-      updatedAt: now,
-      createdAt: now,
-    },
-    { merge: true }
-  );
+      format,
+      pathPrefix: storagePath.split("/").slice(0, 2).join("/"),
+    });
 
-  logger.info("[READER][SESSION_READY]", {
-    uid,
-    bookId,
-    sessionId,
-    resumePage,
-    format,
-    pathPrefix: storagePath.split("/").slice(0, 2).join("/"),
-  });
+    return {
+      signedUrl,
+      resumePage,
+      format,
+    };
+  } catch (error: any) {
+    logger.error("[READER][SESSION_INIT_FAILED]", {
+      uid,
+      bookId,
+      error: String(error?.message || error),
+      code: error instanceof HttpsError ? error.code : "internal",
+    });
+    throw error;
+  }
+};
 
-  return {
-    signedUrl,
-    resumePage,
-    format,
-  };
-});
+export const getOrCreateReadingSession = onCall(
+  { cors: true },
+  getOrCreateReadingSessionHandler
+);

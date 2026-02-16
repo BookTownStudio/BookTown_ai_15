@@ -195,7 +195,8 @@ const ReaderScreen: React.FC = () => {
             : 'تعذّر فتح الكتاب. يرجى المحاولة لاحقًا.'
         );
 
-        navigate({ type: 'back' });
+        if (currentView.params?.from) navigate(currentView.params.from);
+        else navigate({ type: 'tab', id: 'read' });
       } finally {
         if (isMounted) setLoadingSession(false);
       }

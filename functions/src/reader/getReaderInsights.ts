@@ -40,7 +40,7 @@ export const getReaderInsights = onCall({ cors: true }, async (request) => {
 
       totalReadingTimeSeconds += data.totalActiveSeconds ?? 0;
 
-      if (data.status_state === "finished") {
+      if (data.status_state === "completed") {
         finishedCount += 1;
       }
 

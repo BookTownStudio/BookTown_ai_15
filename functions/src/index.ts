@@ -58,6 +58,7 @@ import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttach
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
 import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
+import { backfillReadingProgressCanonical as backfillReadingProgressCanonicalRaw } from "./admin/backfillReadingProgressCanonical";
 import {
   listUserQuotes as listUserQuotesRaw,
   getQuoteById as getQuoteByIdRaw,
@@ -484,6 +485,10 @@ export const finalizeMetadata = wrapCallableV2(
 export const backfillDerivedStats = wrapCallableV2(
   "backfillDerivedStats",
   backfillDerivedStatsRaw
+);
+export const backfillReadingProgressCanonical = wrapCallableV2(
+  "backfillReadingProgressCanonical",
+  backfillReadingProgressCanonicalRaw
 );
 export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { httpsCallable, getFunctions } from "firebase/functions";
-import { useToast } from "../../store/toast.tsx";
+import { useToast } from "../../../store/toast.tsx";
 
 /**
  * ReaderInsights

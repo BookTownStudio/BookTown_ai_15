@@ -20,7 +20,7 @@ const db = admin.firestore();
  * collection: reading_progress
  * docId: {uid}_{bookId}
  */
-export const getReaderProgress = onCall({ cors: true }, async (request) => {
+export const getReaderProgressHandler = async (request: any) => {
   if (!request.auth) {
     throw new HttpsError(
       "unauthenticated",
@@ -60,6 +60,14 @@ export const getReaderProgress = onCall({ cors: true }, async (request) => {
   }
 
   const data = snap.data();
+  if (!data) {
+    logger.error("[READER][GET_PROGRESS_CORRUPT_DOC]", {
+      uid,
+      bookId,
+      progressId,
+    });
+    throw new HttpsError("internal", "Progress document is corrupted.");
+  }
 
   // 🔒 Defensive validation (should never fail if rules are correct)
   if (data?.userId !== uid) {
@@ -79,4 +87,6 @@ export const getReaderProgress = onCall({ cors: true }, async (request) => {
     lastPosition: data.lastPosition ?? null,
     updatedAt: data.updatedAt ?? null,
   };
-});
+};
+
+export const getReaderProgress = onCall({ cors: true }, getReaderProgressHandler);

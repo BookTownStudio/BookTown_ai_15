@@ -14,10 +14,12 @@
 
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
+import * as logger from "firebase-functions/logger";
 import { getSignedUrl } from '../attachments/storageSignedUrl';
 import { resolveBookToEbookAttachment } from '../attachments/resolveBookToEbookAttachment';
 
 const db = admin.firestore();
+const EBOOK_URL_TTL_MS = 10 * 60 * 1000;
 
 export const requestEbookReadAccess = functions.https.onCall(
   async (data, context) => {
@@ -41,12 +43,21 @@ export const requestEbookReadAccess = functions.https.onCall(
       );
     }
 
+    logger.info("[READER][READ_ACCESS_REQUEST]", {
+      uid,
+      bookId,
+    });
+
     /* ----------------------------------
        2. Resolve Catalog → Edition → Attachment
     ---------------------------------- */
     const attachment = await resolveBookToEbookAttachment(bookId);
 
     if (!attachment) {
+      logger.warn("[READER][READ_ACCESS_ATTACHMENT_NOT_FOUND]", {
+        uid,
+        bookId,
+      });
       throw new functions.https.HttpsError(
         'not-found',
         'No readable ebook attachment found for this book.'
@@ -60,6 +71,12 @@ export const requestEbookReadAccess = functions.https.onCall(
        - Paid / restricted paths come later
     ---------------------------------- */
     if (attachment.visibility === 'restricted') {
+      logger.warn("[READER][READ_ACCESS_DENIED]", {
+        uid,
+        bookId,
+        attachmentId: attachment.id,
+        visibility: attachment.visibility,
+      });
       throw new functions.https.HttpsError(
         'permission-denied',
         'You do not have access to this ebook.'
@@ -70,6 +87,11 @@ export const requestEbookReadAccess = functions.https.onCall(
        4. Storage Path Resolution
     ---------------------------------- */
     if (!attachment.storagePath) {
+      logger.error("[READER][READ_ACCESS_MISSING_STORAGE_PATH]", {
+        uid,
+        bookId,
+        attachmentId: attachment.id,
+      });
       throw new functions.https.HttpsError(
         'internal',
         'Attachment is missing storagePath.'
@@ -79,10 +101,18 @@ export const requestEbookReadAccess = functions.https.onCall(
     /* ----------------------------------
        5. Signed URL Issuance (Short-Lived)
     ---------------------------------- */
+    const expiresAt = Date.now() + EBOOK_URL_TTL_MS;
     const signedUrl = await getSignedUrl({
       bucket: admin.storage().bucket().name,
       path: attachment.storagePath,
       intent: 'ebook',
+    });
+
+    logger.info("[READER][READ_ACCESS_GRANTED]", {
+      uid,
+      bookId,
+      attachmentId: attachment.id,
+      expiresAt,
     });
 
     /* ----------------------------------
@@ -97,16 +127,19 @@ export const requestEbookReadAccess = functions.https.onCall(
         action: 'READ_GRANTED',
       })
       .catch(() => {
-        // Silent fail — never block read access
+        logger.warn("[READER][READ_ACCESS_AUDIT_WRITE_FAILED]", {
+          uid,
+          bookId,
+          attachmentId: attachment.id,
+        });
       });
 
     /* ----------------------------------
        7. Response
     ---------------------------------- */
     return {
-      url: signedUrl,
-      expiresIn: 300, // seconds (documentary only; TTL enforced server-side)
-      attachmentId: attachment.id,
+      signedUrl,
+      expiresAt,
     };
   }
 );

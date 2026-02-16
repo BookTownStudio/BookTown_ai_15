@@ -718,10 +718,7 @@ export const apiContracts = {
         .strict(),
       "httpsCallable",
       {
-        callSites: [
-          "app/lib/hooks/app/useEbookReaderAccess.ts",
-          "lib/hooks/useEbookReaderAccess.ts",
-        ],
+        callSites: ["lib/hooks/useEbookReaderAccess.ts"],
       }
     ),
 
@@ -1333,6 +1330,52 @@ export const apiContracts = {
     backfillDerivedStats: defineContract(
       z.unknown(),
       z.unknown(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    backfillReadingProgressCanonical: defineContract(
+      z.union([
+        z.undefined(),
+        z
+          .object({
+            dryRun: z.boolean().optional(),
+            pageSize: z.number().int().positive().max(400).optional(),
+            maxDocs: z.number().int().positive().max(50000).optional(),
+            cursorDocId: z.string().min(1).optional(),
+          })
+          .strict(),
+      ]),
+      z
+        .object({
+          ok: z.boolean(),
+          dryRun: z.boolean(),
+          pageSize: z.number().int().positive(),
+          maxDocs: z.number().int().positive(),
+          processed: z.number().int().nonnegative(),
+          mutated: z.number().int().nonnegative(),
+          unchanged: z.number().int().nonnegative(),
+          skippedInvalid: z.number().int().nonnegative(),
+          commits: z.number().int().nonnegative(),
+          hasMore: z.boolean(),
+          nextCursorDocId: z.string().nullable(),
+          adjustments: z
+            .object({
+              uidFilled: z.number().int().nonnegative(),
+              userIdFilled: z.number().int().nonnegative(),
+              uidUserIdNormalized: z.number().int().nonnegative(),
+              bookIdFilled: z.number().int().nonnegative(),
+              statusNormalized: z.number().int().nonnegative(),
+              progressNormalized: z.number().int().nonnegative(),
+              updatedAtFilled: z.number().int().nonnegative(),
+              lastPositionBackfilled: z.number().int().nonnegative(),
+            })
+            .strict(),
+          invalidDocIds: z.array(z.string()),
+        })
+        .strict(),
       "httpsCallable",
       {
         callSites: [],
