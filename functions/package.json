@@ -9,6 +9,7 @@
     "contract:sync": "node scripts/syncContracts.cjs",
     "contract:parity": "npm run contract:sync && ts-node src/contracts/parity/checkSurfaceParity.ts",
     "build": "npm run contract:sync && tsc",
+    "populate:account": "node scripts/populateAccount.cjs",
     "backfill:reading-progress:dry": "node scripts/backfillReadingProgressCanonical.cjs --dry-run=true",
     "backfill:reading-progress:write": "node scripts/backfillReadingProgressCanonical.cjs --dry-run=false",
     "serve": "npm run build && firebase emulators:start --only functions",

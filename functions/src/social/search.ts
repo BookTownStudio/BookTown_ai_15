@@ -19,6 +19,7 @@ const MAX_BLOCKED_LOOKUP = 800;
 const MAX_FOLLOWING_LOOKUP = 1000;
 const RATE_LIMIT_WINDOW_MS = 60_000;
 const RATE_LIMIT_REQUESTS_PER_WINDOW = 45;
+const EMAIL_LIKE_QUERY_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
 
 type SearchType = "users" | "posts" | "topics";
 
@@ -201,6 +202,10 @@ function uniqueSearchTypes(raw: unknown): SearchType[] {
 
 function hashSha256(value: string): string {
   return createHash("sha256").update(value).digest("hex");
+}
+
+function isEmailLikeQuery(value: string): boolean {
+  return EMAIL_LIKE_QUERY_REGEX.test(value.trim());
 }
 
 function parseCursor(rawCursor: unknown, signature: string): CursorPayload {
@@ -586,26 +591,32 @@ function rankUsers(
     const handleSansAt = candidate.handleNormalized.replace(/^@/, "");
     const reasons: string[] = [];
     let score = 0;
+    let lexicalMatched = false;
 
     if (candidate.handleNormalized === normalizedQuery || handleSansAt === normalizedQuery) {
       score += 3.2;
       reasons.push("exact_handle");
+      lexicalMatched = true;
     }
     if (candidate.nameNormalized === normalizedQuery) {
       score += 2.6;
       reasons.push("exact_name");
+      lexicalMatched = true;
     }
     if (candidate.nameNormalized.startsWith(normalizedQuery)) {
       score += 1.8;
       reasons.push("name_prefix");
+      lexicalMatched = true;
     }
     if (handleSansAt.startsWith(normalizedQuery)) {
       score += 1.7;
       reasons.push("handle_prefix");
+      lexicalMatched = true;
     }
     if (searchable.includes(normalizedQuery)) {
       score += 1.3;
       reasons.push("full_match");
+      lexicalMatched = true;
     }
 
     let tokenHits = 0;
@@ -617,6 +628,12 @@ function rankUsers(
     if (tokenHits > 0) {
       score += (tokenHits / Math.max(1, queryTokens.length)) * 1.5;
       reasons.push("token_coverage");
+      lexicalMatched = true;
+    }
+
+    // Hard gate: no lexical match means candidate is ineligible.
+    if (!lexicalMatched) {
+      continue;
     }
 
     if (followingSet.has(candidate.uid)) {
@@ -667,26 +684,32 @@ function rankPosts(
     const searchable = `${candidate.textNormalized} ${candidate.authorNameNormalized} ${candidate.authorHandleNormalized}`;
     const reasons: string[] = [];
     let score = 0;
+    let lexicalMatched = false;
 
     if (candidate.textNormalized.includes(normalizedQuery)) {
       score += 2.4;
       reasons.push("content_match");
+      lexicalMatched = true;
     }
     if (candidate.authorNameNormalized.includes(normalizedQuery)) {
       score += 1.5;
       reasons.push("author_match");
+      lexicalMatched = true;
     }
     if (candidate.authorHandleNormalized.includes(normalizedQuery)) {
       score += 1.2;
       reasons.push("handle_match");
+      lexicalMatched = true;
     }
     if (candidate.hashtags.some((tag) => tag === normalizedQuery)) {
       score += 1.8;
       reasons.push("hashtag_exact");
+      lexicalMatched = true;
     }
     if (candidate.hashtags.some((tag) => tag.includes(normalizedQuery))) {
       score += 0.8;
       reasons.push("hashtag_related");
+      lexicalMatched = true;
     }
 
     let tokenHits = 0;
@@ -698,6 +721,12 @@ function rankPosts(
     if (tokenHits > 0) {
       score += (tokenHits / Math.max(1, queryTokens.length)) * 1.8;
       reasons.push("token_coverage");
+      lexicalMatched = true;
+    }
+
+    // Hard gate: ranking boosts must never surface non-matching candidates.
+    if (!lexicalMatched) {
+      continue;
     }
 
     if (followingSet.has(candidate.authorId)) {
@@ -928,6 +957,23 @@ export const searchSocial = onCall({ cors: true }, async (request): Promise<Soci
   const normalizedQuery = normalizeSearchText(queryRaw).slice(0, MAX_QUERY_LENGTH);
   if (normalizedQuery.length < 2) {
     throw new HttpsError("invalid-argument", "query must be at least 2 characters.");
+  }
+  if (isEmailLikeQuery(normalizedQuery)) {
+    const blockedQueryHash = hashSha256(normalizedQuery);
+    logger.info("SOCIAL_SEARCH_QUERY_BLOCKED_V1", {
+      uid,
+      queryHash: blockedQueryHash,
+      reason: "email_like_query",
+      rankingVersion: SEARCH_RANKING_VERSION,
+    });
+    return {
+      rankingVersion: SEARCH_RANKING_VERSION,
+      queryHash: blockedQueryHash,
+      users: [],
+      posts: [],
+      topics: [],
+      hasMore: false,
+    };
   }
 
   const rawLimit = typeof payload.limit === "number" ? payload.limit : 20;
