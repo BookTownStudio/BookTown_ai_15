@@ -205,7 +205,23 @@ function hashSha256(value: string): string {
 }
 
 function isEmailLikeQuery(value: string): boolean {
-  return EMAIL_LIKE_QUERY_REGEX.test(value.trim());
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  if (EMAIL_LIKE_QUERY_REGEX.test(trimmed)) {
+    return true;
+  }
+
+  const atIndex = trimmed.indexOf("@");
+  if (atIndex <= 0 || atIndex !== trimmed.lastIndexOf("@")) {
+    return false;
+  }
+
+  const domain = trimmed.slice(atIndex + 1);
+  return (
+    domain.includes(".") &&
+    !domain.startsWith(".") &&
+    !domain.endsWith(".")
+  );
 }
 
 function parseCursor(rawCursor: unknown, signature: string): CursorPayload {
@@ -954,12 +970,9 @@ export const searchSocial = onCall({ cors: true }, async (request): Promise<Soci
   const uid = request.auth.uid;
   const payload = (request.data || {}) as Record<string, unknown>;
   const queryRaw = typeof payload.query === "string" ? payload.query : "";
-  const normalizedQuery = normalizeSearchText(queryRaw).slice(0, MAX_QUERY_LENGTH);
-  if (normalizedQuery.length < 2) {
-    throw new HttpsError("invalid-argument", "query must be at least 2 characters.");
-  }
-  if (isEmailLikeQuery(normalizedQuery)) {
-    const blockedQueryHash = hashSha256(normalizedQuery);
+  const queryBounded = queryRaw.trim().slice(0, MAX_QUERY_LENGTH);
+  if (isEmailLikeQuery(queryBounded)) {
+    const blockedQueryHash = hashSha256(normalizeSearchText(queryBounded));
     logger.info("SOCIAL_SEARCH_QUERY_BLOCKED_V1", {
       uid,
       queryHash: blockedQueryHash,
@@ -974,6 +987,11 @@ export const searchSocial = onCall({ cors: true }, async (request): Promise<Soci
       topics: [],
       hasMore: false,
     };
+  }
+
+  const normalizedQuery = normalizeSearchText(queryBounded).slice(0, MAX_QUERY_LENGTH);
+  if (normalizedQuery.length < 2) {
+    throw new HttpsError("invalid-argument", "query must be at least 2 characters.");
   }
 
   const rawLimit = typeof payload.limit === "number" ? payload.limit : 20;
