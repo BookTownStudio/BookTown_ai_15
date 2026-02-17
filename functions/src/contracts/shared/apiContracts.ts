@@ -144,6 +144,93 @@ const publicProfileSchema = z
   })
   .strict();
 
+const profileAttachmentRefSchema = z
+  .object({
+    attachmentId: z.string().min(1),
+    type: z.string().min(1),
+    role: z.string().min(1),
+    renderHint: z.string().min(1),
+  })
+  .strict();
+
+const profilePostSchema = z
+  .object({
+    id: z.string().min(1),
+    authorId: z.string().min(1),
+    authorName: z.string().min(1),
+    authorHandle: z.string().min(2),
+    authorAvatar: z.string().max(2048),
+    content: z
+      .object({
+        text: z.string().nullable(),
+        attachments: z.array(profileAttachmentRefSchema),
+      })
+      .strict(),
+    visibility: postVisibilitySchema,
+    status: z.literal("published"),
+    counters: z
+      .object({
+        likes: z.number().int().nonnegative(),
+        comments: z.number().int().nonnegative(),
+        reposts: z.number().int().nonnegative(),
+        bookmarks: z.number().int().nonnegative(),
+      })
+      .strict(),
+    timestamps: z
+      .object({
+        createdAt: z.string().min(1),
+        updatedAt: z.string().nullable(),
+        publishedAt: z.string().nullable(),
+      })
+      .strict(),
+    flags: z
+      .object({
+        edited: z.boolean(),
+        hasAttachments: z.boolean(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const profileReviewSchema = z
+  .object({
+    id: z.string().min(1),
+    bookId: z.string().min(1),
+    userId: z.string().min(1),
+    rating: z.number().int().min(1).max(5),
+    text: z.string().max(2000),
+    authorName: z.string().max(120),
+    authorHandle: z.string().max(120),
+    authorAvatar: z.string().max(2048),
+    timestamp: z.string().min(1),
+    upvotes: z.number().int().nonnegative(),
+    downvotes: z.number().int().nonnegative(),
+    commentsCount: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const profileBookSchema = z
+  .object({
+    id: z.string().min(1),
+    authorId: z.string().min(1),
+    titleEn: z.string().max(300),
+    titleAr: z.string().max(300),
+    authorEn: z.string().max(300),
+    authorAr: z.string().max(300),
+    descriptionEn: z.string().max(5000),
+    descriptionAr: z.string().max(5000),
+    coverUrl: z.string().max(2048),
+    rating: z.number().nonnegative(),
+    ratingsCount: z.number().int().nonnegative(),
+    isEbookAvailable: z.boolean(),
+    genresEn: z.array(z.string().max(120)).max(30),
+    genresAr: z.array(z.string().max(120)).max(30),
+    publicationDate: z.string().max(64).nullable(),
+    pageCount: z.number().int().nonnegative().nullable(),
+    ebookAttachmentId: z.string().max(256).optional(),
+  })
+  .strict();
+
 const socialSearchTypeSchema = z.enum(["users", "posts", "topics"]);
 
 const socialSearchAttachmentRefSchema = z
