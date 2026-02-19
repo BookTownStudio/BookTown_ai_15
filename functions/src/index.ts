@@ -57,6 +57,10 @@ import { incrementPostView as incrementPostViewRaw } from "./social/analytics";
 import { createWriteProject as createWriteProjectRaw } from "./createWriteProject";
 import { deleteWriteProject as deleteWriteProjectRaw } from "./deleteWriteProject";
 import { updateWriteProject as updateWriteProjectRaw } from "./updateWriteProject";
+import { duplicateWriteProject as duplicateWriteProjectRaw } from "./duplicateWriteProject";
+import { publishWriteProject as publishWriteProjectRaw } from "./publishWriteProject";
+import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
+import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
 import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
@@ -480,6 +484,22 @@ export const deleteWriteProject = wrapCallableV2(
 export const updateWriteProject = wrapCallableV2(
   "updateWriteProject",
   updateWriteProjectRaw
+);
+export const duplicateWriteProject = wrapCallableV2(
+  "duplicateWriteProject",
+  duplicateWriteProjectRaw
+);
+export const publishWriteProject = wrapCallableV2(
+  "publishWriteProject",
+  publishWriteProjectRaw
+);
+export const createWriteProjectShareLink = wrapCallableV2(
+  "createWriteProjectShareLink",
+  createWriteProjectShareLinkRaw
+);
+export const revokeWriteProjectShareLink = wrapCallableV2(
+  "revokeWriteProjectShareLink",
+  revokeWriteProjectShareLinkRaw
 );
 
 // Attachments

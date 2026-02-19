@@ -13,9 +13,10 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { mockTemplates } from '../../data/mocks.ts';
 import { TemplatesIcon } from '../../components/icons/TemplatesIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
-import { useDeleteProject, useDuplicateProject, useUpdateProject } from '../../lib/hooks/useProjectMutations.ts';
+import { useCreateProjectShareLink, useDeleteProject, useDuplicateProject, useUpdateProject } from '../../lib/hooks/useProjectMutations.ts';
 import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal.tsx';
 import { Project } from '../../types/entities.ts';
+import { useToast } from '../../store/toast.tsx';
 
 interface TemplatesPanelTriggerProps {
     isOpen: boolean;
@@ -125,6 +126,7 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({ isOpen, o
 
 const WriteScreen: React.FC = () => {
     const { lang } = useI18n();
+    const { showToast } = useToast();
     const { data: projects, isLoading, isError, error } = useUserProjects();
     const { navigate, currentView, resetTokens } = useNavigation();
     const [isPanelOpen, setPanelOpen] = useState(false);
@@ -135,6 +137,7 @@ const WriteScreen: React.FC = () => {
     const { mutate: deleteProject, isLoading: isDeleting } = useDeleteProject();
     const { mutate: duplicateProject } = useDuplicateProject();
     const { mutate: updateProject } = useUpdateProject();
+    const { mutate: createShareLink } = useCreateProjectShareLink();
 
     // When the user navigates away from the write tab, close any open project menus.
     useEffect(() => {
@@ -191,16 +194,36 @@ const WriteScreen: React.FC = () => {
 
     const handleShare = (project: Project) => {
         setActiveMenuProjectId(null);
-        if (navigator.share) {
-             navigator.share({
-                title: lang === 'en' ? project.titleEn : project.titleAr,
-                text: 'Check out my story on BookTown!',
-                url: window.location.href, // Placeholder
-            }).catch(console.error);
-        } else {
-            // Fallback
-             alert(`Sharing project: ${project.titleEn}`);
-        }
+        createShareLink(project.id, {
+            onSuccess: async (share) => {
+                const shareData = {
+                    title: lang === 'en' ? project.titleEn : project.titleAr,
+                    text: lang === 'en' ? 'Check out my story on BookTown.' : 'اطلع على قصتي في بوك تاون.',
+                    url: share.shareUrl,
+                };
+
+                if (navigator.share) {
+                    try {
+                        await navigator.share(shareData);
+                        return;
+                    } catch (err: any) {
+                        if (err?.name === 'AbortError') {
+                            return;
+                        }
+                    }
+                }
+
+                try {
+                    await navigator.clipboard.writeText(share.shareUrl);
+                    showToast(lang === 'en' ? 'Share link copied.' : 'تم نسخ رابط المشاركة.');
+                } catch {
+                    showToast(lang === 'en' ? 'Share link ready.' : 'رابط المشاركة جاهز.');
+                }
+            },
+            onError: () => {
+                showToast(lang === 'en' ? 'Failed to create share link.' : 'فشل إنشاء رابط المشاركة.');
+            }
+        });
     };
 
     // Updated: Navigate to Publish Screen

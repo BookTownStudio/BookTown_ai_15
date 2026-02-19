@@ -67,6 +67,14 @@ service cloud.firestore {
         && request.resource.data.isSuspended == resource.data.isSuspended;
     }
 
+    function isServerAuthoritativeUserSubcollection(subCollection) {
+      return subCollection == "projects"
+        || subCollection == "published_books"
+        || subCollection == "project_duplicate_ops"
+        || subCollection == "project_publish_ops"
+        || subCollection == "project_share_links";
+    }
+
     /* =========================
        USERS
        ========================= */
@@ -90,10 +98,12 @@ service cloud.firestore {
         allow create, update: if isOwner(uid)
           && subCollection != "follows_authors"
           && subCollection != "followers"
-          && subCollection != "following";
+          && subCollection != "following"
+          && !isServerAuthoritativeUserSubcollection(subCollection);
         allow delete: if isOwner(uid)
           && subCollection != "followers"
-          && subCollection != "following";
+          && subCollection != "following"
+          && !isServerAuthoritativeUserSubcollection(subCollection);
       }
     }
 

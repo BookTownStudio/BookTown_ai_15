@@ -823,17 +823,41 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
     throw new HttpsError("not-found", "Profile not found.");
   }
 
-  const snap = await db
-    .collectionGroup("reviews")
-    .where("userId", "==", targetUid)
-    .orderBy("updatedAt", "desc")
-    .limit(Math.min(120, limitSize * 4))
-    .get();
+  const scanLimit = Math.min(180, Math.max(limitSize * 6, limitSize + 20));
+  let reviewDocs:
+    FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[] = [];
+
+  try {
+    const orderedSnap = await db
+      .collectionGroup("reviews")
+      .where("userId", "==", targetUid)
+      .orderBy("updatedAt", "desc")
+      .limit(scanLimit)
+      .get();
+    reviewDocs = orderedSnap.docs;
+  } catch (error) {
+    logger.warn("[PROFILE][REVIEWS][ORDERED_QUERY_FAILED]", {
+      targetUid,
+      error,
+    });
+  }
+
+  if (reviewDocs.length < limitSize) {
+    const fallbackSnap = await db
+      .collectionGroup("reviews")
+      .where("userId", "==", targetUid)
+      .limit(scanLimit)
+      .get();
+    const seenPaths = new Set(reviewDocs.map((doc) => doc.ref.path));
+    for (const doc of fallbackSnap.docs) {
+      if (seenPaths.has(doc.ref.path)) continue;
+      reviewDocs.push(doc);
+    }
+  }
 
   const items: ProfileReview[] = [];
-  let hasMore = false;
 
-  for (const reviewDoc of snap.docs) {
+  for (const reviewDoc of reviewDocs) {
     const parentDoc = reviewDoc.ref.parent.parent;
     const grandCollectionId = parentDoc?.parent?.id;
     if (grandCollectionId !== "books") continue;
@@ -850,14 +874,16 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
       normalizedReview.userId = targetUid;
     }
     items.push(normalizedReview);
-    if (items.length >= limitSize) {
-      hasMore = true;
-      break;
-    }
   }
 
+  items.sort(
+    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  );
+
+  const hasMore = items.length > limitSize;
+
   return {
-    items,
+    items: items.slice(0, limitSize),
     hasMore,
   };
 });

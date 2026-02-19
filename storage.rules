@@ -82,7 +82,7 @@ service firebase.storage {
       allow read: if true;
 
       allow write: if isOwner(uid)
-        && category in ['avatar', 'banner', 'post', 'misc', 'attachment', 'attachments']
+        && category in ['avatar', 'banner', 'cover', 'post', 'misc', 'attachment', 'attachments']
         && isImage()
         && (
           (category == 'avatar' && request.resource.size < 5 * 1024 * 1024)

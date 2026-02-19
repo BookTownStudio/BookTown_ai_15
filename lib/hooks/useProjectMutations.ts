@@ -68,20 +68,23 @@ export const useDuplicateProject = () => {
     return useMutation({
         mutationFn: async (projectId: string) => {
             if (!uid) throw new Error("Unauthenticated duplicate attempt blocked.");
-            const originalData = await dataService.projects.getProject(uid, projectId);
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
-            const { id, updatedAt, createdAt, ...rest } = originalData;
-            const newProjectData: Omit<Project, 'id' | 'updatedAt' | 'createdAt'> = {
-                ...rest,
-                titleEn: `Copy of ${originalData.titleEn}`,
-                titleAr: `نسخة من ${originalData.titleAr}`,
-                isPublished: false,
-            };
-            return WriteRepository.createProject(uid, newProjectData);
+            return dataService.projects.duplicateProject(uid, projectId);
         },
         onSuccess: () => {
              // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
              queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+        },
+    });
+};
+
+export const useCreateProjectShareLink = () => {
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation({
+        mutationFn: async (projectId: string) => {
+            if (!uid) throw new Error("Unauthenticated share attempt blocked.");
+            return dataService.projects.createShareLink(uid, projectId, window.location.origin);
         },
     });
 };

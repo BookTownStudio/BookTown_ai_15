@@ -5,7 +5,7 @@ import { useAuth } from '../auth.tsx';
 import { queryKeys } from '../queryKeys.ts';
 import { Project } from '../../types/entities.ts';
 
-export const useUserProjects = () => {
+export const useUserProjects = (enabledOverride = true) => {
     const { user } = useAuth();
     const uid = user?.uid;
 
@@ -17,7 +17,7 @@ export const useUserProjects = () => {
             // RULE: Use WriteRepository as the only path to project data
             return await WriteRepository.loadProjects(uid, false);
         },
-        enabled: !!uid,
+        enabled: !!uid && enabledOverride,
         // Ensure we don't stale-out authoritative syncs too quickly
         staleTime: 1000 * 60 * 2, 
     });

@@ -255,6 +255,8 @@ export interface PublishedBook {
     formats: ('epub' | 'pdf')[];
     pageCount: number;
     versionNumber?: number;
+    bookId?: string;
+    editionId?: string;
 }
 
 export interface ShelfEntry {

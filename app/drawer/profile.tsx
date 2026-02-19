@@ -7,7 +7,7 @@ import { useUserStats } from '../../lib/hooks/useUserStats.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useUserProfilePosts } from '../../lib/hooks/useUserProfilePosts.ts';
 import { useUserProfileReviews } from '../../lib/hooks/useUserProfileReviews.ts';
-import { useUserProfileBooks } from '../../lib/hooks/useUserProfileBooks.ts';
+import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -26,11 +26,10 @@ import ProfileStrengthBar from '../../components/ui/ProfileStrengthBar.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import PostCard from '../../components/content/PostCard.tsx';
 import ReviewCard from '../../components/content/ReviewCard.tsx';
-import BookCard from '../../components/content/BookCard.tsx';
 
-type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'books';
+type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'projects';
 
-const TABS: ProfileTab[] = ['posts', 'reviews', 'shelves', 'books'];
+const TABS: ProfileTab[] = ['posts', 'reviews', 'shelves', 'projects'];
 
 /* -----------------------------------------------------
    Mock Guest Data
@@ -94,7 +93,7 @@ const ProfileScreen: React.FC = () => {
     posts: 0,
     reviews: 0,
     shelves: 0,
-    books: 0,
+    projects: 0,
   });
 
   const [activeTab, setActiveTab] = useState<ProfileTab>('shelves');
@@ -119,24 +118,24 @@ const ProfileScreen: React.FC = () => {
 
   const { data: shelves, isLoading: shelvesLoading } =
     useUserShelves(effectiveProfileUserId);
-  const { data: profilePosts, isLoading: profilePostsLoading } =
+  const { data: profilePosts, isLoading: profilePostsLoading, isError: profilePostsError } =
     useUserProfilePosts(
       effectiveProfileUserId,
       20,
       activeTab === 'posts'
     );
-  const { data: profileReviews, isLoading: profileReviewsLoading } =
+  const { data: profileReviews, isLoading: profileReviewsLoading, isError: profileReviewsError } =
     useUserProfileReviews(
       effectiveProfileUserId,
       20,
       activeTab === 'reviews'
     );
-  const { data: profileBooks, isLoading: profileBooksLoading } =
-    useUserProfileBooks(
-      effectiveProfileUserId,
-      20,
-      activeTab === 'books'
-    );
+  const canViewProjects = isOwnProfile;
+  const {
+    data: profileProjects,
+    isLoading: profileProjectsLoading,
+    isError: profileProjectsError,
+  } = useUserProjects(activeTab === 'projects' && canViewProjects);
 
   const profile = isGuestView ? MOCK_GUEST_PROFILE : fetchedProfile;
 
@@ -152,8 +151,7 @@ const ProfileScreen: React.FC = () => {
 
   const [editData, setEditData] = useState<ProfileEditData>({
     name: '',
-    bioEn: '',
-    bioAr: '',
+    bio: '',
     avatarUrl: '',
     bannerUrl: '',
   });
@@ -237,6 +235,7 @@ const ProfileScreen: React.FC = () => {
     lang === 'ar' ? 'ar-EG' : 'en-US',
     { month: 'short', year: 'numeric' }
   );
+  const profileBio = profile.bioEn || profile.bioAr;
 
   return (
     <>
@@ -275,8 +274,7 @@ const ProfileScreen: React.FC = () => {
                 onClick={() => {
                   setEditData({
                     name: profile.name,
-                    bioEn: profile.bioEn,
-                    bioAr: profile.bioAr,
+                    bio: profile.bioEn || profile.bioAr,
                     avatarUrl: profile.avatarUrl,
                     bannerUrl: profile.bannerUrl,
                   });
@@ -309,7 +307,7 @@ const ProfileScreen: React.FC = () => {
 
           <div className="mt-4 rounded-xl bg-slate-100 dark:bg-slate-800 p-4">
             <BilingualText role="Body">
-              {lang === 'en' ? profile.bioEn : profile.bioAr}
+              {profileBio || (lang === 'en' ? 'No bio yet.' : 'لا توجد نبذة بعد.')}
             </BilingualText>
           </div>
 
@@ -484,6 +482,10 @@ const ProfileScreen: React.FC = () => {
               {activeTab === 'posts' &&
                 (profilePostsLoading ? (
                   <LoadingSpinner />
+                ) : profilePostsError ? (
+                  <BilingualText className="text-red-500 dark:text-red-400">
+                    {lang === 'en' ? 'Failed to load posts.' : 'فشل تحميل المنشورات.'}
+                  </BilingualText>
                 ) : profilePosts && profilePosts.length > 0 ? (
                   profilePosts.map(post => (
                     <PostCard
@@ -502,9 +504,15 @@ const ProfileScreen: React.FC = () => {
               {activeTab === 'reviews' &&
                 (profileReviewsLoading ? (
                   <LoadingSpinner />
+                ) : profileReviewsError ? (
+                  <BilingualText className="text-red-500 dark:text-red-400">
+                    {lang === 'en' ? 'Failed to load reviews.' : 'فشل تحميل المراجعات.'}
+                  </BilingualText>
                 ) : profileReviews && profileReviews.length > 0 ? (
                   profileReviews.map(review => (
-                    <ReviewCard key={review.id} review={review} />
+                    <div key={`${review.bookId}_${review.userId}`} className="rounded-xl bg-slate-900 px-4">
+                      <ReviewCard review={review} />
+                    </div>
                   ))
                 ) : (
                   <BilingualText className="text-slate-500">
@@ -512,23 +520,47 @@ const ProfileScreen: React.FC = () => {
                   </BilingualText>
                 ))}
 
-              {activeTab === 'books' &&
-                (profileBooksLoading ? (
+              {activeTab === 'projects' &&
+                (!canViewProjects ? (
+                  <BilingualText className="text-slate-500">
+                    {lang === 'en'
+                      ? 'Projects are private and visible only to the owner.'
+                      : 'المشاريع خاصة وتظهر فقط لصاحب الحساب.'}
+                  </BilingualText>
+                ) : profileProjectsLoading ? (
                   <LoadingSpinner />
-                ) : profileBooks && profileBooks.length > 0 ? (
-                  <div className="grid grid-cols-1 gap-4">
-                    {profileBooks.map(book => (
-                      <BookCard
-                        key={book.id}
-                        bookId={book.id}
-                        book={book}
-                        layout="list"
-                      />
-                    ))}
-                  </div>
+                ) : profileProjectsError ? (
+                  <BilingualText className="text-red-500 dark:text-red-400">
+                    {lang === 'en' ? 'Failed to load projects.' : 'فشل تحميل المشاريع.'}
+                  </BilingualText>
+                ) : profileProjects && profileProjects.length > 0 ? (
+                  profileProjects.map(project => (
+                    <div
+                      key={project.id}
+                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-800"
+                    >
+                      <BilingualText role="H3" className="!text-lg !font-semibold">
+                        {lang === 'en'
+                          ? project.titleEn
+                          : (project.titleAr || project.titleEn)}
+                      </BilingualText>
+                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
+                        <span>{project.status}</span>
+                        <span>
+                          {new Date(project.updatedAt).toLocaleDateString(
+                            lang === 'ar' ? 'ar-EG' : 'en-US',
+                            { month: 'short', day: 'numeric', year: 'numeric' }
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-2 text-xs text-slate-500">
+                        {project.wordCount.toLocaleString()} {lang === 'en' ? 'words' : 'كلمة'}
+                      </div>
+                    </div>
+                  ))
                 ) : (
                   <BilingualText className="text-slate-500">
-                    {lang === 'en' ? 'No books yet.' : 'لا توجد كتب بعد.'}
+                    {lang === 'en' ? 'No projects yet.' : 'لا توجد مشاريع بعد.'}
                   </BilingualText>
                 ))}
             </motion.div>
@@ -543,9 +575,18 @@ const ProfileScreen: React.FC = () => {
           profileData={editData}
           setProfileData={setEditData}
           onSave={() =>
-            updateProfile(editData, {
-              onSuccess: () => setEditModalOpen(false),
-            })
+            updateProfile(
+              {
+                name: editData.name,
+                bioEn: editData.bio,
+                bioAr: editData.bio,
+                avatarUrl: editData.avatarUrl,
+                bannerUrl: editData.bannerUrl,
+              },
+              {
+                onSuccess: () => setEditModalOpen(false),
+              }
+            )
           }
           isSaving={isUpdating}
         />

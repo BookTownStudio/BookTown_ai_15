@@ -6,7 +6,6 @@ import {
   getDocs,
   orderBy,
   query,
-  setDoc,
   Timestamp,
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
@@ -30,6 +29,14 @@ type SuccessEnvelope<T> = {
 
 type ProjectStatus = "Idea" | "Draft" | "Revision" | "Final";
 type WriteUpdateResult = { projectId: string; revision: number; updatedAt: string };
+type WriteShareLinkResult = {
+  projectId: string;
+  token: string;
+  shareUrl: string;
+  isRevoked: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
 
 function toIso(value: unknown): string {
   if (value instanceof Timestamp) return value.toDate().toISOString();
@@ -204,6 +211,13 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   return updates;
 }
 
+function createOperationId(prefix: string): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+}
+
 export const firebaseProjectService: ProjectDataService = {
   async getProjects(uid: string): Promise<Project[]> {
     const db = getFirebaseDb();
@@ -301,8 +315,47 @@ export const firebaseProjectService: ProjectDataService = {
     }
   },
 
+  async duplicateProject(_uid: string, projectId: string): Promise<Project> {
+    const duplicated = await callEndpoint<
+      { projectId: string; operationId: string },
+      Record<string, unknown>
+    >("duplicateWriteProject", {
+      projectId,
+      operationId: createOperationId("dup"),
+    });
+
+    const id = assertNonEmptyString(duplicated.id, "duplicateWriteProject.id");
+    return normalizeProjectDoc(id, duplicated);
+  },
+
   async deleteProject(_uid: string, projectId: string): Promise<void> {
     await callEndpoint<{ projectId: string }, { success: boolean }>("deleteWriteProject", {
+      projectId,
+    });
+  },
+
+  async createShareLink(
+    _uid: string,
+    projectId: string,
+    origin?: string
+  ): Promise<WriteShareLinkResult> {
+    return callEndpoint<
+      { projectId: string; origin?: string },
+      WriteShareLinkResult
+    >("createWriteProjectShareLink", {
+      projectId,
+      origin,
+    });
+  },
+
+  async revokeShareLink(
+    _uid: string,
+    projectId: string
+  ): Promise<{ projectId: string; revoked: boolean; revokedAt: string | null }> {
+    return callEndpoint<
+      { projectId: string },
+      { projectId: string; revoked: boolean; revokedAt: string | null }
+    >("revokeWriteProjectShareLink", {
       projectId,
     });
   },
@@ -337,58 +390,38 @@ export const firebaseProjectService: ProjectDataService = {
   },
 
   async publishBook(
-    uid: string,
+    _uid: string,
     projectId: string,
     metadata: { title: string; description: string; coverUrl?: string },
     files: { epubUrl: string; pdfUrl: string }
   ): Promise<PublishedBook> {
-    const db = getFirebaseDb();
-    const project = await this.getProject(uid, projectId);
-    const userSnap = await getDoc(doc(db, "users", uid));
-    const authorName =
-      (typeof userSnap.data()?.name === "string" && userSnap.data()?.name.trim()) || "Anonymous";
-
     const normalizedTitle = metadata.title.trim().slice(0, 180);
     if (!normalizedTitle) {
       throw new Error("Title is required to publish.");
     }
     const normalizedDescription = metadata.description.trim().slice(0, 4000);
+    const coverUrl =
+      typeof metadata.coverUrl === "string" && metadata.coverUrl.trim()
+        ? metadata.coverUrl.trim().slice(0, 2048)
+        : undefined;
 
-    const publishedRef = doc(collection(db, "users", uid, "published_books"));
-    const nowIso = new Date().toISOString();
-    const published: PublishedBook = {
-      id: publishedRef.id,
-      projectId,
-      authorId: uid,
-      authorName,
-      title: normalizedTitle,
-      description: normalizedDescription,
-      coverUrl: metadata.coverUrl,
-      epubUrl: files.epubUrl,
-      pdfUrl: files.pdfUrl,
-      publishedAt: nowIso,
-      formats: ["epub", "pdf"],
-      pageCount: 0,
-      versionNumber: project.revision,
-    };
-
-    await setDoc(publishedRef, {
-      ...published,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    });
-
-    const projectRef = doc(db, "users", uid, "projects", projectId);
-    await setDoc(
-      projectRef,
+    return callEndpoint<
       {
-        isPublished: true,
-        publishedBookId: publishedRef.id,
-        updatedAt: Timestamp.now(),
+        projectId: string;
+        operationId: string;
+        metadata: { title: string; description: string; coverUrl?: string };
+        files: { epubUrl: string; pdfUrl: string };
       },
-      { merge: true }
-    );
-
-    return published;
+      PublishedBook
+    >("publishWriteProject", {
+      projectId,
+      operationId: createOperationId("pub"),
+      metadata: {
+        title: normalizedTitle,
+        description: normalizedDescription,
+        coverUrl,
+      },
+      files,
+    });
   },
 };

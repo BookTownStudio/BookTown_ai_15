@@ -18,6 +18,17 @@ function normalizeString(value: unknown, fallback: string, max: number): string 
   return trimmed.slice(0, max);
 }
 
+function normalizeCoverUrl(value: unknown): string | null {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    return parsed.toString().slice(0, 2048);
+  } catch {
+    return null;
+  }
+}
+
 /**
  * duplicateWriteProject
  * Deterministic duplicate with operation-level idempotency.
@@ -86,6 +97,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
         status: normalizeStatus(source.status),
         typeEn: normalizeString(source.typeEn, "Draft", 80),
         typeAr: normalizeString(source.typeAr, "مسودة", 80),
+        coverUrl: normalizeCoverUrl(source.coverUrl),
         isPublished: false,
         publishedBookId: null,
         revision: 1,
@@ -139,6 +151,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
       version: 1,
       createdAt: createdAtIso,
       updatedAt: updatedAtIso,
+      coverUrl: normalizeCoverUrl(result.data.coverUrl) ?? undefined,
     };
   } catch (error) {
     logger.error("[WRITE][DUPLICATE_FAILED]", { uid, projectId, operationId, error });
@@ -148,4 +161,3 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
     throw new HttpsError("internal", "Failed to duplicate project.");
   }
 });
-

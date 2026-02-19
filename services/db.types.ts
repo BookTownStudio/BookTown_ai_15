@@ -243,7 +243,17 @@ export interface ProjectDataService {
     projectId: string,
     updates: Partial<Project>
   ): Promise<{ projectId: string; revision: number; updatedAt: string }>;
+  duplicateProject(uid: string, projectId: string): Promise<Project>;
   deleteProject(uid: string, projectId: string): Promise<void>;
+  createShareLink(
+    uid: string,
+    projectId: string,
+    origin?: string
+  ): Promise<{ projectId: string; token: string; shareUrl: string; isRevoked: boolean; createdAt: string; updatedAt: string }>;
+  revokeShareLink(
+    uid: string,
+    projectId: string
+  ): Promise<{ projectId: string; revoked: boolean; revokedAt: string | null }>;
 
   stageBookFiles(
     uid: string,

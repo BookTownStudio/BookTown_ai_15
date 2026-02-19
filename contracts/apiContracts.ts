@@ -1400,6 +1400,130 @@ export const apiContracts = {
       }
     ),
 
+    duplicateWriteProject: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+          operationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          id: z.string().min(1),
+          canonicalId: z.string().min(1),
+          path: z.string().min(1),
+          ownerId: z.string().min(1),
+          uid: z.string().min(1),
+          title: z.string().min(1),
+          titleEn: z.string().min(1),
+          titleAr: z.string().min(1),
+          content: z.string(),
+          wordCount: z.number().int().nonnegative(),
+          status: writeProjectStatusSchema,
+          typeEn: z.string().min(1),
+          typeAr: z.string().min(1),
+          coverUrl: z.string().url().max(2048).optional(),
+          isPublished: z.boolean(),
+          revision: z.number().int().positive(),
+          source: z.string().min(1),
+          version: z.number().int().positive(),
+          createdAt: z.string().min(1),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
+    publishWriteProject: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+          operationId: z.string().min(1),
+          metadata: z
+            .object({
+              title: z.string().min(1).max(180),
+              description: z.string().max(4000),
+              coverUrl: z.string().url().max(2048).optional(),
+            })
+            .strict(),
+          files: z
+            .object({
+              epubUrl: z.string().url().max(4096),
+              pdfUrl: z.string().url().max(4096),
+            })
+            .strict(),
+        })
+        .strict(),
+      z
+        .object({
+          id: z.string().min(1),
+          projectId: z.string().min(1),
+          authorId: z.string().min(1),
+          authorName: z.string().min(1),
+          title: z.string().min(1),
+          description: z.string(),
+          coverUrl: z.string().url().max(2048).optional(),
+          epubUrl: z.string().url().max(4096).optional(),
+          pdfUrl: z.string().url().max(4096).optional(),
+          publishedAt: z.string().min(1),
+          formats: z.array(z.enum(["epub", "pdf"])).min(1),
+          pageCount: z.number().int().nonnegative(),
+          versionNumber: z.number().int().positive().optional(),
+          bookId: z.string().min(1),
+          editionId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
+    createWriteProjectShareLink: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+          origin: z.string().url().max(2048).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          projectId: z.string().min(1),
+          token: z.string().min(1),
+          shareUrl: z.string().url().max(4096),
+          isRevoked: z.boolean(),
+          createdAt: z.string().min(1),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseProjectService.ts", "app/tabs/write.tsx"],
+      }
+    ),
+
+    revokeWriteProjectShareLink: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          projectId: z.string().min(1),
+          revoked: z.boolean(),
+          revokedAt: z.string().nullable(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
     getReaderProgress: defineContract(
       z
         .object({
