@@ -31,6 +31,24 @@ export const queryKeys = {
     profile: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'profile'] as const,
 
+    profilePosts: (
+      sessionUid: string | null | undefined,
+      profileUid: string | undefined
+    ) =>
+      [...sessionRoot(sessionUid), 'user', 'profilePosts', safe({ profileUid })] as const,
+
+    profileReviews: (
+      sessionUid: string | null | undefined,
+      profileUid: string | undefined
+    ) =>
+      [...sessionRoot(sessionUid), 'user', 'profileReviews', safe({ profileUid })] as const,
+
+    profileBooks: (
+      sessionUid: string | null | undefined,
+      profileUid: string | undefined
+    ) =>
+      [...sessionRoot(sessionUid), 'user', 'profileBooks', safe({ profileUid })] as const,
+
     // FIX: Added 'stats' to user query keys for authoritative read path.
     stats: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'stats'] as const,

@@ -14,6 +14,8 @@ const MAX_NAME_LENGTH = 80;
 const MAX_HANDLE_LENGTH = 40;
 const MAX_BIO_LENGTH = 500;
 const MAX_URL_LENGTH = 2048;
+const MAX_PROFILE_TAB_LIMIT = 30;
+const DEFAULT_PROFILE_TAB_LIMIT = 20;
 const DEFAULT_AVATAR_BASE = "https://api.dicebear.com/8.x/lorelei/svg?seed=";
 
 type PublicProfile = {
@@ -28,6 +30,75 @@ type PublicProfile = {
   updatedAt: string;
   followers: number;
   following: number;
+};
+
+type ProfilePost = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  authorHandle: string;
+  authorAvatar: string;
+  content: {
+    text: string | null;
+    attachments: Array<{
+      attachmentId: string;
+      type: string;
+      role: string;
+      renderHint: string;
+    }>;
+  };
+  visibility: "public" | "followers" | "private" | "restricted";
+  status: "published";
+  counters: {
+    likes: number;
+    comments: number;
+    reposts: number;
+    bookmarks: number;
+  };
+  timestamps: {
+    createdAt: string;
+    updatedAt: string | null;
+    publishedAt: string | null;
+  };
+  flags: {
+    edited: boolean;
+    hasAttachments: boolean;
+  };
+};
+
+type ProfileReview = {
+  id: string;
+  bookId: string;
+  userId: string;
+  rating: number;
+  text: string;
+  authorName: string;
+  authorHandle: string;
+  authorAvatar: string;
+  timestamp: string;
+  upvotes: number;
+  downvotes: number;
+  commentsCount: number;
+};
+
+type ProfileBook = {
+  id: string;
+  authorId: string;
+  titleEn: string;
+  titleAr: string;
+  authorEn: string;
+  authorAr: string;
+  descriptionEn: string;
+  descriptionAr: string;
+  coverUrl: string;
+  rating: number;
+  ratingsCount: number;
+  isEbookAvailable: boolean;
+  genresEn: string[];
+  genresAr: string[];
+  publicationDate: string | null;
+  pageCount: number | null;
+  ebookAttachmentId?: string;
 };
 
 function buildProfileSearchFields(profile: {
@@ -100,6 +171,40 @@ function sanitizeBio(value: unknown): string {
   return value.trim().slice(0, MAX_BIO_LENGTH);
 }
 
+function sanitizeString(value: unknown, maxLen: number): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, maxLen);
+}
+
+function sanitizeStringArray(
+  value: unknown,
+  itemMaxLen: number,
+  maxItems: number
+): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim().slice(0, itemMaxLen))
+    .filter((item) => item.length > 0)
+    .slice(0, maxItems);
+}
+
+function toRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object") return {};
+  return value as Record<string, unknown>;
+}
+
+function toNullableIso(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  return toIso(value);
+}
+
+function resolveLimit(value: unknown): number {
+  const numeric = toNonNegativeInt(value);
+  if (numeric <= 0) return DEFAULT_PROFILE_TAB_LIMIT;
+  return Math.min(MAX_PROFILE_TAB_LIMIT, Math.max(1, numeric));
+}
+
 function isHttpUrl(value: string): boolean {
   if (!value) return true;
   if (value.length > MAX_URL_LENGTH) return false;
@@ -155,6 +260,163 @@ function normalizePublicProfile(uid: string, source: Record<string, unknown>): P
     updatedAt: toIso(source.updatedAt ?? source.lastActive ?? source.createdAt),
     followers: toNonNegativeInt(source.followers ?? source.followerCount),
     following: toNonNegativeInt(source.following ?? source.followingCount),
+  };
+}
+
+function normalizeAttachmentRefs(
+  value: unknown
+): Array<{
+  attachmentId: string;
+  type: string;
+  role: string;
+  renderHint: string;
+}> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((raw) => {
+      const item = toRecord(raw);
+      const attachmentId = sanitizeString(item.attachmentId, 256);
+      if (!attachmentId) return null;
+      return {
+        attachmentId,
+        type: sanitizeString(item.type, 64) || "IMAGE",
+        role: sanitizeString(item.role, 32) || "primary",
+        renderHint: sanitizeString(item.renderHint, 32) || "card",
+      };
+    })
+    .filter(
+      (
+        item
+      ): item is {
+        attachmentId: string;
+        type: string;
+        role: string;
+        renderHint: string;
+      } => item !== null
+    );
+}
+
+function normalizeProfilePost(docId: string, source: Record<string, unknown>): ProfilePost {
+  const content = toRecord(source.content);
+  const counters = toRecord(source.counters);
+  const timestamps = toRecord(source.timestamps);
+  const flags = toRecord(source.flags);
+  const authorId = sanitizeString(source.authorId, MAX_UID_LENGTH);
+  const attachmentRefs = normalizeAttachmentRefs(content.attachments);
+
+  return {
+    id: sanitizeString(docId, 128),
+    authorId,
+    authorName: sanitizeString(source.authorName, 120) || "Unknown",
+    authorHandle: sanitizeHandle(source.authorHandle, authorId || "user"),
+    authorAvatar:
+      normalizeUrlForRead(source.authorAvatar) ||
+      `${DEFAULT_AVATAR_BASE}${encodeURIComponent(authorId || docId)}`,
+    content: {
+      text:
+        typeof content.text === "string" ? sanitizeString(content.text, 10000) : null,
+      attachments: attachmentRefs,
+    },
+    visibility:
+      source.visibility === "followers" ||
+      source.visibility === "private" ||
+      source.visibility === "restricted"
+        ? source.visibility
+        : "public",
+    status: "published",
+    counters: {
+      likes: toNonNegativeInt(counters.likes),
+      comments: toNonNegativeInt(counters.comments),
+      reposts: toNonNegativeInt(counters.reposts),
+      bookmarks: toNonNegativeInt(counters.bookmarks),
+    },
+    timestamps: {
+      createdAt: toIso(
+        timestamps.createdAt ?? source.createdAt ?? source.timestamp ?? new Date().toISOString()
+      ),
+      updatedAt: toNullableIso(timestamps.updatedAt ?? source.updatedAt),
+      publishedAt: toNullableIso(timestamps.publishedAt ?? source.publishedAt),
+    },
+    flags: {
+      edited: flags.edited === true || source.isEdited === true,
+      hasAttachments: flags.hasAttachments === true || attachmentRefs.length > 0,
+    },
+  };
+}
+
+function canViewPost(
+  post: ProfilePost,
+  viewerUid: string,
+  targetUid: string,
+  viewerFollowsTarget: boolean,
+  source?: Record<string, unknown>
+): boolean {
+  if (viewerUid === targetUid) return true;
+  if (post.visibility === "public") return true;
+  if (post.visibility === "followers") return viewerFollowsTarget;
+  if (post.visibility === "private") return false;
+  const allowedUserIds = Array.isArray(source?.allowedUserIds)
+    ? source.allowedUserIds.filter((item): item is string => typeof item === "string")
+    : [];
+  return allowedUserIds.includes(viewerUid);
+}
+
+function normalizeProfileReview(
+  docId: string,
+  source: Record<string, unknown>,
+  fallbackBookId: string
+): ProfileReview {
+  return {
+    id: sanitizeString(docId, 128),
+    bookId: sanitizeString(source.bookId, 128) || fallbackBookId,
+    userId: sanitizeString(source.userId, MAX_UID_LENGTH),
+    rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),
+    text: sanitizeString(source.text, 2000),
+    authorName: sanitizeString(source.authorName, 120),
+    authorHandle: sanitizeString(source.authorHandle, 120),
+    authorAvatar: normalizeUrlForRead(source.authorAvatar),
+    timestamp: toIso(source.updatedAt ?? source.timestamp ?? source.createdAt),
+    upvotes: toNonNegativeInt(source.upvotes),
+    downvotes: toNonNegativeInt(source.downvotes),
+    commentsCount: toNonNegativeInt(source.commentsCount),
+  };
+}
+
+function normalizeProfileBook(docId: string, source: Record<string, unknown>): ProfileBook {
+  const titleEn = sanitizeString(source.titleEn ?? source.title, 300);
+  const titleAr = sanitizeString(source.titleAr, 300);
+  const authorEn = sanitizeString(source.authorEn ?? source.author, 300);
+  const authorAr = sanitizeString(source.authorAr, 300);
+
+  return {
+    id: sanitizeString(docId, 128),
+    authorId: sanitizeString(source.authorId, 128) || "author_unknown",
+    titleEn,
+    titleAr,
+    authorEn,
+    authorAr,
+    descriptionEn: sanitizeString(source.descriptionEn ?? source.description, 5000),
+    descriptionAr: sanitizeString(source.descriptionAr, 5000),
+    coverUrl: normalizeUrlForRead(
+      source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
+    ),
+    rating:
+      typeof source.rating === "number" && Number.isFinite(source.rating)
+        ? Math.max(0, source.rating)
+        : 0,
+    ratingsCount: toNonNegativeInt(source.ratingsCount),
+    isEbookAvailable: source.isEbookAvailable === true || source.hasEbook === true,
+    genresEn: sanitizeStringArray(source.genresEn ?? source.categories, 120, 30),
+    genresAr: sanitizeStringArray(source.genresAr, 120, 30),
+    publicationDate: sanitizeString(source.publicationDate, 64) || null,
+    pageCount: (() => {
+      const value = toNonNegativeInt(source.pageCount);
+      return value > 0 ? value : null;
+    })(),
+    ...(typeof source.ebookAttachmentId === "string" &&
+    source.ebookAttachmentId.trim().length > 0
+      ? { ebookAttachmentId: source.ebookAttachmentId.trim().slice(0, 256) }
+      : {}),
   };
 }
 
@@ -217,6 +479,20 @@ async function readOrCreatePublicProfile(uid: string): Promise<PublicProfile | n
   );
 
   return profile;
+}
+
+async function isViewerFollowingTarget(
+  viewerUid: string,
+  targetUid: string
+): Promise<boolean> {
+  if (!viewerUid || !targetUid || viewerUid === targetUid) return true;
+  const followSnap = await db
+    .collection("users")
+    .doc(targetUid)
+    .collection("followers")
+    .doc(viewerUid)
+    .get();
+  return followSnap.exists;
 }
 
 export const getPublicProfile = onCall({ cors: true }, async (request) => {
@@ -476,4 +752,158 @@ export const getSuggestedProfiles = onCall({ cors: true }, async (request) => {
   }
 
   return profiles;
+});
+
+export const listProfilePosts = onCall({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const viewerUid = ensureUid(request.auth.uid, "auth.uid");
+  const targetUid = ensureUid(request.data?.uid, "uid");
+  const limitSize = resolveLimit(request.data?.limit);
+
+  const profile = await readOrCreatePublicProfile(targetUid);
+  if (!profile) {
+    throw new HttpsError("not-found", "Profile not found.");
+  }
+
+  const viewerFollowsTarget = await isViewerFollowingTarget(viewerUid, targetUid);
+  const snap = await db
+    .collection("posts")
+    .where("authorId", "==", targetUid)
+    .where("status", "==", "published")
+    .orderBy("timestamps.createdAt", "desc")
+    .limit(Math.min(120, limitSize * 4))
+    .get();
+
+  const items: ProfilePost[] = [];
+  let hasMore = false;
+
+  for (const postDoc of snap.docs) {
+    const source = toRecord(postDoc.data());
+    if (source.isDeleted === true) continue;
+
+    const normalizedPost = normalizeProfilePost(postDoc.id, source);
+    if (
+      !canViewPost(
+        normalizedPost,
+        viewerUid,
+        targetUid,
+        viewerFollowsTarget,
+        source
+      )
+    ) {
+      continue;
+    }
+
+    items.push(normalizedPost);
+    if (items.length >= limitSize) {
+      hasMore = true;
+      break;
+    }
+  }
+
+  return {
+    items,
+    hasMore,
+  };
+});
+
+export const listProfileReviews = onCall({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const targetUid = ensureUid(request.data?.uid, "uid");
+  const limitSize = resolveLimit(request.data?.limit);
+
+  const profile = await readOrCreatePublicProfile(targetUid);
+  if (!profile) {
+    throw new HttpsError("not-found", "Profile not found.");
+  }
+
+  const snap = await db
+    .collectionGroup("reviews")
+    .where("userId", "==", targetUid)
+    .orderBy("updatedAt", "desc")
+    .limit(Math.min(120, limitSize * 4))
+    .get();
+
+  const items: ProfileReview[] = [];
+  let hasMore = false;
+
+  for (const reviewDoc of snap.docs) {
+    const parentDoc = reviewDoc.ref.parent.parent;
+    const grandCollectionId = parentDoc?.parent?.id;
+    if (grandCollectionId !== "books") continue;
+
+    const fallbackBookId = sanitizeString(parentDoc?.id, 128);
+    if (!fallbackBookId) continue;
+
+    const normalizedReview = normalizeProfileReview(
+      reviewDoc.id,
+      toRecord(reviewDoc.data()),
+      fallbackBookId
+    );
+    if (!normalizedReview.userId) {
+      normalizedReview.userId = targetUid;
+    }
+    items.push(normalizedReview);
+    if (items.length >= limitSize) {
+      hasMore = true;
+      break;
+    }
+  }
+
+  return {
+    items,
+    hasMore,
+  };
+});
+
+export const listProfileBooks = onCall({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const targetUid = ensureUid(request.data?.uid, "uid");
+  const limitSize = resolveLimit(request.data?.limit);
+
+  const profile = await readOrCreatePublicProfile(targetUid);
+  if (!profile) {
+    throw new HttpsError("not-found", "Profile not found.");
+  }
+
+  const librarySnap = await db
+    .collection("user_library_books")
+    .where("uid", "==", targetUid)
+    .orderBy("updatedAt", "desc")
+    .limit(limitSize + 10)
+    .get();
+
+  const orderedBookIds: string[] = [];
+  const seen = new Set<string>();
+  for (const libraryDoc of librarySnap.docs) {
+    const bookId = sanitizeString(libraryDoc.data().bookId, 128);
+    if (!bookId || seen.has(bookId)) continue;
+    seen.add(bookId);
+    orderedBookIds.push(bookId);
+  }
+
+  const selectedBookIds = orderedBookIds.slice(0, limitSize);
+  const bookSnaps = await Promise.all(
+    selectedBookIds.map((bookId) => db.collection("books").doc(bookId).get())
+  );
+
+  const items: ProfileBook[] = [];
+  for (const bookSnap of bookSnaps) {
+    if (!bookSnap.exists) continue;
+    items.push(normalizeProfileBook(bookSnap.id, toRecord(bookSnap.data())));
+  }
+
+  return {
+    items,
+    hasMore: orderedBookIds.length > limitSize,
+  };
 });

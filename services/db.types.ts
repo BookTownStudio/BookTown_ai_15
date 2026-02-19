@@ -163,6 +163,9 @@ export interface UserDataService {
   updateProfile(uid: string, data: Partial<User>): Promise<void>;
 
   getSuggestedProfiles(uid: string): Promise<User[]>;
+  getProfilePosts(uid: string, limit?: number): Promise<Post[]>;
+  getProfileReviews(uid: string, limit?: number): Promise<Review[]>;
+  getProfileBooks(uid: string, limit?: number): Promise<Book[]>;
   followUser(followerId: string, targetId: string): Promise<void>;
   unfollowUser(followerId: string, targetId: string): Promise<void>;
 

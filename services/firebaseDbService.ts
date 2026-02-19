@@ -39,6 +39,7 @@ import {
   Venue,
   Event,
   VenueReview,
+  Review,
   Bookmark,
   AgentSession,
   ChatMessage,
@@ -232,6 +233,72 @@ const toProfileUser = (uid: string, source: Record<string, unknown>): User => {
   };
 };
 
+const toProfileReview = (source: Record<string, unknown>): Review => {
+  const bookId = ensureNonEmptyString(
+    normalizeString(source.bookId, 128),
+    "bookId",
+    128
+  );
+  const userId = ensureNonEmptyString(
+    normalizeString(source.userId, 128),
+    "userId",
+    128
+  );
+
+  return {
+    id: ensureNonEmptyString(normalizeString(source.id, 128), "id", 128),
+    bookId,
+    userId,
+    rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),
+    text: normalizeString(source.text, 2000),
+    authorName: normalizeString(source.authorName, 120),
+    authorHandle: normalizeString(source.authorHandle, 120),
+    authorAvatar: normalizeString(source.authorAvatar, 2048),
+    timestamp: toIsoString(source.timestamp),
+    upvotes: toNonNegativeInt(source.upvotes),
+    downvotes: toNonNegativeInt(source.downvotes),
+    commentsCount: toNonNegativeInt(source.commentsCount),
+  };
+};
+
+const toProfileBook = (source: Record<string, unknown>): Book => {
+  const id = ensureNonEmptyString(normalizeString(source.id, 128), "id", 128);
+  const titleEn = normalizeString(source.titleEn, 300);
+  const titleAr = normalizeString(source.titleAr, 300);
+  const authorEn = normalizeString(source.authorEn, 300);
+  const authorAr = normalizeString(source.authorAr, 300);
+
+  return {
+    id,
+    authorId: normalizeString(source.authorId, 128) || "author_unknown",
+    titleEn,
+    titleAr,
+    authorEn,
+    authorAr,
+    descriptionEn: normalizeString(source.descriptionEn, 5000),
+    descriptionAr: normalizeString(source.descriptionAr, 5000),
+    coverUrl: normalizeString(source.coverUrl, 2048),
+    rating:
+      typeof source.rating === "number" && Number.isFinite(source.rating)
+        ? Math.max(0, source.rating)
+        : 0,
+    ratingsCount: toNonNegativeInt(source.ratingsCount),
+    isEbookAvailable: source.isEbookAvailable === true,
+    genresEn: Array.isArray(source.genresEn)
+      ? source.genresEn.filter((item): item is string => typeof item === "string")
+      : [],
+    genresAr: Array.isArray(source.genresAr)
+      ? source.genresAr.filter((item): item is string => typeof item === "string")
+      : [],
+    publicationDate: normalizeString(source.publicationDate, 64),
+    pageCount: toNonNegativeInt(source.pageCount) || undefined,
+    ...(typeof source.ebookAttachmentId === "string" &&
+    source.ebookAttachmentId.trim().length > 0
+      ? { ebookAttachmentId: source.ebookAttachmentId.trim() }
+      : {}),
+  };
+};
+
 /* =========================
    USERS
 ========================= */
@@ -313,6 +380,60 @@ class FirebaseUserService {
         (entry) => entry.uid.length > 0 && entry.uid !== normalizedUid
       )
       .map((entry) => toProfileUser(entry.uid, entry.profile));
+  }
+
+  async getProfilePosts(uid: string, limitSize = 20): Promise<Post[]> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
+    const response = await callEndpoint<
+      { uid: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean }
+    >("listProfilePosts", { uid: normalizedUid, limit: boundedLimit });
+
+    return response.items.map((item) =>
+      normalizePost({
+        ...item,
+        id: normalizeString(item.id, 128),
+      })
+    );
+  }
+
+  async getProfileReviews(uid: string, limitSize = 20): Promise<Review[]> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
+    const response = await callEndpoint<
+      { uid: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean }
+    >("listProfileReviews", { uid: normalizedUid, limit: boundedLimit });
+
+    return response.items
+      .map((item) => {
+        try {
+          return toProfileReview(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter((review): review is Review => review !== null);
+  }
+
+  async getProfileBooks(uid: string, limitSize = 20): Promise<Book[]> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
+    const response = await callEndpoint<
+      { uid: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean }
+    >("listProfileBooks", { uid: normalizedUid, limit: boundedLimit });
+
+    return response.items
+      .map((item) => {
+        try {
+          return toProfileBook(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter((book): book is Book => book !== null);
   }
 
   async followUser(followerId: string, targetId: string): Promise<void> {

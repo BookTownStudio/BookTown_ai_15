@@ -27,6 +27,9 @@ import {
   followUser as followUserRaw,
   unfollowUser as unfollowUserRaw,
   getSuggestedProfiles as getSuggestedProfilesRaw,
+  listProfilePosts as listProfilePostsRaw,
+  listProfileReviews as listProfileReviewsRaw,
+  listProfileBooks as listProfileBooksRaw,
 } from "./profile";
 import { searchSocial as searchSocialRaw } from "./social/search";
 import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
@@ -343,6 +346,18 @@ export const unfollowUser = wrapCallableV2("unfollowUser", unfollowUserRaw);
 export const getSuggestedProfiles = wrapCallableV2(
   "getSuggestedProfiles",
   getSuggestedProfilesRaw
+);
+export const listProfilePosts = wrapCallableV2(
+  "listProfilePosts",
+  listProfilePostsRaw
+);
+export const listProfileReviews = wrapCallableV2(
+  "listProfileReviews",
+  listProfileReviewsRaw
+);
+export const listProfileBooks = wrapCallableV2(
+  "listProfileBooks",
+  listProfileBooksRaw
 );
 
 // ------------------------------------------------------------------

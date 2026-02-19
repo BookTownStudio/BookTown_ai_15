@@ -5,6 +5,9 @@ import { useAuth } from '../../lib/auth.tsx';
 import { useUserProfile } from '../../lib/hooks/useUserProfile.ts';
 import { useUserStats } from '../../lib/hooks/useUserStats.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
+import { useUserProfilePosts } from '../../lib/hooks/useUserProfilePosts.ts';
+import { useUserProfileReviews } from '../../lib/hooks/useUserProfileReviews.ts';
+import { useUserProfileBooks } from '../../lib/hooks/useUserProfileBooks.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -21,6 +24,9 @@ import EditProfileModal, {
 import PageShell from '../../components/layout/PageShell.tsx';
 import ProfileStrengthBar from '../../components/ui/ProfileStrengthBar.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
+import PostCard from '../../components/content/PostCard.tsx';
+import ReviewCard from '../../components/content/ReviewCard.tsx';
+import BookCard from '../../components/content/BookCard.tsx';
 
 type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'books';
 
@@ -113,6 +119,24 @@ const ProfileScreen: React.FC = () => {
 
   const { data: shelves, isLoading: shelvesLoading } =
     useUserShelves(effectiveProfileUserId);
+  const { data: profilePosts, isLoading: profilePostsLoading } =
+    useUserProfilePosts(
+      effectiveProfileUserId,
+      20,
+      activeTab === 'posts'
+    );
+  const { data: profileReviews, isLoading: profileReviewsLoading } =
+    useUserProfileReviews(
+      effectiveProfileUserId,
+      20,
+      activeTab === 'reviews'
+    );
+  const { data: profileBooks, isLoading: profileBooksLoading } =
+    useUserProfileBooks(
+      effectiveProfileUserId,
+      20,
+      activeTab === 'books'
+    );
 
   const profile = isGuestView ? MOCK_GUEST_PROFILE : fetchedProfile;
 
@@ -453,15 +477,60 @@ const ProfileScreen: React.FC = () => {
                   ))
                 ) : (
                   <BilingualText className="text-slate-500">
-                    No shelves yet.
+                    {lang === 'en' ? 'No shelves yet.' : 'لا توجد رفوف بعد.'}
                   </BilingualText>
                 ))}
 
-              {activeTab !== 'shelves' && (
-                <BilingualText className="text-slate-500">
-                  Coming soon.
-                </BilingualText>
-              )}
+              {activeTab === 'posts' &&
+                (profilePostsLoading ? (
+                  <LoadingSpinner />
+                ) : profilePosts && profilePosts.length > 0 ? (
+                  profilePosts.map(post => (
+                    <PostCard
+                      key={post.id}
+                      post={post}
+                      viewMode="list"
+                      surface="drawer"
+                    />
+                  ))
+                ) : (
+                  <BilingualText className="text-slate-500">
+                    {lang === 'en' ? 'No posts yet.' : 'لا توجد منشورات بعد.'}
+                  </BilingualText>
+                ))}
+
+              {activeTab === 'reviews' &&
+                (profileReviewsLoading ? (
+                  <LoadingSpinner />
+                ) : profileReviews && profileReviews.length > 0 ? (
+                  profileReviews.map(review => (
+                    <ReviewCard key={review.id} review={review} />
+                  ))
+                ) : (
+                  <BilingualText className="text-slate-500">
+                    {lang === 'en' ? 'No reviews yet.' : 'لا توجد مراجعات بعد.'}
+                  </BilingualText>
+                ))}
+
+              {activeTab === 'books' &&
+                (profileBooksLoading ? (
+                  <LoadingSpinner />
+                ) : profileBooks && profileBooks.length > 0 ? (
+                  <div className="grid grid-cols-1 gap-4">
+                    {profileBooks.map(book => (
+                      <BookCard
+                        key={book.id}
+                        bookId={book.id}
+                        book={book}
+                        layout="list"
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <BilingualText className="text-slate-500">
+                    {lang === 'en' ? 'No books yet.' : 'لا توجد كتب بعد.'}
+                  </BilingualText>
+                ))}
             </motion.div>
           </AnimatePresence>
         </div>

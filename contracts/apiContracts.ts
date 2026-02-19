@@ -611,6 +611,72 @@ export const apiContracts = {
       }
     ),
 
+    listProfilePosts: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          limit: z.number().int().min(1).max(30).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(profilePostSchema),
+          hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useUserProfilePosts.ts",
+        ],
+      }
+    ),
+
+    listProfileReviews: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          limit: z.number().int().min(1).max(30).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(profileReviewSchema),
+          hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useUserProfileReviews.ts",
+        ],
+      }
+    ),
+
+    listProfileBooks: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          limit: z.number().int().min(1).max(30).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(profileBookSchema),
+          hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useUserProfileBooks.ts",
+        ],
+      }
+    ),
+
     ingestBook: defineContract(
       z
         .object({

@@ -46,6 +46,17 @@ function normalizeStatus(value: unknown): ProjectStatus {
   return "Draft";
 }
 
+function normalizeBoundedString(value: unknown, fallback: string, max: number): string {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return fallback;
+  }
+  return trimmed.slice(0, max);
+}
+
 function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>): Project {
   const titleEn =
     typeof payload.titleEn === "string" && payload.titleEn.trim()
@@ -213,13 +224,13 @@ export const firebaseProjectService: ProjectDataService = {
     project: Omit<Project, "id" | "updatedAt" | "createdAt">
   ): Promise<Project> {
     const payload = {
-      titleEn: typeof project.titleEn === "string" ? project.titleEn : "Untitled Project",
-      titleAr: typeof project.titleAr === "string" ? project.titleAr : "مشروع غير معنون",
-      content: typeof project.content === "string" ? project.content : "",
+      titleEn: normalizeBoundedString(project.titleEn, "Untitled Project", 180),
+      titleAr: normalizeBoundedString(project.titleAr, "مشروع غير معنون", 180),
+      content: typeof project.content === "string" ? project.content.slice(0, 2_000_000) : "",
       wordCount: typeof project.wordCount === "number" ? Math.max(0, Math.floor(project.wordCount)) : 0,
       status: normalizeStatus(project.status),
-      typeEn: typeof project.typeEn === "string" && project.typeEn.trim() ? project.typeEn : "Draft",
-      typeAr: typeof project.typeAr === "string" && project.typeAr.trim() ? project.typeAr : "مسودة",
+      typeEn: normalizeBoundedString(project.typeEn, "Draft", 80),
+      typeAr: normalizeBoundedString(project.typeAr, "مسودة", 80),
     };
 
     const created = await callEndpoint<
