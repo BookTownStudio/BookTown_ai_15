@@ -334,18 +334,156 @@ export const onShelfCreated = onDocumentCreated(
   }
 );
 
-export const onBookReviewCreated = onDocumentCreated(
+function normalizeReviewRating(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(5, Math.trunc(numeric)));
+}
+
+function normalizeReviewVisibility(value: unknown): "public" | "private" {
+  return value === "private" ? "private" : "public";
+}
+
+function toIso(value: unknown): string {
+  if (typeof value === "string" && value.trim()) {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  if (value && typeof (value as { toDate?: unknown }).toDate === "function") {
+    const parsed = (value as { toDate: () => Date }).toDate();
+    if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+  }
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString();
+  return new Date().toISOString();
+}
+
+export const onBookReviewWritten = onDocumentWritten(
   "books/{bookId}/reviews/{reviewId}",
   async (event) => {
-    await updateStatCounter(
-      "book_stats",
-      event.params.bookId,
-      "reviews",
-      1
-    );
-    const data = event.data?.data();
-    if (data?.userId) {
-      await recomputeUserStats(data.userId);
+    const before = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after?.data() as Record<string, unknown> | undefined;
+    const bookId = event.params.bookId;
+    const reviewId = event.params.reviewId;
+
+    const beforeExists = !!before;
+    const afterExists = !!after;
+    const beforeRating = normalizeReviewRating(before?.rating);
+    const afterRating = normalizeReviewRating(after?.rating);
+    const beforeUserId =
+      typeof before?.userId === "string" && before.userId.trim().length > 0
+        ? before.userId.trim()
+        : null;
+    const afterUserId =
+      typeof after?.userId === "string" && after.userId.trim().length > 0
+        ? after.userId.trim()
+        : null;
+
+    const statsRef = db.collection("book_stats").doc(bookId);
+    await db.runTransaction(async (tx) => {
+      const statsSnap = await tx.get(statsRef);
+      const counters = statsSnap.exists ? (statsSnap.data()?.counters || {}) : {};
+      const currentReviews =
+        typeof counters.reviews === "number"
+          ? Math.max(0, Math.trunc(counters.reviews))
+          : 0;
+      const currentRatingsCount =
+        typeof counters.ratingsCount === "number"
+          ? Math.max(0, Math.trunc(counters.ratingsCount))
+          : 0;
+      const currentRatingSum =
+        typeof counters.ratingSum === "number" && Number.isFinite(counters.ratingSum)
+          ? counters.ratingSum
+          : 0;
+
+      let nextReviews = currentReviews;
+      let nextRatingsCount = currentRatingsCount;
+      let nextRatingSum = currentRatingSum;
+
+      if (!beforeExists && afterExists) {
+        nextReviews += 1;
+        nextRatingsCount += 1;
+        nextRatingSum += afterRating;
+      } else if (beforeExists && !afterExists) {
+        nextReviews = Math.max(0, nextReviews - 1);
+        nextRatingsCount = Math.max(0, nextRatingsCount - 1);
+        nextRatingSum = Math.max(0, nextRatingSum - beforeRating);
+      } else if (beforeExists && afterExists) {
+        const delta = afterRating - beforeRating;
+        nextRatingSum = Math.max(0, nextRatingSum + delta);
+      }
+
+      const averageRating =
+        nextRatingsCount > 0 ? Number((nextRatingSum / nextRatingsCount).toFixed(4)) : 0;
+
+      tx.set(
+        statsRef,
+        {
+          counters: {
+            ...counters,
+            reviews: nextReviews,
+            ratingsCount: nextRatingsCount,
+            ratingSum: nextRatingSum,
+            averageRating,
+          },
+          reviews: nextReviews,
+          ratingsCount: nextRatingsCount,
+          averageRating,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
+
+    if (afterExists && afterUserId) {
+      const projectionRef = db
+        .collection("user_reviews")
+        .doc(`${afterUserId}_${bookId}`);
+      await projectionRef.set(
+        {
+          id: reviewId,
+          domain: "book",
+          visibility: normalizeReviewVisibility(after?.visibility),
+          uid: afterUserId,
+          userId: afterUserId,
+          bookId,
+          rating: afterRating,
+          text: typeof after?.text === "string" ? after.text.slice(0, 2000) : "",
+          authorName:
+            typeof after?.authorName === "string" ? after.authorName.slice(0, 120) : "",
+          authorHandle:
+            typeof after?.authorHandle === "string" ? after.authorHandle.slice(0, 120) : "",
+          authorAvatar:
+            typeof after?.authorAvatar === "string" ? after.authorAvatar.slice(0, 2048) : "",
+          upvotes:
+            typeof after?.upvotes === "number" && Number.isFinite(after.upvotes)
+              ? Math.max(0, Math.trunc(after.upvotes))
+              : 0,
+          downvotes:
+            typeof after?.downvotes === "number" && Number.isFinite(after.downvotes)
+              ? Math.max(0, Math.trunc(after.downvotes))
+              : 0,
+          commentsCount:
+            typeof after?.commentsCount === "number" && Number.isFinite(after.commentsCount)
+              ? Math.max(0, Math.trunc(after.commentsCount))
+              : 0,
+          updatedAt: after?.updatedAt ?? after?.updatedAtIso ?? toIso(new Date()),
+          updatedAtIso: toIso(after?.updatedAtIso ?? after?.updatedAt),
+          createdAt: after?.createdAt ?? after?.updatedAt ?? toIso(new Date()),
+          createdAtIso: toIso(after?.createdAtIso ?? after?.createdAt),
+          sourcePath: `books/${bookId}/reviews/${reviewId}`,
+        },
+        { merge: true }
+      );
+    }
+
+    if (!afterExists && beforeUserId) {
+      await db.collection("user_reviews").doc(`${beforeUserId}_${bookId}`).delete();
+    }
+
+    const changedUid = afterUserId || beforeUserId;
+    if (changedUid) {
+      await recomputeUserStats(changedUid);
     }
   }
 );

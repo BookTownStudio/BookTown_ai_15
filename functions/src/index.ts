@@ -34,8 +34,14 @@ import {
   getSuggestedProfiles as getSuggestedProfilesRaw,
   listProfilePosts as listProfilePostsRaw,
   listProfileReviews as listProfileReviewsRaw,
+  runReviewStackReleaseGate as runReviewStackReleaseGateRaw,
   listProfileBooks as listProfileBooksRaw,
 } from "./profile";
+import {
+  deleteBookReview as deleteBookReviewRaw,
+  listBookReviews as listBookReviewsRaw,
+  upsertBookReview as upsertBookReviewRaw,
+} from "./reviews/bookReviews";
 import { searchSocial as searchSocialRaw } from "./social/search";
 import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
 import {
@@ -373,9 +379,25 @@ export const listProfileReviews = wrapCallableV2(
   "listProfileReviews",
   listProfileReviewsRaw
 );
+export const runReviewStackReleaseGate = wrapCallableV2(
+  "runReviewStackReleaseGate",
+  runReviewStackReleaseGateRaw
+);
 export const listProfileBooks = wrapCallableV2(
   "listProfileBooks",
   listProfileBooksRaw
+);
+export const listBookReviews = wrapCallableV2(
+  "listBookReviews",
+  listBookReviewsRaw
+);
+export const upsertBookReview = wrapCallableV2(
+  "upsertBookReview",
+  upsertBookReviewRaw
+);
+export const deleteBookReview = wrapCallableV2(
+  "deleteBookReview",
+  deleteBookReviewRaw
 );
 
 // ------------------------------------------------------------------
@@ -541,6 +563,7 @@ export const backfillReadingProgressCanonical = wrapCallableV2(
 );
 export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";
+export { scheduledReviewAggregateReconcile } from "./admin/reconcileReviewAggregates";
 
 // Triggers
 export * from "./triggers/aggregationTriggers";

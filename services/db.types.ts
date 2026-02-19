@@ -165,6 +165,10 @@ export interface UserDataService {
   getSuggestedProfiles(uid: string): Promise<User[]>;
   getProfilePosts(uid: string, limit?: number): Promise<Post[]>;
   getProfileReviews(uid: string, limit?: number): Promise<Review[]>;
+  getProfileReviewsPage(
+    uid: string,
+    options?: { limit?: number; cursor?: string }
+  ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }>;
   getProfileBooks(uid: string, limit?: number): Promise<Book[]>;
   followUser(followerId: string, targetId: string): Promise<void>;
   unfollowUser(followerId: string, targetId: string): Promise<void>;
@@ -327,6 +331,10 @@ export interface CatalogDataService {
   isAuthorFollowed(uid: string, authorId: string): Promise<boolean>;
 
   getReviews(bookId: string): Promise<Review[]>;
+  getReviewsPage(
+    bookId: string,
+    options?: { limit?: number; cursor?: string }
+  ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }>;
 
   /**
    * 🔒 REVIEW WRITE CONTRACT
@@ -340,9 +348,7 @@ export interface CatalogDataService {
       bookId: string;
       rating: number;
       text: string;
-      authorName: string;
-      authorHandle?: string;
-      authorAvatar?: string | null;
+      visibility?: 'public' | 'private';
     }
   ): Promise<void>;
 

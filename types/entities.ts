@@ -499,6 +499,8 @@ export interface AgentSession {
 
 export interface Review {
     id: string;
+    domain?: 'book';
+    visibility?: 'public' | 'private';
     bookId: string;
     userId: string;
     rating: number; // 1-5

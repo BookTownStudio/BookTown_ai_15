@@ -3,7 +3,6 @@ import {
   getDoc,
   setDoc,
   collection,
-  collectionGroup,
   getDocs,
   query,
   orderBy,
@@ -87,9 +86,64 @@ type FailureEnvelope = {
   };
 };
 
+type CallableDomainError = Error & {
+  endpoint: string;
+  code: string;
+  transportCode?: string;
+  details?: unknown;
+  queryShape?: string;
+  indexHint?: string;
+  uid?: string;
+};
+
+const resolveDeterministicErrorCode = (
+  fallbackCode: string,
+  details: unknown
+): string => {
+  if (details && typeof details === "object") {
+    const detailsCode = (details as { code?: unknown }).code;
+    if (typeof detailsCode === "string" && detailsCode.trim().length > 0) {
+      return detailsCode.trim();
+    }
+  }
+  return fallbackCode;
+};
+
+const createCallableError = (params: {
+  endpoint: string;
+  code: string;
+  message: string;
+  details?: unknown;
+}): CallableDomainError => {
+  const resolvedCode = resolveDeterministicErrorCode(params.code, params.details);
+  const error = new Error(`[${resolvedCode}] ${params.message}`) as CallableDomainError;
+  error.name = "CallableDomainError";
+  error.endpoint = params.endpoint;
+  error.code = resolvedCode;
+  error.transportCode = params.code;
+  error.details = params.details;
+  if (params.details && typeof params.details === "object") {
+    const meta = params.details as Record<string, unknown>;
+    if (typeof meta.queryShape === "string") {
+      error.queryShape = meta.queryShape;
+    }
+    if (typeof meta.indexHint === "string") {
+      error.indexHint = meta.indexHint;
+    }
+    if (typeof meta.uid === "string") {
+      error.uid = meta.uid;
+    }
+  }
+  return error;
+};
+
 const extractCallableData = <T>(endpoint: string, payload: unknown): T => {
   if (!payload || typeof payload !== "object") {
-    throw new Error(`[${endpoint}] Invalid callable response envelope.`);
+    throw createCallableError({
+      endpoint,
+      code: "INVALID_RESPONSE_SCHEMA",
+      message: "Invalid callable response envelope.",
+    });
   }
 
   const envelope = payload as Partial<SuccessEnvelope<T>> &
@@ -106,11 +160,20 @@ const extractCallableData = <T>(endpoint: string, payload: unknown): T => {
       typeof envelope.error.message === "string"
         ? envelope.error.message
         : "Callable request failed.";
-    throw new Error(`[${code}] ${message}`);
+    throw createCallableError({
+      endpoint,
+      code,
+      message,
+      details: envelope.error.details,
+    });
   }
 
   if (envelope.success !== true || !("data" in envelope)) {
-    throw new Error(`[${endpoint}] Missing success envelope data.`);
+    throw createCallableError({
+      endpoint,
+      code: "INVALID_RESPONSE_SCHEMA",
+      message: "Missing success envelope data.",
+    });
   }
 
   return envelope.data as T;
@@ -420,15 +483,39 @@ class FirebaseUserService {
   }
 
   async getProfileReviews(uid: string, limitSize = 20): Promise<Review[]> {
+    const page = await this.getProfileReviewsPage(uid, { limit: limitSize });
+    return page.items;
+  }
+
+  async getProfileReviewsPage(
+    uid: string,
+    options?: { limit?: number; cursor?: string }
+  ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }> {
     const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
-    const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
+    const boundedLimit = Math.min(
+      30,
+      Math.max(1, toNonNegativeInt(options?.limit) || 20)
+    );
+    const cursor =
+      typeof options?.cursor === "string" && options.cursor.trim()
+        ? options.cursor.trim().slice(0, 96)
+        : undefined;
     try {
       const response = await callEndpoint<
-        { uid: string; limit: number },
-        { items: Record<string, unknown>[]; hasMore: boolean }
-      >("listProfileReviews", { uid: normalizedUid, limit: boundedLimit });
+        { uid: string; limit: number; cursor?: string },
+        {
+          items: Record<string, unknown>[];
+          hasMore: boolean;
+          nextCursor?: string;
+          revision?: string;
+        }
+      >("listProfileReviews", {
+        uid: normalizedUid,
+        limit: boundedLimit,
+        ...(cursor ? { cursor } : {}),
+      });
 
-      return response.items
+      const items = response.items
         .map((item) => {
           try {
             return toProfileReview(item);
@@ -437,85 +524,52 @@ class FirebaseUserService {
           }
         })
         .filter((review): review is Review => review !== null);
+
+      return {
+        items,
+        hasMore: response.hasMore === true,
+        ...(typeof response.nextCursor === "string" &&
+        response.nextCursor.trim().length > 0
+          ? { nextCursor: response.nextCursor.trim().slice(0, 96) }
+          : {}),
+        ...(typeof response.revision === "string" &&
+        response.revision.trim().length > 0
+          ? { revision: response.revision.trim().slice(0, 64) }
+          : {}),
+      };
     } catch (callableError) {
-      console.warn(
-        "[ProfileReviews] Callable failed, switching to direct Firestore recovery path.",
-        callableError
-      );
+      const errorCode =
+        callableError &&
+        typeof callableError === "object" &&
+        "code" in callableError &&
+        typeof (callableError as { code?: unknown }).code === "string"
+          ? String((callableError as { code: string }).code)
+          : "UNKNOWN";
+      const queryShape =
+        callableError &&
+        typeof callableError === "object" &&
+        "queryShape" in callableError &&
+        typeof (callableError as { queryShape?: unknown }).queryShape === "string"
+          ? String((callableError as { queryShape: string }).queryShape)
+          : "callable:listProfileReviews(uid,limit)";
+      const indexHint =
+        callableError &&
+        typeof callableError === "object" &&
+        "indexHint" in callableError &&
+        typeof (callableError as { indexHint?: unknown }).indexHint === "string"
+          ? String((callableError as { indexHint: string }).indexHint)
+          : "firestore.indexes.json: collectionGroup=reviews";
+
+      console.error("[ProfileReviews][FAIL_FAST]", {
+        endpoint: "listProfileReviews",
+        code: errorCode,
+        uid: normalizedUid,
+        cursor: cursor ?? null,
+        queryShape,
+        indexHint,
+      });
+      throw callableError;
     }
-
-    const db = getDb();
-    if (!db) {
-      throw new Error("Firebase not initialized");
-    }
-
-    const scanLimit = Math.min(180, Math.max(boundedLimit * 6, boundedLimit + 20));
-    let docs: QueryDocumentSnapshot<DocumentData>[] = [];
-
-    try {
-      const orderedSnap = await getDocs(
-        query(
-          collectionGroup(db, "reviews"),
-          where("userId", "==", normalizedUid),
-          orderBy("updatedAt", "desc"),
-          limit(scanLimit)
-        )
-      );
-      docs = orderedSnap.docs;
-    } catch (orderedError) {
-      console.warn(
-        "[ProfileReviews] Ordered Firestore query failed, trying unordered fallback.",
-        orderedError
-      );
-    }
-
-    if (docs.length < boundedLimit) {
-      const fallbackSnap = await getDocs(
-        query(
-          collectionGroup(db, "reviews"),
-          where("userId", "==", normalizedUid),
-          limit(scanLimit)
-        )
-      );
-      const seenPaths = new Set(docs.map((docSnap) => docSnap.ref.path));
-      for (const docSnap of fallbackSnap.docs) {
-        if (seenPaths.has(docSnap.ref.path)) continue;
-        docs.push(docSnap);
-      }
-    }
-
-    const reviews = docs
-      .map((docSnap) => {
-        try {
-          const parentDoc = docSnap.ref.parent.parent;
-          const grandCollectionId = parentDoc?.parent?.id;
-          if (grandCollectionId !== "books") return null;
-
-          const payload = docSnap.data() as Record<string, unknown>;
-          const fallbackBookId = parentDoc?.id;
-          if (typeof payload.bookId !== "string" || !payload.bookId.trim()) {
-            if (!fallbackBookId) return null;
-            payload.bookId = fallbackBookId;
-          }
-          if (typeof payload.id !== "string" || !payload.id.trim()) {
-            payload.id = docSnap.id;
-          }
-          if (typeof payload.userId !== "string" || !payload.userId.trim()) {
-            payload.userId = normalizedUid;
-          }
-          return toProfileReview(payload);
-        } catch {
-          return null;
-        }
-      })
-      .filter((review): review is Review => review !== null);
-
-    reviews.sort(
-      (a, b) =>
-        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    );
-
-    return reviews.slice(0, boundedLimit);
   }
 
   async getProfileBooks(uid: string, limitSize = 20): Promise<Book[]> {

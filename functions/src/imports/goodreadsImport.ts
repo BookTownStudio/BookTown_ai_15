@@ -460,14 +460,29 @@ async function applyCanonicalRow(params: {
     let reviewCreated = false;
     if (writesReview) {
       const reviewRef = db.doc(`books/${bookId}/reviews/${uid}`);
-      const ratingRef = db.doc(`books/${bookId}/ratings/${uid}`);
       const reviewSnap = await tx.get(reviewRef);
       const createdAt = reviewSnap.exists ? reviewSnap.data()?.createdAt || now : now;
       reviewCreated = !reviewSnap.exists;
+      const createdAtIso = (() => {
+        const raw = reviewSnap.exists ? reviewSnap.data()?.createdAt || now : now;
+        if (typeof raw === "string" && raw.trim()) {
+          const parsed = new Date(raw);
+          if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+        }
+        if (raw && typeof raw.toDate === "function") {
+          const parsed = raw.toDate();
+          if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString();
+          }
+        }
+        return nowIso();
+      })();
 
       tx.set(
         reviewRef,
         {
+          id: uid,
+          domain: "book",
           bookId,
           userId: uid,
           rating: row.rating > 0 ? row.rating : 1,
@@ -475,21 +490,9 @@ async function applyCanonicalRow(params: {
           source: "goodreads_import",
           visibility: "private",
           parserVersion: PARSER_VERSION,
+          updatedAtIso: nowIso(),
           updatedAt: now,
-          createdAt,
-        },
-        { merge: true }
-      );
-
-      tx.set(
-        ratingRef,
-        {
-          bookId,
-          userId: uid,
-          rating: row.rating > 0 ? row.rating : 1,
-          source: "goodreads_import",
-          parserVersion: PARSER_VERSION,
-          updatedAt: now,
+          createdAtIso,
           createdAt,
         },
         { merge: true }

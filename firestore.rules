@@ -182,28 +182,28 @@ service cloud.firestore {
          📚 REVIEWS (SECURE)
          ========================= */
       match /reviews/{reviewId} {
+        // Read only if review is public (or legacy without visibility) or owner.
+        allow get, list: if
+          (
+            !("visibility" in resource.data)
+            || resource.data.visibility == "public"
+          )
+          || (
+            isSignedIn()
+            && resource.data.userId == request.auth.uid
+          );
 
-        // Public read (book details, discovery)
-        allow get, list: if true;
-
-        // Create: signed-in user, must be author
-        allow create: if isSignedIn()
-          && request.resource.data.userId == request.auth.uid
-          && request.resource.data.bookId == bookId
-          && request.resource.data.rating >= 1
-          && request.resource.data.rating <= 5
-          && request.resource.data.text is string;
-
-        // Update: ONLY the author
-        allow update: if isSignedIn()
-          && resource.data.userId == request.auth.uid
-          && request.resource.data.userId == resource.data.userId
-          && request.resource.data.bookId == resource.data.bookId;
-
-        // Delete: ONLY the author
-        allow delete: if isSignedIn()
-          && resource.data.userId == request.auth.uid;
+        // Canonical writes are backend-only via validated callables.
+        allow create, update, delete: if false;
       }
+    }
+
+    /* =========================
+       USER REVIEWS PROJECTION (SERVER AUTHORITY)
+       ========================= */
+    match /user_reviews/{docId} {
+      allow get, list: if false;
+      allow create, update, delete: if false;
     }
 
     /* =========================

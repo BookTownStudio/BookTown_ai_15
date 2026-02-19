@@ -17,6 +17,13 @@ const MAX_URL_LENGTH = 2048;
 const MAX_PROFILE_TAB_LIMIT = 30;
 const DEFAULT_PROFILE_TAB_LIMIT = 20;
 const DEFAULT_AVATAR_BASE = "https://api.dicebear.com/8.x/lorelei/svg?seed=";
+const REVIEW_STACK_REVISION = "review_stack_v2";
+const PROFILE_REVIEW_INDEX_HINT =
+  "user_reviews(uid,domain,visibility,updatedAtIso) and user_reviews(uid,domain,updatedAtIso)";
+const PROFILE_REVIEW_QUERY_SHAPE_PUBLIC =
+  "user_reviews.where(uid==targetUid).where(domain==book).where(visibility==public).orderBy(updatedAtIso desc).limit(limit+1)";
+const PROFILE_REVIEW_QUERY_SHAPE_OWNER =
+  "user_reviews.where(uid==targetUid).where(domain==book).orderBy(updatedAtIso desc).limit(limit+1)";
 
 type PublicProfile = {
   uid: string;
@@ -68,6 +75,8 @@ type ProfilePost = {
 
 type ProfileReview = {
   id: string;
+  domain: "book";
+  visibility: "public" | "private";
   bookId: string;
   userId: string;
   rating: number;
@@ -203,6 +212,13 @@ function resolveLimit(value: unknown): number {
   const numeric = toNonNegativeInt(value);
   if (numeric <= 0) return DEFAULT_PROFILE_TAB_LIMIT;
   return Math.min(MAX_PROFILE_TAB_LIMIT, Math.max(1, numeric));
+}
+
+function decodeCursor(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return normalized.slice(0, 96);
 }
 
 function isHttpUrl(value: string): boolean {
@@ -366,8 +382,11 @@ function normalizeProfileReview(
   source: Record<string, unknown>,
   fallbackBookId: string
 ): ProfileReview {
+  const visibility = source.visibility === "private" ? "private" : "public";
   return {
     id: sanitizeString(docId, 128),
+    domain: "book",
+    visibility,
     bookId: sanitizeString(source.bookId, 128) || fallbackBookId,
     userId: sanitizeString(source.userId, MAX_UID_LENGTH),
     rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),
@@ -380,6 +399,66 @@ function normalizeProfileReview(
     downvotes: toNonNegativeInt(source.downvotes),
     commentsCount: toNonNegativeInt(source.commentsCount),
   };
+}
+
+async function hydrateUserReviewProjection(
+  targetUid: string,
+  scanLimit: number
+): Promise<void> {
+  const migrationSnap = await db
+    .collectionGroup("reviews")
+    .where("userId", "==", targetUid)
+    .orderBy("updatedAt", "desc")
+    .limit(scanLimit)
+    .get();
+
+  if (migrationSnap.empty) return;
+
+  const batch = db.batch();
+  let writes = 0;
+  for (const reviewDoc of migrationSnap.docs) {
+    const parentDoc = reviewDoc.ref.parent.parent;
+    const grandCollectionId = parentDoc?.parent?.id;
+    if (grandCollectionId !== "books") continue;
+    const bookId = sanitizeString(parentDoc?.id, 128);
+    if (!bookId) continue;
+    const source = toRecord(reviewDoc.data());
+    const projectionId = `${targetUid}_${bookId}`;
+    const projectionRef = db.collection("user_reviews").doc(projectionId);
+    const normalized = normalizeProfileReview(reviewDoc.id, source, bookId);
+    batch.set(
+      projectionRef,
+      {
+        id: normalized.id,
+        domain: "book",
+        visibility: normalized.visibility,
+        uid: targetUid,
+        userId: targetUid,
+        bookId: normalized.bookId,
+        rating: normalized.rating,
+        text: normalized.text,
+        authorName: normalized.authorName,
+        authorHandle: normalized.authorHandle,
+        authorAvatar: normalized.authorAvatar,
+        upvotes: normalized.upvotes,
+        downvotes: normalized.downvotes,
+        commentsCount: normalized.commentsCount,
+        updatedAt: source.updatedAt ?? source.timestamp ?? source.createdAt ?? new Date().toISOString(),
+        updatedAtIso: toIso(
+          source.updatedAt ?? source.timestamp ?? source.createdAt ?? new Date().toISOString()
+        ),
+        createdAt: source.createdAt ?? source.updatedAt ?? new Date().toISOString(),
+        sourcePath: reviewDoc.ref.path,
+      },
+      { merge: true }
+    );
+    writes += 1;
+    if (writes >= 400) break;
+  }
+
+  if (writes > 0) {
+    await batch.commit();
+  }
 }
 
 function normalizeProfileBook(docId: string, source: Record<string, unknown>): ProfileBook {
@@ -815,76 +894,244 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
 
+  const viewerUid = ensureUid(request.auth.uid, "auth.uid");
   const targetUid = ensureUid(request.data?.uid, "uid");
   const limitSize = resolveLimit(request.data?.limit);
+  const cursor = decodeCursor(request.data?.cursor);
+  const isOwnerView = viewerUid === targetUid;
 
   const profile = await readOrCreatePublicProfile(targetUid);
   if (!profile) {
     throw new HttpsError("not-found", "Profile not found.");
   }
 
-  const scanLimit = Math.min(180, Math.max(limitSize * 6, limitSize + 20));
-  let reviewDocs:
-    FirebaseFirestore.QueryDocumentSnapshot<FirebaseFirestore.DocumentData>[] = [];
-
   try {
-    const orderedSnap = await db
-      .collectionGroup("reviews")
-      .where("userId", "==", targetUid)
-      .orderBy("updatedAt", "desc")
-      .limit(scanLimit)
-      .get();
-    reviewDocs = orderedSnap.docs;
-  } catch (error) {
-    logger.warn("[PROFILE][REVIEWS][ORDERED_QUERY_FAILED]", {
+    const baseRef = db.collection("user_reviews");
+    const profileQuery = isOwnerView
+      ? baseRef
+          .where("uid", "==", targetUid)
+          .where("domain", "==", "book")
+          .orderBy("updatedAtIso", "desc")
+          .limit(limitSize + 1)
+      : baseRef
+          .where("uid", "==", targetUid)
+          .where("domain", "==", "book")
+          .where("visibility", "==", "public")
+          .orderBy("updatedAtIso", "desc")
+          .limit(limitSize + 1);
+
+    const pagedQuery = cursor ? profileQuery.startAfter(cursor) : profileQuery;
+    let snap = await pagedQuery.get();
+
+    // Migration hydration path for pre-projection reviews.
+    if (!cursor && snap.empty) {
+      await hydrateUserReviewProjection(targetUid, Math.min(180, limitSize * 6));
+      snap = await profileQuery.get();
+    }
+
+    const normalized = snap.docs.map((reviewDoc) =>
+      normalizeProfileReview(
+        reviewDoc.id,
+        toRecord(reviewDoc.data()),
+        sanitizeString(reviewDoc.data().bookId, 128)
+      )
+    );
+
+    const hasMore = normalized.length > limitSize;
+    const items = normalized.slice(0, limitSize);
+    const nextCursor =
+      hasMore && items.length > 0
+        ? sanitizeString(
+            snap.docs[Math.min(limitSize - 1, snap.docs.length - 1)].get("updatedAtIso"),
+            96
+          )
+        : undefined;
+
+    logger.info("[PROFILE][REVIEWS][FETCH_OK]", {
+      revision: REVIEW_STACK_REVISION,
+      viewerUid,
       targetUid,
+      limitSize,
+      cursor,
+      queryShape: isOwnerView
+        ? PROFILE_REVIEW_QUERY_SHAPE_OWNER
+        : PROFILE_REVIEW_QUERY_SHAPE_PUBLIC,
+      resultCount: items.length,
+      hasMore,
+      nextCursor: nextCursor ?? null,
+    });
+
+    return {
+      items,
+      hasMore,
+      ...(nextCursor ? { nextCursor } : {}),
+      revision: REVIEW_STACK_REVISION,
+    };
+  } catch (error) {
+    logger.error("[PROFILE][REVIEWS][FETCH_FAILED]", {
+      revision: REVIEW_STACK_REVISION,
+      viewerUid,
+      targetUid,
+      limitSize,
+      cursor,
+      queryShape: isOwnerView
+        ? PROFILE_REVIEW_QUERY_SHAPE_OWNER
+        : PROFILE_REVIEW_QUERY_SHAPE_PUBLIC,
+      indexHint: PROFILE_REVIEW_INDEX_HINT,
       error,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "PROFILE_REVIEWS_QUERY_FAILED",
+      {
+        revision: REVIEW_STACK_REVISION,
+        code: "PROFILE_REVIEWS_QUERY_FAILED",
+        queryShape: isOwnerView
+          ? PROFILE_REVIEW_QUERY_SHAPE_OWNER
+          : PROFILE_REVIEW_QUERY_SHAPE_PUBLIC,
+        uid: targetUid,
+        indexHint: PROFILE_REVIEW_INDEX_HINT,
+      }
+    );
+  }
+});
+
+export const runReviewStackReleaseGate = onCall({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const callerUid = ensureUid(request.auth.uid, "auth.uid");
+  const targetUid = ensureUid(request.data?.uid ?? callerUid, "uid");
+  const expectedRevision = sanitizeString(request.data?.expectedRevision, 64);
+  const callerRole =
+    typeof request.auth.token?.role === "string"
+      ? request.auth.token.role
+      : "user";
+  const isPrivileged =
+    callerUid === targetUid ||
+    callerRole === "superadmin" ||
+    callerRole === "superuser" ||
+    callerRole === "moderator";
+
+  if (!isPrivileged) {
+    throw new HttpsError(
+      "permission-denied",
+      "Release gate can only be executed by owner or privileged roles."
+    );
+  }
+
+  if (expectedRevision && expectedRevision !== REVIEW_STACK_REVISION) {
+    throw new HttpsError("failed-precondition", "REVIEW_STACK_REVISION_MISMATCH", {
+      expectedRevision,
+      actualRevision: REVIEW_STACK_REVISION,
     });
   }
 
-  if (reviewDocs.length < limitSize) {
-    const fallbackSnap = await db
-      .collectionGroup("reviews")
-      .where("userId", "==", targetUid)
-      .limit(scanLimit)
-      .get();
-    const seenPaths = new Set(reviewDocs.map((doc) => doc.ref.path));
-    for (const doc of fallbackSnap.docs) {
-      if (seenPaths.has(doc.ref.path)) continue;
-      reviewDocs.push(doc);
+  const queryDiagnostics: Array<{
+    name: string;
+    status: "pass" | "fail";
+    queryShape: string;
+    indexHint: string;
+    errorCode?: string;
+    errorMessage?: string;
+  }> = [];
+
+  const runCheck = async (name: string, fn: () => Promise<void>, queryShape: string) => {
+    try {
+      await fn();
+      queryDiagnostics.push({
+        name,
+        status: "pass",
+        queryShape,
+        indexHint: PROFILE_REVIEW_INDEX_HINT,
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      queryDiagnostics.push({
+        name,
+        status: "fail",
+        queryShape,
+        indexHint: PROFILE_REVIEW_INDEX_HINT,
+        errorCode: "FAILED_PRECONDITION",
+        errorMessage,
+      });
+      throw error;
     }
-  }
+  };
 
-  const items: ProfileReview[] = [];
-
-  for (const reviewDoc of reviewDocs) {
-    const parentDoc = reviewDoc.ref.parent.parent;
-    const grandCollectionId = parentDoc?.parent?.id;
-    if (grandCollectionId !== "books") continue;
-
-    const fallbackBookId = sanitizeString(parentDoc?.id, 128);
-    if (!fallbackBookId) continue;
-
-    const normalizedReview = normalizeProfileReview(
-      reviewDoc.id,
-      toRecord(reviewDoc.data()),
-      fallbackBookId
-    );
-    if (!normalizedReview.userId) {
-      normalizedReview.userId = targetUid;
-    }
-    items.push(normalizedReview);
-  }
-
-  items.sort(
-    (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+  await runCheck(
+    "profile_owner_query",
+    async () => {
+      await db
+        .collection("user_reviews")
+        .where("uid", "==", targetUid)
+        .where("domain", "==", "book")
+        .orderBy("updatedAtIso", "desc")
+        .limit(1)
+        .get();
+    },
+    PROFILE_REVIEW_QUERY_SHAPE_OWNER
   );
 
-  const hasMore = items.length > limitSize;
+  await runCheck(
+    "profile_public_query",
+    async () => {
+      await db
+        .collection("user_reviews")
+        .where("uid", "==", targetUid)
+        .where("domain", "==", "book")
+        .where("visibility", "==", "public")
+        .orderBy("updatedAtIso", "desc")
+        .limit(1)
+        .get();
+    },
+    PROFILE_REVIEW_QUERY_SHAPE_PUBLIC
+  );
+
+  let smokeCount = 0;
+  try {
+    const smokeSnap = await db
+      .collection("user_reviews")
+      .where("uid", "==", targetUid)
+      .where("domain", "==", "book")
+      .orderBy("updatedAtIso", "desc")
+      .limit(5)
+      .get();
+    smokeCount = smokeSnap.docs.length;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logger.error("[REVIEW_STACK][RELEASE_GATE][SMOKE_FAILED]", {
+      callerUid,
+      targetUid,
+      revision: REVIEW_STACK_REVISION,
+      indexHint: PROFILE_REVIEW_INDEX_HINT,
+      error: errorMessage,
+    });
+    throw new HttpsError("failed-precondition", "REVIEW_STACK_SMOKE_FAILED", {
+      revision: REVIEW_STACK_REVISION,
+      queryShape: PROFILE_REVIEW_QUERY_SHAPE_OWNER,
+      uid: targetUid,
+      indexHint: PROFILE_REVIEW_INDEX_HINT,
+      error: errorMessage,
+    });
+  }
+
+  logger.info("[REVIEW_STACK][RELEASE_GATE][PASS]", {
+    callerUid,
+    targetUid,
+    revision: REVIEW_STACK_REVISION,
+    smokeCount,
+    queryDiagnostics,
+  });
 
   return {
-    items: items.slice(0, limitSize),
-    hasMore,
+    revision: REVIEW_STACK_REVISION,
+    smokeUid: targetUid,
+    smokeCount,
+    requiredIndexes: PROFILE_REVIEW_INDEX_HINT,
+    queryDiagnostics,
+    passed: true,
   };
 });
 

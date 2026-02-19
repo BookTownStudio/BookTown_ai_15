@@ -31,6 +31,9 @@ const postVisibilitySchema = z.enum([
   "restricted",
 ]);
 
+const reviewVisibilitySchema = z.enum(["public", "private"]);
+const reviewDomainSchema = z.literal("book");
+
 const renderSurfaceSchema = z.enum([
   "home",
   "feed",
@@ -195,6 +198,8 @@ const profilePostSchema = z
 const profileReviewSchema = z
   .object({
     id: z.string().min(1),
+    domain: reviewDomainSchema,
+    visibility: reviewVisibilitySchema,
     bookId: z.string().min(1),
     userId: z.string().min(1),
     rating: z.number().int().min(1).max(5),
@@ -208,6 +213,8 @@ const profileReviewSchema = z
     commentsCount: z.number().int().nonnegative(),
   })
   .strict();
+
+const bookReviewSchema = profileReviewSchema;
 
 const profileBookSchema = z
   .object({
@@ -638,12 +645,15 @@ export const apiContracts = {
         .object({
           uid: z.string().min(1),
           limit: z.number().int().min(1).max(30).optional(),
+          cursor: z.string().min(1).max(96).optional(),
         })
         .strict(),
       z
         .object({
           items: z.array(profileReviewSchema),
           hasMore: z.boolean(),
+          nextCursor: z.string().min(1).max(96).optional(),
+          revision: z.string().min(1).optional(),
         })
         .strict(),
       "httpsCallable",
@@ -651,6 +661,118 @@ export const apiContracts = {
         callSites: [
           "services/firebaseDbService.ts",
           "lib/hooks/useUserProfileReviews.ts",
+        ],
+      }
+    ),
+
+    runReviewStackReleaseGate: defineContract(
+      z
+        .object({
+          uid: z.string().min(1).optional(),
+          expectedRevision: z.string().min(1).max(64).optional(),
+        })
+        .strict()
+        .optional(),
+      z
+        .object({
+          revision: z.string().min(1),
+          smokeUid: z.string().min(1),
+          smokeCount: z.number().int().nonnegative(),
+          requiredIndexes: z.string().min(1),
+          queryDiagnostics: z.array(
+            z
+              .object({
+                name: z.string().min(1),
+                status: z.enum(["pass", "fail"]),
+                queryShape: z.string().min(1),
+                indexHint: z.string().min(1),
+                errorCode: z.string().min(1).optional(),
+                errorMessage: z.string().min(1).optional(),
+              })
+              .strict()
+          ),
+          passed: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    listBookReviews: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          limit: z.number().int().min(1).max(50).optional(),
+          cursor: z.string().min(1).max(96).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(bookReviewSchema),
+          hasMore: z.boolean(),
+          nextCursor: z.string().min(1).max(96).optional(),
+          revision: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useBookReviews.ts",
+        ],
+      }
+    ),
+
+    upsertBookReview: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          rating: z.number().int().min(1).max(5),
+          text: z.string().min(1).max(2000),
+          visibility: reviewVisibilitySchema.optional(),
+        })
+        .strict(),
+      z
+        .object({
+          reviewId: z.string().min(1),
+          bookId: z.string().min(1),
+          uid: z.string().min(1),
+          visibility: reviewVisibilitySchema,
+          created: z.boolean(),
+          updatedAt: z.string().min(1),
+          revision: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useSubmitReview.ts",
+        ],
+      }
+    ),
+
+    deleteBookReview: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          deleted: z.boolean(),
+          bookId: z.string().min(1),
+          uid: z.string().min(1),
+          revision: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useDeleteReview.ts",
         ],
       }
     ),

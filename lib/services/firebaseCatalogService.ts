@@ -33,6 +33,33 @@ const AUTHOR_BOOKS_LIMIT = 60;
 const RELATED_BOOKS_LIMIT = 12;
 const TRENDING_BOOKS_LIMIT = 20;
 
+type SuccessEnvelope<T> = {
+  success: true;
+  data: T;
+};
+
+type FailureEnvelope = {
+  success: false;
+  error: {
+    code: string;
+    message: string;
+    details?: unknown;
+  };
+};
+
+function resolveDeterministicErrorCode(
+  transportCode: string,
+  details: unknown
+): string {
+  if (details && typeof details === "object") {
+    const detailsCode = (details as { code?: unknown }).code;
+    if (typeof detailsCode === "string" && detailsCode.trim().length > 0) {
+      return detailsCode.trim();
+    }
+  }
+  return transportCode;
+}
+
 function getDbOrThrow() {
   try {
     return getFirebaseDb();
@@ -123,23 +150,92 @@ function mapAuthor(data: any, id: string): Author {
 }
 
 function mapReview(data: any, id: string): Review {
+  const normalizedTimestamp =
+    typeof data.timestamp === "string" && data.timestamp.trim().length > 0
+      ? data.timestamp
+      : typeof data.updatedAtIso === "string" && data.updatedAtIso.trim().length > 0
+      ? data.updatedAtIso
+      : typeof data.updatedAt === "string" && data.updatedAt.trim().length > 0
+      ? data.updatedAt
+      : data.updatedAt?.toDate?.()?.toISOString() ||
+        data.createdAt?.toDate?.()?.toISOString() ||
+        new Date().toISOString();
+
   return {
     id,
+    domain: "book",
+    visibility: data.visibility === "private" ? "private" : "public",
     bookId: data.bookId,
-    userId: data.userId,
-    rating: data.rating,
-    text: data.text,
+    userId: data.userId || data.uid || "",
+    rating: Number.isFinite(Number(data.rating)) ? Math.trunc(Number(data.rating)) : 1,
+    text: typeof data.text === "string" ? data.text : "",
     authorName: data.authorName || "",
     authorHandle: data.authorHandle || "",
     authorAvatar: data.authorAvatar || "",
-    timestamp:
-      data.updatedAt?.toDate?.()?.toISOString() ||
-      data.createdAt?.toDate?.()?.toISOString() ||
-      new Date().toISOString(),
-    upvotes: data.upvotes || 0,
-    downvotes: data.downvotes || 0,
-    commentsCount: data.commentsCount || 0,
+    timestamp: normalizedTimestamp,
+    upvotes: Number.isFinite(Number(data.upvotes)) ? Math.max(0, Math.trunc(Number(data.upvotes))) : 0,
+    downvotes:
+      Number.isFinite(Number(data.downvotes)) ? Math.max(0, Math.trunc(Number(data.downvotes))) : 0,
+    commentsCount:
+      Number.isFinite(Number(data.commentsCount))
+        ? Math.max(0, Math.trunc(Number(data.commentsCount)))
+        : 0,
   };
+}
+
+function extractCallableData<T>(endpoint: string, payload: unknown): T {
+  if (!payload || typeof payload !== "object") {
+    throw new Error(`[${endpoint}] Invalid callable response envelope.`);
+  }
+
+  const envelope = payload as Partial<SuccessEnvelope<T>> &
+    Partial<FailureEnvelope> & {
+      success?: boolean;
+    };
+
+  if (envelope.success === false && envelope.error) {
+    const transportCode =
+      typeof envelope.error.code === "string"
+        ? envelope.error.code
+        : "UNKNOWN";
+    const code = resolveDeterministicErrorCode(
+      transportCode,
+      envelope.error.details
+    );
+    const message =
+      typeof envelope.error.message === "string"
+        ? envelope.error.message
+        : "Callable request failed.";
+    const error = new Error(`[${code}] ${message}`) as Error & {
+      code?: string;
+      transportCode?: string;
+      details?: unknown;
+      endpoint?: string;
+    };
+    error.code = code;
+    error.transportCode = transportCode;
+    error.details = envelope.error.details;
+    error.endpoint = endpoint;
+    throw error;
+  }
+
+  if (envelope.success !== true || !("data" in envelope)) {
+    throw new Error(`[${endpoint}] Missing success envelope data.`);
+  }
+
+  return envelope.data as T;
+}
+
+async function callEndpoint<TRequest, TResponse>(
+  endpoint: string,
+  request: TRequest
+): Promise<TResponse> {
+  const fn = httpsCallable<TRequest, SuccessEnvelope<TResponse> | FailureEnvelope>(
+    getFirebaseFunctions(),
+    endpoint
+  );
+  const result = await fn(request);
+  return extractCallableData<TResponse>(endpoint, result.data);
 }
 
 async function resolveCoverUrl(book: any): Promise<string> {
@@ -499,15 +595,53 @@ export const firebaseCatalogService = {
   },
 
   async getReviews(bookId: string): Promise<Review[]> {
-    if (!bookId) return [];
-    const db = getDbOrThrow();
-    const reviewsQuery = query(
-      collection(db, "books", bookId, "reviews"),
-      orderBy("updatedAt", "desc"),
-      limit(100)
+    const page = await this.getReviewsPage(bookId, { limit: 20 });
+    return page.items;
+  },
+
+  async getReviewsPage(
+    bookId: string,
+    options?: { limit?: number; cursor?: string }
+  ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }> {
+    if (!bookId) return { items: [], hasMore: false };
+    const normalizedBookId = String(bookId).trim();
+    if (!normalizedBookId) return { items: [], hasMore: false };
+    const boundedLimit = Math.min(50, Math.max(1, Math.trunc(options?.limit || 20)));
+    const cursor =
+      typeof options?.cursor === "string" && options.cursor.trim()
+        ? options.cursor.trim().slice(0, 96)
+        : undefined;
+
+    const response = await callEndpoint<
+      { bookId: string; limit: number; cursor?: string },
+      {
+        items: Record<string, unknown>[];
+        hasMore: boolean;
+        nextCursor?: string;
+        revision?: string;
+      }
+    >("listBookReviews", {
+      bookId: normalizedBookId,
+      limit: boundedLimit,
+      ...(cursor ? { cursor } : {}),
+    });
+
+    const items = response.items.map((item) =>
+      mapReview(item, String(item.id || ""))
     );
-    const snap = await getDocs(reviewsQuery);
-    return snap.docs.map((d) => mapReview(d.data(), d.id));
+
+    return {
+      items,
+      hasMore: response.hasMore === true,
+      ...(typeof response.nextCursor === "string" &&
+      response.nextCursor.trim().length > 0
+        ? { nextCursor: response.nextCursor.trim().slice(0, 96) }
+        : {}),
+      ...(typeof response.revision === "string" &&
+      response.revision.trim().length > 0
+        ? { revision: response.revision.trim().slice(0, 64) }
+        : {}),
+    };
   },
 
   async addReview(
@@ -516,20 +650,10 @@ export const firebaseCatalogService = {
       bookId: string;
       rating: number;
       text: string;
-      authorName: string;
-      authorHandle?: string;
-      authorAvatar?: string | null;
+      visibility?: "public" | "private";
     }
   ): Promise<void> {
-    const {
-      bookId,
-      rating,
-      text,
-      authorName,
-      authorHandle,
-      authorAvatar,
-    } = review;
-
+    const { bookId, rating, text, visibility } = review;
     if (!uid || !bookId) {
       throw new Error("INVALID_REVIEW_IDENTITY");
     }
@@ -537,32 +661,38 @@ export const firebaseCatalogService = {
       throw new Error("INVALID_REVIEW_RATING");
     }
 
-    const db = getDbOrThrow();
-    const reviewRef = doc(db, "books", bookId, "reviews", uid);
-    await setDoc(
-      reviewRef,
+    await callEndpoint<
       {
-        bookId,
-        userId: uid,
-        rating,
-        text,
-        authorName,
-        authorHandle: authorHandle || null,
-        authorAvatar: authorAvatar || null,
-        updatedAt: serverTimestamp(),
-        createdAt: serverTimestamp(),
+        bookId: string;
+        rating: number;
+        text: string;
+        visibility?: "public" | "private";
       },
-      { merge: true }
-    );
+      {
+        reviewId: string;
+        bookId: string;
+        uid: string;
+        visibility: "public" | "private";
+        created: boolean;
+        updatedAt: string;
+        revision: string;
+      }
+    >("upsertBookReview", {
+      bookId,
+      rating,
+      text,
+      ...(visibility ? { visibility } : {}),
+    });
   },
 
   async deleteReview(uid: string, bookId: string): Promise<void> {
     if (!uid || !bookId) {
       throw new Error("INVALID_REVIEW_IDENTITY");
     }
-
-    const db = getDbOrThrow();
-    await deleteDoc(doc(db, "books", bookId, "reviews", uid));
+    await callEndpoint<
+      { bookId: string },
+      { deleted: boolean; bookId: string; uid: string; revision: string }
+    >("deleteBookReview", { bookId });
   },
 
   async getRecommendations(_uid: string): Promise<string[]> {

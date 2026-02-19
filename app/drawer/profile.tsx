@@ -124,7 +124,12 @@ const ProfileScreen: React.FC = () => {
       20,
       activeTab === 'posts'
     );
-  const { data: profileReviews, isLoading: profileReviewsLoading, isError: profileReviewsError } =
+  const {
+    data: profileReviews,
+    isLoading: profileReviewsLoading,
+    isError: profileReviewsError,
+    error: profileReviewsErrorObject,
+  } =
     useUserProfileReviews(
       effectiveProfileUserId,
       20,
@@ -236,6 +241,13 @@ const ProfileScreen: React.FC = () => {
     { month: 'short', year: 'numeric' }
   );
   const profileBio = profile.bioEn || profile.bioAr;
+  const profileReviewsErrorCode =
+    profileReviewsErrorObject &&
+    typeof profileReviewsErrorObject === 'object' &&
+    'code' in profileReviewsErrorObject &&
+    typeof (profileReviewsErrorObject as { code?: unknown }).code === 'string'
+      ? String((profileReviewsErrorObject as { code: string }).code)
+      : 'UNKNOWN';
 
   return (
     <>
@@ -506,7 +518,9 @@ const ProfileScreen: React.FC = () => {
                   <LoadingSpinner />
                 ) : profileReviewsError ? (
                   <BilingualText className="text-red-500 dark:text-red-400">
-                    {lang === 'en' ? 'Failed to load reviews.' : 'فشل تحميل المراجعات.'}
+                    {lang === 'en'
+                      ? `Failed to load reviews (${profileReviewsErrorCode}).`
+                      : `فشل تحميل المراجعات (${profileReviewsErrorCode}).`}
                   </BilingualText>
                 ) : profileReviews && profileReviews.length > 0 ? (
                   profileReviews.map(review => (

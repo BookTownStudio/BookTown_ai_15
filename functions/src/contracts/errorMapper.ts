@@ -40,6 +40,13 @@ function asCode(error: unknown): string | null {
   return null;
 }
 
+function asDetails(error: unknown): unknown {
+  if (error && typeof error === "object" && "details" in error) {
+    return (error as { details?: unknown }).details;
+  }
+  return undefined;
+}
+
 export function fromValidationFailure(
   stage: "request" | "response",
   details: unknown
@@ -63,11 +70,13 @@ export function fromError(error: unknown): CanonicalError {
   const message = asMessage(error);
   const rawCode = asCode(error);
   const mappedCode = rawCode ? FIREBASE_TO_CANONICAL[rawCode] : undefined;
+  const details = asDetails(error);
 
   if (mappedCode) {
     return {
       code: mappedCode,
       message: message ?? DEFAULT_ERROR_MESSAGES[mappedCode],
+      ...(details === undefined ? {} : { details }),
     };
   }
 
@@ -86,6 +95,7 @@ export function fromError(error: unknown): CanonicalError {
   return {
     code: "UNKNOWN",
     message: message ?? DEFAULT_ERROR_MESSAGES.UNKNOWN,
+    ...(details === undefined ? {} : { details }),
   };
 }
 
