@@ -238,7 +238,11 @@ export interface ProjectDataService {
     uid: string,
     project: Omit<Project, 'id' | 'updatedAt' | 'createdAt'>
   ): Promise<Project>;
-  updateProject(uid: string, projectId: string, updates: Partial<Project>): Promise<void>;
+  updateProject(
+    uid: string,
+    projectId: string,
+    updates: Partial<Project>
+  ): Promise<{ projectId: string; revision: number; updatedAt: string }>;
   deleteProject(uid: string, projectId: string): Promise<void>;
 
   stageBookFiles(

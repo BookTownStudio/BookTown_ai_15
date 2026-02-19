@@ -29,6 +29,7 @@ type SuccessEnvelope<T> = {
 };
 
 type ProjectStatus = "Idea" | "Draft" | "Revision" | "Final";
+type WriteUpdateResult = { projectId: string; revision: number; updatedAt: string };
 
 function toIso(value: unknown): string {
   if (value instanceof Timestamp) return value.toDate().toISOString();
@@ -138,6 +139,13 @@ async function callEndpoint<TRequest, TData>(
   );
   const result = await fn(request);
   return extractSuccessData<TData>(endpoint, result.data);
+}
+
+function isRevisionMismatchError(error: unknown): boolean {
+  if (!(error instanceof Error) || typeof error.message !== "string") {
+    return false;
+  }
+  return error.message.includes("[FAILED_PRECONDITION]") && error.message.includes("Revision mismatch");
 }
 
 function sanitizeWriteUpdates(input: Partial<Project>): {
@@ -257,30 +265,40 @@ export const firebaseProjectService: ProjectDataService = {
     return normalizeProjectDoc(created.id, created as unknown as Record<string, unknown>);
   },
 
-  async updateProject(uid: string, projectId: string, updates: Partial<Project>): Promise<void> {
+  async updateProject(
+    uid: string,
+    projectId: string,
+    updates: Partial<Project>
+  ): Promise<WriteUpdateResult> {
     const sanitized = sanitizeWriteUpdates(updates);
     if (Object.keys(sanitized).length === 0) {
       throw new Error("No writable fields were provided.");
     }
 
-    const current = await this.getProject(uid, projectId);
-    const expectedRevision =
-      typeof updates.revision === "number" && Number.isInteger(updates.revision) && updates.revision > 0
-        ? updates.revision
-        : current.revision;
+    const invokeUpdate = async (expectedRevision: number) =>
+      callEndpoint<
+        {
+          projectId: string;
+          expectedRevision: number;
+          updates: typeof sanitized;
+        },
+        WriteUpdateResult
+      >("updateWriteProject", {
+        projectId,
+        expectedRevision,
+        updates: sanitized,
+      });
 
-    await callEndpoint<
-      {
-        projectId: string;
-        expectedRevision: number;
-        updates: typeof sanitized;
-      },
-      { projectId: string; revision: number; updatedAt: string }
-    >("updateWriteProject", {
-      projectId,
-      expectedRevision,
-      updates: sanitized,
-    });
+    const current = await this.getProject(uid, projectId);
+    try {
+      return await invokeUpdate(current.revision);
+    } catch (error) {
+      if (!isRevisionMismatchError(error)) {
+        throw error;
+      }
+      const latest = await this.getProject(uid, projectId);
+      return invokeUpdate(latest.revision);
+    }
   },
 
   async deleteProject(_uid: string, projectId: string): Promise<void> {

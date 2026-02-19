@@ -71,6 +71,10 @@ const EditorScreen: React.FC = () => {
     const hasHydratedRef = useRef<boolean>(false); 
     const hasLocalEditsRef = useRef<boolean>(false); 
     const lastSavedSnapshot = useRef<EditorSnapshot>({ titleEn: '', titleAr: '', content: '', wordCount: -1 });
+    const saveInFlightRef = useRef<boolean>(false);
+    const queuedSnapshotRef = useRef<EditorSnapshot | null>(null);
+    const queuedNotifyRef = useRef<boolean>(false);
+    const conflictRetryCountRef = useRef<number>(0);
 
     // Data Hooks
     const { data: project, isLoading: isFetching, isError: isFetchError, error: fetchError } = useProjectDetails(isNewRoute ? undefined : projectId);
@@ -82,31 +86,66 @@ const EditorScreen: React.FC = () => {
             return;
         }
 
+        if (saveInFlightRef.current) {
+            queuedSnapshotRef.current = snapshot;
+            queuedNotifyRef.current = queuedNotifyRef.current || notifyOnSuccess;
+            return;
+        }
+
+        saveInFlightRef.current = true;
         setIsSaving(true);
+
+        const completeSaveCycle = () => {
+            saveInFlightRef.current = false;
+
+            const queuedSnapshot = queuedSnapshotRef.current;
+            const queuedNotify = queuedNotifyRef.current;
+            queuedSnapshotRef.current = null;
+            queuedNotifyRef.current = false;
+
+            if (queuedSnapshot && projectId && projectId !== 'new' && syncStatus === 'persistent') {
+                persistSnapshot(queuedSnapshot, queuedNotify);
+                return;
+            }
+
+            setIsSaving(false);
+        };
+
         autosave({
             projectId: projectId as string,
             updates: snapshot
         }, {
             onSuccess: () => {
-                setIsSaving(false);
+                conflictRetryCountRef.current = 0;
                 lastSavedSnapshot.current = snapshot;
                 if (notifyOnSuccess) {
                     showToast(lang === 'en' ? 'Saved successfully.' : 'تم الحفظ بنجاح.');
                 }
+                completeSaveCycle();
             },
             onError: (err: any) => {
-                setIsSaving(false);
                 if (err?.message?.includes("Revision mismatch")) {
-                    setSyncStatus('error');
-                    showToast(lang === 'en' ? 'Save conflict detected. Reload required.' : 'تم اكتشاف تعارض في الحفظ. يلزم إعادة التحميل.');
+                    if (conflictRetryCountRef.current < 2) {
+                        conflictRetryCountRef.current += 1;
+                        queuedSnapshotRef.current = snapshot;
+                        queuedNotifyRef.current = queuedNotifyRef.current || notifyOnSuccess;
+                        showToast(lang === 'en' ? 'Save conflict detected. Retrying...' : 'تم اكتشاف تعارض في الحفظ. جارٍ إعادة المحاولة...');
+                    } else {
+                        conflictRetryCountRef.current = 0;
+                        showToast(lang === 'en' ? 'Save conflict persists. Press Save to retry.' : 'تعارض الحفظ مستمر. اضغط حفظ لإعادة المحاولة.');
+                    }
+                    completeSaveCycle();
                     return;
                 }
                 if (err?.message?.includes("not found")) {
                     setSyncStatus('error');
                     showToast(lang === 'en' ? 'Critical: Project authority lost.' : 'خطأ فادح: فقدت صلاحية المشروع.');
+                    completeSaveCycle();
                     return;
                 }
+                conflictRetryCountRef.current = 0;
                 showToast(lang === 'en' ? 'Save failed. Please retry.' : 'فشل الحفظ. يرجى إعادة المحاولة.');
+                completeSaveCycle();
             }
         });
     }, [autosave, lang, projectId, showToast, syncStatus]);

@@ -25,34 +25,28 @@ export const useAutosaveProject = () => {
                 console.error("[WRITE][BLOCKED_AUTOSAVE] Attempted persistent write to ephemeral ID 'new'. Aborting.");
                 throw new Error("WRITE_PERSISTENCE_VIOLATION: Ephemeral document cannot be autosaved.");
             }
-            
-            const currentProject = queryClient.getQueryData<Project>(
-                queryKeys.user.project(uid, projectId) as unknown as any[]
-            );
 
-            const updatesWithRevision: Partial<Project> = {
-                ...updates,
-                ...(typeof currentProject?.revision === 'number' ? { revision: currentProject.revision } : {})
-            };
-
-            await dataService.projects.updateProject(uid, projectId, updatesWithRevision);
-            return { success: true };
+            return dataService.projects.updateProject(uid, projectId, updates);
         },
-        onSuccess: (_, { projectId, updates }) => {
+        onSuccess: (result, { projectId, updates }) => {
             if (uid) {
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.setQueryData<Project>(queryKeys.user.project(uid, projectId) as unknown as any[], (old) => {
                     if (!old) return old;
-                    const nextRevision =
-                        typeof old.revision === 'number' && Number.isInteger(old.revision)
-                            ? old.revision + 1
-                            : 2;
-                    return { ...old, ...updates, revision: nextRevision, updatedAt: new Date().toISOString() };
+                    return { ...old, ...updates, revision: result.revision, updatedAt: result.updatedAt };
                 });
+                // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
+                queryClient.setQueryData<Project[]>(queryKeys.user.projects(uid) as unknown as any[], (old = []) =>
+                    old.map((project) =>
+                        project.id === projectId
+                            ? { ...project, ...updates, revision: result.revision, updatedAt: result.updatedAt }
+                            : project
+                    )
+                );
             }
         },
         onSettled: (_, error, { projectId }) => {
-            if (uid) {
+            if (uid && error) {
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
