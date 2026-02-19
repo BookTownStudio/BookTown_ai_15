@@ -3,6 +3,7 @@ import {
   getDoc,
   setDoc,
   collection,
+  collectionGroup,
   getDocs,
   query,
   orderBy,
@@ -421,20 +422,100 @@ class FirebaseUserService {
   async getProfileReviews(uid: string, limitSize = 20): Promise<Review[]> {
     const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
     const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
-    const response = await callEndpoint<
-      { uid: string; limit: number },
-      { items: Record<string, unknown>[]; hasMore: boolean }
-    >("listProfileReviews", { uid: normalizedUid, limit: boundedLimit });
+    try {
+      const response = await callEndpoint<
+        { uid: string; limit: number },
+        { items: Record<string, unknown>[]; hasMore: boolean }
+      >("listProfileReviews", { uid: normalizedUid, limit: boundedLimit });
 
-    return response.items
-      .map((item) => {
+      return response.items
+        .map((item) => {
+          try {
+            return toProfileReview(item);
+          } catch {
+            return null;
+          }
+        })
+        .filter((review): review is Review => review !== null);
+    } catch (callableError) {
+      console.warn(
+        "[ProfileReviews] Callable failed, switching to direct Firestore recovery path.",
+        callableError
+      );
+    }
+
+    const db = getDb();
+    if (!db) {
+      throw new Error("Firebase not initialized");
+    }
+
+    const scanLimit = Math.min(180, Math.max(boundedLimit * 6, boundedLimit + 20));
+    let docs: QueryDocumentSnapshot<DocumentData>[] = [];
+
+    try {
+      const orderedSnap = await getDocs(
+        query(
+          collectionGroup(db, "reviews"),
+          where("userId", "==", normalizedUid),
+          orderBy("updatedAt", "desc"),
+          limit(scanLimit)
+        )
+      );
+      docs = orderedSnap.docs;
+    } catch (orderedError) {
+      console.warn(
+        "[ProfileReviews] Ordered Firestore query failed, trying unordered fallback.",
+        orderedError
+      );
+    }
+
+    if (docs.length < boundedLimit) {
+      const fallbackSnap = await getDocs(
+        query(
+          collectionGroup(db, "reviews"),
+          where("userId", "==", normalizedUid),
+          limit(scanLimit)
+        )
+      );
+      const seenPaths = new Set(docs.map((docSnap) => docSnap.ref.path));
+      for (const docSnap of fallbackSnap.docs) {
+        if (seenPaths.has(docSnap.ref.path)) continue;
+        docs.push(docSnap);
+      }
+    }
+
+    const reviews = docs
+      .map((docSnap) => {
         try {
-          return toProfileReview(item);
+          const parentDoc = docSnap.ref.parent.parent;
+          const grandCollectionId = parentDoc?.parent?.id;
+          if (grandCollectionId !== "books") return null;
+
+          const payload = docSnap.data() as Record<string, unknown>;
+          const fallbackBookId = parentDoc?.id;
+          if (typeof payload.bookId !== "string" || !payload.bookId.trim()) {
+            if (!fallbackBookId) return null;
+            payload.bookId = fallbackBookId;
+          }
+          if (typeof payload.id !== "string" || !payload.id.trim()) {
+            payload.id = docSnap.id;
+          }
+          if (typeof payload.userId !== "string" || !payload.userId.trim()) {
+            payload.userId = normalizedUid;
+          }
+          return toProfileReview(payload);
         } catch {
           return null;
         }
       })
       .filter((review): review is Review => review !== null);
+
+    reviews.sort(
+      (a, b) =>
+        new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    );
+
+    return reviews.slice(0, boundedLimit);
   }
 
   async getProfileBooks(uid: string, limitSize = 20): Promise<Book[]> {

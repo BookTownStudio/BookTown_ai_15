@@ -6,6 +6,26 @@ import * as logger from "firebase-functions/logger";
 import { Timestamp } from "firebase-admin/firestore";
 
 const db = admin.firestore();
+const ACTIVE_READING_STATES = new Set([
+  "reading",
+  "paused",
+  "in_progress",
+  "currently_reading",
+]);
+
+function toMillis(value: unknown): number {
+  if (!value) return 0;
+  if (value instanceof Timestamp) return value.toMillis();
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    const date = (value as { toDate: () => Date }).toDate();
+    return Number.isFinite(date.getTime()) ? date.getTime() : 0;
+  }
+  return 0;
+}
 
 /**
  * getReaderInsights
@@ -37,22 +57,31 @@ export const getReaderInsights = onCall({ cors: true }, async (request) => {
 
     progressSnap.forEach((doc) => {
       const data = doc.data();
+      const statusState =
+        typeof data.status_state === "string"
+          ? data.status_state.trim().toLowerCase()
+          : "";
 
       totalReadingTimeSeconds += data.totalActiveSeconds ?? 0;
 
-      if (data.status_state === "completed") {
+      if (statusState === "completed") {
         finishedCount += 1;
       }
 
-      if (data.status_state === "reading") {
+      if (ACTIVE_READING_STATES.has(statusState)) {
+        const lastActiveAt = data.lastActiveAt ?? data.updatedAt ?? null;
         currentlyReading.push({
           bookId: data.bookId,
           progress: data.progress,
           lastPosition: data.lastPosition ?? null,
-          lastActiveAt: data.lastActiveAt ?? null,
+          lastActiveAt,
         });
       }
     });
+
+    currentlyReading.sort(
+      (a, b) => toMillis(b.lastActiveAt) - toMillis(a.lastActiveAt)
+    );
 
     // -------------------------------------------------
     // Streak calculation (event-derived)
