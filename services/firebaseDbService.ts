@@ -187,6 +187,26 @@ const stripUndefined = <T extends Record<string, any>>(value: T): T =>
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
   ) as T;
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+
+const computeFileSha256Hex = async (file: File): Promise<string | undefined> => {
+  try {
+    const subtle = globalThis.crypto?.subtle;
+    if (!subtle) return undefined;
+    const buffer = await file.arrayBuffer();
+    const digest = await subtle.digest("SHA-256", buffer);
+    const bytes = new Uint8Array(digest);
+    return Array.from(bytes)
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  } catch {
+    return undefined;
+  }
+};
+
 const toNonNegativeInt = (value: unknown): number => {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.trunc(value));
@@ -702,6 +722,137 @@ class FirebaseUserService {
       },
       { merge: true }
     );
+  }
+
+  async importGoodreadsData(
+    uid: string,
+    file: File
+  ): Promise<{ booksImported: number; shelvesCreated: number; reviewsImported: number }> {
+    const db = getDb();
+    if (!db) {
+      throw new Error("FIREBASE_NOT_INITIALIZED");
+    }
+
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const fileName = ensureNonEmptyString(file?.name || "", "file.name", 255);
+    const fileSize =
+      typeof file?.size === "number" && Number.isFinite(file.size)
+        ? Math.trunc(file.size)
+        : 0;
+    if (fileSize <= 0) {
+      throw new Error("INVALID_ARGUMENT: file must be non-empty.");
+    }
+
+    const idempotencyKey = `gr_${Date.now()}_${Math.random()
+      .toString(36)
+      .slice(2, 12)}`.replace(/[^A-Za-z0-9_-]/g, "_");
+    const contentSha256 = await computeFileSha256Hex(file);
+
+    const startResponse = await callEndpoint<
+      {
+        fileName: string;
+        fileSize: number;
+        mimeType?: string;
+        sourceKind?: "AUTO" | "CSV" | "DSAR_JSON";
+        contentSha256?: string;
+        idempotencyKey: string;
+      },
+      {
+        importId: string;
+        status: "UPLOADING";
+        uploadUrl: string;
+        uploadMethod: "PUT";
+        uploadHeaders: Record<string, string>;
+        expiresAt: string;
+      }
+    >("startGoodreadsImport", {
+      fileName,
+      fileSize,
+      mimeType: typeof file.type === "string" ? file.type : "",
+      sourceKind: "AUTO",
+      contentSha256,
+      idempotencyKey,
+    });
+
+    const uploadResponse = await fetch(startResponse.uploadUrl, {
+      method: startResponse.uploadMethod,
+      headers: startResponse.uploadHeaders,
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(
+        `GOODREADS_UPLOAD_FAILED: ${uploadResponse.status} ${uploadResponse.statusText}`
+      );
+    }
+
+    const finalizeResponse = await callEndpoint<
+      { importId: string },
+      {
+        importId: string;
+        status: "QUEUED";
+        detectedSourceKind: "CSV" | "DSAR_JSON";
+        parserVersion: "gr_import_v2";
+      }
+    >("finalizeGoodreadsImport", {
+      importId: startResponse.importId,
+    });
+
+    const timeoutMs = 5 * 60 * 1000;
+    const pollIntervalMs = 1500;
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt < timeoutMs) {
+      const sessionSnap = await getDoc(
+        doc(db, "imports", normalizedUid, "sessions", finalizeResponse.importId)
+      );
+
+      if (!sessionSnap.exists()) {
+        await sleep(pollIntervalMs);
+        continue;
+      }
+
+      const data = sessionSnap.data() as Record<string, unknown>;
+      const status = normalizeString(data.status, 32);
+
+      if (status === "FAILED") {
+        const failure =
+          data.failure && typeof data.failure === "object"
+            ? (data.failure as Record<string, unknown>)
+            : null;
+        const message =
+          normalizeString(failure?.message, 300) ||
+          "Goodreads import failed.";
+        throw new Error(`GOODREADS_IMPORT_FAILED: ${message}`);
+      }
+
+      if (status === "COMPLETE") {
+        const summary =
+          data.summary && typeof data.summary === "object"
+            ? (data.summary as Record<string, unknown>)
+            : {};
+        const progress =
+          data.progress && typeof data.progress === "object"
+            ? (data.progress as Record<string, unknown>)
+            : {};
+
+        const booksImported =
+          toNonNegativeInt(summary.booksImported) ||
+          toNonNegativeInt(progress.succeeded);
+        const shelvesCreated = toNonNegativeInt(summary.shelvesCreated);
+        const reviewsImported = toNonNegativeInt(summary.reviewsImported);
+
+        return {
+          booksImported,
+          shelvesCreated,
+          reviewsImported,
+        };
+      }
+
+      await sleep(pollIntervalMs);
+    }
+
+    throw new Error("DEADLINE_EXCEEDED: Goodreads import is still processing.");
   }
 
   async submitFeedback(

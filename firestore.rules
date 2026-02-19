@@ -72,7 +72,8 @@ service cloud.firestore {
         || subCollection == "published_books"
         || subCollection == "project_duplicate_ops"
         || subCollection == "project_publish_ops"
-        || subCollection == "project_share_links";
+        || subCollection == "project_share_links"
+        || subCollection == "userBooks";
     }
 
     /* =========================
@@ -492,6 +493,14 @@ service cloud.firestore {
        ========================= */
     match /projects/{projectId} {
       allow read, create, update, delete: if false;
+    }
+
+    /* =========================
+       IMPORT SESSIONS (SERVER WRITE, OWNER READ)
+       ========================= */
+    match /imports/{uid}/{document=**} {
+      allow get, list: if isOwner(uid);
+      allow create, update, delete: if false;
     }
 
     /* =========================

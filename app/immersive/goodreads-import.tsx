@@ -91,7 +91,7 @@ const GoodreadsImportScreen: React.FC = () => {
                         type="file" 
                         ref={fileInputRef} 
                         onChange={handleFileChange} 
-                        accept=".csv,.xml,.zip" 
+                        accept=".csv,.zip" 
                         className="hidden" 
                     />
                     
@@ -113,7 +113,7 @@ const GoodreadsImportScreen: React.FC = () => {
                                 {lang === 'en' ? 'Click to upload or drag and drop' : 'انقر للتحميل أو اسحب وأفلت'}
                             </BilingualText>
                             <BilingualText role="Caption" className="mt-2">
-                                CSV, XML, ZIP
+                                CSV, ZIP
                             </BilingualText>
                         </>
                     )}

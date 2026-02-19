@@ -10,6 +10,11 @@ import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { finalizeUserUpload as finalizeUserUploadRaw } from "./library/finalizeUserUpload";
+import {
+  finalizeGoodreadsImport as finalizeGoodreadsImportRaw,
+  processGoodreadsImportSessions,
+  startGoodreadsImport as startGoodreadsImportRaw,
+} from "./imports/goodreadsImport";
 import { deriveBookCovers } from "./library/deriveBookCovers";
 import { backfillCovers as backfillCoversRaw } from "./library/backfillCovers";
 import { backfillMissingCovers as backfillMissingCoversRaw } from "./library/backfillMissingCovers";
@@ -296,6 +301,14 @@ export const finalizeUserUpload = wrapCallableV2(
   "finalizeUserUpload",
   finalizeUserUploadRaw
 );
+export const startGoodreadsImport = wrapCallableV2(
+  "startGoodreadsImport",
+  startGoodreadsImportRaw
+);
+export const finalizeGoodreadsImport = wrapCallableV2(
+  "finalizeGoodreadsImport",
+  finalizeGoodreadsImportRaw
+);
 export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
 export const backfillMissingCovers = wrapCallableV2(
   "backfillMissingCovers",
@@ -305,6 +318,7 @@ export const backfillUserUploadCoverJobs = wrapCallableV2(
   "backfillUserUploadCoverJobs",
   backfillUserUploadCoverJobsRaw
 );
+export { processGoodreadsImportSessions };
 
 // ------------------------------------------------------------------
 // 📖 READER MEDIATION (SECURE, CANONICAL)

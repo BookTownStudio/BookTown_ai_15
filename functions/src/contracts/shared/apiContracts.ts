@@ -747,6 +747,58 @@ export const apiContracts = {
       }
     ),
 
+    startGoodreadsImport: defineContract(
+      z
+        .object({
+          fileName: z.string().min(1).max(255),
+          fileSize: z.number().finite().positive().max(25 * 1024 * 1024),
+          mimeType: z.string().min(1).max(120).optional(),
+          sourceKind: z.enum(["AUTO", "CSV", "DSAR_JSON"]).optional(),
+          contentSha256: z.string().regex(/^[a-f0-9]{64}$/).optional(),
+          idempotencyKey: z
+            .string()
+            .min(8)
+            .max(96)
+            .regex(/^[A-Za-z0-9_-]+$/),
+        })
+        .strict(),
+      z
+        .object({
+          importId: z.string().min(1),
+          status: z.enum(["UPLOADING"]),
+          uploadUrl: z.string().url(),
+          uploadMethod: z.literal("PUT"),
+          uploadHeaders: z.record(z.string()),
+          expiresAt: z.string().min(1),
+          existingSession: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    finalizeGoodreadsImport: defineContract(
+      z
+        .object({
+          importId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          importId: z.string().min(1),
+          status: z.literal("QUEUED"),
+          detectedSourceKind: z.enum(["CSV", "DSAR_JSON"]),
+          parserVersion: z.literal("gr_import_v2"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
     backfillCovers: defineContract(
       z.unknown(),
       z.unknown(),
