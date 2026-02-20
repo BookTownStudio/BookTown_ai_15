@@ -3,19 +3,20 @@
 import { useMemo } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { useQuery } from '@tanstack/react-query';
-import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../auth.tsx';
+import { dataService } from '../../services/dataService.ts';
+import { Shelf } from '../../types/entities.ts';
 
 /**
  * Currently Reading (Home Projection)
  * ----------------------------------------
  * UX CONTRACT (LOCKED):
- * - Visibility is driven by reading_progress.status_state
- * - Progress is canonical from reading_progress
+ * - Visibility is driven by 'currently-reading' shelf membership
+ * - Progress is optional display metadata from shelf entries
  * - Order is recency-first (updatedAt DESC)
  *
  * SOURCE OF TRUTH:
- * - reading_progress
+ * - shelves/{currently-reading}.entries
  */
 
 export interface CurrentlyReadingItem {
@@ -29,6 +30,53 @@ interface UseCurrentlyReadingResult {
   isLoading: boolean;
 }
 
+const CURRENTLY_READING_KEY = 'currently-reading';
+
+const normalizeToken = (value: unknown): string =>
+  typeof value === 'string'
+    ? value.trim().toLowerCase().replace(/\s+/g, '-')
+    : '';
+
+const isCurrentlyReadingShelf = (shelf: Shelf): boolean => {
+  const idToken = normalizeToken(shelf.id);
+  const titleEnToken = normalizeToken(shelf.titleEn);
+
+  return (
+    idToken === CURRENTLY_READING_KEY ||
+    idToken.endsWith(`_${CURRENTLY_READING_KEY}`) ||
+    titleEnToken === CURRENTLY_READING_KEY
+  );
+};
+
+const toTimestampOrNull = (value: unknown): Timestamp | null => {
+  if (value instanceof Timestamp) return value;
+  if (
+    value &&
+    typeof value === 'object' &&
+    typeof (value as { toDate?: unknown }).toDate === 'function'
+  ) {
+    try {
+      const date = (value as { toDate: () => Date }).toDate();
+      return Timestamp.fromDate(date);
+    } catch {
+      return null;
+    }
+  }
+  if (typeof value === 'string') {
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) {
+      return Timestamp.fromDate(parsed);
+    }
+  }
+  return null;
+};
+
+const progressToUnit = (value: unknown): number => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return 0;
+  if (value > 1) return Math.max(0, Math.min(1, value / 100));
+  return Math.max(0, Math.min(1, value));
+};
+
 export function useCurrentlyReading(
   maxItems: number = 50
 ): UseCurrentlyReadingResult {
@@ -41,30 +89,23 @@ export function useCurrentlyReading(
     queryFn: async () => {
       if (!user?.uid) return [];
 
-      const fn = httpsCallable(getFunctions(), 'getReaderInsights');
-      const res = await fn();
-      const payload = res.data as any;
+      const shelves = await dataService.shelves.getUserShelves(user.uid);
+      const currentShelf = shelves.find(isCurrentlyReadingShelf);
+      if (!currentShelf) return [];
 
-      if (payload?.success === false) {
-        const code =
-          typeof payload?.error?.code === 'string'
-            ? payload.error.code
-            : 'UNKNOWN';
-        const message =
-          typeof payload?.error?.message === 'string'
-            ? payload.error.message
-            : 'Failed to fetch currently reading projection.';
-        throw new Error(`[${code}] ${message}`);
-      }
+      const entries = await dataService.shelves.getShelfEntries(
+        user.uid,
+        currentShelf.id,
+        { resolveBooks: false }
+      );
 
-      const data =
-        payload?.success === true && payload?.data
-          ? payload.data
-          : payload;
-
-      const rows = Array.isArray(data?.currentlyReading)
-        ? data.currentlyReading
-        : [];
+      const rows = [...entries].sort((a: any, b: any) => {
+        const ta = Date.parse(String(a?.addedAt || ''));
+        const tb = Date.parse(String(b?.addedAt || ''));
+        const safeA = Number.isFinite(ta) ? ta : 0;
+        const safeB = Number.isFinite(tb) ? tb : 0;
+        return safeB - safeA;
+      });
 
       const deduped = new Set<string>();
       const items: CurrentlyReadingItem[] = [];
@@ -81,9 +122,8 @@ export function useCurrentlyReading(
 
         items.push({
           bookId,
-          progress: Math.max(0, Math.min(1, progressRaw)),
-          updatedAt:
-            row?.lastActiveAt instanceof Timestamp ? row.lastActiveAt : null,
+          progress: progressToUnit(progressRaw),
+          updatedAt: toTimestampOrNull(row?.addedAt),
         });
         deduped.add(bookId);
       }
