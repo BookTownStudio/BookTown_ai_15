@@ -332,6 +332,11 @@ const toProfileReview = (source: Record<string, unknown>): Review => {
   return {
     id: ensureNonEmptyString(normalizeString(source.id, 128), "id", 128),
     bookId,
+    bookTitleEn: normalizeString(source.bookTitleEn, 300),
+    bookTitleAr: normalizeString(source.bookTitleAr, 300),
+    bookAuthorEn: normalizeString(source.bookAuthorEn, 300),
+    bookAuthorAr: normalizeString(source.bookAuthorAr, 300),
+    bookCoverUrl: normalizeString(source.bookCoverUrl, 2048),
     userId,
     rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),
     text: normalizeString(source.text, 2000),

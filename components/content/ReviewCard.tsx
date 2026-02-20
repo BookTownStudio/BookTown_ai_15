@@ -6,16 +6,22 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { useDeleteReview } from '../../lib/hooks/useDeleteReview.ts';
 
-import BilingualText from '../ui/BilingualText.tsx';
 import { StarIcon } from '../icons/StarIcon.tsx';
 import { cn } from '../../lib/utils.ts';
 
 type ReviewCardProps = {
   review: Review;
   onEdit?: (review: Review) => void;
+  showBookContext?: boolean;
+  onOpenBook?: (review: Review) => void;
 };
 
-const ReviewCard: React.FC<ReviewCardProps> = ({ review, onEdit }) => {
+const ReviewCard: React.FC<ReviewCardProps> = ({
+  review,
+  onEdit,
+  showBookContext = false,
+  onOpenBook,
+}) => {
   const { lang, isRTL } = useI18n();
   const { user } = useAuth();
 
@@ -36,6 +42,20 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ review, onEdit }) => {
   }, [review.authorHandle, review.authorName]);
 
   const authorAvatar = review.authorAvatar || '/avatar.png';
+  const bookTitle =
+    lang === 'ar'
+      ? (review.bookTitleAr || review.bookTitleEn || (lang === 'en' ? 'Unknown book' : 'كتاب غير معروف'))
+      : (review.bookTitleEn || review.bookTitleAr || 'Unknown book');
+  const bookAuthor =
+    lang === 'ar'
+      ? (review.bookAuthorAr || review.bookAuthorEn || '')
+      : (review.bookAuthorEn || review.bookAuthorAr || '');
+  const bookCover = review.bookCoverUrl || '';
+
+  const openBook = () => {
+    if (!onOpenBook || !review.bookId) return;
+    onOpenBook(review);
+  };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -49,8 +69,41 @@ const ReviewCard: React.FC<ReviewCardProps> = ({ review, onEdit }) => {
   };
 
   return (
-    <div className="py-4 border-b border-white/10 last:border-b-0 animate-fade-in group">
+    <div
+      className={cn(
+        "py-4 border-b border-white/10 last:border-b-0 animate-fade-in group",
+        onOpenBook && review.bookId ? "cursor-pointer" : ""
+      )}
+      role={onOpenBook && review.bookId ? "button" : undefined}
+      tabIndex={onOpenBook && review.bookId ? 0 : undefined}
+      onClick={openBook}
+      onKeyDown={(e) => {
+        if (!onOpenBook || !review.bookId) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          openBook();
+        }
+      }}
+    >
       <div className={cn('flex flex-col gap-3', isRTL && 'items-end')}>
+        {showBookContext && (
+          <div className={cn('flex items-center gap-3 w-full rounded-lg border border-white/10 bg-white/5 p-2', isRTL && 'flex-row-reverse')}>
+            <div className="h-12 w-9 flex-shrink-0 overflow-hidden rounded-md bg-slate-800">
+              {bookCover ? (
+                <img src={bookCover} alt="" className="h-full w-full object-cover" />
+              ) : (
+                <div className="h-full w-full bg-slate-700/50" />
+              )}
+            </div>
+            <div className={cn('min-w-0 flex-grow', isRTL && 'text-right')}>
+              <p className="truncate text-sm font-bold text-white">{bookTitle}</p>
+              <p className="truncate text-xs text-white/60">{bookAuthor || (lang === 'en' ? 'Unknown author' : 'مؤلف غير معروف')}</p>
+            </div>
+            <span className="text-[10px] font-bold uppercase tracking-wider text-accent">
+              {lang === 'en' ? 'View Book' : 'عرض الكتاب'}
+            </span>
+          </div>
+        )}
         
         {/* AUTHOR IDENTITY BLOCK: Fixed Layout to prevent reflow/overlap */}
         <div className={cn('flex items-center gap-3 w-full', isRTL && 'flex-row-reverse')}>

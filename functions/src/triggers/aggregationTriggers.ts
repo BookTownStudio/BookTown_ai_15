@@ -357,6 +357,72 @@ function toIso(value: unknown): string {
   return new Date().toISOString();
 }
 
+type ProjectionBookSnapshot = {
+  bookTitleEn: string;
+  bookTitleAr: string;
+  bookAuthorEn: string;
+  bookAuthorAr: string;
+  bookCoverUrl: string;
+};
+
+function sanitizeProjectionString(value: unknown, maxLen: number): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, maxLen);
+}
+
+function sanitizeProjectionUrl(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  if (!normalized) return "";
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return "";
+    return parsed.toString().slice(0, 2048);
+  } catch {
+    return "";
+  }
+}
+
+function normalizeProjectionBookSnapshot(
+  source: Record<string, unknown>
+): ProjectionBookSnapshot {
+  return {
+    bookTitleEn: sanitizeProjectionString(source.bookTitleEn ?? source.titleEn ?? source.title, 300),
+    bookTitleAr: sanitizeProjectionString(source.bookTitleAr ?? source.titleAr, 300),
+    bookAuthorEn: sanitizeProjectionString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
+    bookAuthorAr: sanitizeProjectionString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverUrl: sanitizeProjectionUrl(
+      source.bookCoverUrl ?? source.coverUrl ?? (source.cover as Record<string, unknown> | undefined)?.medium
+    ),
+  };
+}
+
+function isProjectionBookSnapshotMissing(snapshot: ProjectionBookSnapshot): boolean {
+  return (
+    snapshot.bookTitleEn.length === 0 &&
+    snapshot.bookTitleAr.length === 0 &&
+    snapshot.bookAuthorEn.length === 0 &&
+    snapshot.bookAuthorAr.length === 0
+  );
+}
+
+async function resolveProjectionBookSnapshot(
+  bookId: string,
+  source: Record<string, unknown>
+): Promise<ProjectionBookSnapshot> {
+  const fromReview = normalizeProjectionBookSnapshot(source);
+  if (!isProjectionBookSnapshotMissing(fromReview)) {
+    return fromReview;
+  }
+
+  const bookSnap = await db.collection("books").doc(bookId).get();
+  if (!bookSnap.exists) {
+    return fromReview;
+  }
+
+  return normalizeProjectionBookSnapshot((bookSnap.data() || {}) as Record<string, unknown>);
+}
+
 export const onBookReviewWritten = onDocumentWritten(
   "books/{bookId}/reviews/{reviewId}",
   async (event) => {
@@ -436,6 +502,10 @@ export const onBookReviewWritten = onDocumentWritten(
     });
 
     if (afterExists && afterUserId) {
+      const bookSnapshot = await resolveProjectionBookSnapshot(
+        bookId,
+        (after || {}) as Record<string, unknown>
+      );
       const projectionRef = db
         .collection("user_reviews")
         .doc(`${afterUserId}_${bookId}`);
@@ -447,6 +517,7 @@ export const onBookReviewWritten = onDocumentWritten(
           uid: afterUserId,
           userId: afterUserId,
           bookId,
+          ...bookSnapshot,
           rating: afterRating,
           text: typeof after?.text === "string" ? after.text.slice(0, 2000) : "",
           authorName:

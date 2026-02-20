@@ -248,6 +248,18 @@ const ProfileScreen: React.FC = () => {
     typeof (profileReviewsErrorObject as { code?: unknown }).code === 'string'
       ? String((profileReviewsErrorObject as { code: string }).code)
       : 'UNKNOWN';
+  const handleOpenReviewedBook = (bookId: string, reviewId: string) => {
+    if (!bookId) return;
+    navigate({
+      type: 'immersive',
+      id: 'bookDetails',
+      params: {
+        bookId,
+        reviewId,
+        from: currentView,
+      },
+    });
+  };
 
   return (
     <>
@@ -525,7 +537,13 @@ const ProfileScreen: React.FC = () => {
                 ) : profileReviews && profileReviews.length > 0 ? (
                   profileReviews.map(review => (
                     <div key={`${review.bookId}_${review.userId}`} className="rounded-xl bg-slate-900 px-4">
-                      <ReviewCard review={review} />
+                      <ReviewCard
+                        review={review}
+                        showBookContext
+                        onOpenBook={(selectedReview) => {
+                          handleOpenReviewedBook(selectedReview.bookId, selectedReview.id);
+                        }}
+                      />
                     </div>
                   ))
                 ) : (

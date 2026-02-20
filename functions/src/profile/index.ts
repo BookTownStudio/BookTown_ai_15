@@ -78,6 +78,11 @@ type ProfileReview = {
   domain: "book";
   visibility: "public" | "private";
   bookId: string;
+  bookTitleEn: string;
+  bookTitleAr: string;
+  bookAuthorEn: string;
+  bookAuthorAr: string;
+  bookCoverUrl: string;
   userId: string;
   rating: number;
   text: string;
@@ -88,6 +93,14 @@ type ProfileReview = {
   upvotes: number;
   downvotes: number;
   commentsCount: number;
+};
+
+type ReviewBookSnapshot = {
+  bookTitleEn: string;
+  bookTitleAr: string;
+  bookAuthorEn: string;
+  bookAuthorAr: string;
+  bookCoverUrl: string;
 };
 
 type ProfileBook = {
@@ -383,11 +396,13 @@ function normalizeProfileReview(
   fallbackBookId: string
 ): ProfileReview {
   const visibility = source.visibility === "private" ? "private" : "public";
+  const bookSnapshot = normalizeProfileReviewBookSnapshot(source);
   return {
     id: sanitizeString(docId, 128),
     domain: "book",
     visibility,
     bookId: sanitizeString(source.bookId, 128) || fallbackBookId,
+    ...bookSnapshot,
     userId: sanitizeString(source.userId, MAX_UID_LENGTH),
     rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),
     text: sanitizeString(source.text, 2000),
@@ -399,6 +414,103 @@ function normalizeProfileReview(
     downvotes: toNonNegativeInt(source.downvotes),
     commentsCount: toNonNegativeInt(source.commentsCount),
   };
+}
+
+function normalizeProfileReviewBookSnapshot(
+  source: Record<string, unknown>
+): ReviewBookSnapshot {
+  return {
+    bookTitleEn: sanitizeString(source.bookTitleEn ?? source.titleEn ?? source.title, 300),
+    bookTitleAr: sanitizeString(source.bookTitleAr ?? source.titleAr, 300),
+    bookAuthorEn: sanitizeString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
+    bookAuthorAr: sanitizeString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverUrl: normalizeUrlForRead(
+      source.bookCoverUrl ?? source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
+    ),
+  };
+}
+
+function isReviewBookSnapshotMissing(snapshot: ReviewBookSnapshot): boolean {
+  return (
+    snapshot.bookTitleEn.length === 0 &&
+    snapshot.bookTitleAr.length === 0 &&
+    snapshot.bookAuthorEn.length === 0 &&
+    snapshot.bookAuthorAr.length === 0
+  );
+}
+
+async function readBookSnapshot(bookId: string): Promise<ReviewBookSnapshot> {
+  const bookSnap = await db.collection("books").doc(bookId).get();
+  if (!bookSnap.exists) {
+    return {
+      bookTitleEn: "",
+      bookTitleAr: "",
+      bookAuthorEn: "",
+      bookAuthorAr: "",
+      bookCoverUrl: "",
+    };
+  }
+
+  return normalizeProfileReviewBookSnapshot(toRecord(bookSnap.data()));
+}
+
+async function enrichProfileReviewsWithBookSnapshot(
+  items: ProfileReview[]
+): Promise<ProfileReview[]> {
+  const missingBookIds = Array.from(
+    new Set(
+      items
+        .filter((item) =>
+          isReviewBookSnapshotMissing({
+            bookTitleEn: item.bookTitleEn,
+            bookTitleAr: item.bookTitleAr,
+            bookAuthorEn: item.bookAuthorEn,
+            bookAuthorAr: item.bookAuthorAr,
+            bookCoverUrl: item.bookCoverUrl,
+          })
+        )
+        .map((item) => item.bookId)
+        .filter((bookId) => bookId.length > 0)
+    )
+  );
+
+  if (missingBookIds.length === 0) {
+    return items;
+  }
+
+  const snapshots = await Promise.all(
+    missingBookIds.map(async (bookId) => ({
+      bookId,
+      snapshot: await readBookSnapshot(bookId),
+    }))
+  );
+
+  const snapshotMap = new Map<string, ReviewBookSnapshot>(
+    snapshots.map((item) => [item.bookId, item.snapshot])
+  );
+
+  return items.map((item) => {
+    const currentSnapshot: ReviewBookSnapshot = {
+      bookTitleEn: item.bookTitleEn,
+      bookTitleAr: item.bookTitleAr,
+      bookAuthorEn: item.bookAuthorEn,
+      bookAuthorAr: item.bookAuthorAr,
+      bookCoverUrl: item.bookCoverUrl,
+    };
+    if (!isReviewBookSnapshotMissing(currentSnapshot)) {
+      return item;
+    }
+
+    const resolvedSnapshot = snapshotMap.get(item.bookId);
+    if (!resolvedSnapshot) {
+      return item;
+    }
+
+    return {
+      ...item,
+      ...resolvedSnapshot,
+    };
+  });
 }
 
 async function hydrateUserReviewProjection(
@@ -415,6 +527,7 @@ async function hydrateUserReviewProjection(
   if (migrationSnap.empty) return;
 
   const batch = db.batch();
+  const bookSnapshotCache = new Map<string, ReviewBookSnapshot>();
   let writes = 0;
   for (const reviewDoc of migrationSnap.docs) {
     const parentDoc = reviewDoc.ref.parent.parent;
@@ -426,6 +539,16 @@ async function hydrateUserReviewProjection(
     const projectionId = `${targetUid}_${bookId}`;
     const projectionRef = db.collection("user_reviews").doc(projectionId);
     const normalized = normalizeProfileReview(reviewDoc.id, source, bookId);
+    let bookSnapshot = normalizeProfileReviewBookSnapshot(source);
+    if (isReviewBookSnapshotMissing(bookSnapshot)) {
+      const cached = bookSnapshotCache.get(bookId);
+      if (cached) {
+        bookSnapshot = cached;
+      } else {
+        bookSnapshot = await readBookSnapshot(bookId);
+        bookSnapshotCache.set(bookId, bookSnapshot);
+      }
+    }
     batch.set(
       projectionRef,
       {
@@ -435,6 +558,7 @@ async function hydrateUserReviewProjection(
         uid: targetUid,
         userId: targetUid,
         bookId: normalized.bookId,
+        ...bookSnapshot,
         rating: normalized.rating,
         text: normalized.text,
         authorName: normalized.authorName,
@@ -938,7 +1062,9 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
     );
 
     const hasMore = normalized.length > limitSize;
-    const items = normalized.slice(0, limitSize);
+    const items = await enrichProfileReviewsWithBookSnapshot(
+      normalized.slice(0, limitSize)
+    );
     const nextCursor =
       hasMore && items.length > 0
         ? sanitizeString(

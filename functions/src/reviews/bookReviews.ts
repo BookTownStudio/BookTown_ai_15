@@ -18,11 +18,24 @@ const BOOK_REVIEW_QUERY_SHAPE =
 
 type BookReviewVisibility = "public" | "private";
 
+type ReviewBookSnapshot = {
+  bookTitleEn: string;
+  bookTitleAr: string;
+  bookAuthorEn: string;
+  bookAuthorAr: string;
+  bookCoverUrl: string;
+};
+
 type BookReviewItem = {
   id: string;
   domain: "book";
   visibility: BookReviewVisibility;
   bookId: string;
+  bookTitleEn: string;
+  bookTitleAr: string;
+  bookAuthorEn: string;
+  bookAuthorAr: string;
+  bookCoverUrl: string;
   userId: string;
   rating: number;
   text: string;
@@ -132,16 +145,54 @@ function toIso(value: unknown): string {
   return new Date().toISOString();
 }
 
+function normalizeBookSnapshotFromSource(source: Record<string, unknown>): ReviewBookSnapshot {
+  return {
+    bookTitleEn: sanitizeString(source.bookTitleEn ?? source.titleEn ?? source.title, 300),
+    bookTitleAr: sanitizeString(source.bookTitleAr ?? source.titleAr, 300),
+    bookAuthorEn: sanitizeString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
+    bookAuthorAr: sanitizeString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverUrl: normalizeUrl(
+      source.bookCoverUrl ?? source.coverUrl ?? (source.cover as Record<string, unknown> | undefined)?.medium
+    ),
+  };
+}
+
+function hasBookSnapshot(snapshot: ReviewBookSnapshot): boolean {
+  return (
+    snapshot.bookTitleEn.length > 0 ||
+    snapshot.bookTitleAr.length > 0 ||
+    snapshot.bookAuthorEn.length > 0 ||
+    snapshot.bookAuthorAr.length > 0
+  );
+}
+
+async function resolveBookSnapshot(bookId: string): Promise<ReviewBookSnapshot> {
+  const bookSnap = await db.collection("books").doc(bookId).get();
+  if (!bookSnap.exists) {
+    return {
+      bookTitleEn: "",
+      bookTitleAr: "",
+      bookAuthorEn: "",
+      bookAuthorAr: "",
+      bookCoverUrl: "",
+    };
+  }
+
+  return normalizeBookSnapshotFromSource(bookSnap.data() || {});
+}
+
 function normalizeReviewItem(
   docId: string,
   source: Record<string, unknown>,
   fallbackBookId: string
 ): BookReviewItem {
+  const bookSnapshot = normalizeBookSnapshotFromSource(source);
   return {
     id: sanitizeString(docId, 128),
     domain: "book",
     visibility: sanitizeVisibility(source.visibility),
     bookId: sanitizeString(source.bookId, MAX_BOOK_ID_LENGTH) || fallbackBookId,
+    ...bookSnapshot,
     userId: sanitizeString(source.userId, MAX_UID_LENGTH),
     rating: sanitizeRating(source.rating),
     text: sanitizeString(source.text, MAX_REVIEW_TEXT_LENGTH),
@@ -201,6 +252,7 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
   const nowIso = new Date().toISOString();
 
   const { authorName, authorHandle, authorAvatar } = await resolveAuthorIdentity(uid);
+  const bookSnapshot = await resolveBookSnapshot(bookId);
   const reviewRef = db.collection("books").doc(bookId).collection("reviews").doc(uid);
   const projectionRef = db.collection("user_reviews").doc(`${uid}_${bookId}`);
 
@@ -218,6 +270,7 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
         domain: "book",
         visibility,
         bookId,
+        ...bookSnapshot,
         userId: uid,
         rating,
         text,
@@ -244,6 +297,7 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
         uid,
         userId: uid,
         bookId,
+        ...bookSnapshot,
         rating,
         text,
         authorName,

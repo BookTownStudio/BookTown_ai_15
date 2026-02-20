@@ -502,6 +502,11 @@ export interface Review {
     domain?: 'book';
     visibility?: 'public' | 'private';
     bookId: string;
+    bookTitleEn?: string;
+    bookTitleAr?: string;
+    bookAuthorEn?: string;
+    bookAuthorAr?: string;
+    bookCoverUrl?: string;
     userId: string;
     rating: number; // 1-5
     text: string;
