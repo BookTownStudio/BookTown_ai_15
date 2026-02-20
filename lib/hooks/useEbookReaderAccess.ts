@@ -17,7 +17,7 @@ import { useAuth } from '../auth.tsx';
  * - In-memory cache only (no persistence)
  *
  * Source of truth:
- * Cloud Function: requestEbookReadAccess
+ * Cloud Function: requestEbookReadAccessV2
  */
 
 interface EbookReadAccessResponse {
@@ -69,7 +69,7 @@ export function useEbookReaderAccess(bookId?: string): UseEbookReaderAccessState
 
         const fn = httpsCallable<{ bookId: string }, EbookReadAccessResponse>(
           getFunctions(),
-          'requestEbookReadAccess'
+          'requestEbookReadAccessV2'
         );
 
         const res = await fn({ bookId });

@@ -18,8 +18,9 @@ import {
 } from "firebase/auth";
 
 import type { User as FirebaseUser } from "firebase/auth";
+import { httpsCallable } from "firebase/functions";
 
-import { getFirebaseAuth } from './firebase.ts';
+import { getFirebaseAuth, getFirebaseFunctions } from './firebase.ts';
 import { UserRole } from '../types/entities.ts';
 import { queryClient } from './query-client.ts';
 import { deriveUserRole, isAdminRole } from './auth/roles.ts';
@@ -69,6 +70,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             : null
     });
     const lastIdentityRef = useRef<string | null>(null);
+    const bootstrapUidRef = useRef<string | null>(null);
 
     const firebaseAuth = getFirebaseAuth();
 
@@ -110,6 +112,24 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return () => {};
         }
     }, [firebaseAuth, guestId, isGuest]);
+
+    useEffect(() => {
+        if (!user?.uid) {
+            bootstrapUidRef.current = null;
+            return;
+        }
+
+        if (bootstrapUidRef.current === user.uid) {
+            return;
+        }
+        bootstrapUidRef.current = user.uid;
+
+        const bootstrapFn = httpsCallable(getFirebaseFunctions(), "bootstrapCurrentUser");
+        void bootstrapFn({}).catch((err) => {
+            console.error("[AUTH][BOOTSTRAP_CURRENT_USER_FAILED]", err);
+            bootstrapUidRef.current = null;
+        });
+    }, [user]);
 
     const isAdmin = isAdminRole(role);
 

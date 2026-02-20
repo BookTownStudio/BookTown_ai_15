@@ -12,7 +12,7 @@
  * - Secure, auditable, scalable
  */
 
-import * as functions from 'firebase-functions';
+import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as admin from 'firebase-admin';
 import * as logger from "firebase-functions/logger";
 import { getSignedUrl } from '../attachments/storageSignedUrl';
@@ -21,23 +21,23 @@ import { resolveBookToEbookAttachment } from '../attachments/resolveBookToEbookA
 const db = admin.firestore();
 const EBOOK_URL_TTL_MS = 10 * 60 * 1000;
 
-export const requestEbookReadAccess = functions.https.onCall(
-  async (data, context) => {
+export const requestEbookReadAccess = onCall(
+  async (request) => {
     /* ----------------------------------
        1. Auth Guard
     ---------------------------------- */
-    if (!context.auth) {
-      throw new functions.https.HttpsError(
+    if (!request.auth) {
+      throw new HttpsError(
         'unauthenticated',
         'User must be authenticated to read ebooks.'
       );
     }
 
-    const uid = context.auth.uid;
-    const { bookId } = data as { bookId?: string };
+    const uid = request.auth.uid;
+    const { bookId } = request.data as { bookId?: string };
 
     if (!bookId || typeof bookId !== 'string') {
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'invalid-argument',
         'bookId is required.'
       );
@@ -58,7 +58,7 @@ export const requestEbookReadAccess = functions.https.onCall(
         uid,
         bookId,
       });
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'not-found',
         'No readable ebook attachment found for this book.'
       );
@@ -77,7 +77,7 @@ export const requestEbookReadAccess = functions.https.onCall(
         attachmentId: attachment.id,
         visibility: attachment.visibility,
       });
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'permission-denied',
         'You do not have access to this ebook.'
       );
@@ -92,7 +92,7 @@ export const requestEbookReadAccess = functions.https.onCall(
         bookId,
         attachmentId: attachment.id,
       });
-      throw new functions.https.HttpsError(
+      throw new HttpsError(
         'internal',
         'Attachment is missing storagePath.'
       );
