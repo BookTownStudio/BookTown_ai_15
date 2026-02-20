@@ -47,6 +47,7 @@ const BookDetailsScreen: React.FC = () => {
   const { user } = useAuth();
 
   const originalBookId = currentView.type === 'immersive' ? currentView.params?.bookId : undefined;
+  const reviewAction = currentView.type === 'immersive' ? currentView.params?.reviewAction : undefined;
 
   const randomBookId = useMemo(() => {
     if (originalBookId !== 'surprise') return null;
@@ -83,6 +84,13 @@ const BookDetailsScreen: React.FC = () => {
       setUserRating(0);
     }
   }, [existingUserReview, isEditingReview, isAddingReview]);
+
+  useEffect(() => {
+    if (reviewAction !== 'edit') return;
+    if (!existingUserReview) return;
+    setIsAddingReview(false);
+    setIsEditingReview(true);
+  }, [reviewAction, existingUserReview]);
 
   const hasReadableEbook = Boolean(book?.ebookAttachmentId || book?.isEbookAvailable);
 

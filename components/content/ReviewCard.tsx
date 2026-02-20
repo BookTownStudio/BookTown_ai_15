@@ -1,12 +1,14 @@
 // components/content/ReviewCard.tsx
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Review } from '../../types/entities.ts';
 
 import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { useDeleteReview } from '../../lib/hooks/useDeleteReview.ts';
 
+import { BookIcon } from '../icons/BookIcon.tsx';
 import { StarIcon } from '../icons/StarIcon.tsx';
+import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
 import { cn } from '../../lib/utils.ts';
 
 type ReviewCardProps = {
@@ -24,6 +26,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
 }) => {
   const { lang, isRTL } = useI18n();
   const { user } = useAuth();
+  const [isActionsOpen, setIsActionsOpen] = useState(false);
+  const [isBookCoverFailed, setIsBookCoverFailed] = useState(false);
+  const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
   const isOwner = Boolean(user?.uid && user.uid === review.userId);
   const deleteReview = useDeleteReview();
@@ -50,7 +55,25 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
     lang === 'ar'
       ? (review.bookAuthorAr || review.bookAuthorEn || '')
       : (review.bookAuthorEn || review.bookAuthorAr || '');
-  const bookCover = review.bookCoverUrl || '';
+  const bookCover = review.bookCoverThumbUrl || review.bookCoverUrl || '';
+
+  useEffect(() => {
+    setIsBookCoverFailed(false);
+  }, [bookCover]);
+
+  useEffect(() => {
+    if (!isActionsOpen) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node;
+      if (!actionsMenuRef.current?.contains(target)) {
+        setIsActionsOpen(false);
+      }
+    };
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+    };
+  }, [isActionsOpen]);
 
   const openBook = () => {
     if (!onOpenBook || !review.bookId) return;
@@ -60,12 +83,23 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (!review.bookId || deleteReview.isPending) return;
+    const confirmed = window.confirm(
+      lang === 'en' ? 'Delete this review?' : 'هل تريد حذف هذه المراجعة؟'
+    );
+    if (!confirmed) return;
     await deleteReview.mutateAsync({ bookId: review.bookId });
+    setIsActionsOpen(false);
   };
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (onEdit) onEdit(review);
+    setIsActionsOpen(false);
+  };
+
+  const handleToggleActions = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsActionsOpen((prev) => !prev);
   };
 
   return (
@@ -89,10 +123,19 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
         {showBookContext && (
           <div className={cn('flex items-center gap-3 w-full rounded-lg border border-white/10 bg-white/5 p-2', isRTL && 'flex-row-reverse')}>
             <div className="h-12 w-9 flex-shrink-0 overflow-hidden rounded-md bg-slate-800">
-              {bookCover ? (
-                <img src={bookCover} alt="" className="h-full w-full object-cover" />
+              {bookCover && !isBookCoverFailed ? (
+                <img
+                  src={bookCover}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  onError={() => setIsBookCoverFailed(true)}
+                />
               ) : (
-                <div className="h-full w-full bg-slate-700/50" />
+                <div className="flex h-full w-full items-center justify-center bg-slate-700/50 text-slate-400">
+                  <BookIcon className="h-4 w-4" />
+                </div>
               )}
             </div>
             <div className={cn('min-w-0 flex-grow', isRTL && 'text-right')}>
@@ -132,19 +175,65 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
             )}
           </div>
 
-          {/* Rating */}
-          <div className="flex items-center gap-0.5 flex-shrink-0">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <StarIcon
-                key={i}
-                className={cn(
-                  'h-3.5 w-3.5',
-                  i < review.rating ? 'text-yellow-400' : 'text-white/10'
-                )}
-              />
-            ))}
-          </div>
-        </div>
+	          {/* Rating + Owner Actions */}
+	          <div className={cn('relative flex flex-shrink-0 items-center gap-1.5', isRTL && 'flex-row-reverse')}>
+	            <div className="flex items-center gap-0.5">
+	              {Array.from({ length: 5 }).map((_, i) => (
+	                <StarIcon
+	                  key={i}
+	                  className={cn(
+	                    'h-3.5 w-3.5',
+	                    i < review.rating ? 'text-yellow-400' : 'text-white/10'
+	                  )}
+	                />
+	              ))}
+	            </div>
+
+	            {isOwner && (
+	              <div ref={actionsMenuRef} className="relative">
+	                <button
+	                  type="button"
+	                  onClick={handleToggleActions}
+	                  className="rounded-full p-1 text-white/50 transition-colors hover:bg-white/10 hover:text-white"
+	                  aria-label={lang === 'en' ? 'Review actions' : 'إجراءات المراجعة'}
+	                  aria-expanded={isActionsOpen}
+	                >
+	                  <VerticalEllipsisIcon className="h-4 w-4" />
+	                </button>
+	                {isActionsOpen && (
+	                  <div
+	                    className={cn(
+	                      'absolute top-full z-40 mt-1 w-36 overflow-hidden rounded-lg border border-white/10 bg-slate-900 shadow-xl',
+	                      isRTL ? 'left-0' : 'right-0'
+	                    )}
+	                    onClick={(event) => event.stopPropagation()}
+	                  >
+	                    <button
+	                      type="button"
+	                      onClick={handleEdit}
+	                      disabled={!onEdit}
+	                      className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wider text-white/80 transition-colors hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+	                    >
+	                      {lang === 'en' ? 'Edit review' : 'تعديل المراجعة'}
+	                    </button>
+	                    <button
+	                      type="button"
+	                      onClick={handleDelete}
+	                      disabled={deleteReview.isPending}
+	                      className="w-full px-3 py-2 text-left text-xs font-bold uppercase tracking-wider text-red-300 transition-colors hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+	                    >
+	                      {deleteReview.isPending
+	                        ? '...'
+	                        : lang === 'en'
+	                          ? 'Delete review'
+	                          : 'حذف المراجعة'}
+	                    </button>
+	                  </div>
+	                )}
+	              </div>
+	            )}
+	          </div>
+	        </div>
 
         {/* Text */}
         <div className={cn("w-full px-1", isRTL && "text-right")}>
@@ -154,22 +243,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
             </p>
           )}
 
-          {/* Actions */}
-          {isOwner && (
-            <div className={cn('mt-3 flex gap-4 text-[11px] font-bold uppercase tracking-wider', isRTL ? 'justify-start' : 'justify-end')}>
-              {onEdit && (
-                <button onClick={handleEdit} className="text-white/40 hover:text-white transition-colors">
-                  {lang === 'en' ? 'Edit' : 'تعديل'}
-                </button>
-              )}
-              <button onClick={handleDelete} disabled={deleteReview.isPending} className="text-red-400/60 hover:text-red-400 transition-colors">
-                {deleteReview.isPending ? '...' : (lang === 'en' ? 'Delete' : 'حذف')}
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+	        </div>
+	      </div>
+	    </div>
   );
 };
 

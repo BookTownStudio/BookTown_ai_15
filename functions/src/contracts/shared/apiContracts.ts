@@ -205,6 +205,7 @@ const profileReviewSchema = z
     bookTitleAr: z.string().max(300).optional(),
     bookAuthorEn: z.string().max(300).optional(),
     bookAuthorAr: z.string().max(300).optional(),
+    bookCoverThumbUrl: z.string().max(2048).optional(),
     bookCoverUrl: z.string().max(2048).optional(),
     userId: z.string().min(1),
     rating: z.number().int().min(1).max(5),

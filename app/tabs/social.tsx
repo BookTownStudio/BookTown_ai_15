@@ -33,7 +33,7 @@ const TextIcon = (props: any) => (
     </svg>
 );
 
-const TAB_STORAGE_KEY = 'booktown_social_tab_v2';
+const TAB_STORAGE_KEY = 'booktown_social_tab_v3';
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -43,7 +43,7 @@ const SocialScreen: React.FC = () => {
         if (stored === 'following' || stored === 'explore' || stored === 'books') {
             return stored as SocialFeedScope;
         }
-        return 'following';
+        return 'explore';
     });
 
     const [filters, setFilters] = useState<SocialFeedFilter[]>([]);
@@ -131,7 +131,8 @@ const SocialScreen: React.FC = () => {
         } else {
             if (resetTokens.social > 0) {
                 mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                setScope('following');
+                setScope('explore');
+                localStorage.setItem(TAB_STORAGE_KEY, 'explore');
                 setFilters([]);
                 setMoreFiltersOpen(false);
                 handleCloseSearch();

@@ -170,6 +170,7 @@ function mapReview(data: any, id: string): Review {
     bookTitleAr: typeof data.bookTitleAr === "string" ? data.bookTitleAr : "",
     bookAuthorEn: typeof data.bookAuthorEn === "string" ? data.bookAuthorEn : "",
     bookAuthorAr: typeof data.bookAuthorAr === "string" ? data.bookAuthorAr : "",
+    bookCoverThumbUrl: typeof data.bookCoverThumbUrl === "string" ? data.bookCoverThumbUrl : "",
     bookCoverUrl: typeof data.bookCoverUrl === "string" ? data.bookCoverUrl : "",
     userId: data.userId || data.uid || "",
     rating: Number.isFinite(Number(data.rating)) ? Math.trunc(Number(data.rating)) : 1,

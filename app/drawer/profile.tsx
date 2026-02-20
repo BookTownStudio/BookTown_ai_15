@@ -30,6 +30,30 @@ import ReviewCard from '../../components/content/ReviewCard.tsx';
 type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'projects';
 
 const TABS: ProfileTab[] = ['posts', 'reviews', 'shelves', 'projects'];
+const PROFILE_TAB_STORAGE_PREFIX = 'booktown_profile_tab_v1';
+
+const isProfileTab = (value: unknown): value is ProfileTab =>
+  typeof value === 'string' && TABS.includes(value as ProfileTab);
+
+const readPersistedProfileTab = (uid?: string): ProfileTab | null => {
+  if (!uid || typeof window === 'undefined') return null;
+  try {
+    const key = `${PROFILE_TAB_STORAGE_PREFIX}:${uid}`;
+    const stored = localStorage.getItem(key);
+    return isProfileTab(stored) ? stored : null;
+  } catch {
+    return null;
+  }
+};
+
+const persistProfileTab = (uid: string | undefined, tab: ProfileTab): void => {
+  if (!uid || typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(`${PROFILE_TAB_STORAGE_PREFIX}:${uid}`, tab);
+  } catch {
+    // Ignore storage write failures; tab state remains in-memory.
+  }
+};
 
 /* -----------------------------------------------------
    Mock Guest Data
@@ -86,6 +110,13 @@ const ProfileScreen: React.FC = () => {
   const { lang } = useI18n();
   const { user: authUser, isGuest } = useAuth();
   const { currentView, navigate } = useNavigation();
+  const paramUserId =
+    currentView.type === 'immersive'
+      ? currentView.params?.userId
+      : undefined;
+  const effectiveProfileUserId = paramUserId ?? authUser?.uid;
+  const isGuestView = isGuest && !effectiveProfileUserId;
+  const isOwnProfile = !!authUser && effectiveProfileUserId === authUser.uid;
 
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -95,21 +126,15 @@ const ProfileScreen: React.FC = () => {
     shelves: 0,
     projects: 0,
   });
+  const scopedProfileRef = useRef<string | null>(null);
 
-  const [activeTab, setActiveTab] = useState<ProfileTab>('shelves');
+  const [activeTab, setActiveTab] = useState<ProfileTab>(() =>
+    readPersistedProfileTab(effectiveProfileUserId) ?? 'shelves'
+  );
   const [showCompactProfileBar, setShowCompactProfileBar] = useState(false);
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
-
-  const paramUserId =
-    currentView.type === 'immersive'
-      ? currentView.params?.userId
-      : undefined;
-
-  const effectiveProfileUserId = paramUserId ?? authUser?.uid;
-  const isGuestView = isGuest && !effectiveProfileUserId;
-  const isOwnProfile = !!authUser && effectiveProfileUserId === authUser.uid;
 
   const { data: fetchedProfile, isLoading } =
     useUserProfile(effectiveProfileUserId);
@@ -181,15 +206,26 @@ const ProfileScreen: React.FC = () => {
     return () => el.removeEventListener('scroll', onScroll);
   }, [activeTab]);
 
+  useEffect(() => {
+    if (!effectiveProfileUserId) return;
+    if (scopedProfileRef.current === effectiveProfileUserId) return;
+
+    scopedProfileRef.current = effectiveProfileUserId;
+    const restoredTab = readPersistedProfileTab(effectiveProfileUserId) ?? 'shelves';
+    setActiveTab(restoredTab);
+  }, [effectiveProfileUserId]);
+
   const switchTab = (tab: ProfileTab) => {
     const el = scrollRef.current;
     if (!el || tab === activeTab) {
       setActiveTab(tab);
+      persistProfileTab(effectiveProfileUserId, tab);
       return;
     }
 
     tabScrollPositions.current[activeTab] = el.scrollTop;
     setActiveTab(tab);
+    persistProfileTab(effectiveProfileUserId, tab);
 
     requestAnimationFrame(() => {
       el.scrollTo({
@@ -248,7 +284,11 @@ const ProfileScreen: React.FC = () => {
     typeof (profileReviewsErrorObject as { code?: unknown }).code === 'string'
       ? String((profileReviewsErrorObject as { code: string }).code)
       : 'UNKNOWN';
-  const handleOpenReviewedBook = (bookId: string, reviewId: string) => {
+  const handleOpenReviewedBook = (
+    bookId: string,
+    reviewId: string,
+    reviewAction?: 'edit'
+  ) => {
     if (!bookId) return;
     navigate({
       type: 'immersive',
@@ -256,6 +296,7 @@ const ProfileScreen: React.FC = () => {
       params: {
         bookId,
         reviewId,
+        ...(reviewAction ? { reviewAction } : {}),
         from: currentView,
       },
     });
@@ -542,6 +583,13 @@ const ProfileScreen: React.FC = () => {
                         showBookContext
                         onOpenBook={(selectedReview) => {
                           handleOpenReviewedBook(selectedReview.bookId, selectedReview.id);
+                        }}
+                        onEdit={(selectedReview) => {
+                          handleOpenReviewedBook(
+                            selectedReview.bookId,
+                            selectedReview.id,
+                            'edit'
+                          );
                         }}
                       />
                     </div>

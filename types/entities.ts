@@ -506,6 +506,7 @@ export interface Review {
     bookTitleAr?: string;
     bookAuthorEn?: string;
     bookAuthorAr?: string;
+    bookCoverThumbUrl?: string;
     bookCoverUrl?: string;
     userId: string;
     rating: number; // 1-5

@@ -488,6 +488,7 @@ async function applyCanonicalRow(params: {
           bookTitleAr: "",
           bookAuthorEn: trimTo(row.author, 300),
           bookAuthorAr: "",
+          bookCoverThumbUrl: "",
           bookCoverUrl: "",
           userId: uid,
           rating: row.rating > 0 ? row.rating : 1,

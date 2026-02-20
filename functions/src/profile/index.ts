@@ -82,6 +82,7 @@ type ProfileReview = {
   bookTitleAr: string;
   bookAuthorEn: string;
   bookAuthorAr: string;
+  bookCoverThumbUrl: string;
   bookCoverUrl: string;
   userId: string;
   rating: number;
@@ -100,6 +101,7 @@ type ReviewBookSnapshot = {
   bookTitleAr: string;
   bookAuthorEn: string;
   bookAuthorAr: string;
+  bookCoverThumbUrl: string;
   bookCoverUrl: string;
 };
 
@@ -424,6 +426,14 @@ function normalizeProfileReviewBookSnapshot(
     bookTitleAr: sanitizeString(source.bookTitleAr ?? source.titleAr, 300),
     bookAuthorEn: sanitizeString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
     bookAuthorAr: sanitizeString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverThumbUrl: normalizeUrlForRead(
+      source.bookCoverThumbUrl ??
+        source.coverThumbUrl ??
+        toRecord(source.cover).small ??
+        toRecord(source.cover).thumb ??
+        toRecord(source.cover).thumbnail ??
+        toRecord(source.cover).medium
+    ),
     bookCoverUrl: normalizeUrlForRead(
       source.bookCoverUrl ?? source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
     ),
@@ -447,6 +457,7 @@ async function readBookSnapshot(bookId: string): Promise<ReviewBookSnapshot> {
       bookTitleAr: "",
       bookAuthorEn: "",
       bookAuthorAr: "",
+      bookCoverThumbUrl: "",
       bookCoverUrl: "",
     };
   }
@@ -466,6 +477,7 @@ async function enrichProfileReviewsWithBookSnapshot(
             bookTitleAr: item.bookTitleAr,
             bookAuthorEn: item.bookAuthorEn,
             bookAuthorAr: item.bookAuthorAr,
+            bookCoverThumbUrl: item.bookCoverThumbUrl,
             bookCoverUrl: item.bookCoverUrl,
           })
         )
@@ -495,6 +507,7 @@ async function enrichProfileReviewsWithBookSnapshot(
       bookTitleAr: item.bookTitleAr,
       bookAuthorEn: item.bookAuthorEn,
       bookAuthorAr: item.bookAuthorAr,
+      bookCoverThumbUrl: item.bookCoverThumbUrl,
       bookCoverUrl: item.bookCoverUrl,
     };
     if (!isReviewBookSnapshotMissing(currentSnapshot)) {

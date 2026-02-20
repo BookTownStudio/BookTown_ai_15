@@ -23,6 +23,7 @@ type ReviewBookSnapshot = {
   bookTitleAr: string;
   bookAuthorEn: string;
   bookAuthorAr: string;
+  bookCoverThumbUrl: string;
   bookCoverUrl: string;
 };
 
@@ -35,6 +36,7 @@ type BookReviewItem = {
   bookTitleAr: string;
   bookAuthorEn: string;
   bookAuthorAr: string;
+  bookCoverThumbUrl: string;
   bookCoverUrl: string;
   userId: string;
   rating: number;
@@ -151,6 +153,14 @@ function normalizeBookSnapshotFromSource(source: Record<string, unknown>): Revie
     bookTitleAr: sanitizeString(source.bookTitleAr ?? source.titleAr, 300),
     bookAuthorEn: sanitizeString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
     bookAuthorAr: sanitizeString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverThumbUrl: normalizeUrl(
+      source.bookCoverThumbUrl ??
+        source.coverThumbUrl ??
+        (source.cover as Record<string, unknown> | undefined)?.small ??
+        (source.cover as Record<string, unknown> | undefined)?.thumb ??
+        (source.cover as Record<string, unknown> | undefined)?.thumbnail ??
+        (source.cover as Record<string, unknown> | undefined)?.medium
+    ),
     bookCoverUrl: normalizeUrl(
       source.bookCoverUrl ?? source.coverUrl ?? (source.cover as Record<string, unknown> | undefined)?.medium
     ),
@@ -174,6 +184,7 @@ async function resolveBookSnapshot(bookId: string): Promise<ReviewBookSnapshot> 
       bookTitleAr: "",
       bookAuthorEn: "",
       bookAuthorAr: "",
+      bookCoverThumbUrl: "",
       bookCoverUrl: "",
     };
   }

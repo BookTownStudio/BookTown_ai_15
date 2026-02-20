@@ -336,6 +336,7 @@ const toProfileReview = (source: Record<string, unknown>): Review => {
     bookTitleAr: normalizeString(source.bookTitleAr, 300),
     bookAuthorEn: normalizeString(source.bookAuthorEn, 300),
     bookAuthorAr: normalizeString(source.bookAuthorAr, 300),
+    bookCoverThumbUrl: normalizeString(source.bookCoverThumbUrl, 2048),
     bookCoverUrl: normalizeString(source.bookCoverUrl, 2048),
     userId,
     rating: Math.min(5, Math.max(1, toNonNegativeInt(source.rating) || 1)),

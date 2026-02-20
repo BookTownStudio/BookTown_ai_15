@@ -83,6 +83,14 @@ function normalizeBookSnapshotFromSource(source) {
     bookTitleAr: normalizeString(source.bookTitleAr || source.titleAr, 300),
     bookAuthorEn: normalizeString(source.bookAuthorEn || source.authorEn || source.author, 300),
     bookAuthorAr: normalizeString(source.bookAuthorAr || source.authorAr, 300),
+    bookCoverThumbUrl: normalizeUrl(
+      source.bookCoverThumbUrl ||
+        source.coverThumbUrl ||
+        coverObject.small ||
+        coverObject.thumb ||
+        coverObject.thumbnail ||
+        coverObject.medium
+    ),
     bookCoverUrl: normalizeUrl(source.bookCoverUrl || source.coverUrl || coverObject.medium || coverObject.original),
   };
 }

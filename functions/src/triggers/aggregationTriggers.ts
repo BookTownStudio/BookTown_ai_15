@@ -362,6 +362,7 @@ type ProjectionBookSnapshot = {
   bookTitleAr: string;
   bookAuthorEn: string;
   bookAuthorAr: string;
+  bookCoverThumbUrl: string;
   bookCoverUrl: string;
 };
 
@@ -391,6 +392,14 @@ function normalizeProjectionBookSnapshot(
     bookTitleAr: sanitizeProjectionString(source.bookTitleAr ?? source.titleAr, 300),
     bookAuthorEn: sanitizeProjectionString(source.bookAuthorEn ?? source.authorEn ?? source.author, 300),
     bookAuthorAr: sanitizeProjectionString(source.bookAuthorAr ?? source.authorAr, 300),
+    bookCoverThumbUrl: sanitizeProjectionUrl(
+      source.bookCoverThumbUrl ??
+        source.coverThumbUrl ??
+        (source.cover as Record<string, unknown> | undefined)?.small ??
+        (source.cover as Record<string, unknown> | undefined)?.thumb ??
+        (source.cover as Record<string, unknown> | undefined)?.thumbnail ??
+        (source.cover as Record<string, unknown> | undefined)?.medium
+    ),
     bookCoverUrl: sanitizeProjectionUrl(
       source.bookCoverUrl ?? source.coverUrl ?? (source.cover as Record<string, unknown> | undefined)?.medium
     ),
