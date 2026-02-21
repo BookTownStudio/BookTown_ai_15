@@ -1,4 +1,4 @@
 
-import AdminDashboardScreen from '../drawer/admin.tsx';
+import ControlCenterScreen from '../drawer/admin.tsx';
 
-export default AdminDashboardScreen;
+export default ControlCenterScreen;

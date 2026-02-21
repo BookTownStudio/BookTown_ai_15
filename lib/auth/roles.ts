@@ -8,6 +8,12 @@
  */
 export type UserRole = 'superadmin' | 'moderator' | 'user';
 
+const ROLE_LEVEL: Record<UserRole, number> = {
+    user: 0,
+    moderator: 1,
+    superadmin: 2,
+};
+
 const CLAIM_ROLE_ALIASES: Record<string, UserRole> = {
     user: 'user',
     moderator: 'moderator',
@@ -52,4 +58,8 @@ export const isAdminRole = (role: UserRole): boolean => {
  */
 export const isSuperAdmin = (role: UserRole): boolean => {
     return role === 'superadmin';
+};
+
+export const hasRoleAtLeast = (role: UserRole, minimum: UserRole): boolean => {
+    return ROLE_LEVEL[role] >= ROLE_LEVEL[minimum];
 };
