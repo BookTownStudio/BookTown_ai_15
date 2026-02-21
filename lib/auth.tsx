@@ -100,6 +100,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setGuestId(null);
             }
 
+            // Terminal auth state transition reached; end any in-flight login spinner.
+            setIsLoggingIn(false);
             setIsInitialized(true);
             setIsLoading(false);
         };
@@ -111,6 +113,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             );
             return () => unsubscribe();
         } catch {
+            setIsLoggingIn(false);
             setIsLoading(false);
             return () => {};
         }
@@ -156,6 +159,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const logout = async () => {
+        setIsLoggingIn(false);
         setIsGuest(false);
         setGuestId(null);
 
