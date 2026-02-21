@@ -168,7 +168,6 @@ async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Prom
       createdAt: now,
       joinDate: now,
       lastActive: now,
-      role: "user",
       status: "active",
       isSuspended: false,
       initializationVersion: 5,
