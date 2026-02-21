@@ -257,6 +257,14 @@ service cloud.firestore {
     }
 
     /* =========================
+       DELETION REQUESTS (SERVER AUTHORITY)
+       ========================= */
+    match /deletion_requests/{id} {
+      allow read: if isAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
        NOTIFICATION PREFERENCES
        ========================= */
     match /notification_preferences/{uid} {

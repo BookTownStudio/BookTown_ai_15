@@ -549,6 +549,12 @@ export const backfillReadingProgressCanonical = wrapCallableV2(
 export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";
 export { scheduledReviewAggregateReconcile } from "./admin/reconcileReviewAggregates";
+export {
+  createDeletionRequest,
+  reviewDeletionRequest,
+  executeDeletion,
+} from "./control/deleteRequests";
+export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
 
 // Triggers
 export * from "./triggers/aggregationTriggers";
