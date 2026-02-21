@@ -533,6 +533,26 @@ const ControlCenterScreen: React.FC = () => {
     <div className="h-screen flex flex-col bg-slate-900">
       <ScreenHeader titleEn="Control Center" titleAr="مركز التحكم" onBack={handleBack} />
 
+      {/* --- Role Visibility Strip --- */}
+      <div className="flex items-center justify-between px-6 py-2 bg-black/20 border-b border-white/10">
+        <span className="text-xs text-slate-400">
+          Signed in as: <span className="font-semibold text-white uppercase">{role}</span>
+        </span>
+
+        {role === 'superadmin' && (
+          <span className="text-[10px] font-black px-2 py-1 rounded bg-red-500/20 text-red-300">
+            SUPERADMIN
+          </span>
+        )}
+
+        {role === 'moderator' && (
+          <span className="text-[10px] font-black px-2 py-1 rounded bg-blue-500/20 text-blue-300">
+            MODERATOR
+          </span>
+        )}
+      </div>
+      {/* --- End Role Visibility Strip --- */}
+
       <main className="flex-grow overflow-hidden flex flex-col md:flex-row pt-20">
         <nav
           className={cn(
