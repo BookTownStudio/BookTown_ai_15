@@ -89,9 +89,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 const roleFromClaims =
                     typeof tokenResult.claims.role === 'string'
                         ? tokenResult.claims.role
-                        : tokenResult.claims.admin === true
-                            ? 'superadmin'
-                            : null;
+                        : null;
                 setClaimsRole(roleFromClaims);
             } else {
                 setClaimsRole(null);

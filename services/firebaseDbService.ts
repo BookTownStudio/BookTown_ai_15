@@ -390,7 +390,6 @@ const toProfileUser = (uid: string, source: Record<string, unknown>): User => {
     followerCount: toNonNegativeInt(source.followers ?? source.followerCount),
     following: toNonNegativeInt(source.following ?? source.followingCount),
     followingCount: toNonNegativeInt(source.following ?? source.followingCount),
-    role: "user",
     lastActive: toIsoString(source.lastActive || source.updatedAt || source.createdAt),
     booksRead: toNonNegativeInt(source.booksRead),
     quotesSaved: toNonNegativeInt(source.quotesSaved),

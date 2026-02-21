@@ -166,7 +166,6 @@ export interface User {
     followerCount?: number;
     following: number;
     followingCount?: number;
-    role: UserRole;
     lastActive: string; // ISO string
     booksRead: number;
     quotesSaved: number;
