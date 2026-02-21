@@ -550,10 +550,12 @@ export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";
 export { scheduledReviewAggregateReconcile } from "./admin/reconcileReviewAggregates";
 export {
+  listDeletionRequests,
   createDeletionRequest,
   reviewDeletionRequest,
   executeDeletion,
 } from "./control/deleteRequests";
+export { searchUsersForAdmin } from "./control/adminUserDiscovery";
 export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
 
 // Triggers

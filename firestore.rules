@@ -260,7 +260,7 @@ service cloud.firestore {
        DELETION REQUESTS (SERVER AUTHORITY)
        ========================= */
     match /deletion_requests/{id} {
-      allow read: if isAdminUser();
+      allow read: if false;
       allow create, update, delete: if false;
     }
 

@@ -1,16 +1,17 @@
 import { httpsCallable, type Functions } from 'firebase/functions';
-import {
-  collection,
-  getDocs,
-  limit,
-  orderBy,
-  query,
-  type QueryDocumentSnapshot,
-} from 'firebase/firestore';
-import { getFirebaseDb, getFirebaseFunctions } from '../firebase.ts';
+import { getFirebaseFunctions } from '../firebase.ts';
 
 export type DeletionRequestStatus = 'pending' | 'approved' | 'rejected' | 'executed';
 export type DeletionReviewDecision = Extract<DeletionRequestStatus, 'approved' | 'rejected'>;
+export type AdminUserRole = 'user' | 'moderator' | 'superadmin';
+
+export type AdminUserSearchResult = {
+  uid: string;
+  email: string;
+  displayName: string;
+  role: AdminUserRole;
+  status: string;
+};
 
 export type DeletionRequest = {
   id: string;
@@ -60,6 +61,25 @@ type ExecuteDeletionPayload = {
   targetId: string;
 };
 
+type ListDeletionRequestsPayload = {
+  targetType: 'deletion_request';
+  targetId: 'list';
+};
+
+type ListDeletionRequestsResponse = {
+  requests: unknown;
+};
+
+type SearchUsersPayload = {
+  query: string;
+  targetType: 'user_search';
+  targetId: string;
+};
+
+type SearchUsersResponse = {
+  users: unknown;
+};
+
 let functionsInstance: Functions | null = null;
 
 function getFunctionsOnce(): Functions {
@@ -69,27 +89,27 @@ function getFunctionsOnce(): Functions {
   return functionsInstance;
 }
 
-function readRequiredString(value: unknown, field: string, docId: string): string {
+function readRequiredString(value: unknown, field: string, context: string): string {
   if (typeof value !== 'string') {
-    throw new Error(`[adminService] Invalid ${field} in deletion_requests/${docId}.`);
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
   }
   const normalized = value.trim();
   if (normalized.length === 0) {
-    throw new Error(`[adminService] Empty ${field} in deletion_requests/${docId}.`);
+    throw new Error(`[adminService] Empty ${field} in ${context}.`);
   }
   return normalized;
 }
 
-function readNullableString(value: unknown, field: string, docId: string): string | null {
+function readNullableString(value: unknown, field: string, context: string): string | null {
   if (value == null) return null;
   if (typeof value !== 'string') {
-    throw new Error(`[adminService] Invalid ${field} in deletion_requests/${docId}.`);
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
   }
   const normalized = value.trim();
   return normalized.length > 0 ? normalized : null;
 }
 
-function readStatus(value: unknown, docId: string): DeletionRequestStatus {
+function readStatus(value: unknown, context: string): DeletionRequestStatus {
   if (
     value === 'pending' ||
     value === 'approved' ||
@@ -98,13 +118,13 @@ function readStatus(value: unknown, docId: string): DeletionRequestStatus {
   ) {
     return value;
   }
-  throw new Error(`[adminService] Invalid status in deletion_requests/${docId}.`);
+  throw new Error(`[adminService] Invalid status in ${context}.`);
 }
 
-function toIsoString(value: unknown, field: string, docId: string, required: boolean): string | null {
+function toIsoString(value: unknown, field: string, context: string, required: boolean): string | null {
   if (value == null) {
     if (required) {
-      throw new Error(`[adminService] Missing ${field} in deletion_requests/${docId}.`);
+      throw new Error(`[adminService] Missing ${field} in ${context}.`);
     }
     return null;
   }
@@ -112,7 +132,7 @@ function toIsoString(value: unknown, field: string, docId: string, required: boo
   if (typeof value === 'string') {
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) {
-      throw new Error(`[adminService] Invalid ${field} in deletion_requests/${docId}.`);
+      throw new Error(`[adminService] Invalid ${field} in ${context}.`);
     }
     return parsed.toISOString();
   }
@@ -122,29 +142,90 @@ function toIsoString(value: unknown, field: string, docId: string, required: boo
     if (typeof candidate.toDate === 'function') {
       const parsed = (candidate.toDate as () => Date)();
       if (Number.isNaN(parsed.getTime())) {
-        throw new Error(`[adminService] Invalid ${field} in deletion_requests/${docId}.`);
+        throw new Error(`[adminService] Invalid ${field} in ${context}.`);
       }
       return parsed.toISOString();
     }
   }
 
-  throw new Error(`[adminService] Invalid ${field} in deletion_requests/${docId}.`);
+  throw new Error(`[adminService] Invalid ${field} in ${context}.`);
 }
 
-function mapDeletionRequestDoc(doc: QueryDocumentSnapshot): DeletionRequest {
-  const data = doc.data() as DeletionRequestDoc;
+function mapDeletionRequestItem(item: unknown, index: number): DeletionRequest {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid deletion request at index ${index}.`);
+  }
 
+  const data = item as DeletionRequestDoc & { id?: unknown };
+  const id = readRequiredString(data.id, 'id', `deletion request #${index}`);
+  const context = `deletion_requests/${id}`;
   return {
-    id: doc.id,
-    targetUid: readRequiredString(data.targetUid, 'targetUid', doc.id),
-    reason: readRequiredString(data.reason, 'reason', doc.id),
-    raisedByUid: readRequiredString(data.raisedByUid, 'raisedByUid', doc.id),
-    status: readStatus(data.status, doc.id),
-    reviewedByUid: readNullableString(data.reviewedByUid, 'reviewedByUid', doc.id),
-    reviewedAt: toIsoString(data.reviewedAt, 'reviewedAt', doc.id, false),
-    executedAt: toIsoString(data.executedAt, 'executedAt', doc.id, false),
-    createdAt: toIsoString(data.createdAt, 'createdAt', doc.id, true) as string,
+    id,
+    targetUid: readRequiredString(data.targetUid, 'targetUid', context),
+    reason: readRequiredString(data.reason, 'reason', context),
+    raisedByUid: readRequiredString(data.raisedByUid, 'raisedByUid', context),
+    status: readStatus(data.status, context),
+    reviewedByUid: readNullableString(data.reviewedByUid, 'reviewedByUid', context),
+    reviewedAt: toIsoString(data.reviewedAt, 'reviewedAt', context, false),
+    executedAt: toIsoString(data.executedAt, 'executedAt', context, false),
+    createdAt: toIsoString(data.createdAt, 'createdAt', context, true) as string,
   };
+}
+
+function parseListDeletionRequestsResponse(payload: unknown): DeletionRequest[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid listDeletionRequests response.');
+  }
+
+  const response = payload as ListDeletionRequestsResponse;
+  if (!Array.isArray(response.requests)) {
+    throw new Error('[adminService] listDeletionRequests response missing requests array.');
+  }
+
+  return response.requests.map((item, index) => mapDeletionRequestItem(item, index));
+}
+
+function readRole(value: unknown, context: string): AdminUserRole {
+  if (value === 'user' || value === 'moderator' || value === 'superadmin') {
+    return value;
+  }
+  throw new Error(`[adminService] Invalid role in ${context}.`);
+}
+
+function mapAdminUserSearchItem(item: unknown, index: number): AdminUserSearchResult {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid user search result at index ${index}.`);
+  }
+
+  const data = item as {
+    uid?: unknown;
+    email?: unknown;
+    displayName?: unknown;
+    role?: unknown;
+    status?: unknown;
+  };
+
+  const context = `user search result #${index}`;
+  return {
+    uid: readRequiredString(data.uid, 'uid', context),
+    email: readRequiredString(data.email, 'email', context),
+    displayName: readRequiredString(data.displayName, 'displayName', context),
+    role: readRole(data.role, context),
+    status: readRequiredString(data.status, 'status', context),
+  };
+}
+
+function parseSearchUsersResponse(payload: unknown): AdminUserSearchResult[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid searchUsersForAdmin response.');
+  }
+
+  const response = payload as SearchUsersResponse;
+  if (!Array.isArray(response.users)) {
+    throw new Error('[adminService] searchUsersForAdmin response missing users array.');
+  }
+
+  return response.users.map((item, index) => mapAdminUserSearchItem(item, index));
 }
 
 export const adminService = {
@@ -219,13 +300,36 @@ export const adminService = {
   },
 
   async listDeletionRequests(): Promise<DeletionRequest[]> {
-    const db = getFirebaseDb();
-    const requestsQuery = query(
-      collection(db, 'deletion_requests'),
-      orderBy('createdAt', 'desc'),
-      limit(200)
+    const fn = httpsCallable<ListDeletionRequestsPayload, ListDeletionRequestsResponse>(
+      getFunctionsOnce(),
+      'listDeletionRequests'
     );
-    const snapshot = await getDocs(requestsQuery);
-    return snapshot.docs.map(mapDeletionRequestDoc);
+
+    const result = await fn({
+      targetType: 'deletion_request',
+      targetId: 'list',
+    });
+
+    return parseListDeletionRequestsResponse(result.data);
+  },
+
+  async searchUsers(query: string): Promise<AdminUserSearchResult[]> {
+    const normalized = query.trim();
+    if (!normalized) {
+      return [];
+    }
+
+    const fn = httpsCallable<SearchUsersPayload, SearchUsersResponse>(
+      getFunctionsOnce(),
+      'searchUsersForAdmin'
+    );
+
+    const result = await fn({
+      query: normalized,
+      targetType: 'user_search',
+      targetId: normalized.slice(0, 120),
+    });
+
+    return parseSearchUsersResponse(result.data);
   },
 };

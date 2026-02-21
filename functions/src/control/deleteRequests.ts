@@ -23,6 +23,18 @@ interface DeletionRequestDoc {
   createdAt: FirebaseFirestore.FieldValue | FirebaseFirestore.Timestamp;
 }
 
+interface SerializableDeletionRequest {
+  id: string;
+  targetUid: string;
+  reason: string;
+  raisedByUid: string;
+  status: DeletionRequestStatus;
+  reviewedByUid: string | null;
+  reviewedAt: string | null;
+  executedAt: string | null;
+  createdAt: string;
+}
+
 function readPayload(caller: CallableRequest<ControlPayload>): Record<string, unknown> {
   const payload = caller.data;
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -57,11 +69,137 @@ function toRequestDoc(data: FirebaseFirestore.DocumentData): DeletionRequestDoc 
   return data as DeletionRequestDoc;
 }
 
+function readDocString(
+  value: unknown,
+  field: string,
+  requestId: string
+): string {
+  if (typeof value !== "string") {
+    throw new HttpsError(
+      "failed-precondition",
+      `Deletion request ${requestId} has invalid ${field}.`
+    );
+  }
+
+  const normalized = value.trim();
+  if (normalized.length === 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Deletion request ${requestId} has empty ${field}.`
+    );
+  }
+
+  return normalized;
+}
+
+function readDocStatus(
+  value: unknown,
+  requestId: string
+): DeletionRequestStatus {
+  if (
+    value === "pending" ||
+    value === "approved" ||
+    value === "rejected" ||
+    value === "executed"
+  ) {
+    return value;
+  }
+
+  throw new HttpsError(
+    "failed-precondition",
+    `Deletion request ${requestId} has invalid status.`
+  );
+}
+
+function toIsoTimestamp(
+  value: unknown,
+  field: string,
+  requestId: string,
+  required: boolean
+): string | null {
+  if (value == null) {
+    if (required) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Deletion request ${requestId} is missing ${field}.`
+      );
+    }
+    return null;
+  }
+
+  if (typeof value === "string") {
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Deletion request ${requestId} has invalid ${field}.`
+      );
+    }
+    return parsed.toISOString();
+  }
+
+  if (typeof value === "object") {
+    const candidate = value as { toDate?: unknown };
+    if (typeof candidate.toDate === "function") {
+      const parsed = (candidate.toDate as () => Date)();
+      if (Number.isNaN(parsed.getTime())) {
+        throw new HttpsError(
+          "failed-precondition",
+          `Deletion request ${requestId} has invalid ${field}.`
+        );
+      }
+      return parsed.toISOString();
+    }
+  }
+
+  throw new HttpsError(
+    "failed-precondition",
+    `Deletion request ${requestId} has unsupported ${field}.`
+  );
+}
+
+function serializeRequest(
+  requestId: string,
+  request: DeletionRequestDoc
+): SerializableDeletionRequest {
+  return {
+    id: requestId,
+    targetUid: readDocString(request.targetUid, "targetUid", requestId),
+    reason: readDocString(request.reason, "reason", requestId),
+    raisedByUid: readDocString(request.raisedByUid, "raisedByUid", requestId),
+    status: readDocStatus(request.status, requestId),
+    reviewedByUid:
+      typeof request.reviewedByUid === "string" && request.reviewedByUid.trim().length > 0
+        ? request.reviewedByUid.trim()
+        : null,
+    reviewedAt: toIsoTimestamp(request.reviewedAt, "reviewedAt", requestId, false),
+    executedAt: toIsoTimestamp(request.executedAt, "executedAt", requestId, false),
+    createdAt: toIsoTimestamp(request.createdAt, "createdAt", requestId, true) as string,
+  };
+}
+
 function isAuthUserNotFound(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = (error as { code?: unknown }).code;
   return code === "auth/user-not-found";
 }
+
+export const listDeletionRequests = withControlAuth<
+  ControlPayload,
+  { requests: SerializableDeletionRequest[] }
+>("moderator", "listDeletionRequests", async () => {
+  const requestsSnap = await db
+    .collection(DELETION_REQUESTS_COLLECTION)
+    .orderBy("createdAt", "desc")
+    .limit(100)
+    .get();
+
+  const requests = requestsSnap.docs.map((doc) =>
+    serializeRequest(doc.id, toRequestDoc(doc.data()))
+  );
+
+  return { requests };
+});
 
 export const createDeletionRequest = withControlAuth<ControlPayload, { requestId: string }>(
   "moderator",

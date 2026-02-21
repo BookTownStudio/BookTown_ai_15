@@ -32,6 +32,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import {
   adminService,
   adminServiceQueryKeys,
+  type AdminUserSearchResult,
   type DeletionRequest,
   type DeletionReviewDecision,
 } from '../../lib/services/adminService.ts';
@@ -223,20 +224,45 @@ const UsersTab: React.FC<{
 }> = ({ onRaiseDeleteRequest, isSubmitting, submissionError }) => {
   const { lang } = useI18n();
   const { role } = useAuth();
-  const [targetUid, setTargetUid] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('');
+  const [selectedUser, setSelectedUser] = useState<AdminUserSearchResult | null>(null);
   const [reason, setReason] = useState('');
   const [localValidationError, setLocalValidationError] = useState<string | null>(null);
 
   const canRaiseDeleteRequest = hasRoleAtLeast(role, 'moderator');
+  const normalizedSearchQuery = debouncedSearchQuery.trim();
+
+  useEffect(() => {
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery);
+    }, 300);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [searchQuery]);
+
+  const {
+    data: searchResults = [],
+    isLoading: isSearchLoading,
+    isError: isSearchError,
+    error: searchError,
+  } = useQuery<AdminUserSearchResult[]>({
+    queryKey: ['admin', 'userSearch', normalizedSearchQuery.toLowerCase()],
+    queryFn: () => adminService.searchUsers(normalizedSearchQuery),
+    enabled: canRaiseDeleteRequest && normalizedSearchQuery.length >= 2,
+  });
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!canRaiseDeleteRequest) return;
 
-    const normalizedTargetUid = targetUid.trim();
     const normalizedReason = reason.trim();
-    if (!normalizedTargetUid) {
-      setLocalValidationError(lang === 'en' ? 'Target UID is required.' : 'معرف المستخدم المستهدف مطلوب.');
+    if (!selectedUser) {
+      setLocalValidationError(
+        lang === 'en'
+          ? 'Select a user from search results.'
+          : 'اختر مستخدمًا من نتائج البحث.'
+      );
       return;
     }
     if (!normalizedReason) {
@@ -246,8 +272,10 @@ const UsersTab: React.FC<{
 
     setLocalValidationError(null);
     try {
-      await onRaiseDeleteRequest(normalizedTargetUid, normalizedReason);
-      setTargetUid('');
+      await onRaiseDeleteRequest(selectedUser.uid, normalizedReason);
+      setSearchQuery('');
+      setDebouncedSearchQuery('');
+      setSelectedUser(null);
       setReason('');
     } catch (error) {
       setLocalValidationError(
@@ -274,14 +302,77 @@ const UsersTab: React.FC<{
 
         <form className="space-y-3" onSubmit={(event) => void handleSubmit(event)}>
           <InputField
-            id="delete-target-uid"
-            label={lang === 'en' ? 'Target UID' : 'معرف المستخدم المستهدف'}
+            id="delete-target-search"
+            label={lang === 'en' ? 'Search User' : 'بحث المستخدم'}
             type="text"
-            value={targetUid}
-            onChange={(e) => setTargetUid(e.target.value)}
-            placeholder={lang === 'en' ? 'Enter target user UID' : 'أدخل معرف المستخدم'}
+            value={searchQuery}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setSelectedUser(null);
+            }}
+            placeholder={lang === 'en' ? 'Search by email or display name' : 'ابحث بالبريد الإلكتروني أو الاسم'}
             disabled={!canRaiseDeleteRequest || isSubmitting}
+            autoComplete="off"
           />
+
+          {isSearchLoading && normalizedSearchQuery.length >= 2 && (
+            <div className="text-xs text-slate-400">
+              {lang === 'en' ? 'Searching users...' : 'جار البحث عن المستخدمين...'}
+            </div>
+          )}
+
+          {isSearchError && (
+            <div className="rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-300">
+              {toErrorMessage(
+                searchError,
+                lang === 'en'
+                  ? 'Failed to search users.'
+                  : 'تعذر البحث عن المستخدمين.'
+              )}
+            </div>
+          )}
+
+          {!selectedUser && normalizedSearchQuery.length >= 2 && !isSearchLoading && !isSearchError && (
+            <div className="rounded-md border border-white/10 bg-slate-800/70 p-2 max-h-64 overflow-y-auto space-y-2">
+              {searchResults.length === 0 ? (
+                <div className="px-2 py-2 text-sm text-slate-400">
+                  {lang === 'en' ? 'No users found.' : 'لا يوجد مستخدمون.'}
+                </div>
+              ) : (
+                searchResults.map((user) => (
+                  <button
+                    key={user.uid}
+                    type="button"
+                    onClick={() => {
+                      setSelectedUser(user);
+                      setSearchQuery(user.email || user.displayName);
+                    }}
+                    className="w-full text-left rounded-md border border-white/10 bg-black/20 hover:bg-black/30 px-3 py-2 transition-colors"
+                  >
+                    <p className="text-sm font-semibold text-white">{user.displayName}</p>
+                    <p className="text-xs text-slate-400">{user.email}</p>
+                    <p className="text-[10px] uppercase text-slate-500">
+                      {user.role} · {user.status}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+
+          {selectedUser && (
+            <div className="rounded-md border border-emerald-500/30 bg-emerald-500/10 px-3 py-2">
+              <p className="text-sm font-semibold text-emerald-200">
+                {lang === 'en' ? 'Selected user' : 'المستخدم المحدد'}
+              </p>
+              <p className="text-sm text-white">{selectedUser.displayName}</p>
+              <p className="text-xs text-emerald-200/80">{selectedUser.email}</p>
+              <p className="text-[10px] uppercase text-emerald-200/70">
+                {selectedUser.role} · {selectedUser.status}
+              </p>
+            </div>
+          )}
+
           <label htmlFor="delete-request-reason" className="block text-xs text-slate-400">
             {lang === 'en' ? 'Reason' : 'السبب'}
           </label>
