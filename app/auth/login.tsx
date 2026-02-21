@@ -16,7 +16,7 @@ import { AppleIcon } from '../../components/icons/AppleIcon.tsx';
 import { BookTownLogoIcon } from '../../components/icons/BookTownLogoIcon.tsx';
 
 const LoginScreen: React.FC = () => {
-    const { login, signUp, signInWithGoogle, resetPassword, isLoggingIn, error, enterGuestMode } = useAuth();
+    const { login, signUp, signInWithGoogle, resetPassword, isLoggingIn, error } = useAuth();
     const { lang } = useI18n();
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
@@ -160,11 +160,6 @@ const LoginScreen: React.FC = () => {
                     <SocialButton icon={<AppleIcon className="h-6 w-6" />} label="Continue with Apple" disabled />
                 </div>
 
-                <div className="animate-fade-in-up" style={{ animationDelay: '900ms' }}>
-                    <Button variant="ghost" className="w-full !h-12 border-2 border-slate-600 !text-white hover:bg-slate-800" onClick={enterGuestMode}>
-                        Continue as Test User (Admin)
-                    </Button>
-                </div>
             </div>
         </div>
     );

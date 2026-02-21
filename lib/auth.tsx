@@ -38,7 +38,6 @@ interface AuthContextType {
     isLoggingIn: boolean;
     login: (email: string, pass: string) => void;
     logout: () => void;
-    enterGuestMode: () => void;
     signInWithGoogle: () => void;
     signUp: (email: string, pass: string) => void;
     resetPassword: (email: string) => Promise<void>;
@@ -49,8 +48,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 interface AuthProviderProps {
     children: ReactNode;
 }
-
-const GUEST_KEY = "booktown-guest-id";
 
 export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<FirebaseUser | null>(null);
@@ -142,26 +139,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const isAdmin = isAdminRole(role);
 
     // -----------------------
-    // Guest Mode
-    // -----------------------
-    const enterGuestMode = () => {
-        let existing = localStorage.getItem(GUEST_KEY);
-        if (!existing) {
-            existing = `guest_${crypto.randomUUID()}`;
-            localStorage.setItem(GUEST_KEY, existing);
-        }
-
-        setGuestId(existing);
-        setIsGuest(true);
-        setUser(null);
-        setIsInitialized(true);
-        setIsLoading(false);
-
-        // ✅ purge cache on identity change
-        queryClient.setUid(existing);
-    };
-
-    // -----------------------
     // Auth Actions
     // -----------------------
     const login = async (email: string, pass: string) => {
@@ -183,7 +160,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const logout = async () => {
         setIsGuest(false);
         setGuestId(null);
-        localStorage.removeItem(GUEST_KEY);
 
         try {
             await signOut(firebaseAuth);
@@ -254,7 +230,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         isLoggingIn,
         login,
         logout,
-        enterGuestMode,
         signInWithGoogle,
         signUp,
         resetPassword
