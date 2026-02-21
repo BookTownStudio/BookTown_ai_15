@@ -533,139 +533,141 @@ const ControlCenterScreen: React.FC = () => {
     <div className="h-screen flex flex-col bg-slate-900">
       <ScreenHeader titleEn="Control Center" titleAr="مركز التحكم" onBack={handleBack} />
 
-      {/* --- Role Visibility Strip --- */}
-      <div className="flex items-center justify-between px-6 py-2 bg-black/20 border-b border-white/10">
-        <span className="text-xs text-slate-400">
-          Signed in as: <span className="font-semibold text-white uppercase">{role}</span>
-        </span>
-
-        {role === 'superadmin' && (
-          <span className="text-[10px] font-black px-2 py-1 rounded bg-red-500/20 text-red-300">
-            SUPERADMIN
+      <div className="pt-20 flex flex-col flex-grow overflow-hidden">
+        {/* --- Role Visibility Strip --- */}
+        <div className="flex items-center justify-between px-6 py-2 bg-black/20 border-b border-white/10">
+          <span className="text-xs text-slate-400">
+            Signed in as: <span className="font-semibold text-white uppercase">{role}</span>
           </span>
-        )}
 
-        {role === 'moderator' && (
-          <span className="text-[10px] font-black px-2 py-1 rounded bg-blue-500/20 text-blue-300">
-            MODERATOR
-          </span>
-        )}
-      </div>
-      {/* --- End Role Visibility Strip --- */}
-
-      <main className="flex-grow overflow-hidden flex flex-col md:flex-row pt-20">
-        <nav
-          className={cn(
-            'bg-slate-800/50 backdrop-blur-md border-b md:border-b-0 md:border-r border-white/10',
-            'w-full md:w-72 md:h-full overflow-y-auto flex-shrink-0'
+          {role === 'superadmin' && (
+            <span className="text-[10px] font-black px-2 py-1 rounded bg-red-500/20 text-red-300">
+              SUPERADMIN
+            </span>
           )}
-        >
-          <div className="p-2 md:p-4 space-y-4">
-            {visibleDomains.map((domain) => (
-              <div key={domain.id} className="rounded-xl border border-white/10 bg-black/10 p-2">
-                <div className="px-2 pb-2 flex items-center justify-between">
-                  <span className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">
-                    {lang === 'en' ? domain.en : domain.ar}
-                  </span>
-                  {isSuperadmin && domain.id === 'operations' && pendingDeleteApprovals > 0 && (
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                      {pendingDeleteApprovals}
-                    </span>
-                  )}
-                </div>
-                <div className="space-y-1">
-                  {domain.sections.map((section) => {
-                    const isActive = activeSection === section.id;
-                    const showApprovalsBadge =
-                      isSuperadmin && section.id === 'deletion_requests' && pendingDeleteApprovals > 0;
 
-                    return (
-                      <button
-                        key={section.id}
-                        onClick={() => setActiveSection(section.id)}
-                        className={cn(
-                          'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all text-left',
-                          isActive
-                            ? 'bg-primary text-white shadow-lg'
-                            : 'text-slate-300 hover:bg-white/5 hover:text-white'
-                        )}
-                      >
-                        <span className="flex items-center gap-3">
-                          <section.icon className={cn('h-5 w-5', isActive ? 'text-white' : 'text-current')} />
-                          <span className="font-medium text-sm">{lang === 'en' ? section.en : section.ar}</span>
-                        </span>
-                        {showApprovalsBadge && (
-                          <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
-                            {pendingDeleteApprovals}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
-          </div>
-        </nav>
-
-        <div className="flex-grow overflow-y-auto p-4 md:p-8 bg-slate-900/50">
-          <div className="max-w-5xl mx-auto">
-            {activeSection === 'users' && <UsersTab onRaiseDeleteRequest={handleRaiseDeleteRequest} />}
-            {activeSection === 'moderation' && <ModerationTab />}
-            {activeSection === 'feedback' && <FeedbackTab />}
-            {activeSection === 'deletion_requests' && (
-              <DeletionRequestsTab
-                role={role}
-                requests={deleteRequests}
-                onUpdateStatus={handleUpdateDeleteRequestStatus}
-              />
-            )}
-            {activeSection === 'analytics' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'Analytics' : 'التحليلات'}
-                subtitle={lang === 'en' ? 'Operational metrics panel.' : 'لوحة مؤشرات تشغيلية.'}
-                icon={AnalyticsIcon}
-              />
-            )}
-            {activeSection === 'ai_governance' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'AI Governance' : 'حوكمة الذكاء الاصطناعي'}
-                subtitle={lang === 'en' ? 'Policy and model controls.' : 'سياسات وضوابط النماذج.'}
-                icon={BrainIcon}
-              />
-            )}
-            {activeSection === 'catalog' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'Catalog' : 'الكتالوج'}
-                subtitle={lang === 'en' ? 'Catalog quality controls.' : 'ضوابط جودة الكتالوج.'}
-                icon={BookIcon}
-              />
-            )}
-            {activeSection === 'curation' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'Curation' : 'التنسيق'}
-                subtitle={lang === 'en' ? 'Editorial curation workflows.' : 'سير عمل التنسيق التحريري.'}
-                icon={StarIcon}
-              />
-            )}
-            {activeSection === 'marketplace' && <MarketplaceTab />}
-            {activeSection === 'system_jobs' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'System Jobs' : 'مهام النظام'}
-                subtitle={lang === 'en' ? 'Background operations queue.' : 'قائمة عمليات النظام الخلفية.'}
-                icon={SettingsIcon}
-              />
-            )}
-            {activeSection === 'settings' && (
-              <PlaceholderTab
-                title={lang === 'en' ? 'Settings' : 'الإعدادات'}
-                subtitle={lang === 'en' ? 'Global control center settings.' : 'إعدادات مركز التحكم العامة.'}
-                icon={SettingsIcon}
-              />
-            )}
-          </div>
+          {role === 'moderator' && (
+            <span className="text-[10px] font-black px-2 py-1 rounded bg-blue-500/20 text-blue-300">
+              MODERATOR
+            </span>
+          )}
         </div>
-      </main>
+        {/* --- End Role Visibility Strip --- */}
+
+        <main className="flex-grow overflow-hidden flex flex-col md:flex-row">
+          <nav
+            className={cn(
+              'bg-slate-800/50 backdrop-blur-md border-b md:border-b-0 md:border-r border-white/10',
+              'w-full md:w-72 md:h-full overflow-y-auto flex-shrink-0'
+            )}
+          >
+            <div className="p-2 md:p-4 space-y-4">
+              {visibleDomains.map((domain) => (
+                <div key={domain.id} className="rounded-xl border border-white/10 bg-black/10 p-2">
+                  <div className="px-2 pb-2 flex items-center justify-between">
+                    <span className="text-[11px] uppercase tracking-widest text-slate-400 font-bold">
+                      {lang === 'en' ? domain.en : domain.ar}
+                    </span>
+                    {isSuperadmin && domain.id === 'operations' && pendingDeleteApprovals > 0 && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                        {pendingDeleteApprovals}
+                      </span>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    {domain.sections.map((section) => {
+                      const isActive = activeSection === section.id;
+                      const showApprovalsBadge =
+                        isSuperadmin && section.id === 'deletion_requests' && pendingDeleteApprovals > 0;
+
+                      return (
+                        <button
+                          key={section.id}
+                          onClick={() => setActiveSection(section.id)}
+                          className={cn(
+                            'w-full flex items-center justify-between gap-3 px-3 py-2 rounded-lg transition-all text-left',
+                            isActive
+                              ? 'bg-primary text-white shadow-lg'
+                              : 'text-slate-300 hover:bg-white/5 hover:text-white'
+                          )}
+                        >
+                          <span className="flex items-center gap-3">
+                            <section.icon className={cn('h-5 w-5', isActive ? 'text-white' : 'text-current')} />
+                            <span className="font-medium text-sm">{lang === 'en' ? section.en : section.ar}</span>
+                          </span>
+                          {showApprovalsBadge && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">
+                              {pendingDeleteApprovals}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </nav>
+
+          <div className="flex-grow overflow-y-auto p-4 md:p-8 bg-slate-900/50">
+            <div className="max-w-5xl mx-auto">
+              {activeSection === 'users' && <UsersTab onRaiseDeleteRequest={handleRaiseDeleteRequest} />}
+              {activeSection === 'moderation' && <ModerationTab />}
+              {activeSection === 'feedback' && <FeedbackTab />}
+              {activeSection === 'deletion_requests' && (
+                <DeletionRequestsTab
+                  role={role}
+                  requests={deleteRequests}
+                  onUpdateStatus={handleUpdateDeleteRequestStatus}
+                />
+              )}
+              {activeSection === 'analytics' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'Analytics' : 'التحليلات'}
+                  subtitle={lang === 'en' ? 'Operational metrics panel.' : 'لوحة مؤشرات تشغيلية.'}
+                  icon={AnalyticsIcon}
+                />
+              )}
+              {activeSection === 'ai_governance' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'AI Governance' : 'حوكمة الذكاء الاصطناعي'}
+                  subtitle={lang === 'en' ? 'Policy and model controls.' : 'سياسات وضوابط النماذج.'}
+                  icon={BrainIcon}
+                />
+              )}
+              {activeSection === 'catalog' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'Catalog' : 'الكتالوج'}
+                  subtitle={lang === 'en' ? 'Catalog quality controls.' : 'ضوابط جودة الكتالوج.'}
+                  icon={BookIcon}
+                />
+              )}
+              {activeSection === 'curation' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'Curation' : 'التنسيق'}
+                  subtitle={lang === 'en' ? 'Editorial curation workflows.' : 'سير عمل التنسيق التحريري.'}
+                  icon={StarIcon}
+                />
+              )}
+              {activeSection === 'marketplace' && <MarketplaceTab />}
+              {activeSection === 'system_jobs' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'System Jobs' : 'مهام النظام'}
+                  subtitle={lang === 'en' ? 'Background operations queue.' : 'قائمة عمليات النظام الخلفية.'}
+                  icon={SettingsIcon}
+                />
+              )}
+              {activeSection === 'settings' && (
+                <PlaceholderTab
+                  title={lang === 'en' ? 'Settings' : 'الإعدادات'}
+                  subtitle={lang === 'en' ? 'Global control center settings.' : 'إعدادات مركز التحكم العامة.'}
+                  icon={SettingsIcon}
+                />
+              )}
+            </div>
+          </div>
+        </main>
+      </div>
     </div>
   );
 };

@@ -249,6 +249,14 @@ service cloud.firestore {
     }
 
     /* =========================
+       AUDIT LOG (IMMUTABLE, SERVER WRITES ONLY)
+       ========================= */
+    match /audit_log/{logId} {
+      allow read: if isSuperAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
        NOTIFICATION PREFERENCES
        ========================= */
     match /notification_preferences/{uid} {
