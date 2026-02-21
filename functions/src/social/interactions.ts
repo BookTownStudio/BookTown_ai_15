@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -11,10 +12,10 @@ const db = admin.firestore();
  * Counter sync handled by onPostLikeCreated trigger.
  */
 export const likeSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
-    
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+
     const { postId } = request.data;
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     if (!postId) throw new HttpsError("invalid-argument", "postId required.");
 
@@ -75,10 +76,10 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
  * Enforces: non-owner only, emits activity log.
  */
 export const repostSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
-    
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+
     const { postId } = request.data;
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     if (!postId) throw new HttpsError("invalid-argument", "postId required.");
 

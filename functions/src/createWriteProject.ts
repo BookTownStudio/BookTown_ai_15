@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 /**
  * createWriteProject
@@ -12,10 +13,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
   logger.info("[WRITE][ENTRY] Materialization request received.");
 
   // 2. Authentication Enforcement
-  if (!request.auth) {
-    logger.error("[WRITE][FAILURE] Unauthenticated materialization attempt.");
-    throw new HttpsError("unauthenticated", "Project materialization failed: User is not authenticated.");
-  }
+  const caller = await assertActiveAuthenticatedUser(request.auth);
 
   const { project } = request.data as {
     project?: {
@@ -28,7 +26,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
       typeAr?: unknown;
     };
   };
-  const uid = request.auth.uid;
+  const uid = caller.uid;
 
   // 3. Validation
   if (!project) {

@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 type RevokeResult = {
   projectId: string;
@@ -13,11 +14,8 @@ type RevokeResult = {
  * Revokes active share link for a write project.
  */
 export const revokeWriteProjectShareLink = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId } = request.data as {
     projectId?: unknown;
   };

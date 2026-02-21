@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    assertActiveAuthenticatedUser,
+    getRoleFromClaims,
+} from "../shared/auth";
 
 /**
  * editSocialPost
@@ -8,13 +12,11 @@ import * as logger from "firebase-functions/logger";
  * Enforces: text and visibility edits, conditional attachment edits, versioned history.
  */
 export const editSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Auth required.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId, text, visibility, attachments: clientAttachments } = request.data;
-    const uid = request.auth.uid;
-    const isAdmin = request.auth.token.admin === true || request.auth.token.role === 'superadmin';
+    const uid = caller.uid;
+    const isAdmin = getRoleFromClaims(caller) === "superadmin";
 
     if (!postId) {
         throw new HttpsError("invalid-argument", "postId required.");

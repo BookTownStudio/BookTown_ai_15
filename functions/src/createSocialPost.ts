@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { recomputeUserStats } from "./userStats/recomputeUserStats";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 /**
  * createSocialPost
@@ -11,13 +12,11 @@ import { recomputeUserStats } from "./userStats/recomputeUserStats";
 export const createSocialPost = onCall({ cors: true }, async (request) => {
   logger.info("[SOCIAL][PUBLISH_ATTEMPT] Processing publish request");
 
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated to create a post.");
-  }
+  const caller = await assertActiveAuthenticatedUser(request.auth);
 
   const { content, attachments: clientAttachments, publishToken, visibility: clientVisibility } = request.data;
-  const uid = request.auth.uid;
-  const email = request.auth.token.email || "";
+  const uid = caller.uid;
+  const email = typeof caller.token.email === "string" ? caller.token.email : "";
 
   if (!publishToken) {
     throw new HttpsError("invalid-argument", "publishToken is required.");
@@ -42,9 +41,9 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
   // Construct Locked Schema (POST_MODEL_V1)
   const postData: any = {
     authorId: uid,
-    authorName: request.auth.token.name || email.split('@')[0] || "Anonymous",
+    authorName: caller.token.name || email.split('@')[0] || "Anonymous",
     authorHandle: `@${email.split('@')[0] || 'user'}`,
-    authorAvatar: request.auth.token.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
+    authorAvatar: caller.token.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
     
     content: {
         text: text,

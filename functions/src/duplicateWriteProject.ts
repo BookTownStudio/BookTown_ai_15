@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 type WriteStatus = "Idea" | "Draft" | "Revision" | "Final";
 
@@ -34,11 +35,8 @@ function normalizeCoverUrl(value: unknown): string | null {
  * Deterministic duplicate with operation-level idempotency.
  */
 export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId, operationId } = request.data as {
     projectId?: unknown;
     operationId?: unknown;

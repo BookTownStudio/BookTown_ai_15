@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 type WriteStatus = "Idea" | "Draft" | "Revision" | "Final";
 
@@ -46,11 +47,8 @@ function normalizeCoverUrl(value: unknown): string | undefined {
  * Deterministic project update with revision precondition.
  */
 export const updateWriteProject = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId, updates, expectedRevision } = request.data as {
     projectId?: unknown;
     updates?: Record<string, unknown>;

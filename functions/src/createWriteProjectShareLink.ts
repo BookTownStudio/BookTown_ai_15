@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 const DEFAULT_SHARE_ORIGIN = "https://booktown-ai.web.app";
 
@@ -47,11 +48,8 @@ function createShareToken(): string {
  * Creates or reuses a deterministic, revocable share token for a project.
  */
 export const createWriteProjectShareLink = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId, origin } = request.data as {
     projectId?: unknown;
     origin?: unknown;

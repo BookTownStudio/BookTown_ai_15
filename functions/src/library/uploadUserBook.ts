@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import { CONTRACT_VERSION } from "../contracts/shared/version";
 import { generateCorrelationId, getHeaderValue } from "../contracts/correlation";
+import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 type UploadUserBookRequest = {
   shelfId: string;
@@ -64,11 +65,8 @@ function toContentType(fileType: "epub" | "pdf"): string {
 export const uploadUserBook = onCall<UploadUserBookRequest>(
   { cors: true },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Authentication required.");
-    }
-
-    const uid = request.auth.uid;
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const uid = caller.uid;
     const correlationId =
       getHeaderValue(
         request.rawRequest?.headers as Record<string, unknown> | undefined,

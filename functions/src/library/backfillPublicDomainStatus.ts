@@ -3,6 +3,10 @@ import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { evaluatePublicDomainStatus } from "./policy/publicDomainPolicy";
 import { FieldValue } from "firebase-admin/firestore";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -18,19 +22,8 @@ const db = admin.firestore();
 export const backfillPublicDomainStatus = onCall(
   { cors: true },
   async (request) => {
-    /* -------------------------------------------------
-     * AUTH & AUTHORIZATION
-     * ------------------------------------------------- */
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Authentication required.");
-    }
-
-    const uid = request.auth.uid;
-    const userSnap = await db.doc(`users/${uid}`).get();
-
-    if (!userSnap.exists || userSnap.data()?.role !== "admin") {
-      throw new HttpsError("permission-denied", "Admin access required.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { uid } = assertRoleFromClaims(caller, "superadmin");
 
     /* -------------------------------------------------
      * INPUT NORMALIZATION

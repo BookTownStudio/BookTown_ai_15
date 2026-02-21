@@ -91,6 +91,7 @@ import {
 } from "./messaging/directMessages";
 import { api as apiRaw } from "./api";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
+import { canonicalizeRoleClaim } from "./shared/auth";
 
 // ------------------------------------------------------------------
 // Admin SDK (initialized via firebaseAdmin module)
@@ -109,6 +110,19 @@ type BootstrapIdentity = {
   photoURL: string | null;
   source: string;
 };
+
+async function ensureCanonicalRoleClaim(authUser: admin.auth.UserRecord): Promise<void> {
+  const existingClaims = (authUser.customClaims ?? {}) as Record<string, unknown>;
+  const canonicalRole = canonicalizeRoleClaim(existingClaims.role);
+  if (existingClaims.role === canonicalRole) {
+    return;
+  }
+
+  await admin.auth().setCustomUserClaims(authUser.uid, {
+    ...existingClaims,
+    role: canonicalRole,
+  });
+}
 
 async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Promise<string[]> {
   const { uid, source } = identity;
@@ -220,6 +234,7 @@ export const bootstrapCurrentUser = onCall({ cors: true }, async (request) => {
   }
 
   const authUser = await admin.auth().getUser(request.auth.uid);
+  await ensureCanonicalRoleClaim(authUser);
   const created = await bootstrapUserProfileAndShelves({
     uid: authUser.uid,
     email: authUser.email ?? null,
@@ -247,6 +262,7 @@ const createDefaultShelvesRaw = onCall({ cors: true }, async (request) => {
   }
 
   const authUser = await admin.auth().getUser(request.auth.uid);
+  await ensureCanonicalRoleClaim(authUser);
   const created = await bootstrapUserProfileAndShelves({
     uid: authUser.uid,
     email: authUser.email ?? null,

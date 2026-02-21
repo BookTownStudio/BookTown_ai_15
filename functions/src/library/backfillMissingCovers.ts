@@ -12,6 +12,10 @@ import {
   upgradeGoogleCoverCandidates,
   upgradeOpenLibraryCandidates,
 } from "./ingestBook";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
@@ -301,29 +305,11 @@ async function saveCover(
   });
 }
 
-async function assertAdmin(request: CallableRequest<unknown>): Promise<string> {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const uid = request.auth.uid;
-  const token = (request.auth.token ?? {}) as Record<string, unknown>;
-  if (token.admin === true) {
-    return uid;
-  }
-
-  const userSnap = await db.doc(`users/${uid}`).get();
-  if (userSnap.exists && userSnap.data()?.role === "admin") {
-    return uid;
-  }
-
-  throw new HttpsError("permission-denied", "Admin access required.");
-}
-
 export const backfillMissingCovers = onCall(
   { cors: true, timeoutSeconds: 540, memory: "1GiB" },
   async (request) => {
-    const executor = await assertAdmin(request);
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { uid: executor } = assertRoleFromClaims(caller, "superadmin");
 
     const payload = (request.data ?? {}) as Record<string, unknown>;
 

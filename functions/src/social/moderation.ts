@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    assertActiveAuthenticatedUser,
+    assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -10,10 +14,8 @@ const db = admin.firestore();
  * Enforces: Admin-only triggers, immutable audit logging, and visibility effects.
  */
 export const applyModerationAction = onCall({ cors: true }, async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
-    
-    const isAdmin = request.auth.token.admin === true || request.auth.token.role === 'superadmin' || request.auth.token.role === 'moderator';
-    if (!isAdmin) throw new HttpsError("permission-denied", "Authority refused.");
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { uid } = assertRoleFromClaims(caller, ["moderator", "superadmin"]);
 
     const { postId, action, reportId, note } = request.data;
     
@@ -22,6 +24,9 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
     
     if (!postId || !VALID_ACTIONS.includes(action)) {
         throw new HttpsError("invalid-argument", "Invalid postId or moderation action.");
+    }
+    if (action === "hard_delete" && !reportId) {
+        throw new HttpsError("invalid-argument", "reportId is required for hard delete.");
     }
 
     const postRef = db.collection('posts').doc(postId);
@@ -32,6 +37,35 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
             const postSnap = await transaction.get(postRef);
             if (!postSnap.exists && action !== 'hard_delete') {
                 throw new HttpsError("not-found", "Post not found.");
+            }
+
+            if (reportId) {
+                const reportRef = db.collection('reports').doc(reportId);
+                const reportSnap = await transaction.get(reportRef);
+                if (!reportSnap.exists) {
+                    throw new HttpsError("not-found", "Report not found.");
+                }
+
+                const reportData = (reportSnap.data() || {}) as Record<string, unknown>;
+                const reportEntityType =
+                    typeof reportData.entityType === "string" ? reportData.entityType : "";
+                const reportEntityId =
+                    typeof reportData.entityId === "string" ? reportData.entityId : "";
+                const reportStatus =
+                    typeof reportData.status === "string" ? reportData.status : "";
+
+                if (reportEntityType !== "post") {
+                    throw new HttpsError("failed-precondition", "Report entity type mismatch.");
+                }
+                if (reportEntityId !== postId) {
+                    throw new HttpsError("failed-precondition", "Report target mismatch.");
+                }
+                if (reportStatus !== "under_review") {
+                    throw new HttpsError(
+                        "failed-precondition",
+                        "Report must be under_review before final action."
+                    );
+                }
             }
             
             const post = postSnap.data();
@@ -58,7 +92,7 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
                 transaction.update(db.collection('reports').doc(reportId), {
                     status: action === 'dismiss' ? 'dismissed' : 'action_taken',
                     resolution: action,
-                    resolvedBy: request.auth?.uid,
+                    resolvedBy: uid,
                     resolvedAt: now
                 });
             }
@@ -69,7 +103,7 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
                 action,
                 postId,
                 authorId: post?.authorId || 'unknown',
-                moderatorId: request.auth?.uid,
+                moderatorId: uid,
                 note: note || '',
                 timestamp: now,
                 version: "1.0"
@@ -88,19 +122,32 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
  * Helper for UI flow to move reports into review.
  */
 export const transitionModerationStage = onCall({ cors: true }, async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
-    const isAdmin = request.auth.token.admin === true || request.auth.token.role === 'superadmin' || request.auth.token.role === 'moderator';
-    if (!isAdmin) throw new HttpsError("permission-denied", "Authority refused.");
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { uid } = assertRoleFromClaims(caller, ["moderator", "superadmin"]);
 
     const { reportId, nextStage } = request.data;
-    if (!reportId || !['under_review', 'action_taken', 'dismissed'].includes(nextStage)) {
+    if (!reportId || nextStage !== 'under_review') {
         throw new HttpsError("invalid-argument", "Invalid stage transition.");
     }
 
-    await db.collection('reports').doc(reportId).update({
-        status: nextStage,
-        moderatorId: request.auth.uid,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    await db.runTransaction(async (transaction) => {
+        const reportRef = db.collection('reports').doc(reportId);
+        const reportSnap = await transaction.get(reportRef);
+        if (!reportSnap.exists) {
+            throw new HttpsError("not-found", "Report not found.");
+        }
+
+        const report = (reportSnap.data() || {}) as Record<string, unknown>;
+        const status = typeof report.status === "string" ? report.status : "";
+        if (status !== "open") {
+            throw new HttpsError("failed-precondition", "Only open reports can enter review.");
+        }
+
+        transaction.update(reportRef, {
+            status: nextStage,
+            moderatorId: uid,
+            updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        });
     });
 
     return { success: true };

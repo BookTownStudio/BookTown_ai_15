@@ -251,6 +251,92 @@ const stripUndefined = <T extends Record<string, any>>(value: T): T =>
     Object.entries(value).filter(([, fieldValue]) => fieldValue !== undefined)
   ) as T;
 
+const WEEKDAY_KEYS = [
+  "mon",
+  "tue",
+  "wed",
+  "thu",
+  "fri",
+  "sat",
+  "sun",
+] as const;
+
+const TIME_24H_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const sanitizeOpeningSchedule = (
+  value: unknown,
+  strict = true
+): Venue["openingSchedule"] | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const result: NonNullable<Venue["openingSchedule"]> = {
+    mon: { closed: true, open: null, close: null },
+    tue: { closed: true, open: null, close: null },
+    wed: { closed: true, open: null, close: null },
+    thu: { closed: true, open: null, close: null },
+    fri: { closed: true, open: null, close: null },
+    sat: { closed: true, open: null, close: null },
+    sun: { closed: true, open: null, close: null },
+  };
+
+  for (const day of WEEKDAY_KEYS) {
+    const dayValue = source[day];
+    if (!dayValue || typeof dayValue !== "object") continue;
+    const dayRecord = dayValue as Record<string, unknown>;
+    const closed = dayRecord.closed === true;
+    const open = normalizeOptionalString(dayRecord.open, 5) ?? null;
+    const close = normalizeOptionalString(dayRecord.close, 5) ?? null;
+
+    if (!closed) {
+      if (!open || !close || !TIME_24H_PATTERN.test(open) || !TIME_24H_PATTERN.test(close)) {
+        if (strict) {
+          throw new Error(`INVALID_ARGUMENT: openingSchedule.${day} must include valid open/close HH:MM.`);
+        }
+        result[day] = { closed: true, open: null, close: null };
+        continue;
+      }
+    }
+
+    result[day] = {
+      closed,
+      open: closed ? null : open,
+      close: closed ? null : close,
+    };
+  }
+
+  return result;
+};
+
+const sanitizeVenueLocation = (
+  value: unknown
+): Venue["location"] | undefined => {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as Record<string, unknown>;
+  const latitudeRaw = source.latitude;
+  const longitudeRaw = source.longitude;
+
+  if (typeof latitudeRaw !== "number" || !Number.isFinite(latitudeRaw)) {
+    throw new Error("INVALID_ARGUMENT: location.latitude must be a finite number.");
+  }
+  if (typeof longitudeRaw !== "number" || !Number.isFinite(longitudeRaw)) {
+    throw new Error("INVALID_ARGUMENT: location.longitude must be a finite number.");
+  }
+  if (latitudeRaw < -90 || latitudeRaw > 90) {
+    throw new Error("INVALID_ARGUMENT: location.latitude out of range.");
+  }
+  if (longitudeRaw < -180 || longitudeRaw > 180) {
+    throw new Error("INVALID_ARGUMENT: location.longitude out of range.");
+  }
+
+  return stripUndefined({
+    latitude: Number(latitudeRaw.toFixed(7)),
+    longitude: Number(longitudeRaw.toFixed(7)),
+    placeId: normalizeOptionalString(source.placeId, 128),
+    city: normalizeOptionalString(source.city, 120),
+    country: normalizeOptionalString(source.country, 120),
+  });
+};
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -691,15 +777,27 @@ class FirebaseUserService {
     const db = getDb();
     if (!db) return [];
 
-    const q = query(
-      collection(db, "users", uid, "bookmarks"),
-      orderBy("timestamp", "desc"),
-      limit(200)
+    const bookmarkCollections = [
+      "post_bookmarks",
+      "venue_bookmarks",
+      "event_bookmarks",
+      "bookmarks",
+    ] as const;
+
+    const snaps = await Promise.all(
+      bookmarkCollections.map((subCollection) =>
+        getDocs(
+          query(
+            collection(db, "users", uid, subCollection),
+            orderBy("timestamp", "desc"),
+            limit(200)
+          )
+        )
+      )
     );
 
-    const snap = await getDocs(q);
-
-    return snap.docs
+    return snaps
+      .flatMap((snap) => snap.docs)
       .map((bookmarkDoc) => {
         const data = bookmarkDoc.data() as Record<string, unknown>;
         const typeValue = typeof data.type === "string" ? data.type : null;
@@ -722,7 +820,9 @@ class FirebaseUserService {
             : {}),
         } satisfies Bookmark;
       })
-      .filter((bookmark): bookmark is Bookmark => bookmark !== null);
+      .filter((bookmark): bookmark is Bookmark => bookmark !== null)
+      .sort((a, b) => b.timestamp.localeCompare(a.timestamp))
+      .slice(0, 200);
   }
 
   async getAgentSessions(uid: string): Promise<AgentSession[]> {
@@ -1258,6 +1358,17 @@ class FirebaseVenueService {
   }
 
   private mapVenue(data: any): Venue {
+    const rawLocation =
+      data && typeof data.location === "object" ? (data.location as Record<string, unknown>) : undefined;
+    const latitude =
+      typeof rawLocation?.latitude === "number" && Number.isFinite(rawLocation.latitude)
+        ? rawLocation.latitude
+        : undefined;
+    const longitude =
+      typeof rawLocation?.longitude === "number" && Number.isFinite(rawLocation.longitude)
+        ? rawLocation.longitude
+        : undefined;
+
     return {
       id: data.id,
       ownerId: data.ownerId,
@@ -1272,6 +1383,17 @@ class FirebaseVenueService {
       ratingsCount: typeof data.ratingsCount === "number" ? data.ratingsCount : undefined,
       websiteUrl: data.websiteUrl || undefined,
       phone: data.phone || undefined,
+      openingSchedule: sanitizeOpeningSchedule(data.openingSchedule, false),
+      location:
+        latitude !== undefined && longitude !== undefined
+          ? stripUndefined({
+              latitude,
+              longitude,
+              placeId: normalizeOptionalString(rawLocation?.placeId, 128),
+              city: normalizeOptionalString(rawLocation?.city, 120),
+              country: normalizeOptionalString(rawLocation?.country, 120),
+            })
+          : undefined,
     };
   }
 
@@ -1287,6 +1409,7 @@ class FirebaseVenueService {
       privacy: data.privacy === "private" ? "private" : "public",
       duration: data.duration || undefined,
       isOnline: Boolean(data.isOnline),
+      locationId: normalizeOptionalString(data.locationId, 128),
       venueName: data.venueName || undefined,
       link: data.link || undefined,
     };
@@ -1419,7 +1542,20 @@ class FirebaseVenueService {
       const dateTime = normalizeIsoDate(data.dateTime, "dateTime");
       const imageUrl = ensureHttpsUrl(data.imageUrl, "imageUrl");
       const isOnline = Boolean(data.isOnline);
-      const venueName = isOnline ? undefined : ensureNonEmptyString(data.venueName, "venueName");
+      const locationId = isOnline ? undefined : normalizeOptionalString(data.locationId, 128);
+      let venueName = isOnline ? undefined : normalizeOptionalString(data.venueName, 120);
+      if (!isOnline && locationId) {
+        const locationSnap = await getDoc(doc(db, "venues", locationId));
+        if (!locationSnap.exists()) {
+          throw new Error("INVALID_ARGUMENT: locationId must reference an existing location.");
+        }
+        if (!venueName) {
+          venueName = ensureNonEmptyString(locationSnap.data()?.name, "venueName");
+        }
+      }
+      if (!isOnline && !venueName) {
+        throw new Error("INVALID_ARGUMENT: venueName or locationId is required for offline events.");
+      }
       const link = isOnline ? ensureHttpsUrl(data.link, "link") : undefined;
 
       const eventRef = doc(collection(db, "events"));
@@ -1435,6 +1571,7 @@ class FirebaseVenueService {
         privacy: data.privacy === "private" ? "private" : "public",
         duration: normalizeOptionalString(data.duration),
         isOnline,
+        locationId,
         venueName,
         link,
         createdAt: serverTimestamp(),
@@ -1447,6 +1584,8 @@ class FirebaseVenueService {
     const type = ensureNonEmptyString(data.type, "type");
     const address = ensureNonEmptyString(data.address, "address");
     const imageUrl = ensureHttpsUrl(data.imageUrl, "imageUrl");
+    const openingSchedule = sanitizeOpeningSchedule(data.openingSchedule);
+    const location = sanitizeVenueLocation(data.location);
 
     const venueRef = doc(collection(db, "venues"));
     await setDoc(venueRef, stripUndefined({
@@ -1458,6 +1597,8 @@ class FirebaseVenueService {
       address,
       imageUrl,
       openingHours: normalizeOptionalString(data.openingHours),
+      openingSchedule,
+      location,
       descriptionEn: normalizeOptionalString(data.descriptionEn, 2000) || "",
       descriptionAr: normalizeOptionalString(data.descriptionAr, 2000) || "",
       rating: 0,
@@ -1487,6 +1628,20 @@ class FirebaseVenueService {
       const dateTime = normalizeIsoDate(eventData.dateTime, "dateTime");
       const imageUrl = ensureHttpsUrl(eventData.imageUrl, "imageUrl");
       const isOnline = Boolean(eventData.isOnline);
+      const locationId = isOnline ? undefined : normalizeOptionalString(eventData.locationId, 128);
+      let venueName = isOnline ? undefined : normalizeOptionalString(eventData.venueName, 120);
+      if (!isOnline && locationId) {
+        const locationSnap = await getDoc(doc(db, "venues", locationId));
+        if (!locationSnap.exists()) {
+          throw new Error("INVALID_ARGUMENT: locationId must reference an existing location.");
+        }
+        if (!venueName) {
+          venueName = ensureNonEmptyString(locationSnap.data()?.name, "venueName");
+        }
+      }
+      if (!isOnline && !venueName) {
+        throw new Error("INVALID_ARGUMENT: venueName or locationId is required for offline events.");
+      }
 
       await updateDoc(doc(db, "events", normalizedVenueId), stripUndefined({
         titleEn,
@@ -1499,7 +1654,8 @@ class FirebaseVenueService {
         privacy: eventData.privacy === "private" ? "private" : "public",
         duration: normalizeOptionalString(eventData.duration),
         isOnline,
-        venueName: isOnline ? undefined : ensureNonEmptyString(eventData.venueName, "venueName"),
+        locationId,
+        venueName,
         link: isOnline ? ensureHttpsUrl(eventData.link, "link") : undefined,
         updatedAt: serverTimestamp(),
       }));
@@ -1511,6 +1667,8 @@ class FirebaseVenueService {
     const type = ensureNonEmptyString(venueData.type, "type");
     const address = ensureNonEmptyString(venueData.address, "address");
     const imageUrl = ensureHttpsUrl(venueData.imageUrl, "imageUrl");
+    const openingSchedule = sanitizeOpeningSchedule(venueData.openingSchedule);
+    const location = sanitizeVenueLocation(venueData.location);
 
     await updateDoc(doc(db, "venues", normalizedVenueId), stripUndefined({
       name,
@@ -1520,6 +1678,8 @@ class FirebaseVenueService {
       address,
       imageUrl,
       openingHours: normalizeOptionalString(venueData.openingHours),
+      openingSchedule,
+      location,
       descriptionEn: normalizeOptionalString(venueData.descriptionEn, 2000) || "",
       descriptionAr: normalizeOptionalString(venueData.descriptionAr, 2000) || "",
       websiteUrl: normalizeOptionalString(venueData.websiteUrl, 1024),
@@ -1534,9 +1694,11 @@ class FirebaseVenueService {
     const normalizedVenueId = ensureNonEmptyString(venueId, "venueId", 128);
     const entity = await this.resolveEntity(normalizedVenueId);
     const bookmarkType = entity.collectionName === "events" ? "event" : "venue";
+    const bookmarkCollection =
+      bookmarkType === "event" ? "event_bookmarks" : "venue_bookmarks";
 
     await setDoc(
-      doc(db, "users", normalizedUid, "bookmarks", normalizedVenueId),
+      doc(db, "users", normalizedUid, bookmarkCollection, normalizedVenueId),
       {
         type: bookmarkType,
         entityId: normalizedVenueId,

@@ -159,30 +159,62 @@ export const removePostFromSearchIndex = onDocumentDeleted("posts/{postId}", asy
     logger.info(`[INDEX][DELETE] Hard removed post ${event.params.postId} from index.`);
 });
 
-/**
- * syncBookmarkToSearchIndex
- * Trigger: onCreate (users/{uid}/bookmarks/{entityId})
- */
-export const syncBookmarkToSearchIndex = onDocumentCreated("users/{uid}/bookmarks/{entityId}", async (event) => {
-    const data = event.data?.data();
-    if (!data) return;
-
-    const { uid, entityId } = event.params;
-    const docId = `${uid}_${entityId}`;
-
-    const projection = {
-        uid: uid,
-        entityId: entityId,
-        entityType: data.type || 'post',
+async function writeBookmarkProjection(params: {
+    uid: string;
+    entityId: string;
+    entityType: 'post' | 'venue' | 'event' | 'quote';
+}) {
+    const { uid, entityId, entityType } = params;
+    await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).set({
+        uid,
+        entityId,
+        entityType,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    };
+    });
+}
 
-    await db.collection('search_bookmarks').doc(docId).set(projection);
+async function deleteBookmarkProjection(uid: string, entityId: string) {
+    await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).delete();
+}
+
+export const syncBookmarkToSearchIndex = onDocumentCreated("users/{uid}/post_bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await writeBookmarkProjection({ uid, entityId, entityType: 'post' });
 });
 
-export const removeBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/bookmarks/{entityId}", async (event) => {
+export const removeBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/post_bookmarks/{entityId}", async (event) => {
     const { uid, entityId } = event.params;
-    await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).delete();
+    await deleteBookmarkProjection(uid, entityId);
+});
+
+export const syncVenueBookmarkToSearchIndex = onDocumentCreated("users/{uid}/venue_bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await writeBookmarkProjection({ uid, entityId, entityType: 'venue' });
+});
+
+export const removeVenueBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/venue_bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await deleteBookmarkProjection(uid, entityId);
+});
+
+export const syncEventBookmarkToSearchIndex = onDocumentCreated("users/{uid}/event_bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await writeBookmarkProjection({ uid, entityId, entityType: 'event' });
+});
+
+export const removeEventBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/event_bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await deleteBookmarkProjection(uid, entityId);
+});
+
+export const syncQuoteBookmarkToSearchIndex = onDocumentCreated("users/{uid}/bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await writeBookmarkProjection({ uid, entityId, entityType: 'quote' });
+});
+
+export const removeQuoteBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/bookmarks/{entityId}", async (event) => {
+    const { uid, entityId } = event.params;
+    await deleteBookmarkProjection(uid, entityId);
 });
 
 /**

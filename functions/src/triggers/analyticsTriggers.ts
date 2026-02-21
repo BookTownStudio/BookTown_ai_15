@@ -12,31 +12,41 @@ const db = admin.firestore();
 export const syncActivityToAnalytics = onDocumentCreated("activity_log/{activityId}", async (event) => {
     const snap = event.data;
     if (!snap) return;
-    const activity = snap.data();
+    const activity = snap.data() as Record<string, unknown>;
 
-    // Only process post-related metrics
-    if (activity.object.entity_type !== 'post') return;
+    const objectData =
+        activity.object && typeof activity.object === "object"
+            ? (activity.object as Record<string, unknown>)
+            : null;
+    if (!objectData) return;
+    if (objectData.entity_type !== 'post') return;
+    if (typeof objectData.entity_id !== "string" || objectData.entity_id.trim().length === 0) return;
 
-    const postId = activity.object.entity_id;
+    const postId = objectData.entity_id.trim();
     const analyticsRef = db.collection('post_analytics').doc(postId);
     const now = admin.firestore.FieldValue.serverTimestamp();
 
-    let field: string | null = null;
-    switch (activity.verb) {
-        case 'post_liked': field = 'likes'; break;
-        case 'post_commented': field = 'comments_count'; break;
-        case 'post_reposted': field = 'reposts'; break;
-        case 'post_bookmarked': field = 'bookmarks'; break;
-    }
+    const metricByVerb: Record<string, { field: string; delta: number }> = {
+        post_liked: { field: "likes", delta: 1 },
+        post_unliked: { field: "likes", delta: -1 },
+        post_commented: { field: "comments_count", delta: 1 },
+        post_comment_removed: { field: "comments_count", delta: -1 },
+        post_reposted: { field: "reposts", delta: 1 },
+        post_unreposted: { field: "reposts", delta: -1 },
+        post_bookmarked: { field: "bookmarks", delta: 1 },
+        post_unbookmarked: { field: "bookmarks", delta: -1 },
+    };
 
-    if (!field) return;
+    const metric =
+        typeof activity.verb === "string" ? metricByVerb[activity.verb] : undefined;
+    if (!metric) return;
 
     try {
         await analyticsRef.set({
-            [field]: admin.firestore.FieldValue.increment(1),
+            [metric.field]: admin.firestore.FieldValue.increment(metric.delta),
             lastUpdatedAt: now
         }, { merge: true });
-        logger.info(`[ANALYTICS][SYNC] Incremented ${field} for post ${postId}`);
+        logger.info(`[ANALYTICS][SYNC] Applied ${metric.delta} to ${metric.field} for post ${postId}`);
     } catch (error) {
         logger.error(`[ANALYTICS][SYNC_ERROR] Post ${postId}:`, error);
     }

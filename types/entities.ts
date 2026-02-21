@@ -4,7 +4,7 @@ import React from 'react';
 /**
  * Defines the standardized user roles across the application.
  */
-export type UserRole = 'superadmin' | 'superuser' | 'moderator' | 'user';
+export type UserRole = 'superadmin' | 'moderator' | 'user';
 
 // --- LIBRARY SEARCH DOMAIN (LOCKED V1) ---
 
@@ -574,6 +574,21 @@ export interface Venue {
     ratingsCount?: number;
     websiteUrl?: string;
     phone?: string;
+    openingSchedule?: Record<
+      "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun",
+      {
+        closed: boolean;
+        open: string | null;
+        close: string | null;
+      }
+    >;
+    location?: {
+      placeId?: string;
+      city?: string;
+      country?: string;
+      latitude: number;
+      longitude: number;
+    };
 }
 
 export interface Event {
@@ -587,6 +602,7 @@ export interface Event {
     privacy: 'public' | 'private';
     duration?: string;
     isOnline?: boolean;
+    locationId?: string;
     venueName?: string;
     link?: string;
 }

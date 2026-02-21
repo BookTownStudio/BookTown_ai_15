@@ -2,6 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -40,38 +44,11 @@ function hasReadyCover(data: Record<string, unknown>, bookId: string): boolean {
   );
 }
 
-async function assertAdmin(auth: {
-  uid: string;
-  token?: Record<string, unknown>;
-} | null): Promise<string> {
-  if (!auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const uid = auth.uid;
-  if (auth.token?.admin === true) {
-    return uid;
-  }
-
-  const userSnap = await db.doc(`users/${uid}`).get();
-  if (userSnap.exists && userSnap.data()?.role === "admin") {
-    return uid;
-  }
-
-  throw new HttpsError("permission-denied", "Admin access required.");
-}
-
 export const backfillUserUploadCoverJobs = onCall(
   { cors: true, timeoutSeconds: 540, memory: "1GiB" },
   async (request) => {
-    const executor = await assertAdmin(
-      request.auth
-        ? {
-            uid: request.auth.uid,
-            token: request.auth.token as Record<string, unknown> | undefined,
-          }
-        : null
-    );
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { uid: executor } = assertRoleFromClaims(caller, "superadmin");
 
     const payload = asRecord(request.data) ?? {};
     const dryRun = payload.dryRun === true;

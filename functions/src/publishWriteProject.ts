@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 type PublishResult = {
   id: string;
@@ -153,11 +154,8 @@ function mapPublishedDocToResult(doc: Record<string, unknown>): PublishResult | 
  * Authoritative publish finalization with idempotent operation key.
  */
 export const publishWriteProject = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId, operationId, metadata, files } = request.data as {
     projectId?: unknown;
     operationId?: unknown;

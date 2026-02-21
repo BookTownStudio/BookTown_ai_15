@@ -2,6 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 type CanonicalReaderState = "not_started" | "reading" | "paused" | "completed";
 
@@ -89,11 +93,6 @@ function normalizeStatusState(raw: unknown, progress: number): CanonicalReaderSt
   return progress >= 1 ? "completed" : "reading";
 }
 
-function isAdminToken(token: Record<string, unknown> | undefined): boolean {
-  if (!token) return false;
-  return token.admin === true || token.role === "superadmin";
-}
-
 function buildCanonicalPatch(
   docId: string,
   data: FirebaseFirestore.DocumentData,
@@ -178,16 +177,8 @@ function buildCanonicalPatch(
 export const backfillReadingProgressCanonical = onCall(
   { cors: true, timeoutSeconds: 540, memory: "1GiB" },
   async (request) => {
-    if (!request.auth) {
-      throw new HttpsError("unauthenticated", "Authentication required.");
-    }
-
-    if (!isAdminToken(request.auth.token as Record<string, unknown> | undefined)) {
-      throw new HttpsError(
-        "permission-denied",
-        "Admin privileges are required to run backfills."
-      );
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    assertRoleFromClaims(caller, "superadmin");
 
     const payload = (request.data ?? {}) as BackfillRequest;
     const dryRun = payload.dryRun !== false;
@@ -285,7 +276,7 @@ export const backfillReadingProgressCanonical = onCall(
     }
 
     logger.info("[BACKFILL][READING_PROGRESS_CANONICAL]", {
-      triggeredBy: request.auth.uid,
+      triggeredBy: caller.uid,
       dryRun,
       pageSize,
       maxDocs,

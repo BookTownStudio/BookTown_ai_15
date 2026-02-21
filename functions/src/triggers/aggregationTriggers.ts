@@ -219,32 +219,26 @@ export const onPostCommentDeleted = onDocumentDeleted(
 );
 
 export const onPostBookmarkCreated = onDocumentCreated(
-  "users/{userId}/bookmarks/{entityId}",
+  "users/{userId}/post_bookmarks/{entityId}",
   async (event) => {
-    const data = event.data?.data();
-    if (data?.type === "post") {
-      await updateStatCounter(
-        "post_stats",
-        event.params.entityId,
-        "bookmarks",
-        1
-      );
-    }
+    await updateStatCounter(
+      "post_stats",
+      event.params.entityId,
+      "bookmarks",
+      1
+    );
   }
 );
 
 export const onPostBookmarkDeleted = onDocumentDeleted(
-  "users/{userId}/bookmarks/{entityId}",
+  "users/{userId}/post_bookmarks/{entityId}",
   async (event) => {
-    const data = event.data?.data();
-    if (data?.type === "post") {
-      await updateStatCounter(
-        "post_stats",
-        event.params.entityId,
-        "bookmarks",
-        -1
-      );
-    }
+    await updateStatCounter(
+      "post_stats",
+      event.params.entityId,
+      "bookmarks",
+      -1
+    );
   }
 );
 

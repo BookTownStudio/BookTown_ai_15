@@ -94,6 +94,7 @@ const TabScreens: React.FC = () => {
 
 const ImmersiveScreens: React.FC = () => {
     const { currentView } = useNavigation();
+    const { isAdmin } = useAuth();
     if (currentView.type !== 'immersive') return null;
 
     // Updated switch to handle all ImmersiveScreenName cases
@@ -116,7 +117,7 @@ const ImmersiveScreens: React.FC = () => {
         case 'venues': return <VenuesScreen />;
         case 'settings': return <SettingsScreen />;
         case 'feedback': return <FeedbackScreen />;
-        case 'adminDashboard': return <AdminDashboardScreen />;
+        case 'adminDashboard': return isAdmin ? <AdminDashboardScreen /> : <PageLoader />;
         case 'books': return <BooksScreen />;
         case 'notificationsFeed': return <NotificationsFeedScreen />;
         case 'shelfDetails': return <ShelfDetailsScreen />;
@@ -147,8 +148,8 @@ const StackScreens: React.FC = () => {
 };
 
 const AppContent: React.FC = () => {
-    const { user, isLoading: isAuthLoading, isGuest, isInitialized } = useAuth();
-    const { currentView } = useNavigation();
+    const { user, isLoading: isAuthLoading, isGuest, isInitialized, isAdmin } = useAuth();
+    const { currentView, navigate } = useNavigation();
     
     const [showSplash, setShowSplash] = useState(true);
     const [isFading, setIsFading] = useState(false);
@@ -163,6 +164,19 @@ const AppContent: React.FC = () => {
             return () => clearTimeout(timer);
         }
     }, [isAuthLoading]);
+
+    useEffect(() => {
+        if (
+            !isAuthLoading &&
+            currentView.type === 'immersive' &&
+            currentView.id === 'adminDashboard' &&
+            !isGuest &&
+            user &&
+            !isAdmin
+        ) {
+            navigate({ type: 'tab', id: 'home' });
+        }
+    }, [currentView, isAdmin, isAuthLoading, isGuest, navigate, user]);
 
     if (showSplash) return <SplashScreen fading={isFading} />;
     

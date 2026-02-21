@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 const MAX_CASCADE_DELETE_DOCS = 450;
 
@@ -9,11 +10,8 @@ const MAX_CASCADE_DELETE_DOCS = 450;
  * Authoritative delete with deterministic cascade cleanup.
  */
 export const deleteWriteProject = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "User must be authenticated to delete a project.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const { projectId } = request.data as { projectId?: unknown };
 
   if (typeof projectId !== "string" || !projectId.trim()) {

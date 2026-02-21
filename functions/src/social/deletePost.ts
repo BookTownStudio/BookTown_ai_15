@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    assertActiveAuthenticatedUser,
+    getRoleFromClaims,
+} from "../shared/auth";
 
 const RESTORE_WINDOW_HOURS = 72; // Spec: restoreWindowHours: 72
 
@@ -10,14 +14,16 @@ const RESTORE_WINDOW_HOURS = 72; // Spec: restoreWindowHours: 72
  * Modes: soft (reversible), hard (permanent).
  */
 export const deleteSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Auth required.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId, type = 'soft' } = request.data;
-    const uid = request.auth.uid;
-    const isAdmin = request.auth.token.admin === true || request.auth.token.role === 'superadmin';
-    const isModerator = isAdmin || request.auth.token.role === 'superuser' || request.auth.token.role === 'moderator';
+    const { postId, type = 'soft', reportId } = request.data as {
+        postId?: string;
+        type?: 'soft' | 'hard';
+        reportId?: string;
+    };
+    const uid = caller.uid;
+    const role = getRoleFromClaims(caller);
+    const isModerator = role === "moderator" || role === "superadmin";
 
     if (!postId) {
         throw new HttpsError("invalid-argument", "postId required.");
@@ -42,8 +48,11 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
                 throw new HttpsError("permission-denied", "POST_DELETE_FORBIDDEN");
             }
             
-            if (type === 'hard' && !isModerator && !isAdmin) {
+            if (type === 'hard' && !isModerator) {
                 throw new HttpsError("permission-denied", "POST_DELETE_FORBIDDEN: Hard delete restricted to moderators.");
+            }
+            if (type === 'hard' && (!reportId || typeof reportId !== "string")) {
+                throw new HttpsError("invalid-argument", "reportId is required for hard delete.");
             }
 
             const now = admin.firestore.Timestamp.now();
@@ -77,8 +86,31 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
             } 
             
             if (type === 'hard') {
+                const hardDeleteReportId = reportId as string;
+                const reportRef = db.collection('reports').doc(hardDeleteReportId);
+                const reportSnap = await transaction.get(reportRef);
+                if (!reportSnap.exists) {
+                    throw new HttpsError("not-found", "Report not found.");
+                }
+
+                const report = (reportSnap.data() || {}) as Record<string, unknown>;
+                const reportStatus = typeof report.status === "string" ? report.status : "";
+                const reportEntityId = typeof report.entityId === "string" ? report.entityId : "";
+                if (reportStatus !== "under_review") {
+                    throw new HttpsError("failed-precondition", "Report must be under_review for hard delete.");
+                }
+                if (reportEntityId !== postId) {
+                    throw new HttpsError("failed-precondition", "Report target mismatch for hard delete.");
+                }
+
                 // Permanent Cascade: Remove document
                 transaction.delete(postRef);
+                transaction.update(reportRef, {
+                    status: "action_taken",
+                    resolution: "hard_delete",
+                    resolvedBy: uid,
+                    resolvedAt: now,
+                });
 
                 // In a production environment, this would trigger a cleanup function for storage assets
                 const auditRef = db.collection('activity_log').doc();
@@ -114,10 +146,10 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
  * Reversal logic for soft-deleted posts within the 72-hour window.
  */
 export const restoreSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) throw new HttpsError("unauthenticated", "Auth required.");
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId } = request.data;
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     const db = admin.firestore();
     const postRef = db.collection('posts').doc(postId);

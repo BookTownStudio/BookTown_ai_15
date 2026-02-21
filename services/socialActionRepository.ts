@@ -69,6 +69,20 @@ function requireId(value: string, field: string): string {
     return normalized;
 }
 
+function bookmarkCollectionForType(type: BookmarkType): string {
+    if (type === 'post') return 'post_bookmarks';
+    if (type === 'venue') return 'venue_bookmarks';
+    if (type === 'event') return 'event_bookmarks';
+    return 'bookmarks';
+}
+
+function normalizeBookmarkType(type: string): BookmarkType {
+    if (type === 'post' || type === 'venue' || type === 'event' || type === 'quote') {
+        return type;
+    }
+    return 'post';
+}
+
 class UnifiedSocialActionRepository implements SocialActionRepository {
     async like(postId: string, userId: string) {
         const db = requireDb();
@@ -120,8 +134,9 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const db = requireDb();
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
+        const bookmarkCollection = bookmarkCollectionForType(entityType);
 
-        const ref = doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId);
+        const ref = doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId);
         await setDoc(
             ref,
             {
@@ -142,8 +157,9 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const db = requireDb();
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
+        const bookmarkCollection = bookmarkCollectionForType(entityType);
 
-        await deleteDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId));
+        await deleteDoc(doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId));
     }
 
     async hasBookmarked(
@@ -154,8 +170,9 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const db = requireDb();
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
+        const bookmarkCollection = bookmarkCollectionForType(type);
 
-        const snap = await getDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId));
+        const snap = await getDoc(doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId));
         return snap.exists();
     }
 
@@ -171,10 +188,12 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const db = requireDb();
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
+        const normalizedType = normalizeBookmarkType(entityType);
+        const bookmarkCollection = bookmarkCollectionForType(normalizedType);
 
         const [likeSnap, bookmarkSnap, repostSnap] = await Promise.all([
             getDoc(doc(db, 'users', normalizedUserId, 'likes', normalizedEntityId)),
-            getDoc(doc(db, 'users', normalizedUserId, 'bookmarks', normalizedEntityId)),
+            getDoc(doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId)),
             getDoc(doc(db, 'users', normalizedUserId, 'reposts', normalizedEntityId)),
         ]);
 

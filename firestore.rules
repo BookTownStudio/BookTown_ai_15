@@ -13,17 +13,25 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == uid;
     }
 
+    function isActiveSignedIn() {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isSuspended != true
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status != "suspended";
+    }
+
+    function isActiveOwner(uid) {
+      return isActiveSignedIn() && request.auth.uid == uid;
+    }
+
     function isAdminUser() {
       return isSignedIn()
-        && (
-          request.auth.token.admin == true
-          || request.auth.token.role in ['superadmin', 'superuser', 'moderator']
-          || request.auth.token.email in [
-            'booktown10@gmail.com',
-            'test@booktown.com',
-            'admin@booktown.com'
-          ]
-        );
+        && request.auth.token.role in ['superadmin', 'moderator'];
+    }
+
+    function isSuperAdminUser() {
+      return isSignedIn()
+        && request.auth.token.role == 'superadmin';
     }
 
     function isSystemShelfId(shelfId) {
@@ -67,15 +75,6 @@ service cloud.firestore {
         && request.resource.data.isSuspended == resource.data.isSuspended;
     }
 
-    function isServerAuthoritativeUserSubcollection(subCollection) {
-      return subCollection == "projects"
-        || subCollection == "published_books"
-        || subCollection == "project_duplicate_ops"
-        || subCollection == "project_publish_ops"
-        || subCollection == "project_share_links"
-        || subCollection == "userBooks";
-    }
-
     /* =========================
        USERS
        ========================= */
@@ -83,28 +82,146 @@ service cloud.firestore {
       allow get: if isOwner(uid);
       allow list: if false;
       allow create: if false;
-      allow update: if isOwner(uid) && isAllowedUserProfilePatch();
+      allow update: if isActiveOwner(uid) && isAllowedUserProfilePatch();
       allow delete: if false;
 
       match /follows_authors/{authorId} {
         allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid)
+        allow create, update: if isActiveOwner(uid)
           && request.resource.data.uid == uid
           && request.resource.data.authorId == authorId;
-        allow delete: if isOwner(uid);
+        allow delete: if isActiveOwner(uid);
       }
 
-      match /{subCollection}/{docId} {
+      match /likes/{postId} {
         allow read: if isOwner(uid);
-        allow create, update: if isOwner(uid)
-          && subCollection != "follows_authors"
-          && subCollection != "followers"
-          && subCollection != "following"
-          && !isServerAuthoritativeUserSubcollection(subCollection);
-        allow delete: if isOwner(uid)
-          && subCollection != "followers"
-          && subCollection != "following"
-          && !isServerAuthoritativeUserSubcollection(subCollection);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.postId == postId;
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /reposts/{postId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid);
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /post_bookmarks/{postId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.type == "post"
+          && request.resource.data.entityId == postId;
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /venue_bookmarks/{venueId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.type == "venue"
+          && request.resource.data.entityId == venueId;
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /event_bookmarks/{eventId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.type == "event"
+          && request.resource.data.entityId == eventId;
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /bookmarks/{bookmarkId} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.type == "quote";
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /comment_likes/{commentLikeId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if isActiveOwner(uid);
+      }
+
+      match /followers/{followerId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /following/{targetUid} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /projects/{projectId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /published_books/{bookId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /project_duplicate_ops/{opId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /project_publish_ops/{opId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /project_share_links/{projectId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /userBooks/{bookId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+      }
+
+      match /shelves/{shelfId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if false;
+
+        match /books/{bookId} {
+          allow read: if isOwner(uid);
+          allow create, update, delete: if false;
+        }
+      }
+
+      match /agent_sessions/{sessionId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if isActiveOwner(uid);
+
+        match /messages/{messageId} {
+          allow read: if isOwner(uid);
+          allow create, update, delete: if isActiveOwner(uid);
+        }
+      }
+
+      match /reports/{reportId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if isActiveOwner(uid);
+      }
+
+      match /blocks/{blockedUid} {
+        allow read: if isOwner(uid);
+        allow create, update: if isActiveOwner(uid)
+          && request.resource.data.blockedUid == blockedUid;
+        allow delete: if isActiveOwner(uid);
+      }
+
+      match /drafts/{draftId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if isActiveOwner(uid);
+      }
+
+      match /meta/{metaId} {
+        allow read: if isOwner(uid);
+        allow create, update, delete: if isActiveOwner(uid);
       }
     }
 
@@ -136,7 +253,8 @@ service cloud.firestore {
        NOTIFICATION PREFERENCES
        ========================= */
     match /notification_preferences/{uid} {
-      allow read, create, update: if isOwner(uid);
+      allow read: if isOwner(uid);
+      allow create, update: if isActiveOwner(uid);
       allow delete: if false;
     }
 
@@ -144,7 +262,8 @@ service cloud.firestore {
        USER SETTINGS
        ========================= */
     match /user_settings/{uid} {
-      allow read, create, update: if isOwner(uid);
+      allow read: if isOwner(uid);
+      allow create, update: if isActiveOwner(uid);
       allow delete: if false;
     }
 
@@ -219,14 +338,8 @@ service cloud.firestore {
        ========================= */
     match /attachments/{attachmentId} {
       allow get: if true;
-
-      allow create: if isSignedIn()
-        && request.resource.data.uploaderUid == request.auth.uid
-        && request.resource.data.type == 'ebook';
-
-      allow update: if isSignedIn()
-        && resource.data.uploaderUid == request.auth.uid;
-
+      allow list: if false;
+      allow create, update: if false;
       allow delete: if false;
     }
 
@@ -422,7 +535,7 @@ service cloud.firestore {
     }
 
     match /post_analytics/{postId} {
-      allow get, list: if isSignedIn();
+      allow get, list: if isSuperAdminUser();
       allow create, update, delete: if false;
 
       match /viewers/{viewerUid} {

@@ -14,7 +14,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  setDoc,
   startAt,
   where,
 } from "firebase/firestore";
@@ -76,25 +75,6 @@ function normalizeSearchText(input: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function buildSearchPrefixes(value: string): string[] {
-  const normalized = normalizeSearchText(value);
-  if (!normalized) return [];
-
-  const prefixes = new Set<string>();
-  for (let i = 1; i <= normalized.length; i += 1) {
-    prefixes.add(normalized.slice(0, i));
-  }
-
-  const tokens = normalized.split(" ").filter(Boolean);
-  for (const token of tokens) {
-    for (let i = 1; i <= token.length; i += 1) {
-      prefixes.add(token.slice(0, i));
-    }
-  }
-
-  return Array.from(prefixes).slice(0, 80);
 }
 
 function buildAuthorId(authorName: string): string {
@@ -297,27 +277,8 @@ export const firebaseCatalogService = {
   },
 
   async createBook(book: Book): Promise<void> {
-    if (!book?.id) {
-      throw new Error("BOOK_ID_MISSING");
-    }
-
-    const db = getDbOrThrow();
-    const bookRef = doc(db, "books", book.id);
-    const existing = await getDoc(bookRef);
-    const existingCreatedAt = existing.exists() ? existing.data()?.createdAt : null;
-
-    const now = serverTimestamp();
-    await setDoc(
-      bookRef,
-      {
-        ...book,
-        authorId: book.authorId || buildAuthorId(book.authorEn || book.authorAr || ""),
-        titleEnNormalized: normalizeSearchText(book.titleEn || ""),
-        updatedAt: now,
-        createdAt: existingCreatedAt || now,
-      },
-      { merge: true }
-    );
+    void book;
+    throw new Error("CATALOG_WRITE_PATH_DISABLED: Use backend callable ingestion paths only.");
   },
 
   async ingestBook(params: {
@@ -395,17 +356,6 @@ export const firebaseCatalogService = {
           limit(AUTHOR_BOOKS_LIMIT)
         );
         snap = await getDocs(byAuthorName);
-
-        // Opportunistically normalize legacy books for future indexed reads.
-        await Promise.all(
-          snap.docs.map((bookDoc) =>
-            setDoc(
-              doc(db, "books", bookDoc.id),
-              { authorId, updatedAt: serverTimestamp() },
-              { merge: true }
-            )
-          )
-        );
       }
     }
 
@@ -459,38 +409,8 @@ export const firebaseCatalogService = {
   },
 
   async createAuthor(author: Author): Promise<void> {
-    if (!author?.id) {
-      throw new Error("AUTHOR_ID_MISSING");
-    }
-
-    const db = getDbOrThrow();
-    const authorRef = doc(db, "authors", author.id);
-    const existing = await getDoc(authorRef);
-    const existingData = existing.exists() ? existing.data() : null;
-    const existingCreatedAt = existingData?.createdAt || null;
-    const normalizedNameEn = normalizeSearchText(author.nameEn || "");
-    const normalizedNameAr = normalizeSearchText(author.nameAr || "");
-    const searchPrefixes = Array.from(
-      new Set([
-        ...buildSearchPrefixes(author.nameEn || ""),
-        ...buildSearchPrefixes(author.nameAr || ""),
-      ])
-    );
-
-    await setDoc(
-      authorRef,
-      {
-        ...author,
-        nameEnNormalized: normalizedNameEn,
-        nameArNormalized: normalizedNameAr,
-        searchPrefixes,
-        popularityScore: existingData?.popularityScore || 0,
-        followersCount: existingData?.followersCount || 0,
-        updatedAt: serverTimestamp(),
-        createdAt: existingCreatedAt || serverTimestamp(),
-      },
-      { merge: true }
-    );
+    void author;
+    throw new Error("CATALOG_WRITE_PATH_DISABLED: Use backend callable ingestion paths only.");
   },
 
   async searchAuthors(queryText: string): Promise<Author[]> {

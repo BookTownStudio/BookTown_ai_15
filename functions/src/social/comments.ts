@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    assertActiveAuthenticatedUser,
+    getRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 const COMMENT_EDIT_WINDOW_MINUTES = 15;
@@ -11,18 +15,15 @@ const COMMENT_EDIT_WINDOW_MINUTES = 15;
  * Effects: Creates comment, emits activity log.
  */
 export const addSocialComment = onCall({ cors: true }, async (request) => {
-    const auth = request.auth;
-    if (!auth) {
-        throw new Error("unauthenticated");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
     
     const { postId, text, parentId } = request.data as {
         postId?: string;
         text?: string;
         parentId?: string;
     };
-    const uid = auth.uid;
-    const email = auth.token ? (auth.token.email || "") : "";
+    const uid = caller.uid;
+    const email = typeof caller.token.email === "string" ? caller.token.email : "";
 
     if (!postId || !text || !text.trim()) {
         throw new HttpsError("invalid-argument", "Missing text.");
@@ -44,9 +45,9 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
             // 1. Create comment
             transaction.set(commentRef, {
                 authorId: uid,
-                authorName: auth.token?.name || email.split('@')[0] || "Anonymous",
+                authorName: caller.token?.name || email.split('@')[0] || "Anonymous",
                 authorHandle: `@${email.split('@')[0] || 'user'}`,
-                authorAvatar: auth.token?.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
+                authorAvatar: caller.token?.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
                 text: text.trim(),
                 timestamp: now,
                 parentId: typeof parentId === "string" && parentId.trim() ? parentId.trim() : null,
@@ -83,17 +84,14 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
  * editSocialComment
  */
 export const editSocialComment = onCall({ cors: true }, async (request) => {
-    const auth = request.auth;
-    if (!auth) {
-        throw new Error("unauthenticated");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
     
     const { postId, commentId, text } = request.data as {
         postId?: string;
         commentId?: string;
         text?: string;
     };
-    const uid = auth.uid;
+    const uid = caller.uid;
 
     if (!postId || !commentId || !text) {
         throw new HttpsError("invalid-argument", "Missing required fields.");
@@ -139,10 +137,7 @@ export const editSocialComment = onCall({ cors: true }, async (request) => {
  * deleteSocialComment
  */
 export const deleteSocialComment = onCall({ cors: true }, async (request) => {
-    const auth = request.auth;
-    if (!auth) {
-        throw new Error("unauthenticated");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId, commentId } = request.data as {
         postId?: string;
@@ -151,8 +146,9 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
     if (!postId || !commentId) {
         throw new HttpsError("invalid-argument", "postId and commentId are required.");
     }
-    const uid = auth.uid;
-    const isAdmin = auth.token ? (auth.token.admin === true) : false;
+    const uid = caller.uid;
+    const role = getRoleFromClaims(caller);
+    const isModerator = role === "moderator" || role === "superadmin";
 
     const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
     const snap = await commentRef.get();
@@ -160,7 +156,7 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
     if (!snap.exists) throw new HttpsError("not-found", "Comment missing.");
     
     const comment = snap.data()!;
-    if (comment.authorId !== uid && !isAdmin) {
+    if (comment.authorId !== uid && !isModerator) {
         throw new HttpsError("permission-denied", "Unauthorized delete attempt.");
     }
 
@@ -174,15 +170,13 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
  * Effects: Toggles user like signal and updates comment likes counter.
  */
 export const likeSocialComment = onCall({ cors: true }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Auth required.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId, commentId } = request.data as {
         postId?: string;
         commentId?: string;
     };
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     if (!postId || !commentId) {
         throw new HttpsError("invalid-argument", "postId and commentId are required.");

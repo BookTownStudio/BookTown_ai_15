@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -10,16 +11,14 @@ const db = admin.firestore();
  * Enforces: Rate limits, canonical reason validation, and auto-hide logic.
  */
 export const reportSocialPost = onCall({ cors: true }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Authentication required to report content.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId, reason, details } = request.data as {
         postId?: string;
         reason?: string;
         details?: string;
     };
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     if (!postId || !reason) {
         throw new HttpsError("invalid-argument", "Missing required fields.");
@@ -130,9 +129,7 @@ export const reportSocialPost = onCall({ cors: true }, async (request) => {
  * Enforces: rate limit, dedupe and server-derived target ownership.
  */
 export const reportSocialComment = onCall({ cors: true }, async (request) => {
-    if (!request.auth) {
-        throw new HttpsError("unauthenticated", "Authentication required to report content.");
-    }
+    const caller = await assertActiveAuthenticatedUser(request.auth);
 
     const { postId, commentId, reason, note } = request.data as {
         postId?: string;
@@ -140,7 +137,7 @@ export const reportSocialComment = onCall({ cors: true }, async (request) => {
         reason?: string;
         note?: string;
     };
-    const uid = request.auth.uid;
+    const uid = caller.uid;
 
     if (!postId || !commentId || !reason) {
         throw new HttpsError("invalid-argument", "Missing required fields.");

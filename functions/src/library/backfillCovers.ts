@@ -4,6 +4,10 @@ import { onCall } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { Buffer } from "buffer";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
@@ -19,9 +23,8 @@ import {
 
 // FIX: Added cors configuration to onCall for consistency with other Cloud Functions.
 export const backfillCovers = onCall({ cors: true }, async (request) => {
-  if (!request.auth?.token?.admin) {
-    throw new Error("Admin only");
-  }
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  assertRoleFromClaims(caller, "superadmin");
 
   const limit = Number(request.data?.limit ?? 20);
 

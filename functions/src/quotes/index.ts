@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { Query, DocumentData, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -485,11 +486,8 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
 });
 
 export const toggleQuoteBookmark = onCall({ cors: true }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const data = (request.data ?? {}) as Record<string, unknown>;
 
   const quoteId = normalizeRequiredString(data.quoteId, "quoteId", 180);

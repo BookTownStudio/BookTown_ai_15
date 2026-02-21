@@ -3,6 +3,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 /**
  * backfillDerivedStats
@@ -10,22 +14,8 @@ import * as logger from "firebase-functions/logger";
  * Sequential processing in batches of 250 to respect Firestore write limits.
  */
 export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
-  // 1. Authority Verification
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Unauthenticated backfill attempt.");
-  }
-
-  // Rule: Only superadmins or accounts with admin token may trigger backfills
-  const isAdmin =
-    request.auth.token.admin === true ||
-    request.auth.token.role === "superadmin";
-
-  if (!isAdmin) {
-    throw new HttpsError(
-      "permission-denied",
-      "Authority refused: Admin privileges required."
-    );
-  }
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  assertRoleFromClaims(caller, "superadmin");
 
   const db = admin.firestore();
   const BATCH_SIZE = 250;

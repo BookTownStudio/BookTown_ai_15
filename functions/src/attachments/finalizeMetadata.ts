@@ -3,6 +3,7 @@ import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { FieldValue } from "firebase-admin/firestore";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
+import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -20,11 +21,8 @@ const db = admin.firestore();
  * - Never return URLs
  */
 export const finalizeMetadata = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Auth required.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const {
     attachmentId,
     parentType,

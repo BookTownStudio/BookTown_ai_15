@@ -2,6 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
+import {
+  assertActiveAuthenticatedUser,
+  assertRoleFromClaims,
+} from "../shared/auth";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -26,11 +30,8 @@ const storage = admin.storage();
  * - It only FINALIZES metadata + linkage
  */
 export const createEbookAttachment = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const { uid, role } = assertRoleFromClaims(caller, "superadmin");
 
   const {
     bookId,
@@ -39,25 +40,6 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
     mimeType,
     surface,
   } = request.data || {};
-
-  // --------------------------------------------------
-  // 🔐 ROLE CHECK (AUTHORITATIVE)
-  // --------------------------------------------------
-  const userSnap = await db.collection("users").doc(uid).get();
-  if (!userSnap.exists) {
-    throw new HttpsError("permission-denied", "User record not found.");
-  }
-
-  const user = userSnap.data()!;
-  const role = user.role;
-
-  if (role !== "admin" && role !== "system") {
-    logger.warn("[EBOOK][DENY] Non-authoritative caller", { uid, role });
-    throw new HttpsError(
-      "permission-denied",
-      "Only admin or system may attach ebooks."
-    );
-  }
 
   // --------------------------------------------------
   // 🔐 SURFACE LOCK

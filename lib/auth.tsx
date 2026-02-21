@@ -8,7 +8,7 @@ import React, {
 } from 'react';
 
 import {
-    onAuthStateChanged,
+    onIdTokenChanged,
     signInWithEmailAndPassword,
     signOut,
     GoogleAuthProvider,
@@ -61,13 +61,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isInitialized, setIsInitialized] = useState(false);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const [claimsRole, setClaimsRole] = useState<string | null>(null);
     const role: UserRole = deriveUserRole({
-        authUser: user
-            ? {
-                uid: user.uid,
-                email: user.email
-            }
-            : null
+        claimsRole
     });
     const lastIdentityRef = useRef<string | null>(null);
     const bootstrapUidRef = useRef<string | null>(null);
@@ -91,6 +87,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             }
 
             setUser(firebaseUser);
+            if (firebaseUser) {
+                const tokenResult = await firebaseUser.getIdTokenResult();
+                const roleFromClaims =
+                    typeof tokenResult.claims.role === 'string'
+                        ? tokenResult.claims.role
+                        : tokenResult.claims.admin === true
+                            ? 'superadmin'
+                            : null;
+                setClaimsRole(roleFromClaims);
+            } else {
+                setClaimsRole(null);
+            }
 
             if (firebaseUser) {
                 setIsGuest(false);
@@ -102,7 +110,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
 
         try {
-            const unsubscribe = onAuthStateChanged(
+            const unsubscribe = onIdTokenChanged(
                 firebaseAuth,
                 handleUserChange
             );
