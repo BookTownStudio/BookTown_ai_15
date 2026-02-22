@@ -1,6 +1,4 @@
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { ref, uploadBytes } from 'firebase/storage';
-import { getFirebaseStorage } from '../lib/firebase.ts';
 import { MediaService } from '../lib/media/mediaService.ts';
 import { FirebaseStorageAdapter } from '../lib/media/storageAdapter.ts';
 import { UploadCategory, UploadDataService } from './db.types.ts';
@@ -8,6 +6,8 @@ import { AttachmentMetadataV1, AttachmentTypeV1, AttachmentV1 } from '../types/e
 
 type PendingUpload = {
   attachmentId: string;
+  token: string;
+  uploadUrl: string;
   storagePath: string;
   purpose: string;
   format: string;
@@ -20,43 +20,47 @@ type PendingUpload = {
 const pendingUploads = new Map<string, PendingUpload>();
 const mediaService = new MediaService(new FirebaseStorageAdapter());
 
-const safeFileName = (name: string) =>
-  name
-    .split('/')
-    .pop()
-    ?.replace(/[^a-zA-Z0-9._-]/g, '_') || 'upload';
+type CallableEnvelope<T> =
+  | T
+  | {
+      success: boolean;
+      data?: T;
+      error?: {
+        code?: string;
+        message?: string;
+        details?: unknown;
+      };
+    };
 
-const inferFormat = (fileName: string) => {
-  const ext = fileName.split('.').pop()?.toLowerCase();
-  return ext && ext.length <= 6 ? ext : 'bin';
+type UploadIntentResponse = {
+  token: string;
+  uploadUrl: string;
+  attachmentId: string;
+  storagePath: string;
+  fileName?: string;
+  purpose: string;
+  format: string;
+  type: AttachmentTypeV1;
 };
 
-const makeId = () => {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return `att_${crypto.randomUUID()}`;
-  }
-  return `att_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-};
+const unwrapCallableData = <T>(raw: unknown): T => {
+  if (raw && typeof raw === 'object' && 'success' in (raw as Record<string, unknown>)) {
+    const envelope = raw as CallableEnvelope<T> & {
+      success: boolean;
+      data?: T;
+      error?: { message?: string };
+    };
 
-const encodeToken = (payload: Record<string, any>) =>
-  btoa(JSON.stringify(payload));
-
-const decodeToken = (token: string) => {
-  try {
-    return JSON.parse(atob(token));
-  } catch {
-    return null;
+    if (envelope.success !== true) {
+      throw new Error(envelope.error?.message || 'Callable request failed.');
+    }
+    if (typeof envelope.data === 'undefined') {
+      throw new Error('Callable response missing data.');
+    }
+    return envelope.data;
   }
-};
 
-const extractAttachmentId = (path: string) => {
-  const parts = path.split('/');
-  const attachmentsIndex = parts.indexOf('attachments');
-  if (attachmentsIndex !== -1 && parts[attachmentsIndex + 1]) {
-    const candidate = parts[attachmentsIndex + 1];
-    return candidate.includes('.') ? candidate.split('.')[0] : candidate;
-  }
-  return null;
+  return raw as T;
 };
 
 export class FirebaseUploadService implements UploadDataService {
@@ -68,45 +72,40 @@ export class FirebaseUploadService implements UploadDataService {
     fileName: string
   ) {
     if (!uid) throw new Error('UNAUTHENTICATED');
-
-    const attachmentId = makeId();
-    const safeName = safeFileName(fileName);
-    const format = inferFormat(safeName);
-    const purpose = type.toLowerCase();
-
-    let storagePath = '';
-
-    if (type === 'IMAGE') {
-      storagePath = `users/${uid}/attachments/${attachmentId}/${safeName}`;
-    } else if (type === 'DOCUMENT') {
-      if (format !== 'pdf') {
-        throw new Error('Only PDF documents are supported.');
-      }
-      storagePath = `attachments/${uid}/${attachmentId}.pdf`;
-    } else {
+    if (type !== 'IMAGE' && type !== 'DOCUMENT') {
       throw new Error('Unsupported attachment type.');
     }
 
-    pendingUploads.set(attachmentId, {
-      attachmentId,
-      storagePath,
-      purpose,
-      format,
-      type,
-      fileName: safeName
-    });
-
-    const token = encodeToken({
-      attachmentId,
-      storagePath,
-      purpose,
-      format,
-      type,
+    const functions = getFunctions();
+    const getUploadTokenFn = httpsCallable(functions, 'getUploadToken');
+    const result = await getUploadTokenFn({
       parentType,
-      parentId
+      parentId,
+      type,
+      fileName
     });
 
-    return { token, uploadUrl: storagePath, attachmentId };
+    const intent = unwrapCallableData<UploadIntentResponse>(result.data);
+    if (!intent?.attachmentId || !intent?.uploadUrl || !intent?.storagePath || !intent?.token) {
+      throw new Error('Invalid upload intent response.');
+    }
+
+    pendingUploads.set(intent.attachmentId, {
+      attachmentId: intent.attachmentId,
+      token: intent.token,
+      uploadUrl: intent.uploadUrl,
+      storagePath: intent.storagePath,
+      purpose: intent.purpose,
+      format: intent.format,
+      type: intent.type,
+      fileName: intent.fileName || fileName
+    });
+
+    return {
+      token: intent.token,
+      uploadUrl: intent.uploadUrl,
+      attachmentId: intent.attachmentId
+    };
   }
 
   async uploadImage(
@@ -126,28 +125,36 @@ export class FirebaseUploadService implements UploadDataService {
       throw new Error('Empty file rejected.');
     }
 
+    const pending = Array.from(pendingUploads.values()).find((entry) => entry.uploadUrl === path);
+    if (!pending) {
+      throw new Error('Upload intent not found.');
+    }
+
     const mimeType = (file as File).type || 'application/octet-stream';
-    if (path.startsWith('users/') && !mimeType.startsWith('image/')) {
-      throw new Error('Only image files are supported.');
+    if (pending.type === 'IMAGE' && !mimeType.startsWith('image/')) {
+      throw new Error('Only image files are supported for IMAGE attachments.');
     }
-    if (path.startsWith('attachments/') && mimeType !== 'application/pdf') {
-      throw new Error('Only PDF files are supported.');
-    }
-
-    const attachmentId = extractAttachmentId(path);
-    if (attachmentId) {
-      const pending = pendingUploads.get(attachmentId);
-      if (pending) {
-        pending.mimeType = mimeType;
-        pending.size = file.size;
-        pendingUploads.set(attachmentId, pending);
-      }
+    if (pending.type === 'DOCUMENT' && mimeType !== 'application/pdf') {
+      throw new Error('Only PDF files are supported for DOCUMENT attachments.');
     }
 
-    const storage = getFirebaseStorage();
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    return path;
+    const uploadResponse = await fetch(path, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': mimeType
+      },
+      body: file
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Signed upload failed with status ${uploadResponse.status}.`);
+    }
+
+    pending.mimeType = mimeType;
+    pending.size = file.size;
+    pendingUploads.set(pending.attachmentId, pending);
+
+    return pending.storagePath;
   }
 
   async finalizeMetadata(
@@ -159,50 +166,45 @@ export class FirebaseUploadService implements UploadDataService {
   ): Promise<AttachmentV1> {
     if (!uid) throw new Error('UNAUTHENTICATED');
 
-    const tokenData = decodeToken(token);
-    if (!tokenData || tokenData.attachmentId !== attachmentId) {
-      throw new Error('Invalid upload token.');
-    }
-
     const pending = pendingUploads.get(attachmentId);
-    const purpose = tokenData.purpose as string;
-    const format = tokenData.format as string;
-    const storagePath = tokenData.storagePath as string;
+    if (!pending || pending.token !== token) {
+      throw new Error('Invalid upload intent token.');
+    }
 
     const functions = getFunctions();
     const finalizeFn = httpsCallable(functions, 'finalizeMetadata');
-
-    await finalizeFn({
+    const finalizeResult = await finalizeFn({
       attachmentId,
       parentType,
       parentId,
-      purpose,
-      format,
-      storagePath
+      purpose: pending.purpose,
+      format: pending.format,
+      storagePath: pending.storagePath
     });
+    unwrapCallableData<{ ok: boolean; attachmentId: string }>(finalizeResult.data);
 
     const metadata: AttachmentMetadataV1 = {
       attachmentId,
-      type: tokenData.type as AttachmentTypeV1,
+      type: pending.type,
       mimeType: pending?.mimeType || 'application/octet-stream',
       size: pending?.size || 0,
       createdAt: new Date().toISOString(),
       uploader: { uid },
-      storagePath,
+      storagePath: pending.storagePath,
       parentId,
       parentType
     };
 
     const payload =
-      tokenData.type === 'DOCUMENT'
-        ? { name: pending?.fileName || tokenData.fileName, size: pending?.size || 0 }
+      pending.type === 'DOCUMENT'
+        ? { name: pending.fileName, size: pending.size || 0 }
         : {};
 
     pendingUploads.delete(attachmentId);
 
     return {
       attachmentId,
-      type: tokenData.type as AttachmentTypeV1,
+      type: pending.type,
       metadata,
       payload,
       immutable: true

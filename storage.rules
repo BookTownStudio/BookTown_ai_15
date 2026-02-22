@@ -79,10 +79,10 @@ service firebase.storage {
        👤 USER ASSETS (AVATAR / BANNER / POSTS)
        ========================= */
     match /users/{uid}/{category}/{allPaths=**} {
-      allow read: if true;
+      allow read: if category in ['avatar', 'banner', 'cover', 'post', 'misc'];
 
       allow write: if isOwner(uid)
-        && category in ['avatar', 'banner', 'cover', 'post', 'misc', 'attachment', 'attachments']
+        && category in ['avatar', 'banner', 'cover', 'post', 'misc']
         && isImage()
         && (
           (category == 'avatar' && request.resource.size < 5 * 1024 * 1024)
@@ -118,10 +118,8 @@ service firebase.storage {
       // ❌ No direct reads
       allow read: if false;
 
-      // ✅ Upload ebook (PDF only)
-      allow write: if isOwner(ownerUid)
-        && isPdf()
-        && isReasonableEbookSize();
+      // ❌ No direct client writes; uploads must use server-issued signed URLs.
+      allow write: if false;
 
       // ❌ No deletes from client
       allow delete: if false;

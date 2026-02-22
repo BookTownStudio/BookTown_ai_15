@@ -72,6 +72,7 @@ import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from ".
 import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
 import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
+import { getUploadToken as getUploadTokenRaw } from "./attachments/getUploadToken";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
 import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
 import { backfillReadingProgressCanonical as backfillReadingProgressCanonicalRaw } from "./admin/backfillReadingProgressCanonical";
@@ -532,6 +533,7 @@ export const createEbookAttachment = wrapCallableV2(
   "createEbookAttachment",
   createEbookAttachmentRaw
 );
+export const getUploadToken = getUploadTokenRaw;
 export const finalizeMetadata = wrapCallableV2(
   "finalizeMetadata",
   finalizeMetadataRaw

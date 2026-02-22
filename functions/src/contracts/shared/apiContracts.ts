@@ -73,6 +73,27 @@ const socialAttachmentSchema = z
   })
   .strict();
 
+const primaryStructuredEntityTypeSchema = z.enum([
+  "book",
+  "author",
+  "quote",
+  "shelf",
+  "venue",
+]);
+
+const createStructuredAttachmentSchema = z
+  .object({
+    type: primaryStructuredEntityTypeSchema,
+    entityId: z.string().min(1),
+    entityOwnerId: z.string().min(1).optional(),
+  })
+  .strict();
+
+const createSocialPostAttachmentSchema = z.union([
+  socialAttachmentSchema,
+  createStructuredAttachmentSchema,
+]);
+
 const readerInsightsDataSchema = z
   .object({
     currentlyReading: z.array(
@@ -192,6 +213,8 @@ const profilePostSchema = z
         hasAttachments: z.boolean(),
       })
       .strict(),
+    primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
+    primaryEntityId: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -310,6 +333,8 @@ const socialSearchPostSchema = z
         hasAttachments: z.boolean(),
       })
       .strict(),
+    primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
+    primaryEntityId: z.string().min(1).nullable().optional(),
     score: z.number(),
     rankReasons: z.array(z.string().min(1)).max(6),
   })
@@ -1151,10 +1176,10 @@ export const apiContracts = {
           content: z
             .object({
               text: z.string().max(5000).optional(),
-              attachments: z.array(socialAttachmentSchema).optional(),
+              attachments: z.array(createSocialPostAttachmentSchema).optional(),
             })
             .strict(),
-          attachments: z.array(socialAttachmentSchema).optional(),
+          attachments: z.array(createSocialPostAttachmentSchema).optional(),
           visibility: postVisibilitySchema.optional(),
           publishToken: z.string().min(1),
         })

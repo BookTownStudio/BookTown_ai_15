@@ -1,11 +1,71 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
+const storage = admin.storage();
+
+type ParentType = "posts" | "projects" | "drafts";
+
+function assertPathOwnership(uid: string, storagePath: string): void {
+  const ownsUsersPath = storagePath.startsWith(`users/${uid}/attachments/`);
+  const ownsAttachmentPath = storagePath.startsWith(`attachments/${uid}/`);
+  if (!ownsUsersPath && !ownsAttachmentPath) {
+    throw new HttpsError("permission-denied", "Invalid storage ownership.");
+  }
+}
+
+async function assertParentAccess(
+  uid: string,
+  parentType: ParentType,
+  parentId: string
+): Promise<void> {
+  if (parentType === "posts") {
+    const postSnap = await db.collection("posts").doc(parentId).get();
+    if (!postSnap.exists) {
+      throw new HttpsError("not-found", "Parent post not found.");
+    }
+    const authorId = (postSnap.data()?.authorId ?? "") as string;
+    if (authorId !== uid) {
+      throw new HttpsError("permission-denied", "Cannot attach to this post.");
+    }
+    return;
+  }
+
+  if (parentType === "projects") {
+    const projectSnap = await db
+      .collection("users")
+      .doc(uid)
+      .collection("projects")
+      .doc(parentId)
+      .get();
+    if (!projectSnap.exists) {
+      throw new HttpsError("not-found", "Parent project not found.");
+    }
+    return;
+  }
+
+  if (parentType === "drafts") {
+    if (parentId === "draft") {
+      return;
+    }
+    const draftSnap = await db
+      .collection("users")
+      .doc(uid)
+      .collection("drafts")
+      .doc(parentId)
+      .get();
+    if (!draftSnap.exists) {
+      throw new HttpsError("not-found", "Parent draft not found.");
+    }
+    return;
+  }
+
+  throw new HttpsError("invalid-argument", "Unsupported parent type.");
+}
 
 /**
  * finalizeMetadata
@@ -46,50 +106,89 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
     );
   }
 
-  logger.info("[ATTACHMENT][FINALIZE] Start", {
-    attachmentId,
-    parentType,
-    parentId,
-    purpose,
-    format,
-  });
+  logger.info("[ATTACHMENT][FINALIZE] Start", { attachmentId, parentType, parentId });
 
-  // -------------------------------------------------
-  // Guardrails
-  // -------------------------------------------------
-  const allowedFormats = ["epub", "pdf"];
-  if (purpose === "ebook" && !allowedFormats.includes(format)) {
+  const intentRef = db.collection("_attachment_upload_intents").doc(attachmentId);
+  const intentSnap = await intentRef.get();
+  if (!intentSnap.exists) {
     throw new HttpsError(
       "failed-precondition",
-      "Invalid ebook format."
+      "Upload intent missing or expired."
     );
   }
 
-  // -------------------------------------------------
-  // Public Domain enforcement (BOOKS ONLY)
-  // -------------------------------------------------
-  if (purpose === "ebook" && ["books", "editions"].includes(parentType)) {
-    const parentSnap = await db
-      .collection(parentType)
-      .doc(parentId)
-      .get();
+  const intent = (intentSnap.data() ?? {}) as Record<string, unknown>;
+  const intentUid = String(intent.uid ?? "");
+  const intentParentType = String(intent.parentType ?? "");
+  const intentParentId = String(intent.parentId ?? "");
+  const intentPurpose = String(intent.purpose ?? "");
+  const intentFormat = String(intent.format ?? "");
+  const intentStoragePath = String(intent.storagePath ?? "");
+  const expectedMimePrefix = String(intent.expectedMimePrefix ?? "");
+  const maxBytesRaw = Number(intent.maxBytes ?? 0);
+  const intentStatus = String(intent.status ?? "");
 
-    if (!parentSnap.exists) {
-      throw new HttpsError("not-found", "Parent entity not found.");
+  if (intentUid !== uid) {
+    throw new HttpsError(
+      "permission-denied",
+      "Upload intent does not belong to caller."
+    );
+  }
+
+  if (intentStatus === "finalized") {
+    logger.info("[ATTACHMENT][FINALIZE] Already finalized", { attachmentId, uid });
+    return { ok: true, attachmentId };
+  }
+
+  if (intentStatus !== "issued" && intentStatus !== "uploaded") {
+    throw new HttpsError("failed-precondition", "Upload intent is not active.");
+  }
+
+  const expiresAt = intent.expiresAt;
+  if (!(expiresAt instanceof Timestamp) || expiresAt.toMillis() <= Date.now()) {
+    throw new HttpsError("deadline-exceeded", "Upload intent has expired.");
+  }
+
+  if (
+    intentParentType !== parentType ||
+    intentParentId !== parentId ||
+    intentPurpose !== purpose ||
+    intentFormat !== format ||
+    intentStoragePath !== storagePath
+  ) {
+    throw new HttpsError("permission-denied", "Finalize payload mismatch.");
+  }
+
+  if (!["posts", "projects", "drafts"].includes(intentParentType)) {
+    throw new HttpsError("invalid-argument", "Unsupported parent type.");
+  }
+
+  const typedParentType = intentParentType as ParentType;
+  await assertParentAccess(uid, typedParentType, intentParentId);
+  assertPathOwnership(uid, intentStoragePath);
+
+  const bucket = storage.bucket();
+  const file = bucket.file(intentStoragePath);
+  const [exists] = await file.exists();
+  if (!exists) {
+    throw new HttpsError("not-found", "Uploaded file not found.");
+  }
+
+  const [objectMetadata] = await file.getMetadata();
+  const mimeType = String(objectMetadata.contentType ?? "");
+  const size = Number(objectMetadata.size ?? 0);
+  const maxBytes = Number.isFinite(maxBytesRaw) && maxBytesRaw > 0 ? maxBytesRaw : 0;
+
+  if (size <= 0 || (maxBytes > 0 && size > maxBytes)) {
+    throw new HttpsError("failed-precondition", "Uploaded file size is invalid.");
+  }
+  if (expectedMimePrefix === "application/pdf") {
+    if (mimeType !== "application/pdf") {
+      throw new HttpsError("failed-precondition", "Only PDF files are allowed.");
     }
-
-    const parent = parentSnap.data()!;
-    if (!parent.publicDomain) {
-      logger.warn("[ATTACHMENT][DENIED] Non-PD ebook upload", {
-        parentType,
-        parentId,
-        uid,
-      });
-
-      throw new HttpsError(
-        "permission-denied",
-        "Ebooks for non-public-domain books are not allowed."
-      );
+  } else if (expectedMimePrefix === "image/") {
+    if (!mimeType.startsWith("image/")) {
+      throw new HttpsError("failed-precondition", "Only image files are allowed.");
     }
   }
 
@@ -104,17 +203,18 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
     .set(
       {
         id: attachmentId,
-        type: purpose === "ebook" ? "ebook" : "file",
-        purpose,
-        format,
-        parentType,
-        parentId,
-        storagePath,
+        type: intentPurpose === "ebook" ? "ebook" : "file",
+        purpose: intentPurpose,
+        format: intentFormat,
+        mimeType,
+        size,
+        parentType: intentParentType,
+        parentId: intentParentId,
+        storagePath: intentStoragePath,
         uploader: {
           uid,
         },
-        visibility:
-          ["books", "editions"].includes(parentType) ? "public" : "private",
+        visibility: "private",
         status: "active",
         finalizedAt: now,
         updatedAt: now,
@@ -122,8 +222,20 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
       { merge: true }
     );
 
+  await intentRef.set(
+    {
+      status: "finalized",
+      updatedAt: now,
+      finalizedAt: now,
+      finalizedBy: uid,
+      observedMimeType: mimeType,
+      observedSize: size,
+    },
+    { merge: true }
+  );
+
   // 🔒 Recompute if avatar related (hasAvatar check)
-  if (purpose === 'avatar' || purpose === 'profile_picture') {
+  if (intentPurpose === "avatar" || intentPurpose === "profile_picture") {
     await recomputeUserStats(uid);
   }
 
