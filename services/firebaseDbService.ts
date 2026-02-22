@@ -3,6 +3,7 @@ import {
   getDoc,
   setDoc,
   collection,
+  collectionGroup,
   getDocs,
   query,
   orderBy,
@@ -11,6 +12,7 @@ import {
   deleteDoc,
   where,
   startAfter,
+  documentId,
   QueryDocumentSnapshot,
   DocumentData,
   serverTimestamp,
@@ -71,6 +73,84 @@ const MAX_VENUE_SEARCH_RESULTS = 25;
 const MAX_REVIEW_LENGTH = 1000;
 const MAX_VENUE_FIELD_LENGTH = 240;
 const MAX_DM_LIST_LIMIT = 200;
+const FOLLOWING_FEED_PAGE_SIZE = 20;
+const FOLLOWING_FEED_IN_BATCH_SIZE = 10;
+
+type FollowingFeedCursor = {
+  v: 1;
+  scope: "following";
+  createdAtMs: number;
+  postId: string;
+};
+
+type PrimaryStructuredEntityType =
+  | "book"
+  | "author"
+  | "quote"
+  | "shelf"
+  | "venue";
+
+type FeedPostContext = {
+  post: Post;
+  raw: Record<string, unknown>;
+};
+
+type HydratedFeedEntity = {
+  type: PrimaryStructuredEntityType;
+  id: string;
+  data: Record<string, unknown>;
+  ownerId?: string;
+};
+
+const base64UrlEncode = (raw: string): string => {
+  const encoded = btoa(raw);
+  return encoded.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+};
+
+const base64UrlDecode = (raw: string): string => {
+  const normalized = raw.replace(/-/g, "+").replace(/_/g, "/");
+  const paddingNeeded = normalized.length % 4;
+  const padded =
+    paddingNeeded === 0
+      ? normalized
+      : `${normalized}${"=".repeat(4 - paddingNeeded)}`;
+  return atob(padded);
+};
+
+const encodeFollowingFeedCursor = (cursor: FollowingFeedCursor): string =>
+  base64UrlEncode(JSON.stringify(cursor));
+
+const decodeFollowingFeedCursor = (
+  raw: string | undefined
+): FollowingFeedCursor | null => {
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(base64UrlDecode(raw.trim())) as Partial<FollowingFeedCursor>;
+    if (
+      parsed.v !== 1 ||
+      parsed.scope !== "following" ||
+      typeof parsed.createdAtMs !== "number" ||
+      !Number.isFinite(parsed.createdAtMs) ||
+      parsed.createdAtMs <= 0 ||
+      typeof parsed.postId !== "string" ||
+      parsed.postId.trim().length === 0
+    ) {
+      return null;
+    }
+
+    return {
+      v: 1,
+      scope: "following",
+      createdAtMs: Math.trunc(parsed.createdAtMs),
+      postId: parsed.postId.trim(),
+    };
+  } catch {
+    return null;
+  }
+};
 
 type SuccessEnvelope<T> = {
   success: true;
@@ -1994,6 +2074,378 @@ class FirebaseSocialService {
     return ids;
   }
 
+  private static chunkAuthorIds(authorIds: readonly string[]): string[][] {
+    const chunks: string[][] = [];
+    for (let i = 0; i < authorIds.length; i += FOLLOWING_FEED_IN_BATCH_SIZE) {
+      chunks.push(authorIds.slice(i, i + FOLLOWING_FEED_IN_BATCH_SIZE));
+    }
+    return chunks;
+  }
+
+  private static readonly ENTITY_BATCH_QUERY_SIZE = 10;
+
+  private normalizePrimaryEntityType(value: unknown): PrimaryStructuredEntityType | null {
+    if (typeof value !== "string") {
+      return null;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (!normalized) {
+      return null;
+    }
+
+    if (
+      FirebaseSocialService.STRUCTURED_ENTITY_TYPES.has(
+        normalized as PrimaryStructuredEntityType
+      )
+    ) {
+      return normalized as PrimaryStructuredEntityType;
+    }
+
+    return null;
+  }
+
+  private extractPrimaryEntityRef(
+    raw: Record<string, unknown>,
+    post: Post
+  ): { type: PrimaryStructuredEntityType; id: string } | null {
+    const typeFromFields = this.normalizePrimaryEntityType(raw.primaryEntityType);
+    const idFromFields =
+      typeof raw.primaryEntityId === "string" ? raw.primaryEntityId.trim() : "";
+    if (typeFromFields && idFromFields) {
+      return {
+        type: typeFromFields,
+        id: idFromFields,
+      };
+    }
+
+    const refs = Array.isArray(post.content?.attachments)
+      ? post.content.attachments
+      : [];
+
+    for (const ref of refs) {
+      const type = this.normalizePrimaryEntityType(
+        (ref as { type?: unknown }).type
+      );
+      const id =
+        typeof (ref as { attachmentId?: unknown }).attachmentId === "string"
+          ? (ref as { attachmentId: string }).attachmentId.trim()
+          : "";
+      if (type && id) {
+        return { type, id };
+      }
+    }
+
+    return null;
+  }
+
+  private static chunkEntityIds(entityIds: readonly string[]): string[][] {
+    const chunks: string[][] = [];
+    for (
+      let i = 0;
+      i < entityIds.length;
+      i += FirebaseSocialService.ENTITY_BATCH_QUERY_SIZE
+    ) {
+      chunks.push(
+        entityIds.slice(i, i + FirebaseSocialService.ENTITY_BATCH_QUERY_SIZE)
+      );
+    }
+    return chunks;
+  }
+
+  private async fetchCollectionDocsByIds(
+    db: ReturnType<typeof getDb>,
+    collectionName: string,
+    ids: string[]
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const result = new Map<string, Record<string, unknown>>();
+    const uniqueIds = Array.from(
+      new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return result;
+    }
+
+    const chunks = FirebaseSocialService.chunkEntityIds(uniqueIds);
+    const snapshots = await Promise.all(
+      chunks.map((chunk) =>
+        getDocs(
+          query(
+            collection(db, collectionName),
+            where(documentId(), "in", chunk)
+          )
+        )
+      )
+    );
+
+    for (const snap of snapshots) {
+      for (const docSnap of snap.docs) {
+        result.set(docSnap.id, docSnap.data() as Record<string, unknown>);
+      }
+    }
+
+    return result;
+  }
+
+  private async fetchQuoteDocsByIds(
+    db: ReturnType<typeof getDb>,
+    ids: string[]
+  ): Promise<Map<string, { data: Record<string, unknown>; ownerId?: string }>> {
+    const result = new Map<string, { data: Record<string, unknown>; ownerId?: string }>();
+    const uniqueIds = Array.from(
+      new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))
+    );
+    if (uniqueIds.length === 0) {
+      return result;
+    }
+
+    const chunks = FirebaseSocialService.chunkEntityIds(uniqueIds);
+    const snapshots = await Promise.all(
+      chunks.map((chunk) =>
+        getDocs(
+          query(
+            collectionGroup(db, "quotes"),
+            where(documentId(), "in", chunk)
+          )
+        )
+      )
+    );
+
+    for (const snap of snapshots) {
+      for (const docSnap of snap.docs) {
+        if (result.has(docSnap.id)) {
+          continue;
+        }
+        const ownerId = docSnap.ref.parent?.parent?.id;
+        result.set(docSnap.id, {
+          data: docSnap.data() as Record<string, unknown>,
+          ...(ownerId ? { ownerId } : {}),
+        });
+      }
+    }
+
+    return result;
+  }
+
+  private async hydrateFeedPrimaryEntities(
+    db: ReturnType<typeof getDb>,
+    contexts: FeedPostContext[]
+  ): Promise<Post[]> {
+    if (!db || contexts.length === 0) {
+      return contexts.map((context) => context.post);
+    }
+
+    const idsByType: Record<PrimaryStructuredEntityType, Set<string>> = {
+      book: new Set(),
+      author: new Set(),
+      quote: new Set(),
+      shelf: new Set(),
+      venue: new Set(),
+    };
+    const primaryByPostId = new Map<string, { type: PrimaryStructuredEntityType; id: string }>();
+
+    for (const context of contexts) {
+      const primary = this.extractPrimaryEntityRef(context.raw, context.post);
+      if (!primary) {
+        continue;
+      }
+      primaryByPostId.set(context.post.id, primary);
+      idsByType[primary.type].add(primary.id);
+    }
+
+    if (primaryByPostId.size === 0) {
+      return contexts.map((context) => context.post);
+    }
+
+    const [books, authors, quotes, shelves, venues] = await Promise.all([
+      this.fetchCollectionDocsByIds(db, "books", Array.from(idsByType.book)),
+      this.fetchCollectionDocsByIds(db, "authors", Array.from(idsByType.author)),
+      this.fetchQuoteDocsByIds(db, Array.from(idsByType.quote)),
+      this.fetchCollectionDocsByIds(db, "shelves", Array.from(idsByType.shelf)),
+      this.fetchCollectionDocsByIds(db, "venues", Array.from(idsByType.venue)),
+    ]);
+
+    const entityMap = new Map<string, HydratedFeedEntity>();
+    for (const [id, data] of books) {
+      entityMap.set(`book:${id}`, { type: "book", id, data });
+    }
+    for (const [id, data] of authors) {
+      entityMap.set(`author:${id}`, { type: "author", id, data });
+    }
+    for (const [id, payload] of quotes) {
+      entityMap.set(`quote:${id}`, {
+        type: "quote",
+        id,
+        data: payload.data,
+        ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
+      });
+    }
+    for (const [id, data] of shelves) {
+      entityMap.set(`shelf:${id}`, { type: "shelf", id, data });
+    }
+    for (const [id, data] of venues) {
+      entityMap.set(`venue:${id}`, { type: "venue", id, data });
+    }
+
+    return contexts.map((context) => {
+      const primary = primaryByPostId.get(context.post.id);
+      if (!primary) {
+        return context.post;
+      }
+
+      const hydrated = entityMap.get(`${primary.type}:${primary.id}`);
+      const enriched = {
+        ...context.post,
+        primaryEntityType: primary.type,
+        primaryEntityId: primary.id,
+        hydratedEntity: hydrated
+          ? {
+              type: hydrated.type,
+              id: hydrated.id,
+              data: hydrated.data,
+              ...(hydrated.ownerId ? { ownerId: hydrated.ownerId } : {}),
+            }
+          : null,
+      } as Post;
+
+      return enriched;
+    });
+  }
+
+  private decodeFollowingCursorFromLegacySnapshot(
+    cursorId: string | undefined
+  ): FollowingFeedCursor | null {
+    if (!cursorId || !cursorRegistry.has(cursorId)) {
+      return null;
+    }
+
+    const legacySnap = cursorRegistry.get(cursorId);
+    if (!legacySnap?.exists()) {
+      return null;
+    }
+
+    const legacyData = legacySnap.data() as Record<string, unknown> | undefined;
+    const createdAtIso = toIsoString(
+      legacyData?.createdAt ??
+      (legacyData?.timestamps as { createdAt?: unknown } | undefined)?.createdAt
+    );
+    const createdAtMs = Date.parse(createdAtIso);
+    if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) {
+      return null;
+    }
+
+    return {
+      v: 1,
+      scope: "following",
+      createdAtMs: Math.trunc(createdAtMs),
+      postId: legacySnap.id,
+    };
+  }
+
+  private async getFollowingFeedPage(
+    db: ReturnType<typeof getDb>,
+    uid: string,
+    filters: string[],
+    cursorId?: string
+  ): Promise<{ posts: Post[]; nextCursor?: string }> {
+    const followingAuthorIds = Array.from(
+      await this.getFollowingAuthorIds(uid)
+    ).filter((authorId) => authorId.length > 0);
+
+    if (followingAuthorIds.length === 0) {
+      return { posts: [] };
+    }
+
+    const decodedCursor =
+      decodeFollowingFeedCursor(cursorId) ??
+      this.decodeFollowingCursorFromLegacySnapshot(cursorId);
+
+    const postsRef = collection(db, "posts");
+    const authorChunks = FirebaseSocialService.chunkAuthorIds(followingAuthorIds);
+    const perBatchLimit = Math.max(
+      2,
+      Math.ceil((FOLLOWING_FEED_PAGE_SIZE * 2) / Math.max(1, authorChunks.length))
+    );
+
+    const batchQueries = authorChunks.map(async (authorBatch) => {
+      let q = query(
+        postsRef,
+        where("authorId", "in", authorBatch),
+        orderBy("createdAt", "desc"),
+        orderBy(documentId(), "desc"),
+        limit(perBatchLimit)
+      );
+
+      if (decodedCursor) {
+        q = query(
+          q,
+          startAfter(new Date(decodedCursor.createdAtMs), decodedCursor.postId)
+        );
+      }
+
+      const snap = await getDocs(q);
+      return snap;
+    });
+
+    const batchSnapshots = await Promise.all(batchQueries);
+    const candidates: FeedPostContext[] = [];
+
+    for (const snap of batchSnapshots) {
+      for (const docSnap of snap.docs) {
+        const raw = docSnap.data() as Record<string, unknown>;
+        const post = normalizePost({ ...raw, id: docSnap.id });
+        if (post.status !== "published") continue;
+        if (post.visibility !== "public" && post.visibility !== "followers") continue;
+        if (!this.matchesFeedFilters(post, filters)) continue;
+        candidates.push({ post, raw });
+      }
+    }
+
+    const dedupedById = new Map<string, FeedPostContext>();
+    for (const candidate of candidates) {
+      if (!dedupedById.has(candidate.post.id)) {
+        dedupedById.set(candidate.post.id, candidate);
+      }
+    }
+
+    const sorted = Array.from(dedupedById.values()).sort((a, b) => {
+      const aMs = Date.parse(a.post.timestamps?.createdAt || "");
+      const bMs = Date.parse(b.post.timestamps?.createdAt || "");
+      const safeAMs = Number.isFinite(aMs) ? aMs : 0;
+      const safeBMs = Number.isFinite(bMs) ? bMs : 0;
+      if (safeBMs !== safeAMs) {
+        return safeBMs - safeAMs;
+      }
+      return b.post.id.localeCompare(a.post.id);
+    });
+
+    const pageContexts = sorted.slice(0, FOLLOWING_FEED_PAGE_SIZE);
+    const posts = await this.hydrateFeedPrimaryEntities(db, pageContexts);
+    const hasMore =
+      sorted.length > FOLLOWING_FEED_PAGE_SIZE ||
+      batchSnapshots.some((snap) => snap.docs.length === perBatchLimit);
+
+    if (!hasMore || pageContexts.length === 0) {
+      return { posts };
+    }
+
+    const last = pageContexts[pageContexts.length - 1].post;
+    const createdAtMs = Date.parse(last.timestamps?.createdAt || "");
+    if (!Number.isFinite(createdAtMs) || createdAtMs <= 0) {
+      return { posts };
+    }
+
+    return {
+      posts,
+      nextCursor: encodeFollowingFeedCursor({
+        v: 1,
+        scope: "following",
+        createdAtMs: Math.trunc(createdAtMs),
+        postId: last.id,
+      }),
+    };
+  }
+
   async getFeed(
     uid: string,
     scope: string,
@@ -2003,17 +2455,17 @@ class FirebaseSocialService {
     const db = getDb();
     if (!db) return { posts: [], nextCursor: undefined };
 
-    const PAGE_SIZE = 20;
+    const PAGE_SIZE = FOLLOWING_FEED_PAGE_SIZE;
     const normalizedUid = normalizeString(uid, 128);
 
     try {
-      const postsRef = collection(db, "posts");
       const normScope = (scope || "explore").toLowerCase();
       const isGuest = this.isGuestIdentity(normalizedUid);
-      const followingAuthorIds =
-        normScope === "following" && !isGuest
-          ? await this.getFollowingAuthorIds(normalizedUid)
-          : null;
+      if (normScope === "following" && !isGuest) {
+        return this.getFollowingFeedPage(db, normalizedUid, filters, cursorId);
+      }
+
+      const postsRef = collection(db, "posts");
 
       let baseConstraints: any[] = [
         where("status", "==", "published"),
@@ -2048,17 +2500,17 @@ class FirebaseSocialService {
       }
 
       const snap = await getDocs(q);
-      const normalizedPosts = snap.docs.map((docRef) =>
-        normalizePost({ ...docRef.data(), id: docRef.id })
-      );
-      const posts = normalizedPosts
-        .filter((post) => {
-          if (followingAuthorIds && !followingAuthorIds.has(post.authorId)) {
-            return false;
-          }
-          return this.matchesFeedFilters(post, filters);
-        })
+      const contexts: FeedPostContext[] = snap.docs.map((docRef) => {
+        const raw = docRef.data() as Record<string, unknown>;
+        return {
+          post: normalizePost({ ...raw, id: docRef.id }),
+          raw,
+        };
+      });
+      const filteredContexts = contexts
+        .filter((context) => this.matchesFeedFilters(context.post, filters))
         .slice(0, PAGE_SIZE);
+      const posts = await this.hydrateFeedPrimaryEntities(db, filteredContexts);
 
       const lastDoc = snap.docs[snap.docs.length - 1];
       let nextCursor: string | undefined;

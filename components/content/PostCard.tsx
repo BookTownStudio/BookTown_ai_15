@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Post, PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
+import { Post, PostAttachment } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import GlassCard from '../ui/GlassCard.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
@@ -36,6 +36,136 @@ interface PostCardProps {
     onNewPost?: () => void;
     surface?: RenderSurface;
 }
+
+type StructuredEntityType = 'book' | 'author' | 'quote' | 'shelf' | 'venue';
+type HydratedEntityPayload = {
+    type?: string;
+    id?: string;
+    ownerId?: string;
+    data?: Record<string, unknown>;
+} | null;
+
+const normalizeStructuredType = (value: unknown): StructuredEntityType | null => {
+    if (typeof value !== 'string') return null;
+    const normalized = value.trim().toLowerCase();
+    if (
+        normalized === 'book' ||
+        normalized === 'author' ||
+        normalized === 'quote' ||
+        normalized === 'shelf' ||
+        normalized === 'venue'
+    ) {
+        return normalized;
+    }
+    return null;
+};
+
+const resolveAttachmentFromHydratedEntity = (
+    refTypeRaw: unknown,
+    refIdRaw: unknown,
+    hydratedEntity: HydratedEntityPayload,
+    fallbackOwnerId: string
+): PostAttachment | null => {
+    const refType = normalizeStructuredType(refTypeRaw);
+    const refId = typeof refIdRaw === 'string' ? refIdRaw.trim() : '';
+    if (!refType || !refId || !hydratedEntity) return null;
+
+    const hydratedType = normalizeStructuredType(hydratedEntity.type);
+    const hydratedId = typeof hydratedEntity.id === 'string' ? hydratedEntity.id.trim() : '';
+    if (hydratedType !== refType || hydratedId !== refId) {
+        return null;
+    }
+
+    const data =
+        hydratedEntity.data && typeof hydratedEntity.data === 'object'
+            ? hydratedEntity.data
+            : {};
+
+    if (refType === 'book') {
+        const titleEn = typeof data.titleEn === 'string' ? data.titleEn : '';
+        const titleAr = typeof data.titleAr === 'string' ? data.titleAr : '';
+        const authorEn = typeof data.authorEn === 'string' ? data.authorEn : '';
+        const authorAr = typeof data.authorAr === 'string' ? data.authorAr : '';
+        const coverUrl = typeof data.coverUrl === 'string' ? data.coverUrl : '';
+        const ratingRaw = typeof data.rating === 'number' ? data.rating : 0;
+
+        return {
+            type: 'book',
+            bookId: refId,
+            bookTitle: titleEn || titleAr || 'Book',
+            bookAuthor: authorEn || authorAr || '',
+            bookCover: coverUrl,
+            bookRating: Number.isFinite(ratingRaw) ? ratingRaw : 0,
+        };
+    }
+
+    if (refType === 'quote') {
+        const ownerIdFromEntity =
+            typeof hydratedEntity.ownerId === 'string' && hydratedEntity.ownerId.trim().length > 0
+                ? hydratedEntity.ownerId.trim()
+                : typeof data.ownerId === 'string' && data.ownerId.trim().length > 0
+                    ? data.ownerId.trim()
+                    : fallbackOwnerId;
+        const quoteText =
+            typeof data.textEn === 'string'
+                ? data.textEn
+                : typeof data.textAr === 'string'
+                    ? data.textAr
+                    : '';
+
+        return ({
+            type: 'quote',
+            quoteId: refId,
+            quoteOwnerId: ownerIdFromEntity || fallbackOwnerId,
+            quoteText,
+        } as unknown) as PostAttachment;
+    }
+
+    if (refType === 'author') {
+        return {
+            type: 'author',
+            authorId: refId,
+            authorName:
+                (typeof data.nameEn === 'string' ? data.nameEn : '') ||
+                (typeof data.nameAr === 'string' ? data.nameAr : '') ||
+                '',
+            authorPhoto: typeof data.avatarUrl === 'string' ? data.avatarUrl : '',
+            authorCountry:
+                (typeof data.countryEn === 'string' ? data.countryEn : '') ||
+                (typeof data.countryAr === 'string' ? data.countryAr : '') ||
+                undefined,
+        };
+    }
+
+    if (refType === 'shelf') {
+        const covers = Array.isArray(data.covers)
+            ? data.covers.filter((cover): cover is string => typeof cover === 'string')
+            : [];
+        const bookCount = typeof data.bookCount === 'number' && Number.isFinite(data.bookCount)
+            ? Math.max(0, Math.trunc(data.bookCount))
+            : 0;
+        return {
+            type: 'shelf',
+            shelfId: refId,
+            ownerId: typeof data.ownerId === 'string' ? data.ownerId : '',
+            shelfName:
+                (typeof data.titleEn === 'string' ? data.titleEn : '') ||
+                (typeof data.titleAr === 'string' ? data.titleAr : '') ||
+                '',
+            bookCount,
+            covers,
+        };
+    }
+
+    if (refType === 'venue') {
+        return {
+            type: 'venue',
+            venueId: refId,
+        };
+    }
+
+    return null;
+};
 
 const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDiscussion, surface = 'feed' }) => {
     const { lang, isRTL } = useI18n();
@@ -121,12 +251,30 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     const resolvedAttachments = useMemo(() => {
         const refs = post?.content?.attachments || [];
         if (refs.length === 0) return [];
+
+        const hydratedEntity =
+            ((post as unknown as { hydratedEntity?: HydratedEntityPayload }).hydratedEntity ?? null);
         
         return refs.map(ref => {
             const hydrated = post?.attachments?.find(a => 
                 ('attachmentId' in a ? a.attachmentId : 'legacy') === ref.attachmentId
             );
-            return hydrated || { type: ref.type, attachmentId: ref.attachmentId };
+
+            if (hydrated) {
+                return hydrated;
+            }
+
+            const structured = resolveAttachmentFromHydratedEntity(
+                ref.type,
+                ref.attachmentId,
+                hydratedEntity,
+                post?.authorId || ''
+            );
+            if (structured) {
+                return structured;
+            }
+
+            return { type: ref.type, attachmentId: ref.attachmentId };
         }) as PostAttachment[];
     }, [post]);
 

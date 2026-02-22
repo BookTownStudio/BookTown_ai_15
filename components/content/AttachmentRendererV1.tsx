@@ -18,7 +18,6 @@ import { cn } from '../../lib/utils.ts';
 import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
 import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
 import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
-import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { VolumeXIcon } from '../icons/VolumeXIcon.tsx';
 
 export type RenderSurface = 'home' | 'feed' | 'drawer' | 'read' | 'write';
@@ -167,30 +166,109 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload: any; surface
     );
 };
 
-const ReferenceView: React.FC<{ type: 'BOOK' | 'QUOTE'; id: string; owner?: string }> = ({ type, id, owner }) => {
-    if (type === 'BOOK') {
-        const { data: book, isLoading } = useBookCatalog(id);
-        if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
-        if (!book) return null;
-        return (
-            <div className="flex items-center gap-3 p-2 bg-white/5 rounded-lg border border-white/5 opacity-80">
-                <img src={book.coverUrl} className="h-10 w-7 object-cover rounded shadow-sm" alt="" />
-                <div className="min-w-0">
-                    <BilingualText className="font-bold text-[11px] truncate">{book.titleEn}</BilingualText>
-                    <BilingualText role="Caption" className="!text-[9px] truncate">{book.authorEn}</BilingualText>
-                </div>
-            </div>
-        );
-    }
+const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: string }> = ({ title, author, coverUrl }) => (
+    <div className="flex items-center gap-3 p-2 bg-white/5 rounded-lg border border-white/5 opacity-80">
+        {coverUrl ? (
+            <img src={coverUrl} className="h-10 w-7 object-cover rounded shadow-sm" alt="" />
+        ) : (
+            <div className="h-10 w-7 rounded bg-white/10" />
+        )}
+        <div className="min-w-0">
+            <BilingualText className="font-bold text-[11px] truncate">{title}</BilingualText>
+            <BilingualText role="Caption" className="!text-[9px] truncate">{author}</BilingualText>
+        </div>
+    </div>
+);
 
+const QuoteReferenceCard: React.FC<{ text: string }> = ({ text }) => (
+    <div className="p-3 bg-black/10 italic text-[11px] border-l-2 border-white/10 rounded-r-lg text-slate-400">
+        "{text}"
+    </div>
+);
+
+const HookedBookReferenceView: React.FC<{ id: string }> = ({ id }) => {
+    const { data: book, isLoading } = useBookCatalog(id);
+    if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
+    if (!book) return null;
+    return (
+        <BookReferenceCard
+            title={book.titleEn}
+            author={book.authorEn}
+            coverUrl={book.coverUrl}
+        />
+    );
+};
+
+const HookedQuoteReferenceView: React.FC<{ id: string; owner?: string }> = ({ id, owner }) => {
     const { data: quote, isLoading } = useQuoteDetails(id, owner);
     if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
     if (!quote) return null;
-    return (
-        <div className="p-3 bg-black/10 italic text-[11px] border-l-2 border-white/10 rounded-r-lg text-slate-400">
-            "{quote.textEn}"
-        </div>
-    );
+    return <QuoteReferenceCard text={quote.textEn} />;
+};
+
+const UnresolvedReferenceView: React.FC = () => (
+    <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400">
+        Reference unavailable
+    </div>
+);
+
+const ReferenceView: React.FC<{
+    type: 'BOOK' | 'QUOTE';
+    id: string;
+    owner?: string;
+    surface: RenderSurface;
+    hydrated?: Record<string, unknown> | null;
+}> = ({ type, id, owner, surface, hydrated }) => {
+    if (type === 'BOOK') {
+        const hydratedTitle =
+            typeof hydrated?.titleEn === 'string'
+                ? hydrated.titleEn
+                : typeof hydrated?.titleAr === 'string'
+                    ? hydrated.titleAr
+                    : '';
+        const hydratedAuthor =
+            typeof hydrated?.authorEn === 'string'
+                ? hydrated.authorEn
+                : typeof hydrated?.authorAr === 'string'
+                    ? hydrated.authorAr
+                    : '';
+        const hydratedCover = typeof hydrated?.coverUrl === 'string' ? hydrated.coverUrl : '';
+
+        if (hydratedTitle || hydratedAuthor || hydratedCover) {
+            return (
+                <BookReferenceCard
+                    title={hydratedTitle || 'Book'}
+                    author={hydratedAuthor}
+                    coverUrl={hydratedCover}
+                />
+            );
+        }
+
+        if (surface === 'feed') {
+            return <UnresolvedReferenceView />;
+        }
+
+        return <HookedBookReferenceView id={id} />;
+    }
+
+    const hydratedText =
+        typeof hydrated?.textEn === 'string'
+            ? hydrated.textEn
+            : typeof hydrated?.textAr === 'string'
+                ? hydrated.textAr
+                : typeof (hydrated as any)?.quoteText === 'string'
+                    ? (hydrated as any).quoteText
+                    : '';
+
+    if (hydratedText) {
+        return <QuoteReferenceCard text={hydratedText} />;
+    }
+
+    if (surface === 'feed') {
+        return <UnresolvedReferenceView />;
+    }
+
+    return <HookedQuoteReferenceView id={id} owner={owner} />;
 };
 
 interface AttachmentRendererV1Props {
@@ -234,8 +312,15 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         return () => observer.disconnect();
     }, [isV1, autoLoad]);
 
+    const isReferenceV1 =
+        v1?.type === 'BOOK_REFERENCE' || v1?.type === 'QUOTE_REFERENCE';
+    const shouldResolveSecureUrl =
+        Boolean(isInViewport && v1) &&
+        !isReferenceV1 &&
+        v1?.type !== 'LINK' &&
+        surface !== 'feed';
     const { data: secureUrl, isLoading: isResolvingUrl, isError: isUrlError } = useAttachmentUrl(
-        (isInViewport && v1) ? v1.attachmentId : undefined, 
+        shouldResolveSecureUrl ? v1!.attachmentId : undefined,
         surface
     );
 
@@ -274,19 +359,56 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     if (!isV1) {
         const legacy = attachment as any;
         switch (legacy.type) {
-            case 'book': visual = <ReferenceView type="BOOK" id={legacy.bookId} />; break;
-            case 'quote': visual = <ReferenceView type="QUOTE" id={legacy.quoteId} owner={legacy.quoteOwnerId} />; break;
+            case 'book':
+                visual = (
+                    <ReferenceView
+                        type="BOOK"
+                        id={legacy.bookId}
+                        surface={surface}
+                        hydrated={{
+                            titleEn: legacy.bookTitle,
+                            authorEn: legacy.bookAuthor,
+                            coverUrl: legacy.bookCover,
+                            rating: legacy.bookRating,
+                        }}
+                    />
+                );
+                break;
+            case 'quote':
+                visual = (
+                    <ReferenceView
+                        type="QUOTE"
+                        id={legacy.quoteId}
+                        owner={legacy.quoteOwnerId}
+                        surface={surface}
+                        hydrated={{
+                            textEn: legacy.quoteText || legacy.textEn || legacy.textAr || '',
+                        }}
+                    />
+                );
+                break;
             case 'media': visual = <ImageView attachment={attachment} url={legacy.url} payload={{}} maxHeight={maxHeightMap[surface]} surface={surface} />; break;
             default: return null;
         }
     } else {
-        if (!isInViewport || isResolvingUrl) {
+        const inlineFeedUrl =
+            surface === 'feed'
+                ? (
+                    (typeof (v1!.payload as any)?.url === 'string' ? (v1!.payload as any).url : '') ||
+                    (typeof (v1!.payload as any)?.previewUrl === 'string' ? (v1!.payload as any).previewUrl : '') ||
+                    (typeof (v1!.metadata as any)?.previewUrl === 'string' ? (v1!.metadata as any).previewUrl : '')
+                )
+                : '';
+        const resolvedUrl = shouldResolveSecureUrl ? (secureUrl?.url || '') : inlineFeedUrl;
+        const requiresResolvedUrl = v1!.type === 'IMAGE';
+
+        if (!isInViewport || (shouldResolveSecureUrl && isResolvingUrl)) {
             visual = (
                 <div className="flex items-center justify-center p-6 bg-white/5 rounded-lg border border-white/5 animate-pulse" style={{ height: 100 }}>
                     <MediaIcon className="h-5 w-5 text-white/20" />
                 </div>
             );
-        } else if (isUrlError || (!secureUrl && v1!.type !== 'LINK' && v1!.type !== 'BOOK_REFERENCE' && v1!.type !== 'QUOTE_REFERENCE')) {
+        } else if ((shouldResolveSecureUrl && isUrlError) || (requiresResolvedUrl && !resolvedUrl)) {
              visual = (
                 <div className="flex flex-col items-center justify-center p-6 bg-red-950/20 rounded-lg border border-red-900/20 text-red-400 text-[10px] text-center gap-2">
                     <VolumeXIcon className="h-4 w-4 opacity-50" />
@@ -294,9 +416,8 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                 </div>
             );
         } else {
-            const url = secureUrl?.url || "";
             switch (v1!.type) {
-                case 'IMAGE': visual = <ImageView attachment={attachment} url={url} payload={v1!.payload} maxHeight={maxHeightMap[surface]} surface={surface} />; break; 
+                case 'IMAGE': visual = <ImageView attachment={attachment} url={resolvedUrl} payload={v1!.payload} maxHeight={maxHeightMap[surface]} surface={surface} />; break; 
                 case 'VIDEO': visual = <VideoView attachment={attachment} payload={v1!.payload} maxHeight={maxHeightMap[surface]} surface={surface} />; break; 
                 case 'AUDIO': visual = <AudioView attachment={attachment} maxHeight={maxHeightMap[surface]} surface={surface} />; break;
                 case 'DOCUMENT': visual = <DocumentView attachment={attachment} payload={v1!.payload} surface={surface} />; break;
@@ -304,8 +425,35 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     visual = <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-xs opacity-60"><GlobeIcon className="h-4 w-4 inline mr-2"/>{v1!.payload.url}</div>; 
                     AttachmentAnalytics.track('attachment_rendered', attachment, surface);
                     break;
-                case 'BOOK_REFERENCE': visual = <ReferenceView type="BOOK" id={v1!.payload.entityId} />; break;
-                case 'QUOTE_REFERENCE': visual = <ReferenceView type="QUOTE" id={v1!.payload.entityId} owner={v1!.payload.ownerId} />; break;
+                case 'BOOK_REFERENCE':
+                    visual = (
+                        <ReferenceView
+                            type="BOOK"
+                            id={v1!.payload.entityId}
+                            surface={surface}
+                            hydrated={
+                                (v1!.payload?.hydratedEntity && typeof v1!.payload.hydratedEntity === 'object')
+                                    ? v1!.payload.hydratedEntity
+                                    : null
+                            }
+                        />
+                    );
+                    break;
+                case 'QUOTE_REFERENCE':
+                    visual = (
+                        <ReferenceView
+                            type="QUOTE"
+                            id={v1!.payload.entityId}
+                            owner={v1!.payload.ownerId}
+                            surface={surface}
+                            hydrated={
+                                (v1!.payload?.hydratedEntity && typeof v1!.payload.hydratedEntity === 'object')
+                                    ? v1!.payload.hydratedEntity
+                                    : null
+                            }
+                        />
+                    );
+                    break;
                 default: visual = <div className="p-4 border border-dashed opacity-30 flex items-center justify-center"><MediaIcon /></div>;
             }
         }
