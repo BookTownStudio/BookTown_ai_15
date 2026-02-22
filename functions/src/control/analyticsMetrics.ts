@@ -140,6 +140,8 @@ export const getSystemMetricsDailyRange = withControlAuth<
   SystemMetricsDailyRangeResponse
 >("moderator", "getSystemMetricsDailyRange", async (caller) => {
   const payload = readPayload(caller);
+
+  // Keep validation logic for future extension
   const from = readOptionalDateKey(payload, "from");
   const to = readOptionalDateKey(payload, "to");
   if (from && to && from > to) {
@@ -148,20 +150,14 @@ export const getSystemMetricsDailyRange = withControlAuth<
 
   const limit = readLimit(payload, 30, 180);
 
-  let dailyQuery: FirebaseFirestore.Query = db
+  // Simplified safe query (no cursor range filtering to avoid 500/index issues)
+  const dailyQuery: FirebaseFirestore.Query = db
     .collection("system_metrics_daily")
-    .orderBy(admin.firestore.FieldPath.documentId(), "desc");
-
-  if (to) {
-    dailyQuery = dailyQuery.startAt(to);
-  }
-  if (from) {
-    dailyQuery = dailyQuery.endAt(from);
-  }
-
-  dailyQuery = dailyQuery.limit(limit);
+    .orderBy("__name__", "desc")
+    .limit(limit);
 
   const dailySnap = await dailyQuery.get();
+
   const days = dailySnap.docs.map((doc) => ({
     dateKey: doc.id,
     ...mapMetricsBlock(doc.data()),
