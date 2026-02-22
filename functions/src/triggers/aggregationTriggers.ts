@@ -9,8 +9,21 @@ import {
 import { admin } from "../firebaseAdmin";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
 import { incrementGlobalMetric } from "../analytics/metricsUtils";
+import { logSystemEvent } from "../analytics/eventLogger";
 
 const db = admin.firestore();
+const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
+const APP_VERSION = process.env.APP_VERSION || "unknown";
+
+async function safeLogSystemEvent(
+  params: Parameters<typeof logSystemEvent>[0]
+): Promise<void> {
+  try {
+    await logSystemEvent(params);
+  } catch (err) {
+    console.error("[EventLogger]", err);
+  }
+}
 
 /**
  * updateStatCounter
@@ -280,6 +293,17 @@ export const onUserFollowCreated = onDocumentCreated(
     );
 
     await incrementGlobalMetric("totalFollows", 1);
+    await safeLogSystemEvent({
+      type: "follow_created",
+      uid: event.params.followerId,
+      entityId: event.params.userId,
+      dedupeKey: event.id,
+      metadata: {
+        source: "trigger.onUserFollowCreated",
+      },
+      environment: ENVIRONMENT,
+      appVersion: APP_VERSION,
+    });
   }
 );
 
@@ -566,28 +590,82 @@ export const onBookReviewWritten = onDocumentWritten(
 
     if (!beforeExists && afterExists) {
       await incrementGlobalMetric("totalReviews", 1);
+      if (afterUserId) {
+        await safeLogSystemEvent({
+          type: "review_created",
+          uid: afterUserId,
+          entityId: reviewId,
+          dedupeKey: event.id,
+          metadata: {
+            source: "trigger.onBookReviewWritten",
+            bookId,
+          },
+          environment: ENVIRONMENT,
+          appVersion: APP_VERSION,
+        });
+      }
     }
   }
 );
 
 export const onSystemUserCreated = onDocumentCreated(
   "users/{uid}",
-  async () => {
+  async (event) => {
     await incrementGlobalMetric("totalUsers", 1);
+    await safeLogSystemEvent({
+      type: "user_created",
+      uid: event.params.uid,
+      entityId: event.params.uid,
+      dedupeKey: event.id,
+      metadata: {
+        source: "trigger.onSystemUserCreated",
+      },
+      environment: ENVIRONMENT,
+      appVersion: APP_VERSION,
+    });
   }
 );
 
 export const onUserQuoteCreated = onDocumentCreated(
   "users/{uid}/quotes/{quoteId}",
-  async () => {
+  async (event) => {
     await incrementGlobalMetric("totalQuotes", 1);
+    await safeLogSystemEvent({
+      type: "quote_created",
+      uid: event.params.uid,
+      entityId: event.params.quoteId,
+      dedupeKey: event.id,
+      metadata: {
+        source: "trigger.onUserQuoteCreated",
+      },
+      environment: ENVIRONMENT,
+      appVersion: APP_VERSION,
+    });
   }
 );
 
 export const onDeletionRequestCreatedMetrics = onDocumentCreated(
   "deletion_requests/{requestId}",
-  async () => {
+  async (event) => {
     await incrementGlobalMetric("totalDeletionRequests", 1);
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    const actorUid =
+      typeof data?.raisedByUid === "string" && data.raisedByUid.trim().length > 0
+        ? data.raisedByUid.trim()
+        : "";
+    if (actorUid) {
+      await safeLogSystemEvent({
+        type: "deletion_request_created",
+        uid: actorUid,
+        entityId: event.params.requestId,
+        dedupeKey: event.id,
+        metadata: {
+          source: "trigger.onDeletionRequestCreatedMetrics",
+        },
+        environment: ENVIRONMENT,
+        appVersion: APP_VERSION,
+      });
+    }
   }
 );
 
@@ -603,6 +681,25 @@ export const onDeletionRequestExecutedMetrics = onDocumentUpdated(
 
     if (beforeStatus !== "executed" && afterStatus === "executed") {
       await incrementGlobalMetric("executedDeletions", 1);
+      const actorUid =
+        typeof after?.reviewedByUid === "string" && after.reviewedByUid.trim().length > 0
+          ? after.reviewedByUid.trim()
+          : typeof after?.raisedByUid === "string" && after.raisedByUid.trim().length > 0
+            ? after.raisedByUid.trim()
+            : "";
+      if (actorUid) {
+        await safeLogSystemEvent({
+          type: "deletion_executed",
+          uid: actorUid,
+          entityId: event.params.requestId,
+          dedupeKey: event.id,
+          metadata: {
+            source: "trigger.onDeletionRequestExecutedMetrics",
+          },
+          environment: ENVIRONMENT,
+          appVersion: APP_VERSION,
+        });
+      }
     }
   }
 );

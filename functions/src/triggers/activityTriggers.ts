@@ -2,8 +2,21 @@ import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/fire
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { incrementGlobalMetric } from "../analytics/metricsUtils";
+import { logSystemEvent } from "../analytics/eventLogger";
 
 const db = admin.firestore();
+const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
+const APP_VERSION = process.env.APP_VERSION || "unknown";
+
+async function safeLogSystemEvent(
+    params: Parameters<typeof logSystemEvent>[0]
+): Promise<void> {
+    try {
+        await logSystemEvent(params);
+    } catch (err) {
+        console.error("[EventLogger]", err);
+    }
+}
 
 async function emitActivityLog(data: {
     actor: { uid: string; type: 'user' };
@@ -38,6 +51,21 @@ export const onActivityPostCreated = onDocumentCreated("posts/{postId}", async (
         }),
         incrementGlobalMetric("totalPosts", 1),
     ]);
+
+    const authorId = typeof data.authorId === "string" ? data.authorId.trim() : "";
+    if (authorId) {
+        await safeLogSystemEvent({
+            type: "post_created",
+            uid: authorId,
+            entityId: event.params.postId,
+            dedupeKey: event.id,
+            metadata: {
+                source: "trigger.onActivityPostCreated",
+            },
+            environment: ENVIRONMENT,
+            appVersion: APP_VERSION,
+        });
+    }
 });
 
 export const onActivityPostLiked = onDocumentCreated("users/{userId}/likes/{postId}", async (event) => {
