@@ -44,6 +44,7 @@ export async function incrementGlobalMetric(field: string, value: number): Promi
   const metricField = field as GlobalMetricField;
   const scopeDoc = FIELD_SCOPE_MAP[metricField];
   const dateKey = getTodayDateKey();
+  const dailyBucketRef = db.collection("system_metrics_daily").doc(dateKey);
   const patch = {
     [metricField]: admin.firestore.FieldValue.increment(value),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -52,17 +53,12 @@ export async function incrementGlobalMetric(field: string, value: number): Promi
   await Promise.all([
     db.collection("system_metrics").doc("global").set(patch, { merge: true }),
     db.collection("system_metrics").doc(scopeDoc).set(patch, { merge: true }),
-    db
-      .collection("system_metrics")
-      .doc("daily")
-      .collection("days")
-      .doc(dateKey)
-      .set(
-        {
-          dateKey,
-          ...patch,
-        },
-        { merge: true }
-      ),
+    dailyBucketRef.set(
+      {
+        dateKey,
+        ...patch,
+      },
+      { merge: true }
+    ),
   ]);
 }

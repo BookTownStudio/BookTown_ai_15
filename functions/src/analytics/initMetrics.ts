@@ -62,16 +62,6 @@ async function initializeSystemMetricsProjectionOnce(): Promise<void> {
     db.collection("system_metrics")
       .doc("moderation")
       .set(buildZeroIncrementPatch(MODERATION_FIELDS), { merge: true }),
-    db.collection("system_metrics")
-      .doc("daily")
-      .set(
-        {
-          schemaVersion: 1,
-          initializedAt: admin.firestore.FieldValue.serverTimestamp(),
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      ),
   ]);
 }
 

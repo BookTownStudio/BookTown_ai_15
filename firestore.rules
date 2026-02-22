@@ -259,6 +259,14 @@ service cloud.firestore {
       }
     }
 
+    match /system_metrics_daily/{dateKey} {
+      allow read, create, update, delete: if false;
+
+      match /{document=**} {
+        allow read, create, update, delete: if false;
+      }
+    }
+
     /* =========================
        AUDIT LOG (IMMUTABLE, SERVER WRITES ONLY)
        ========================= */

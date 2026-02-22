@@ -35,6 +35,9 @@ import {
   type AdminUserSearchResult,
   type DeletionRequest,
   type DeletionReviewDecision,
+  type SystemMetricsDailyEntry,
+  type SystemMetricsDailyRangeParams,
+  type SystemMetricsSnapshot,
 } from '../../lib/services/adminService.ts';
 
 type ControlSectionId =
@@ -415,6 +418,193 @@ const UsersTab: React.FC<{
   );
 };
 
+type MetricsCounterField = Exclude<keyof SystemMetricsDailyEntry, 'dateKey' | 'updatedAt'>;
+
+const METRIC_FIELD_META: Array<{ key: MetricsCounterField; en: string; ar: string }> = [
+  { key: 'totalUsers', en: 'Users', ar: 'المستخدمون' },
+  { key: 'totalPosts', en: 'Posts', ar: 'المنشورات' },
+  { key: 'totalReviews', en: 'Reviews', ar: 'المراجعات' },
+  { key: 'totalQuotes', en: 'Quotes', ar: 'الاقتباسات' },
+  { key: 'totalFollows', en: 'Follows', ar: 'المتابعات' },
+  { key: 'totalDeletionRequests', en: 'Deletion Requests', ar: 'طلبات الحذف' },
+  { key: 'executedDeletions', en: 'Executed Deletions', ar: 'الحذف المنفذ' },
+];
+
+const ANALYTICS_SECTIONS: Array<{
+  key: keyof SystemMetricsSnapshot;
+  en: string;
+  ar: string;
+}> = [
+  { key: 'global', en: 'Global', ar: 'إجمالي' },
+  { key: 'growth', en: 'Growth', ar: 'النمو' },
+  { key: 'engagement', en: 'Engagement', ar: 'التفاعل' },
+  { key: 'moderation', en: 'Moderation', ar: 'الرقابة' },
+];
+
+const METRICS_DAILY_DEFAULT_LIMIT = 30;
+const METRIC_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
+
+function formatMetricNumber(value: number): string {
+  return METRIC_NUMBER_FORMATTER.format(value);
+}
+
+function formatTimestampLabel(value: string | null): string {
+  if (!value) return 'N/A';
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return 'N/A';
+  return parsed.toLocaleString();
+}
+
+const AnalyticsTab: React.FC = () => {
+  const { lang } = useI18n();
+  const dailyRangeParams = useMemo<SystemMetricsDailyRangeParams>(
+    () => ({ limit: METRICS_DAILY_DEFAULT_LIMIT }),
+    []
+  );
+
+  const {
+    data: snapshot,
+    isLoading: isSnapshotLoading,
+    isError: isSnapshotError,
+    error: snapshotError,
+  } = useQuery<SystemMetricsSnapshot>({
+    queryKey: adminServiceQueryKeys.analyticsSnapshot,
+    queryFn: () => adminService.getSystemMetricsSnapshot(),
+  });
+
+  const {
+    data: dailyRows = [],
+    isLoading: isDailyLoading,
+    isError: isDailyError,
+    error: dailyError,
+  } = useQuery<SystemMetricsDailyEntry[]>({
+    queryKey: adminServiceQueryKeys.analyticsDailyRange(dailyRangeParams),
+    queryFn: () => adminService.getSystemMetricsDailyRange(dailyRangeParams),
+  });
+
+  if (isSnapshotLoading || isDailyLoading) {
+    return (
+      <div className="flex justify-center p-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  const loadError = isSnapshotError
+    ? toErrorMessage(
+        snapshotError,
+        lang === 'en' ? 'Failed to load analytics snapshot.' : 'تعذر تحميل ملخص التحليلات.'
+      )
+    : isDailyError
+      ? toErrorMessage(
+          dailyError,
+          lang === 'en' ? 'Failed to load daily analytics.' : 'تعذر تحميل التحليلات اليومية.'
+        )
+      : null;
+
+  if (loadError) {
+    return (
+      <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300">
+        {loadError}
+      </GlassCard>
+    );
+  }
+
+  if (!snapshot) {
+    return (
+      <GlassCard className="!p-6 text-slate-400">
+        {lang === 'en'
+          ? 'No analytics snapshot data is available.'
+          : 'لا توجد بيانات ملخص التحليلات حالياً.'}
+      </GlassCard>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      <BilingualText role="H1" className="!text-2xl mb-4 hidden md:block">
+        {lang === 'en' ? 'Analytics' : 'التحليلات'}
+      </BilingualText>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {ANALYTICS_SECTIONS.map((section) => {
+          const bucket = snapshot[section.key];
+          return (
+            <GlassCard key={section.key} className="!p-4">
+              <p className="text-sm font-semibold text-white">
+                {lang === 'en' ? section.en : section.ar}
+              </p>
+              <div className="mt-3 grid grid-cols-2 gap-3">
+                {METRIC_FIELD_META.map((field) => (
+                  <div key={`${section.key}_${field.key}`}>
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                      {lang === 'en' ? field.en : field.ar}
+                    </p>
+                    <p className="text-lg font-bold text-white">
+                      {formatMetricNumber(bucket[field.key])}
+                    </p>
+                  </div>
+                ))}
+              </div>
+              <p className="mt-3 text-[11px] text-slate-500">
+                {lang === 'en' ? 'Updated:' : 'آخر تحديث:'} {formatTimestampLabel(bucket.updatedAt)}
+              </p>
+            </GlassCard>
+          );
+        })}
+      </div>
+
+      <GlassCard className="!p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-white">
+            {lang === 'en' ? 'Daily Time Series' : 'السلسلة الزمنية اليومية'}
+          </p>
+          <p className="text-xs text-slate-400">
+            {lang === 'en'
+              ? `Latest ${METRICS_DAILY_DEFAULT_LIMIT} days`
+              : `آخر ${METRICS_DAILY_DEFAULT_LIMIT} يوم`}
+          </p>
+        </div>
+
+        {dailyRows.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            {lang === 'en' ? 'No daily metrics available.' : 'لا توجد بيانات يومية متاحة.'}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-left text-slate-400 border-b border-white/10">
+                  <th className="py-2 pr-3 font-semibold">{lang === 'en' ? 'Date' : 'التاريخ'}</th>
+                  {METRIC_FIELD_META.map((field) => (
+                    <th key={`daily_head_${field.key}`} className="py-2 pr-3 font-semibold whitespace-nowrap">
+                      {lang === 'en' ? field.en : field.ar}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {dailyRows.map((row) => (
+                  <tr key={row.dateKey} className="border-b border-white/5">
+                    <td className="py-2 pr-3 text-slate-200 font-medium whitespace-nowrap">
+                      {row.dateKey}
+                    </td>
+                    {METRIC_FIELD_META.map((field) => (
+                      <td key={`daily_${row.dateKey}_${field.key}`} className="py-2 pr-3 text-slate-300 whitespace-nowrap">
+                        {formatMetricNumber(row[field.key])}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+};
+
 // --- Feedback Tab ---
 const FeedbackTab: React.FC = () => {
   const { lang } = useI18n();
@@ -434,7 +624,7 @@ const FeedbackTab: React.FC = () => {
 
 const DeletionRequestsTab: React.FC<{
   role: UserRole;
-  requests: DeleteRequest[];
+  requests: DeletionRequest[];
   isLoading: boolean;
   loadError: string | null;
   actionError: string | null;
@@ -837,11 +1027,7 @@ const ControlCenterScreen: React.FC = () => {
                 />
               )}
               {activeSection === 'analytics' && (
-                <PlaceholderTab
-                  title={lang === 'en' ? 'Analytics' : 'التحليلات'}
-                  subtitle={lang === 'en' ? 'Operational metrics panel.' : 'لوحة مؤشرات تشغيلية.'}
-                  icon={AnalyticsIcon}
-                />
+                <AnalyticsTab />
               )}
               {activeSection === 'ai_governance' && (
                 <PlaceholderTab

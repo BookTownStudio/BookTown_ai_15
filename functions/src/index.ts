@@ -556,6 +556,10 @@ export {
   executeDeletion,
 } from "./control/deleteRequests";
 export { searchUsersForAdmin } from "./control/adminUserDiscovery";
+export {
+  getSystemMetricsSnapshot,
+  getSystemMetricsDailyRange,
+} from "./control/analyticsMetrics";
 export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
 
 // Triggers

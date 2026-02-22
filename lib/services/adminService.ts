@@ -4,6 +4,33 @@ import { getFirebaseFunctions } from '../firebase.ts';
 export type DeletionRequestStatus = 'pending' | 'approved' | 'rejected' | 'executed';
 export type DeletionReviewDecision = Extract<DeletionRequestStatus, 'approved' | 'rejected'>;
 export type AdminUserRole = 'user' | 'moderator' | 'superadmin';
+export type SystemMetricsDailyRangeParams = {
+  from?: string;
+  to?: string;
+  limit?: number;
+};
+
+export type SystemMetricsBucket = {
+  totalUsers: number;
+  totalPosts: number;
+  totalReviews: number;
+  totalQuotes: number;
+  totalFollows: number;
+  totalDeletionRequests: number;
+  executedDeletions: number;
+  updatedAt: string | null;
+};
+
+export type SystemMetricsSnapshot = {
+  global: SystemMetricsBucket;
+  growth: SystemMetricsBucket;
+  engagement: SystemMetricsBucket;
+  moderation: SystemMetricsBucket;
+};
+
+export type SystemMetricsDailyEntry = SystemMetricsBucket & {
+  dateKey: string;
+};
 
 export type AdminUserSearchResult = {
   uid: string;
@@ -27,6 +54,16 @@ export type DeletionRequest = {
 
 export const adminServiceQueryKeys = {
   deletionRequests: ['admin', 'deletionRequests'] as const,
+  analyticsSnapshot: ['admin', 'analytics', 'snapshot'] as const,
+  analyticsDailyRange: (params: SystemMetricsDailyRangeParams = {}) =>
+    [
+      'admin',
+      'analytics',
+      'dailyRange',
+      params.from ?? null,
+      params.to ?? null,
+      params.limit ?? null,
+    ] as const,
 };
 
 type DeletionRequestDoc = {
@@ -78,6 +115,27 @@ type SearchUsersPayload = {
 
 type SearchUsersResponse = {
   users: unknown;
+};
+
+type GetSystemMetricsSnapshotPayload = {
+  targetType: 'system_metrics_snapshot';
+  targetId: 'system_metrics';
+};
+
+type GetSystemMetricsSnapshotResponse = {
+  snapshot: unknown;
+};
+
+type GetSystemMetricsDailyRangePayload = {
+  from?: string;
+  to?: string;
+  limit?: number;
+  targetType: 'system_metrics_daily_range';
+  targetId: string;
+};
+
+type GetSystemMetricsDailyRangeResponse = {
+  days: unknown;
 };
 
 let functionsInstance: Functions | null = null;
@@ -228,6 +286,120 @@ function parseSearchUsersResponse(payload: unknown): AdminUserSearchResult[] {
   return response.users.map((item, index) => mapAdminUserSearchItem(item, index));
 }
 
+const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+
+function readRequiredFiniteNumber(value: unknown, field: string, context: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
+  }
+  return value;
+}
+
+function parseSystemMetricsBucket(payload: unknown, context: string): SystemMetricsBucket {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error(`[adminService] Invalid metrics bucket in ${context}.`);
+  }
+
+  const source = payload as Record<string, unknown>;
+  return {
+    totalUsers: readRequiredFiniteNumber(source.totalUsers, 'totalUsers', context),
+    totalPosts: readRequiredFiniteNumber(source.totalPosts, 'totalPosts', context),
+    totalReviews: readRequiredFiniteNumber(source.totalReviews, 'totalReviews', context),
+    totalQuotes: readRequiredFiniteNumber(source.totalQuotes, 'totalQuotes', context),
+    totalFollows: readRequiredFiniteNumber(source.totalFollows, 'totalFollows', context),
+    totalDeletionRequests: readRequiredFiniteNumber(
+      source.totalDeletionRequests,
+      'totalDeletionRequests',
+      context
+    ),
+    executedDeletions: readRequiredFiniteNumber(
+      source.executedDeletions,
+      'executedDeletions',
+      context
+    ),
+    updatedAt: toIsoString(source.updatedAt, 'updatedAt', context, false),
+  };
+}
+
+function parseSystemMetricsSnapshotResponse(payload: unknown): SystemMetricsSnapshot {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid getSystemMetricsSnapshot response.');
+  }
+
+  const response = payload as GetSystemMetricsSnapshotResponse;
+  if (!response.snapshot || typeof response.snapshot !== 'object' || Array.isArray(response.snapshot)) {
+    throw new Error('[adminService] getSystemMetricsSnapshot response missing snapshot object.');
+  }
+
+  const snapshot = response.snapshot as Record<string, unknown>;
+  return {
+    global: parseSystemMetricsBucket(snapshot.global, 'snapshot.global'),
+    growth: parseSystemMetricsBucket(snapshot.growth, 'snapshot.growth'),
+    engagement: parseSystemMetricsBucket(snapshot.engagement, 'snapshot.engagement'),
+    moderation: parseSystemMetricsBucket(snapshot.moderation, 'snapshot.moderation'),
+  };
+}
+
+function parseSystemMetricsDailyRangeResponse(payload: unknown): SystemMetricsDailyEntry[] {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid getSystemMetricsDailyRange response.');
+  }
+
+  const response = payload as GetSystemMetricsDailyRangeResponse;
+  if (!Array.isArray(response.days)) {
+    throw new Error('[adminService] getSystemMetricsDailyRange response missing days array.');
+  }
+
+  return response.days.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error(`[adminService] Invalid daily metrics row at index ${index}.`);
+    }
+
+    const context = `daily metrics row #${index}`;
+    const row = item as Record<string, unknown>;
+    const dateKey = readRequiredString(row.dateKey, 'dateKey', context);
+    if (!DATE_KEY_REGEX.test(dateKey)) {
+      throw new Error(`[adminService] Invalid dateKey in ${context}.`);
+    }
+
+    return {
+      dateKey,
+      ...parseSystemMetricsBucket(row, context),
+    };
+  });
+}
+
+function normalizeDateKeyParam(value: unknown, field: 'from' | 'to'): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'string') {
+    throw new Error(`[adminService] ${field} must be a YYYY-MM-DD string.`);
+  }
+
+  const normalized = value.trim();
+  if (!DATE_KEY_REGEX.test(normalized)) {
+    throw new Error(`[adminService] ${field} must match YYYY-MM-DD.`);
+  }
+  return normalized;
+}
+
+function normalizeDailyRangeParams(
+  params: SystemMetricsDailyRangeParams | undefined
+): { from?: string; to?: string; limit: number } {
+  const from = normalizeDateKeyParam(params?.from, 'from');
+  const to = normalizeDateKeyParam(params?.to, 'to');
+  if (from && to && from > to) {
+    throw new Error('[adminService] from must be less than or equal to to.');
+  }
+
+  const rawLimit = params?.limit;
+  const limit = rawLimit == null ? 30 : rawLimit;
+  if (!Number.isFinite(limit) || Math.trunc(limit) !== limit || limit <= 0 || limit > 180) {
+    throw new Error('[adminService] limit must be an integer between 1 and 180.');
+  }
+
+  return { from, to, limit };
+}
+
 export const adminService = {
   async createDeletionRequest(targetUid: string, reason: string): Promise<void> {
     const normalizedTargetUid = targetUid.trim();
@@ -331,5 +503,49 @@ export const adminService = {
     });
 
     return parseSearchUsersResponse(result.data);
+  },
+
+  async getSystemMetricsSnapshot(): Promise<SystemMetricsSnapshot> {
+    const fn = httpsCallable<GetSystemMetricsSnapshotPayload, GetSystemMetricsSnapshotResponse>(
+      getFunctionsOnce(),
+      'getSystemMetricsSnapshot'
+    );
+
+    const result = await fn({
+      targetType: 'system_metrics_snapshot',
+      targetId: 'system_metrics',
+    });
+
+    return parseSystemMetricsSnapshotResponse(result.data);
+  },
+
+  async getSystemMetricsDailyRange(
+    params: SystemMetricsDailyRangeParams = {}
+  ): Promise<SystemMetricsDailyEntry[]> {
+    const normalized = normalizeDailyRangeParams(params);
+    const targetId = `${normalized.from ?? 'latest'}:${normalized.to ?? 'latest'}:${normalized.limit}`;
+
+    const fn = httpsCallable<
+      GetSystemMetricsDailyRangePayload,
+      GetSystemMetricsDailyRangeResponse
+    >(
+      getFunctionsOnce(),
+      'getSystemMetricsDailyRange'
+    );
+
+    const payload: GetSystemMetricsDailyRangePayload = {
+      targetType: 'system_metrics_daily_range',
+      targetId,
+      limit: normalized.limit,
+    };
+    if (normalized.from) {
+      payload.from = normalized.from;
+    }
+    if (normalized.to) {
+      payload.to = normalized.to;
+    }
+
+    const result = await fn(payload);
+    return parseSystemMetricsDailyRangeResponse(result.data);
   },
 };
