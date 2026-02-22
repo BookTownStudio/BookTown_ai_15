@@ -3,10 +3,12 @@
 import {
   onDocumentCreated,
   onDocumentDeleted,
+  onDocumentUpdated,
   onDocumentWritten,
 } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
+import { incrementGlobalMetric } from "../analytics/metricsUtils";
 
 const db = admin.firestore();
 
@@ -276,6 +278,8 @@ export const onUserFollowCreated = onDocumentCreated(
       },
       { merge: true }
     );
+
+    await incrementGlobalMetric("totalFollows", 1);
   }
 );
 
@@ -558,6 +562,47 @@ export const onBookReviewWritten = onDocumentWritten(
     const changedUid = afterUserId || beforeUserId;
     if (changedUid) {
       await recomputeUserStats(changedUid);
+    }
+
+    if (!beforeExists && afterExists) {
+      await incrementGlobalMetric("totalReviews", 1);
+    }
+  }
+);
+
+export const onSystemUserCreated = onDocumentCreated(
+  "users/{uid}",
+  async () => {
+    await incrementGlobalMetric("totalUsers", 1);
+  }
+);
+
+export const onUserQuoteCreated = onDocumentCreated(
+  "users/{uid}/quotes/{quoteId}",
+  async () => {
+    await incrementGlobalMetric("totalQuotes", 1);
+  }
+);
+
+export const onDeletionRequestCreatedMetrics = onDocumentCreated(
+  "deletion_requests/{requestId}",
+  async () => {
+    await incrementGlobalMetric("totalDeletionRequests", 1);
+  }
+);
+
+export const onDeletionRequestExecutedMetrics = onDocumentUpdated(
+  "deletion_requests/{requestId}",
+  async (event) => {
+    const before = event.data?.before.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after.data() as Record<string, unknown> | undefined;
+    const beforeStatus =
+      typeof before?.status === "string" ? before.status.toLowerCase() : "";
+    const afterStatus =
+      typeof after?.status === "string" ? after.status.toLowerCase() : "";
+
+    if (beforeStatus !== "executed" && afterStatus === "executed") {
+      await incrementGlobalMetric("executedDeletions", 1);
     }
   }
 );

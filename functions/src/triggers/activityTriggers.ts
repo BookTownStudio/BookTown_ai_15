@@ -1,6 +1,7 @@
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { incrementGlobalMetric } from "../analytics/metricsUtils";
 
 const db = admin.firestore();
 
@@ -27,13 +28,16 @@ async function emitActivityLog(data: {
 export const onActivityPostCreated = onDocumentCreated("posts/{postId}", async (event) => {
     const data = event.data?.data();
     if (!data) return;
-    await emitActivityLog({
-        actor: { uid: data.authorId, type: 'user' },
-        verb: 'post_created',
-        object: { entity_type: 'post', entity_id: event.params.postId },
-        context: { target_owner_uid: null, visibility: 'public' },
-        metadata: { source: 'web', ui_surface: 'social' }
-    });
+    await Promise.all([
+        emitActivityLog({
+            actor: { uid: data.authorId, type: 'user' },
+            verb: 'post_created',
+            object: { entity_type: 'post', entity_id: event.params.postId },
+            context: { target_owner_uid: null, visibility: 'public' },
+            metadata: { source: 'web', ui_surface: 'social' }
+        }),
+        incrementGlobalMetric("totalPosts", 1),
+    ]);
 });
 
 export const onActivityPostLiked = onDocumentCreated("users/{userId}/likes/{postId}", async (event) => {

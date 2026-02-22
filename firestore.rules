@@ -249,6 +249,17 @@ service cloud.firestore {
     }
 
     /* =========================
+       SYSTEM METRICS (SERVER-ONLY PROJECTIONS)
+       ========================= */
+    match /system_metrics/{metricId} {
+      allow read, create, update, delete: if false;
+
+      match /{document=**} {
+        allow read, create, update, delete: if false;
+      }
+    }
+
+    /* =========================
        AUDIT LOG (IMMUTABLE, SERVER WRITES ONLY)
        ========================= */
     match /audit_log/{logId} {
