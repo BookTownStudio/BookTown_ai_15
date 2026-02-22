@@ -20,7 +20,7 @@ export const useChatHistory = (conversationId: string | undefined) => {
     const { user } = useAuth();
     const uid = user?.uid;
     return useQuery<DirectMessage[]>({
-        queryKey: ['messages', conversationId],
+        queryKey: ['messages', uid, conversationId],
         queryFn: () => dataService.messaging.getChatHistory(conversationId!),
         enabled: !!conversationId && !!uid,
         staleTime: 1_000,
@@ -36,10 +36,11 @@ export const useSendMessage = (conversationId: string | undefined) => {
     return useMutation({
         mutationFn: ({ text, idempotencyKey }: { text: string; idempotencyKey: string; }) => {
             if (!uid) throw new Error("Not authenticated");
+            if (!conversationId) throw new Error("Missing conversationId");
             return dataService.messaging.sendMessage(uid, conversationId!, text, idempotencyKey);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['messages', conversationId]);
+            queryClient.invalidateQueries(['messages', uid, conversationId]);
             queryClient.invalidateQueries(['conversations', uid]);
         },
     });
@@ -72,7 +73,7 @@ export const useMarkConversationRead = () => {
             return dataService.messaging.markConversationRead(uid, conversationId);
         },
         onSuccess: (_, conversationId) => {
-            queryClient.invalidateQueries(['messages', conversationId]);
+            queryClient.invalidateQueries(['messages', uid, conversationId]);
             queryClient.invalidateQueries(['conversations', uid]);
         },
     });

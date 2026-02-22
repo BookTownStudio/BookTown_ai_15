@@ -338,11 +338,11 @@ export const listDirectMessages = onCall({ cors: true }, async (request) => {
 
   const messagesSnap = await conversationRef
     .collection("messages")
-    .orderBy("createdAt", "asc")
+    .orderBy("createdAt", "desc")
     .limit(listLimit)
     .get();
 
-  const messages = messagesSnap.docs.map((messageSnap) => {
+  const messages = messagesSnap.docs.reverse().map((messageSnap) => {
     const messageData = messageSnap.data() as Record<string, unknown>;
     const createdAt = toTimestamp(messageData.createdAt);
     const createdMillis = createdAt ? createdAt.toMillis() : null;
@@ -431,9 +431,15 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
       const dedupeData = dedupeSnap.data() as { messageId?: unknown };
       const existingMessageId =
         typeof dedupeData.messageId === "string" ? dedupeData.messageId : "";
+      if (!existingMessageId) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Idempotency state is invalid for this conversation."
+        );
+      }
       return {
         conversationId,
-        messageId: existingMessageId || messageRef.id,
+        messageId: existingMessageId,
       };
     }
 

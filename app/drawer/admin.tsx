@@ -26,15 +26,20 @@ import { cn } from '../../lib/utils.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
-import { useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
 import { db } from '../../lib/firebase.ts';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import {
+  type AdminSystemEvent,
   adminService,
   adminServiceQueryKeys,
   type AdminUserSearchResult,
   type DeletionRequest,
   type DeletionReviewDecision,
+  type FeedbackPipelineStub,
+  type RecentSystemEventsParams,
+  type SystemEventsPage,
+  type SystemHealthSnapshot,
   type SystemMetricsDailyEntry,
   type SystemMetricsDailyRangeParams,
   type SystemMetricsSnapshot,
@@ -44,6 +49,8 @@ type ControlSectionId =
   | 'users'
   | 'moderation'
   | 'analytics'
+  | 'events'
+  | 'health'
   | 'feedback'
   | 'ai_governance'
   | 'catalog'
@@ -76,6 +83,8 @@ const CONTROL_SECTIONS: ControlSection[] = [
   { id: 'users', en: 'Users', ar: 'المستخدمون', icon: UsersIcon, minimumRole: 'moderator', domain: 'operations' },
   { id: 'deletion_requests', en: 'Deletion Requests', ar: 'طلبات الحذف', icon: UsersIcon, minimumRole: 'superadmin', domain: 'operations' },
   { id: 'analytics', en: 'Analytics', ar: 'التحليلات', icon: AnalyticsIcon, minimumRole: 'moderator', domain: 'intelligence' },
+  { id: 'events', en: 'Events', ar: 'الأحداث', icon: FlagIcon, minimumRole: 'moderator', domain: 'intelligence' },
+  { id: 'health', en: 'Health', ar: 'الصحة', icon: SettingsIcon, minimumRole: 'moderator', domain: 'intelligence' },
   { id: 'feedback', en: 'Feedback', ar: 'الملاحظات', icon: FeedbackIcon, minimumRole: 'moderator', domain: 'intelligence' },
   { id: 'ai_governance', en: 'AI Governance', ar: 'حوكمة الذكاء الاصطناعي', icon: BrainIcon, minimumRole: 'superadmin', domain: 'governance' },
   { id: 'catalog', en: 'Catalog', ar: 'الكتالوج', icon: BookIcon, minimumRole: 'superadmin', domain: 'governance' },
@@ -442,6 +451,7 @@ const ANALYTICS_SECTIONS: Array<{
 ];
 
 const METRICS_DAILY_DEFAULT_LIMIT = 30;
+const SYSTEM_EVENTS_DEFAULT_LIMIT = 50;
 const METRIC_NUMBER_FORMATTER = new Intl.NumberFormat('en-US');
 
 function formatMetricNumber(value: number): string {
@@ -605,18 +615,234 @@ const AnalyticsTab: React.FC = () => {
   );
 };
 
+const EventsTab: React.FC = () => {
+  const { lang } = useI18n();
+  const eventsParams = useMemo<RecentSystemEventsParams>(
+    () => ({ limit: SYSTEM_EVENTS_DEFAULT_LIMIT }),
+    []
+  );
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: adminServiceQueryKeys.systemEvents(eventsParams),
+    queryFn: ({ pageParam }) =>
+      adminService.getRecentSystemEvents({
+        limit: eventsParams.limit,
+        afterCursor: typeof pageParam === 'string' ? pageParam : undefined,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage: SystemEventsPage) => lastPage.nextCursor ?? undefined,
+  } as any);
+
+  const pages = (data?.pages ?? []) as SystemEventsPage[];
+  const events = useMemo<AdminSystemEvent[]>(
+    () => pages.flatMap((page) => page.events),
+    [pages]
+  );
+  const totalCountEstimate = pages[0]?.totalCountEstimate ?? 0;
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300">
+        {toErrorMessage(
+          error,
+          lang === 'en' ? 'Failed to load system events.' : 'تعذر تحميل أحداث النظام.'
+        )}
+      </GlassCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <BilingualText role="H1" className="!text-2xl mb-4 hidden md:block">
+        {lang === 'en' ? 'System Events' : 'أحداث النظام'}
+      </BilingualText>
+
+      <GlassCard className="!p-4">
+        <div className="flex items-center justify-between mb-3">
+          <p className="text-sm font-semibold text-white">
+            {lang === 'en' ? 'Recent Events' : 'الأحداث الأخيرة'}
+          </p>
+          <p className="text-xs text-slate-400">
+            {lang === 'en'
+              ? `Estimated total: ${formatMetricNumber(totalCountEstimate)}`
+              : `الإجمالي التقديري: ${formatMetricNumber(totalCountEstimate)}`}
+          </p>
+        </div>
+
+        {events.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            {lang === 'en' ? 'No system events available.' : 'لا توجد أحداث نظام متاحة.'}
+          </p>
+        ) : (
+          <div className="space-y-4">
+            <div className="overflow-x-auto">
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-400 border-b border-white/10">
+                    <th className="py-2 pr-3 font-semibold">{lang === 'en' ? 'createdAt' : 'وقت الإنشاء'}</th>
+                    <th className="py-2 pr-3 font-semibold">{lang === 'en' ? 'type' : 'النوع'}</th>
+                    <th className="py-2 pr-3 font-semibold">{lang === 'en' ? 'uid' : 'المستخدم'}</th>
+                    <th className="py-2 pr-3 font-semibold">{lang === 'en' ? 'entityId' : 'المعرف'}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={event.id} className="border-b border-white/5">
+                      <td className="py-2 pr-3 text-slate-200 whitespace-nowrap">
+                        {formatTimestampLabel(event.createdAt)}
+                      </td>
+                      <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{event.type}</td>
+                      <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{event.uid}</td>
+                      <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{event.entityId ?? 'N/A'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {hasNextPage && (
+              <div className="flex justify-center">
+                <Button
+                  variant="secondary"
+                  className="!text-xs"
+                  onClick={() => fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                >
+                  {isFetchingNextPage
+                    ? (lang === 'en' ? 'Loading...' : 'جار التحميل...')
+                    : (lang === 'en' ? 'Load More' : 'تحميل المزيد')}
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+};
+
+const HealthTab: React.FC = () => {
+  const { lang } = useI18n();
+  const {
+    data: health,
+    isLoading,
+    isError,
+    error,
+  } = useQuery<SystemHealthSnapshot>({
+    queryKey: adminServiceQueryKeys.systemHealthSnapshot,
+    queryFn: () => adminService.getSystemHealthSnapshot(),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300">
+        {toErrorMessage(
+          error,
+          lang === 'en' ? 'Failed to load system health.' : 'تعذر تحميل صحة النظام.'
+        )}
+      </GlassCard>
+    );
+  }
+
+  if (!health) {
+    return (
+      <GlassCard className="!p-6 text-slate-400">
+        {lang === 'en' ? 'No health snapshot available.' : 'لا توجد لقطة صحة متاحة.'}
+      </GlassCard>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <BilingualText role="H1" className="!text-2xl mb-4 hidden md:block">
+        {lang === 'en' ? 'System Health' : 'صحة النظام'}
+      </BilingualText>
+      <GlassCard className="!p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <p className="text-slate-400">{lang === 'en' ? 'Last global metrics update time' : 'آخر تحديث للمقاييس العامة'}</p>
+            <p className="text-white font-semibold">{formatTimestampLabel(health.globalUpdatedAt)}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">{lang === 'en' ? 'Latest daily bucket date' : 'تاريخ أحدث حاوية يومية'}</p>
+            <p className="text-white font-semibold">{health.latestDailyBucketDate ?? 'N/A'}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">{lang === 'en' ? 'Total events count' : 'إجمالي عدد الأحداث'}</p>
+            <p className="text-white font-semibold">{formatMetricNumber(health.totalEventsCount)}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">{lang === 'en' ? 'Latest event type' : 'نوع آخر حدث'}</p>
+            <p className="text-white font-semibold">{health.latestEventType ?? 'N/A'}</p>
+          </div>
+          <div>
+            <p className="text-slate-400">{lang === 'en' ? 'Last post_created timestamp' : 'آخر توقيت post_created'}</p>
+            <p className="text-white font-semibold">{formatTimestampLabel(health.lastPostCreatedAt)}</p>
+          </div>
+        </div>
+      </GlassCard>
+    </div>
+  );
+};
+
 // --- Feedback Tab ---
 const FeedbackTab: React.FC = () => {
   const { lang } = useI18n();
+  const { data, isLoading, isError, error } = useQuery<FeedbackPipelineStub>({
+    queryKey: adminServiceQueryKeys.feedbackPipelineStub,
+    queryFn: () => adminService.getFeedbackPipelineStub(),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center p-12">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300">
+        {toErrorMessage(
+          error,
+          lang === 'en' ? 'Failed to load feedback status.' : 'تعذر تحميل حالة الملاحظات.'
+        )}
+      </GlassCard>
+    );
+  }
+
   return (
     <div className="space-y-4">
       <BilingualText role="H1" className="!text-2xl mb-4 hidden md:block">
         {lang === 'en' ? 'User Feedback' : 'ملاحظات المستخدمين'}
       </BilingualText>
       <GlassCard className="!p-6 text-slate-400">
-        {lang === 'en'
-          ? 'Feedback pipeline will be connected to backend sources in a dedicated phase.'
-          : 'سيتم ربط مسار الملاحظات بمصادر الخلفية في مرحلة مستقلة.'}
+        {data?.message ?? (lang === 'en' ? 'Feedback pipeline not connected yet.' : 'قناة الملاحظات غير متصلة بعد.')}
       </GlassCard>
     </div>
   );
@@ -1012,7 +1238,6 @@ const ControlCenterScreen: React.FC = () => {
                 />
               )}
               {activeSection === 'moderation' && <ModerationTab />}
-              {activeSection === 'feedback' && <FeedbackTab />}
               {activeSection === 'deletion_requests' && (
                 <DeletionRequestsTab
                   role={role}
@@ -1029,6 +1254,13 @@ const ControlCenterScreen: React.FC = () => {
               {activeSection === 'analytics' && (
                 <AnalyticsTab />
               )}
+              {activeSection === 'events' && (
+                <EventsTab />
+              )}
+              {activeSection === 'health' && (
+                <HealthTab />
+              )}
+              {activeSection === 'feedback' && <FeedbackTab />}
               {activeSection === 'ai_governance' && (
                 <PlaceholderTab
                   title={lang === 'en' ? 'AI Governance' : 'حوكمة الذكاء الاصطناعي'}

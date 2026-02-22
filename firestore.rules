@@ -26,7 +26,7 @@ service cloud.firestore {
 
     function isAdminUser() {
       return isSignedIn()
-        && request.auth.token.role in ['superadmin', 'moderator'];
+        && request.auth.token.role in ['superadmin', 'moderator', 'system'];
     }
 
     function isSuperAdminUser() {

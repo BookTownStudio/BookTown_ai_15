@@ -560,7 +560,12 @@ export {
   getSystemMetricsSnapshot,
   getSystemMetricsDailyRange,
 } from "./control/analyticsMetrics";
+export {
+  getRecentSystemEvents,
+  getSystemHealthSnapshot,
+} from "./control/systemEventsAdmin";
 export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
+export { exportDailyAnalyticsSnapshot } from "./analytics/dailyExport";
 
 // Triggers
 export * from "./triggers/aggregationTriggers";

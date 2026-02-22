@@ -1,22 +1,21 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 
-export type CanonicalRole = "user" | "moderator" | "superadmin";
+export type CanonicalRole = "moderator" | "superadmin" | "system";
+export type RoleClaim = CanonicalRole | "user";
 
-const ROLE_WEIGHT: Record<CanonicalRole, number> = {
+const ROLE_WEIGHT: Record<RoleClaim, number> = {
   user: 0,
   moderator: 1,
   superadmin: 2,
+  system: 3,
 };
 
-const ROLE_ALIASES: Record<string, CanonicalRole> = {
-  user: "user",
-  moderator: "moderator",
-  superadmin: "superadmin",
-  superuser: "moderator",
-  admin: "superadmin",
-  system: "superadmin",
-};
+const CANONICAL_ROLES = new Set<CanonicalRole>([
+  "moderator",
+  "superadmin",
+  "system",
+]);
 
 type CallableAuth =
   | {
@@ -26,10 +25,13 @@ type CallableAuth =
   | null
   | undefined;
 
-export function canonicalizeRoleClaim(rawRole: unknown): CanonicalRole {
+export function canonicalizeRoleClaim(rawRole: unknown): RoleClaim {
   if (typeof rawRole !== "string") return "user";
   const normalized = rawRole.trim().toLowerCase();
-  return ROLE_ALIASES[normalized] ?? "user";
+  if (normalized === "user") return "user";
+  return CANONICAL_ROLES.has(normalized as CanonicalRole)
+    ? (normalized as CanonicalRole)
+    : "user";
 }
 
 export function assertAuthenticated(auth: CallableAuth): {
@@ -49,7 +51,7 @@ export function assertAuthenticated(auth: CallableAuth): {
   };
 }
 
-export function getRoleFromClaims(auth: CallableAuth): CanonicalRole {
+export function getRoleFromClaims(auth: CallableAuth): RoleClaim {
   const { token } = assertAuthenticated(auth);
   return canonicalizeRoleClaim(token.role);
 }
@@ -60,6 +62,10 @@ export function assertRoleFromClaims(
 ): { uid: string; role: CanonicalRole } {
   const { uid, token } = assertAuthenticated(auth);
   const callerRole = canonicalizeRoleClaim(token.role);
+  if (callerRole === "user") {
+    throw new HttpsError("permission-denied", "Insufficient role permissions.");
+  }
+
   const required = Array.isArray(requiredRole) ? requiredRole : [requiredRole];
   const allowed = required.some(
     (role) => ROLE_WEIGHT[callerRole] >= ROLE_WEIGHT[role]

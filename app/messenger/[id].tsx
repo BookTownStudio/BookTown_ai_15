@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
+import { useToast } from '../../store/toast.tsx';
 import {
     useChatHistory,
     useSendMessage,
@@ -36,9 +37,10 @@ const ChatBubble: React.FC<{ message: DirectMessage; isMe: boolean; }> = ({ mess
 const MessengerChatScreen: React.FC = () => {
     const { lang, isRTL } = useI18n();
     const { user } = useAuth();
+    const { showToast } = useToast();
     const { navigate, currentView } = useNavigation();
     const messagesEndRef = useRef<HTMLDivElement>(null);
-    const markedReadRef = useRef<string | null>(null);
+    const lastReadMarkerRef = useRef<string | null>(null);
     const [input, setInput] = useState('');
     
     const conversationId = currentView.type === 'immersive' ? currentView.params?.conversationId : undefined;
@@ -48,22 +50,28 @@ const MessengerChatScreen: React.FC = () => {
     const sendMutation = useSendMessage(conversationId);
     const markReadMutation = useMarkConversationRead();
     const isSending = sendMutation.isLoading;
+    const normalizedInput = input.trim();
+    const canSend = Boolean(conversationId) && normalizedInput.length > 0 && !isSending;
 
     const handleBack = () => navigate(currentView.params?.from || { type: 'immersive', id: 'messengerList' });
 
     const handleSend = () => {
-        if (input.trim() && !isSending) {
-            const text = input.trim();
-            sendMutation.mutate(
-                {
-                    text,
-                    idempotencyKey: createMessageIdempotencyKey(),
-                },
-                {
-                    onSuccess: () => setInput(''),
-                }
-            );
-        }
+        if (!canSend) return;
+        sendMutation.mutate(
+            {
+                text: normalizedInput,
+                idempotencyKey: createMessageIdempotencyKey(),
+            },
+            {
+                onSuccess: () => setInput(''),
+                onError: () =>
+                    showToast(
+                        lang === 'en'
+                            ? 'Failed to send message. Please retry.'
+                            : 'فشل إرسال الرسالة. حاول مرة أخرى.'
+                    ),
+            }
+        );
     };
 
     useEffect(() => {
@@ -72,13 +80,19 @@ const MessengerChatScreen: React.FC = () => {
 
     useEffect(() => {
         if (!conversationId || !messages || messages.length === 0) return;
-        if (markedReadRef.current && markedReadRef.current !== conversationId) {
-            markedReadRef.current = null;
-        }
-        if (markedReadRef.current === conversationId) return;
-        markedReadRef.current = conversationId;
-        markReadMutation.mutate(conversationId);
-    }, [conversationId, messages]);
+        const newestMessage = messages[messages.length - 1];
+        const marker = `${conversationId}:${newestMessage.id}`;
+        if (lastReadMarkerRef.current === marker) return;
+
+        lastReadMarkerRef.current = marker;
+        markReadMutation.mutate(conversationId, {
+            onError: () => {
+                if (lastReadMarkerRef.current === marker) {
+                    lastReadMarkerRef.current = null;
+                }
+            },
+        });
+    }, [conversationId, messages, markReadMutation]);
 
     return (
         <div className="h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-900">
@@ -90,7 +104,7 @@ const MessengerChatScreen: React.FC = () => {
                 </div>
             </header>
 
-            <main className="flex-grow pt-20 pb-16 overflow-y-auto">
+            <main className="flex-grow pt-20 pb-28 overflow-y-auto">
                 <div className="container mx-auto p-4 space-y-4">
                     {isLoading && <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}
                     {isError && <BilingualText className="text-center text-red-400">Error loading messages.</BilingualText>}
@@ -101,10 +115,15 @@ const MessengerChatScreen: React.FC = () => {
                 </div>
             </main>
 
-             <footer className="fixed bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10">
-                <div className="container mx-auto p-2">
-                    <div className="relative flex items-center gap-2">
-                        <Button variant="icon" className="flex-shrink-0 !text-slate-500"><PaperclipIcon className="h-6 w-6" /></Button>
+             <footer
+                className="fixed bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10"
+                style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+            >
+                <div className="container mx-auto px-2 pt-2">
+                    <div className="flex items-center gap-2">
+                        <Button variant="icon" className="flex-shrink-0 !text-slate-500" aria-label={lang === 'en' ? 'Attach file' : 'إرفاق ملف'}>
+                            <PaperclipIcon className="h-6 w-6" />
+                        </Button>
                         <input
                             type="text"
                             placeholder={lang === 'en' ? 'Type your message...' : 'اكتب رسالتك...'}
@@ -113,9 +132,15 @@ const MessengerChatScreen: React.FC = () => {
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             disabled={isSending}
-                            className="w-full bg-slate-200 dark:bg-slate-800 rounded-full py-3 pl-4 pr-12 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
+                            className="flex-1 bg-slate-200 dark:bg-slate-800 rounded-full py-3 px-4 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
                         />
-                        <Button variant="icon" className="absolute right-2 top-1/2 -translate-y-1/2 !text-accent" onClick={handleSend} disabled={isSending}>
+                        <Button
+                            variant="icon"
+                            className="flex-shrink-0 !text-accent"
+                            onClick={handleSend}
+                            disabled={!canSend}
+                            aria-label={lang === 'en' ? 'Send message' : 'إرسال الرسالة'}
+                        >
                             <SendIcon className="h-6 w-6" />
                         </Button>
                     </div>

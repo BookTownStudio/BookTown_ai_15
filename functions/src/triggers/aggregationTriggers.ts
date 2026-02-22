@@ -8,8 +8,10 @@ import {
 } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
-import { incrementGlobalMetric } from "../analytics/metricsUtils";
+import { ensureSystemMetricsInitialized } from "../analytics/initMetrics";
+import { incrementGlobalMetricInTransaction } from "../analytics/metricsUtils";
 import { logSystemEvent } from "../analytics/eventLogger";
+import { processMetricEventIdempotently } from "../analytics/metricIdempotency";
 
 const db = admin.firestore();
 const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
@@ -292,7 +294,10 @@ export const onUserFollowCreated = onDocumentCreated(
       { merge: true }
     );
 
-    await incrementGlobalMetric("totalFollows", 1);
+    await ensureSystemMetricsInitialized();
+    await processMetricEventIdempotently(event.id, async (tx) => {
+      incrementGlobalMetricInTransaction(tx, "totalFollows", 1);
+    });
     await safeLogSystemEvent({
       type: "follow_created",
       uid: event.params.followerId,
@@ -589,7 +594,10 @@ export const onBookReviewWritten = onDocumentWritten(
     }
 
     if (!beforeExists && afterExists) {
-      await incrementGlobalMetric("totalReviews", 1);
+      await ensureSystemMetricsInitialized();
+      await processMetricEventIdempotently(event.id, async (tx) => {
+        incrementGlobalMetricInTransaction(tx, "totalReviews", 1);
+      });
       if (afterUserId) {
         await safeLogSystemEvent({
           type: "review_created",
@@ -611,7 +619,10 @@ export const onBookReviewWritten = onDocumentWritten(
 export const onSystemUserCreated = onDocumentCreated(
   "users/{uid}",
   async (event) => {
-    await incrementGlobalMetric("totalUsers", 1);
+    await ensureSystemMetricsInitialized();
+    await processMetricEventIdempotently(event.id, async (tx) => {
+      incrementGlobalMetricInTransaction(tx, "totalUsers", 1);
+    });
     await safeLogSystemEvent({
       type: "user_created",
       uid: event.params.uid,
@@ -629,7 +640,10 @@ export const onSystemUserCreated = onDocumentCreated(
 export const onUserQuoteCreated = onDocumentCreated(
   "users/{uid}/quotes/{quoteId}",
   async (event) => {
-    await incrementGlobalMetric("totalQuotes", 1);
+    await ensureSystemMetricsInitialized();
+    await processMetricEventIdempotently(event.id, async (tx) => {
+      incrementGlobalMetricInTransaction(tx, "totalQuotes", 1);
+    });
     await safeLogSystemEvent({
       type: "quote_created",
       uid: event.params.uid,
@@ -647,7 +661,10 @@ export const onUserQuoteCreated = onDocumentCreated(
 export const onDeletionRequestCreatedMetrics = onDocumentCreated(
   "deletion_requests/{requestId}",
   async (event) => {
-    await incrementGlobalMetric("totalDeletionRequests", 1);
+    await ensureSystemMetricsInitialized();
+    await processMetricEventIdempotently(event.id, async (tx) => {
+      incrementGlobalMetricInTransaction(tx, "totalDeletionRequests", 1);
+    });
     const data = event.data?.data() as Record<string, unknown> | undefined;
     const actorUid =
       typeof data?.raisedByUid === "string" && data.raisedByUid.trim().length > 0
@@ -680,7 +697,10 @@ export const onDeletionRequestExecutedMetrics = onDocumentUpdated(
       typeof after?.status === "string" ? after.status.toLowerCase() : "";
 
     if (beforeStatus !== "executed" && afterStatus === "executed") {
-      await incrementGlobalMetric("executedDeletions", 1);
+      await ensureSystemMetricsInitialized();
+      await processMetricEventIdempotently(event.id, async (tx) => {
+        incrementGlobalMetricInTransaction(tx, "executedDeletions", 1);
+      });
       const actorUid =
         typeof after?.reviewedByUid === "string" && after.reviewedByUid.trim().length > 0
           ? after.reviewedByUid.trim()

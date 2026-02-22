@@ -6,6 +6,7 @@ import {
   buildSearchFieldsFromTextParts,
   normalizeSearchText,
 } from "../search/normalization";
+import { canonicalizeRoleClaim } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -1143,15 +1144,12 @@ export const runReviewStackReleaseGate = onCall({ cors: true }, async (request) 
   const callerUid = ensureUid(request.auth.uid, "auth.uid");
   const targetUid = ensureUid(request.data?.uid ?? callerUid, "uid");
   const expectedRevision = sanitizeString(request.data?.expectedRevision, 64);
-  const callerRole =
-    typeof request.auth.token?.role === "string"
-      ? request.auth.token.role
-      : "user";
+  const callerRole = canonicalizeRoleClaim(request.auth.token?.role);
   const isPrivileged =
     callerUid === targetUid ||
     callerRole === "superadmin" ||
-    callerRole === "superuser" ||
-    callerRole === "moderator";
+    callerRole === "moderator" ||
+    callerRole === "system";
 
   if (!isPrivileged) {
     throw new HttpsError(

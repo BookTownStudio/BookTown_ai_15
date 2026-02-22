@@ -1,8 +1,10 @@
 import { onDocumentCreated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
-import { incrementGlobalMetric } from "../analytics/metricsUtils";
+import { ensureSystemMetricsInitialized } from "../analytics/initMetrics";
+import { incrementGlobalMetricInTransaction } from "../analytics/metricsUtils";
 import { logSystemEvent } from "../analytics/eventLogger";
+import { processMetricEventIdempotently } from "../analytics/metricIdempotency";
 
 const db = admin.firestore();
 const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
@@ -49,7 +51,12 @@ export const onActivityPostCreated = onDocumentCreated("posts/{postId}", async (
             context: { target_owner_uid: null, visibility: 'public' },
             metadata: { source: 'web', ui_surface: 'social' }
         }),
-        incrementGlobalMetric("totalPosts", 1),
+        (async () => {
+            await ensureSystemMetricsInitialized();
+            await processMetricEventIdempotently(event.id, async (tx) => {
+                incrementGlobalMetricInTransaction(tx, "totalPosts", 1);
+            });
+        })(),
     ]);
 
     const authorId = typeof data.authorId === "string" ? data.authorId.trim() : "";

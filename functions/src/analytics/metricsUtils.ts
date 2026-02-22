@@ -30,7 +30,10 @@ export function getTodayDateKey(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export async function incrementGlobalMetric(field: string, value: number): Promise<void> {
+function resolveMetricIncrement(
+  field: string,
+  value: number
+): { metricField: GlobalMetricField; scopeDoc: "growth" | "engagement" | "moderation" } {
   if (!GLOBAL_METRIC_FIELDS.has(field as GlobalMetricField)) {
     throw new Error(`Unsupported global metric field: ${field}`);
   }
@@ -39,16 +42,47 @@ export async function incrementGlobalMetric(field: string, value: number): Promi
     throw new Error(`Invalid increment value for ${field}: ${value}`);
   }
 
-  await ensureSystemMetricsInitialized();
-
   const metricField = field as GlobalMetricField;
   const scopeDoc = FIELD_SCOPE_MAP[metricField];
-  const dateKey = getTodayDateKey();
-  const dailyBucketRef = db.collection("system_metrics_daily").doc(dateKey);
-  const patch = {
+  return { metricField, scopeDoc };
+}
+
+function buildIncrementPatch(metricField: GlobalMetricField, value: number) {
+  return {
     [metricField]: admin.firestore.FieldValue.increment(value),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
   };
+}
+
+export function incrementGlobalMetricInTransaction(
+  tx: FirebaseFirestore.Transaction,
+  field: string,
+  value: number
+): void {
+  const { metricField, scopeDoc } = resolveMetricIncrement(field, value);
+  const dateKey = getTodayDateKey();
+  const dailyBucketRef = db.collection("system_metrics_daily").doc(dateKey);
+  const patch = buildIncrementPatch(metricField, value);
+
+  tx.set(db.collection("system_metrics").doc("global"), patch, { merge: true });
+  tx.set(db.collection("system_metrics").doc(scopeDoc), patch, { merge: true });
+  tx.set(
+    dailyBucketRef,
+    {
+      dateKey,
+      ...patch,
+    },
+    { merge: true }
+  );
+}
+
+export async function incrementGlobalMetric(field: string, value: number): Promise<void> {
+  const { metricField, scopeDoc } = resolveMetricIncrement(field, value);
+  await ensureSystemMetricsInitialized();
+
+  const dateKey = getTodayDateKey();
+  const dailyBucketRef = db.collection("system_metrics_daily").doc(dateKey);
+  const patch = buildIncrementPatch(metricField, value);
 
   await Promise.all([
     db.collection("system_metrics").doc("global").set(patch, { merge: true }),

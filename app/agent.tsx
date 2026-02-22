@@ -75,7 +75,7 @@ const AgentChatScreen: React.FC = () => {
             </header>
 
             {/* Chat Area */}
-            <main className="flex-grow pt-20 pb-16 overflow-y-auto">
+            <main className="flex-grow pt-20 pb-28 overflow-y-auto">
                 <div className="container mx-auto p-4 md:p-8 h-full">
                     {isLoading && <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}
                     {isError && <BilingualText className="text-center text-red-400">Error loading chat.</BilingualText>}
@@ -100,9 +100,12 @@ const AgentChatScreen: React.FC = () => {
             </main>
             
             {/* Input bar */}
-             <footer className="fixed bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10">
-                <div className="container mx-auto p-2">
-                    <div className="relative flex items-center">
+             <footer
+                className="fixed bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10"
+                style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
+            >
+                <div className="container mx-auto px-2 pt-2">
+                    <div className="flex items-center gap-2">
                         <input
                             type="text"
                             placeholder={lang === 'en' ? 'Type your message...' : 'اكتب رسالتك...'}
@@ -111,9 +114,15 @@ const AgentChatScreen: React.FC = () => {
                             onChange={(e) => setInput(e.target.value)}
                             onKeyPress={handleKeyPress}
                             disabled={isSending}
-                            className="w-full bg-slate-200 dark:bg-slate-800 rounded-full py-3 pl-4 pr-12 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
+                            className="flex-1 bg-slate-200 dark:bg-slate-800 rounded-full py-3 px-4 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
                         />
-                        <Button variant="icon" className="absolute right-2 top-1/2 -translate-y-1/2 !text-accent" onClick={handleSend} disabled={isSending}>
+                        <Button
+                            variant="icon"
+                            className="flex-shrink-0 !text-accent"
+                            onClick={handleSend}
+                            disabled={isSending || !input.trim()}
+                            aria-label={lang === 'en' ? 'Send message' : 'إرسال الرسالة'}
+                        >
                             <SendIcon className="h-6 w-6" />
                         </Button>
                     </div>

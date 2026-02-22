@@ -5,3 +5,4 @@ export * from "./deleteRequests";
 export * from "./purgeDeletedUsers";
 export * from "./adminUserDiscovery";
 export * from "./analyticsMetrics";
+export * from "./systemEventsAdmin";

@@ -6,7 +6,7 @@ import {
 import { assertRoleAtLeast, type UserRole } from "./assertRole";
 import { logAdminAction } from "./auditLogger";
 
-type ControlMinimumRole = Exclude<UserRole, "user">;
+type ControlMinimumRole = UserRole;
 
 type CallablePayload = Record<string, unknown> | null | undefined;
 
@@ -32,14 +32,23 @@ export function withControlAuth<TData extends CallablePayload, TResult>(
 
     const result = await handler(caller);
 
-    await logAdminAction({
-      actorUid: uid,
-      actorRole: role,
-      actionType,
-      targetType: readStringField(caller.data, "targetType", "unknown"),
-      targetId: readStringField(caller.data, "targetId", "unknown"),
-      payloadSnapshot: caller.data,
-    });
+    try {
+      await logAdminAction({
+        actorUid: uid,
+        actorRole: role,
+        actionType,
+        targetType: readStringField(caller.data, "targetType", "unknown"),
+        targetId: readStringField(caller.data, "targetId", "unknown"),
+        payloadSnapshot: caller.data,
+      });
+    } catch (error) {
+      console.error("[CONTROL][AUDIT][WRITE_FAILED]", {
+        actionType,
+        actorUid: uid,
+        actorRole: role,
+        error,
+      });
+    }
 
     return result;
   });

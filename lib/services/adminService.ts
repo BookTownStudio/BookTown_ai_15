@@ -9,6 +9,10 @@ export type SystemMetricsDailyRangeParams = {
   to?: string;
   limit?: number;
 };
+export type RecentSystemEventsParams = {
+  limit?: number;
+  afterCursor?: string;
+};
 
 export type SystemMetricsBucket = {
   totalUsers: number;
@@ -30,6 +34,34 @@ export type SystemMetricsSnapshot = {
 
 export type SystemMetricsDailyEntry = SystemMetricsBucket & {
   dateKey: string;
+};
+
+export type AdminSystemEvent = {
+  id: string;
+  createdAt: string | null;
+  type: string;
+  uid: string;
+  entityId: string | null;
+};
+
+export type SystemEventsPage = {
+  events: AdminSystemEvent[];
+  nextCursor: string | null;
+  totalCountEstimate: number;
+};
+
+export type SystemHealthSnapshot = {
+  globalUpdatedAt: string | null;
+  latestDailyBucketDate: string | null;
+  totalEventsCount: number;
+  latestEventType: string | null;
+  latestEventCreatedAt: string | null;
+  lastPostCreatedAt: string | null;
+};
+
+export type FeedbackPipelineStub = {
+  connected: false;
+  message: string;
 };
 
 export type AdminUserSearchResult = {
@@ -64,6 +96,10 @@ export const adminServiceQueryKeys = {
       params.to ?? null,
       params.limit ?? null,
     ] as const,
+  systemEvents: (params: RecentSystemEventsParams = {}) =>
+    ['admin', 'events', 'recent', params.limit ?? 50] as const,
+  systemHealthSnapshot: ['admin', 'health', 'snapshot'] as const,
+  feedbackPipelineStub: ['admin', 'feedback', 'pipelineStub'] as const,
 };
 
 type DeletionRequestDoc = {
@@ -136,6 +172,28 @@ type GetSystemMetricsDailyRangePayload = {
 
 type GetSystemMetricsDailyRangeResponse = {
   days: unknown;
+};
+
+type GetRecentSystemEventsPayload = {
+  limit?: number;
+  afterCursor?: string;
+  targetType: 'system_events';
+  targetId: string;
+};
+
+type GetRecentSystemEventsResponse = {
+  events: unknown;
+  nextCursor: unknown;
+  totalCountEstimate: unknown;
+};
+
+type GetSystemHealthSnapshotPayload = {
+  targetType: 'system_health_snapshot';
+  targetId: 'system_health';
+};
+
+type GetSystemHealthSnapshotResponse = {
+  health: unknown;
 };
 
 let functionsInstance: Functions | null = null;
@@ -400,6 +458,143 @@ function normalizeDailyRangeParams(
   return { from, to, limit };
 }
 
+function mapSystemEventItem(item: unknown, index: number): AdminSystemEvent {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid system event at index ${index}.`);
+  }
+
+  const data = item as {
+    id?: unknown;
+    createdAt?: unknown;
+    type?: unknown;
+    uid?: unknown;
+    entityId?: unknown;
+  };
+
+  const context = `system event #${index}`;
+  return {
+    id: readRequiredString(data.id, 'id', context),
+    createdAt: toIsoString(data.createdAt, 'createdAt', context, false),
+    type: readRequiredString(data.type, 'type', context),
+    uid: readRequiredString(data.uid, 'uid', context),
+    entityId: readNullableString(data.entityId, 'entityId', context),
+  };
+}
+
+function parseRecentSystemEventsResponse(payload: unknown): SystemEventsPage {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid getRecentSystemEvents response.');
+  }
+
+  const response = payload as GetRecentSystemEventsResponse;
+  if (!Array.isArray(response.events)) {
+    throw new Error('[adminService] getRecentSystemEvents response missing events array.');
+  }
+
+  const totalCountEstimate = readRequiredFiniteNumber(
+    response.totalCountEstimate,
+    'totalCountEstimate',
+    'getRecentSystemEvents'
+  );
+  if (Math.trunc(totalCountEstimate) !== totalCountEstimate || totalCountEstimate < 0) {
+    throw new Error('[adminService] Invalid totalCountEstimate in getRecentSystemEvents.');
+  }
+
+  return {
+    events: response.events.map((item, index) => mapSystemEventItem(item, index)),
+    nextCursor: readNullableString(response.nextCursor, 'nextCursor', 'getRecentSystemEvents'),
+    totalCountEstimate,
+  };
+}
+
+function parseSystemHealthSnapshotResponse(payload: unknown): SystemHealthSnapshot {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid getSystemHealthSnapshot response.');
+  }
+
+  const response = payload as GetSystemHealthSnapshotResponse;
+  if (!response.health || typeof response.health !== 'object' || Array.isArray(response.health)) {
+    throw new Error('[adminService] getSystemHealthSnapshot response missing health object.');
+  }
+
+  const source = response.health as Record<string, unknown>;
+  const latestDailyBucketDateRaw = source.latestDailyBucketDate;
+  const latestDailyBucketDate = readNullableString(
+    latestDailyBucketDateRaw,
+    'latestDailyBucketDate',
+    'getSystemHealthSnapshot'
+  );
+  if (latestDailyBucketDate && !DATE_KEY_REGEX.test(latestDailyBucketDate)) {
+    throw new Error('[adminService] Invalid latestDailyBucketDate in getSystemHealthSnapshot.');
+  }
+
+  const totalEventsCount = readRequiredFiniteNumber(
+    source.totalEventsCount,
+    'totalEventsCount',
+    'getSystemHealthSnapshot'
+  );
+  if (Math.trunc(totalEventsCount) !== totalEventsCount || totalEventsCount < 0) {
+    throw new Error('[adminService] Invalid totalEventsCount in getSystemHealthSnapshot.');
+  }
+
+  return {
+    globalUpdatedAt: toIsoString(
+      source.globalUpdatedAt,
+      'globalUpdatedAt',
+      'getSystemHealthSnapshot',
+      false
+    ),
+    latestDailyBucketDate,
+    totalEventsCount,
+    latestEventType: readNullableString(
+      source.latestEventType,
+      'latestEventType',
+      'getSystemHealthSnapshot'
+    ),
+    latestEventCreatedAt: toIsoString(
+      source.latestEventCreatedAt,
+      'latestEventCreatedAt',
+      'getSystemHealthSnapshot',
+      false
+    ),
+    lastPostCreatedAt: toIsoString(
+      source.lastPostCreatedAt,
+      'lastPostCreatedAt',
+      'getSystemHealthSnapshot',
+      false
+    ),
+  };
+}
+
+function normalizeSystemEventsParams(
+  params: RecentSystemEventsParams | undefined
+): { limit: number; afterCursor?: string } {
+  const rawLimit = params?.limit;
+  const limit = rawLimit == null ? 50 : rawLimit;
+  if (!Number.isFinite(limit) || Math.trunc(limit) !== limit || limit <= 0 || limit > 200) {
+    throw new Error('[adminService] limit must be an integer between 1 and 200.');
+  }
+
+  const rawAfterCursor = params?.afterCursor;
+  if (rawAfterCursor == null) {
+    return { limit };
+  }
+
+  if (typeof rawAfterCursor !== 'string') {
+    throw new Error('[adminService] afterCursor must be a string.');
+  }
+
+  const afterCursor = rawAfterCursor.trim();
+  if (!afterCursor) {
+    throw new Error('[adminService] afterCursor cannot be empty.');
+  }
+  if (afterCursor.length > 200) {
+    throw new Error('[adminService] afterCursor exceeds maximum length.');
+  }
+
+  return { limit, afterCursor };
+}
+
 export const adminService = {
   async createDeletionRequest(targetUid: string, reason: string): Promise<void> {
     const normalizedTargetUid = targetUid.trim();
@@ -547,5 +742,50 @@ export const adminService = {
 
     const result = await fn(payload);
     return parseSystemMetricsDailyRangeResponse(result.data);
+  },
+
+  async getRecentSystemEvents(
+    params: RecentSystemEventsParams = {}
+  ): Promise<SystemEventsPage> {
+    const normalized = normalizeSystemEventsParams(params);
+    const targetId = `${normalized.afterCursor ?? 'origin'}:${normalized.limit}`;
+
+    const fn = httpsCallable<GetRecentSystemEventsPayload, GetRecentSystemEventsResponse>(
+      getFunctionsOnce(),
+      'getRecentSystemEvents'
+    );
+
+    const payload: GetRecentSystemEventsPayload = {
+      limit: normalized.limit,
+      targetType: 'system_events',
+      targetId,
+    };
+    if (normalized.afterCursor) {
+      payload.afterCursor = normalized.afterCursor;
+    }
+
+    const result = await fn(payload);
+    return parseRecentSystemEventsResponse(result.data);
+  },
+
+  async getSystemHealthSnapshot(): Promise<SystemHealthSnapshot> {
+    const fn = httpsCallable<GetSystemHealthSnapshotPayload, GetSystemHealthSnapshotResponse>(
+      getFunctionsOnce(),
+      'getSystemHealthSnapshot'
+    );
+
+    const result = await fn({
+      targetType: 'system_health_snapshot',
+      targetId: 'system_health',
+    });
+
+    return parseSystemHealthSnapshotResponse(result.data);
+  },
+
+  async getFeedbackPipelineStub(): Promise<FeedbackPipelineStub> {
+    return {
+      connected: false,
+      message: 'Feedback pipeline not connected yet.',
+    };
   },
 };
