@@ -49,16 +49,28 @@ function normalizeStructuredAttachment(
           : entityType === "shelf"
             ? readNonEmptyString(raw.shelfId)
             : readNonEmptyString(raw.venueId);
-  const entityId =
-    readNonEmptyString(raw.entityId) ||
-    idFromType ||
-    readNonEmptyString(raw.attachmentId) ||
-    readNonEmptyString(raw.id);
+  const explicitEntityId = readNonEmptyString(raw.entityId);
+  const structuredAttachmentId = readNonEmptyString(raw.attachmentId);
+  const entityId = explicitEntityId || idFromType;
+
+  if (!entityId && structuredAttachmentId) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Structured attachment "${entityType}" must include entityId (attachmentId is not accepted).`
+    );
+  }
 
   if (!entityId) {
     throw new HttpsError(
       "invalid-argument",
       `Structured attachment "${entityType}" must include entity id.`
+    );
+  }
+
+  if (structuredAttachmentId && structuredAttachmentId === entityId) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Structured attachment "${entityType}" has invalid id mapping (entityId cannot equal attachmentId).`
     );
   }
 
@@ -250,6 +262,7 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
       ? [
           {
             attachmentId: primaryStructured.entityId,
+            entityId: primaryStructured.entityId,
             type: primaryStructured.type,
             role: "primary",
             renderHint: "card",

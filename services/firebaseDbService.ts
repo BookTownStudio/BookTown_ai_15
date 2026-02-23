@@ -1945,11 +1945,11 @@ class FirebaseSocialService {
   ]);
 
   private static readonly STRUCTURED_ENTITY_ID_KEYS: Record<string, string[]> = {
-    book: ["entityId", "bookId", "attachmentId", "id"],
-    author: ["entityId", "authorId", "attachmentId", "id"],
-    quote: ["entityId", "quoteId", "attachmentId", "id"],
-    shelf: ["entityId", "shelfId", "attachmentId", "id"],
-    venue: ["entityId", "venueId", "attachmentId", "id"],
+    book: ["entityId", "bookId"],
+    author: ["entityId", "authorId"],
+    quote: ["entityId", "quoteId"],
+    shelf: ["entityId", "shelfId"],
+    venue: ["entityId", "venueId"],
   };
 
   private isGuestIdentity(uid: string): boolean {
@@ -1973,17 +1973,29 @@ class FirebaseSocialService {
     if (FirebaseSocialService.STRUCTURED_ENTITY_TYPES.has(normalizedType)) {
       const idKeys = FirebaseSocialService.STRUCTURED_ENTITY_ID_KEYS[normalizedType] || [
         "entityId",
-        "attachmentId",
-        "id",
       ];
 
       const entityId = idKeys
         .map((key) => (typeof attachment[key] === "string" ? attachment[key].trim() : ""))
         .find((value) => value.length > 0);
+      const structuredAttachmentId =
+        typeof attachment.attachmentId === "string" ? attachment.attachmentId.trim() : "";
+
+      if (!entityId && structuredAttachmentId) {
+        throw new Error(
+          `INVALID_ARGUMENT: Structured attachment "${normalizedType}" must include entityId (attachmentId is not accepted).`
+        );
+      }
 
       if (!entityId) {
         throw new Error(
           `INVALID_ARGUMENT: Structured attachment "${normalizedType}" requires entityId.`
+        );
+      }
+
+      if (structuredAttachmentId && structuredAttachmentId === entityId) {
+        throw new Error(
+          `INVALID_ARGUMENT: Structured attachment "${normalizedType}" has invalid id mapping (entityId cannot equal attachmentId).`
         );
       }
 
@@ -2112,25 +2124,59 @@ class FirebaseSocialService {
     const typeFromFields = this.normalizePrimaryEntityType(raw.primaryEntityType);
     const idFromFields =
       typeof raw.primaryEntityId === "string" ? raw.primaryEntityId.trim() : "";
+    const refs = Array.isArray(post.content?.attachments)
+      ? post.content.attachments
+      : [];
+
     if (typeFromFields && idFromFields) {
+      for (const ref of refs) {
+        const refType = this.normalizePrimaryEntityType(
+          (ref as { type?: unknown }).type
+        );
+        if (refType !== typeFromFields) {
+          continue;
+        }
+        const refEntityId =
+          typeof (ref as { entityId?: unknown }).entityId === "string"
+            ? (ref as { entityId: string }).entityId.trim()
+            : "";
+        const refAttachmentId =
+          typeof (ref as { attachmentId?: unknown }).attachmentId === "string"
+            ? (ref as { attachmentId: string }).attachmentId.trim()
+            : "";
+        const fieldLooksLikeAttachmentId =
+          idFromFields.startsWith("att_") ||
+          (refAttachmentId.length > 0 && idFromFields === refAttachmentId);
+
+        if (refEntityId && fieldLooksLikeAttachmentId) {
+          return {
+            type: typeFromFields,
+            id: refEntityId,
+          };
+        }
+      }
+
       return {
         type: typeFromFields,
         id: idFromFields,
       };
     }
 
-    const refs = Array.isArray(post.content?.attachments)
-      ? post.content.attachments
-      : [];
-
     for (const ref of refs) {
       const type = this.normalizePrimaryEntityType(
         (ref as { type?: unknown }).type
       );
+      const entityId =
+        typeof (ref as { entityId?: unknown }).entityId === "string"
+          ? (ref as { entityId: string }).entityId.trim()
+          : "";
       const id =
         typeof (ref as { attachmentId?: unknown }).attachmentId === "string"
           ? (ref as { attachmentId: string }).attachmentId.trim()
           : "";
+      if (type && entityId) {
+        return { type, id: entityId };
+      }
       if (type && id) {
         return { type, id };
       }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
@@ -212,6 +212,77 @@ const UnresolvedReferenceView: React.FC = () => (
     </div>
 );
 
+const readNonEmptyString = (value: unknown): string =>
+    typeof value === 'string' ? value.trim() : '';
+
+type StructuredNavigationTarget =
+    | { id: 'bookDetails'; params: { bookId: string } }
+    | { id: 'authorDetails'; params: { authorId: string } }
+    | { id: 'quoteDetails'; params: { quoteId: string; ownerId: string } }
+    | { id: 'shelfDetails'; params: { shelfId: string; ownerId?: string } }
+    | { id: 'venueDetails'; params: { venueId: string } };
+
+const resolveStructuredNavigationTarget = (
+    attachment: PostAttachment
+): StructuredNavigationTarget | null => {
+    if ('attachmentId' in attachment) {
+        const v1 = attachment as AttachmentV1;
+        if (v1.type === 'BOOK_REFERENCE') {
+            const bookId =
+                readNonEmptyString((v1.payload as any)?.entityId) ||
+                readNonEmptyString((v1.payload as any)?.bookId);
+            return bookId ? { id: 'bookDetails', params: { bookId } } : null;
+        }
+        if (v1.type === 'QUOTE_REFERENCE') {
+            const quoteId =
+                readNonEmptyString((v1.payload as any)?.entityId) ||
+                readNonEmptyString((v1.payload as any)?.quoteId);
+            const ownerId =
+                readNonEmptyString((v1.payload as any)?.ownerId) ||
+                readNonEmptyString((v1.payload as any)?.entityOwnerId) ||
+                readNonEmptyString((v1.payload as any)?.quoteOwnerId);
+            return quoteId && ownerId
+                ? { id: 'quoteDetails', params: { quoteId, ownerId } }
+                : null;
+        }
+        return null;
+    }
+
+    const legacy = attachment as any;
+    const entityId = readNonEmptyString(legacy.entityId);
+    if (legacy.type === 'book') {
+        const bookId = entityId || readNonEmptyString(legacy.bookId);
+        return bookId ? { id: 'bookDetails', params: { bookId } } : null;
+    }
+    if (legacy.type === 'author') {
+        const authorId = entityId || readNonEmptyString(legacy.authorId);
+        return authorId ? { id: 'authorDetails', params: { authorId } } : null;
+    }
+    if (legacy.type === 'quote') {
+        const quoteId = entityId || readNonEmptyString(legacy.quoteId);
+        const ownerId =
+            readNonEmptyString(legacy.entityOwnerId) ||
+            readNonEmptyString(legacy.quoteOwnerId) ||
+            readNonEmptyString(legacy.ownerId);
+        return quoteId && ownerId
+            ? { id: 'quoteDetails', params: { quoteId, ownerId } }
+            : null;
+    }
+    if (legacy.type === 'shelf') {
+        const shelfId = entityId || readNonEmptyString(legacy.shelfId);
+        const ownerId = readNonEmptyString(legacy.ownerId);
+        if (!shelfId) return null;
+        return ownerId
+            ? { id: 'shelfDetails', params: { shelfId, ownerId } }
+            : { id: 'shelfDetails', params: { shelfId } };
+    }
+    if (legacy.type === 'venue') {
+        const venueId = entityId || readNonEmptyString(legacy.venueId);
+        return venueId ? { id: 'venueDetails', params: { venueId } } : null;
+    }
+    return null;
+};
+
 const ReferenceView: React.FC<{
     type: 'BOOK' | 'QUOTE';
     id: string;
@@ -280,6 +351,7 @@ interface AttachmentRendererV1Props {
 
 const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment, surface, onRemove, autoLoad = true }) => {
     const { viewAttachment } = useAttachmentViewer();
+    const { navigate, currentView } = useNavigation();
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isInViewport, setIsInViewport] = useState(false);
     const containerRef = useRef<HTMLDivElement>(null);
@@ -342,10 +414,23 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     }, [isMenuOpen]);
 
     const handlePrimaryClick = (e: React.MouseEvent) => {
-        if (allowed.includes('open')) {
-            e.stopPropagation();
-            viewAttachment(attachment);
+        if (!allowed.includes('open')) return;
+        e.stopPropagation();
+
+        const target = resolveStructuredNavigationTarget(attachment);
+        if (target) {
+            navigate({
+                type: 'immersive',
+                id: target.id,
+                params: {
+                    ...target.params,
+                    from: currentView,
+                },
+            });
+            return;
         }
+
+        viewAttachment(attachment);
     };
 
     const toggleMenu = (e: React.MouseEvent) => {

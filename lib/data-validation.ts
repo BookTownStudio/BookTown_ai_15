@@ -44,9 +44,15 @@ export function normalizePost(data: any): Post {
     } else if (data.attachments && Array.isArray(data.attachments)) {
         attachments = data.attachments.map((a: any) => ({
             attachmentId: a.attachmentId || a.id || 'legacy',
+            ...(typeof a.entityId === 'string' && a.entityId.trim()
+                ? { entityId: a.entityId.trim() }
+                : {}),
+            ...(typeof a.entityOwnerId === 'string' && a.entityOwnerId.trim()
+                ? { entityOwnerId: a.entityOwnerId.trim() }
+                : {}),
             type: a.type || 'IMAGE',
-            role: 'primary',
-            renderHint: 'card'
+            role: a.role || 'primary',
+            renderHint: a.renderHint || 'card'
         }));
     }
 

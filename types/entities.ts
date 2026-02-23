@@ -411,6 +411,8 @@ export type RenderHint = 'inline' | 'card' | 'gallery' | 'embed';
 
 export interface AttachmentRef {
     attachmentId: string;
+    entityId?: string;
+    entityOwnerId?: string;
     type: AttachmentTypeV1 | string;
     role: AttachmentRole;
     renderHint: RenderHint;

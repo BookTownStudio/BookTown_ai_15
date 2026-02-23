@@ -254,10 +254,34 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
         const hydratedEntity =
             ((post as unknown as { hydratedEntity?: HydratedEntityPayload }).hydratedEntity ?? null);
-        
+        const hydratedType = normalizeStructuredType(hydratedEntity?.type);
+        const hydratedId = typeof hydratedEntity?.id === 'string' ? hydratedEntity.id.trim() : '';
+        const postPrimaryType = normalizeStructuredType(
+            (post as unknown as { primaryEntityType?: unknown }).primaryEntityType
+        );
+        const postPrimaryId =
+            typeof (post as unknown as { primaryEntityId?: unknown }).primaryEntityId === 'string'
+                ? ((post as unknown as { primaryEntityId: string }).primaryEntityId || '').trim()
+                : '';
+
         return refs.map(ref => {
+            const refAttachmentId =
+                typeof ref.attachmentId === 'string' ? ref.attachmentId.trim() : '';
+            const refType = normalizeStructuredType(ref.type);
+            const refEntityId =
+                typeof (ref as { entityId?: unknown }).entityId === 'string'
+                    ? ((ref as { entityId: string }).entityId || '').trim()
+                    : '';
+            const inferredFromHydrated =
+                refType && hydratedType === refType ? hydratedId : '';
+            const inferredFromPrimary =
+                refType && postPrimaryType === refType ? postPrimaryId : '';
+            const resolvedEntityId =
+                refEntityId || inferredFromHydrated || inferredFromPrimary || refAttachmentId;
+
             const hydrated = post?.attachments?.find(a => 
-                ('attachmentId' in a ? a.attachmentId : 'legacy') === ref.attachmentId
+                ('attachmentId' in a ? a.attachmentId : 'legacy') === refAttachmentId ||
+                ('attachmentId' in a ? a.attachmentId : 'legacy') === resolvedEntityId
             );
 
             if (hydrated) {
@@ -266,7 +290,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
             const structured = resolveAttachmentFromHydratedEntity(
                 ref.type,
-                ref.attachmentId,
+                resolvedEntityId,
                 hydratedEntity,
                 post?.authorId || ''
             );
@@ -274,7 +298,69 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 return structured;
             }
 
-            return { type: ref.type, attachmentId: ref.attachmentId };
+            if (refType && resolvedEntityId) {
+                if (refType === 'book') {
+                    return {
+                        type: 'book',
+                        bookId: resolvedEntityId,
+                        bookTitle: 'Book',
+                        bookAuthor: '',
+                        bookCover: '',
+                        bookRating: 0,
+                    };
+                }
+
+                if (refType === 'quote') {
+                    const ownerId =
+                        (typeof (ref as { entityOwnerId?: unknown }).entityOwnerId === 'string'
+                            ? (ref as { entityOwnerId: string }).entityOwnerId.trim()
+                            : '') ||
+                        (typeof (ref as { quoteOwnerId?: unknown }).quoteOwnerId === 'string'
+                            ? (ref as { quoteOwnerId: string }).quoteOwnerId.trim()
+                            : '') ||
+                        (typeof hydratedEntity?.ownerId === 'string' ? hydratedEntity.ownerId.trim() : '') ||
+                        (post?.authorId || '');
+                    return {
+                        type: 'quote',
+                        quoteId: resolvedEntityId,
+                        quoteOwnerId: ownerId,
+                    };
+                }
+
+                if (refType === 'author') {
+                    return {
+                        type: 'author',
+                        authorId: resolvedEntityId,
+                        authorName: '',
+                        authorPhoto: '',
+                    };
+                }
+
+                if (refType === 'shelf') {
+                    const ownerId =
+                        (typeof (ref as { ownerId?: unknown }).ownerId === 'string'
+                            ? (ref as { ownerId: string }).ownerId.trim()
+                            : '') ||
+                        (post?.authorId || '');
+                    return {
+                        type: 'shelf',
+                        shelfId: resolvedEntityId,
+                        ownerId,
+                        shelfName: '',
+                        bookCount: 0,
+                        covers: [],
+                    };
+                }
+
+                if (refType === 'venue') {
+                    return {
+                        type: 'venue',
+                        venueId: resolvedEntityId,
+                    };
+                }
+            }
+
+            return { type: ref.type, attachmentId: refAttachmentId || resolvedEntityId };
         }) as PostAttachment[];
     }, [post]);
 

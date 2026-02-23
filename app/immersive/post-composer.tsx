@@ -203,10 +203,26 @@ const PostComposerScreen: React.FC = () => {
         }}
       />
 
-      <SelectBookModal isOpen={modals.book} onClose={() => setModals(m => ({ ...m, book: false }))} onBookSelect={(b) => setAttachment({ type: 'book', bookId: b.id })} />
-      <AttachAuthorModal isOpen={modals.author} onClose={() => setModals(m => ({ ...m, author: false }))} onSelect={(a) => setAttachment({ type: 'author', authorId: a.id })} />
-      <AttachShelfModal isOpen={modals.shelf} onClose={() => setModals(m => ({ ...m, shelf: false }))} onSelect={(s) => setAttachment({ type: 'shelf', shelfId: s.id })} />
-      <AttachQuoteModal isOpen={modals.quote} onClose={() => setModals(m => ({ ...m, quote: false }))} onSelect={(q) => setAttachment({ type: 'quote', quoteId: q.id })} />
+      <SelectBookModal
+        isOpen={modals.book}
+        onClose={() => setModals(m => ({ ...m, book: false }))}
+        onBookSelect={(b) => setAttachment({ type: 'book', entityId: b.id, bookId: b.id } as PostAttachment)}
+      />
+      <AttachAuthorModal
+        isOpen={modals.author}
+        onClose={() => setModals(m => ({ ...m, author: false }))}
+        onSelect={(a) => setAttachment({ type: 'author', entityId: a.id, authorId: a.id } as PostAttachment)}
+      />
+      <AttachShelfModal
+        isOpen={modals.shelf}
+        onClose={() => setModals(m => ({ ...m, shelf: false }))}
+        onSelect={(s) => setAttachment({ type: 'shelf', entityId: s.id, shelfId: s.id } as PostAttachment)}
+      />
+      <AttachQuoteModal
+        isOpen={modals.quote}
+        onClose={() => setModals(m => ({ ...m, quote: false }))}
+        onSelect={(q) => setAttachment({ type: 'quote', entityId: q.id, quoteId: q.id, quoteOwnerId: q.ownerId } as PostAttachment)}
+      />
 
       <Modal isOpen={showCancelPrompt} onClose={() => setShowCancelPrompt(false)}>
         <Button onClick={() => navigate({ type: 'tab', id: 'social' })}>Discard</Button>
