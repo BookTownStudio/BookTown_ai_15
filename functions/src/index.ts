@@ -91,6 +91,8 @@ import {
   markDirectConversationRead as markDirectConversationReadRaw,
 } from "./messaging/directMessages";
 import { api as apiRaw } from "./api";
+import { sitemap as sitemapRaw } from "./ssr/sitemap";
+import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { canonicalizeRoleClaim } from "./shared/auth";
 
@@ -568,6 +570,10 @@ export {
 } from "./control/systemEventsAdmin";
 export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
 export { exportDailyAnalyticsSnapshot } from "./analytics/dailyExport";
+
+// SSR
+export const sitemap = sitemapRaw;
+export const ssrPublicPage = ssrPublicPageRaw;
 
 // Triggers
 export * from "./triggers/aggregationTriggers";

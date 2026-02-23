@@ -59,11 +59,27 @@
     ],
     "rewrites": [
       {
+        "source": "/sitemap.xml",
+        "function": "sitemap"
+      },
+      {
         "source": "/api/**",
         "run": {
           "serviceId": "api",
           "region": "us-central1"
         }
+      },
+      {
+        "source": "/book/**",
+        "function": "ssrPublicPage"
+      },
+      {
+        "source": "/author/**",
+        "function": "ssrPublicPage"
+      },
+      {
+        "source": "/post/**",
+        "function": "ssrPublicPage"
       },
       {
         "source": "/assets/**",
