@@ -317,8 +317,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     const shouldResolveSecureUrl =
         Boolean(isInViewport && v1) &&
         !isReferenceV1 &&
-        v1?.type !== 'LINK' &&
-        surface !== 'feed';
+        v1?.type !== 'LINK';
     const { data: secureUrl, isLoading: isResolvingUrl, isError: isUrlError } = useAttachmentUrl(
         shouldResolveSecureUrl ? v1!.attachmentId : undefined,
         surface

@@ -38,7 +38,7 @@ export const useAttachmentUrl = (
 
                     const result = await getUrlFn({
                         attachmentId,
-                        surface
+                        surface: 'read'
                     });
 
                     clearTimeout(timeoutId);

@@ -11,9 +11,8 @@ const storage = admin.storage();
 type ParentType = "posts" | "projects" | "drafts";
 
 function assertPathOwnership(uid: string, storagePath: string): void {
-  const ownsUsersPath = storagePath.startsWith(`users/${uid}/attachments/`);
   const ownsAttachmentPath = storagePath.startsWith(`attachments/${uid}/`);
-  if (!ownsUsersPath && !ownsAttachmentPath) {
+  if (!ownsAttachmentPath) {
     throw new HttpsError("permission-denied", "Invalid storage ownership.");
   }
 }

@@ -43,6 +43,39 @@ type UploadIntentResponse = {
   type: AttachmentTypeV1;
 };
 
+const DIRECT_UPLOAD_GUARD_ERROR = 'DIRECT_STORAGE_UPLOAD_DISABLED_USE_SIGNED_INTENT';
+
+const isLegacyAttachmentPath = (value: string): boolean => {
+  const normalized = value.trim();
+  return normalized.startsWith('users/') && normalized.includes('/attachments/');
+};
+
+const assertNoLegacyAttachmentPath = (value: string): void => {
+  if (isLegacyAttachmentPath(value)) {
+    throw new Error(DIRECT_UPLOAD_GUARD_ERROR);
+  }
+};
+
+const extractPathFromLegacyStorageUrl = (uploadUrl: string): string => {
+  try {
+    const parsed = new URL(uploadUrl);
+    if (!parsed.hostname.includes('firebasestorage.googleapis.com')) {
+      return '';
+    }
+    const encodedName = parsed.searchParams.get('name');
+    if (!encodedName) {
+      return '';
+    }
+    try {
+      return decodeURIComponent(encodedName);
+    } catch {
+      return encodedName;
+    }
+  } catch {
+    return '';
+  }
+};
+
 const unwrapCallableData = <T>(raw: unknown): T => {
   if (raw && typeof raw === 'object' && 'success' in (raw as Record<string, unknown>)) {
     const envelope = raw as CallableEnvelope<T> & {
@@ -69,7 +102,9 @@ export class FirebaseUploadService implements UploadDataService {
     parentType: string,
     parentId: string,
     type: AttachmentTypeV1,
-    fileName: string
+    fileName: string,
+    contentType?: string,
+    size?: number
   ) {
     if (!uid) throw new Error('UNAUTHENTICATED');
     if (type !== 'IMAGE' && type !== 'DOCUMENT') {
@@ -82,12 +117,19 @@ export class FirebaseUploadService implements UploadDataService {
       parentType,
       parentId,
       type,
-      fileName
+      fileName,
+      ...(contentType ? { contentType } : {}),
+      ...(typeof size === 'number' ? { size } : {})
     });
 
     const intent = unwrapCallableData<UploadIntentResponse>(result.data);
     if (!intent?.attachmentId || !intent?.uploadUrl || !intent?.storagePath || !intent?.token) {
       throw new Error('Invalid upload intent response.');
+    }
+    assertNoLegacyAttachmentPath(intent.storagePath);
+    const legacyPathFromUrl = extractPathFromLegacyStorageUrl(intent.uploadUrl);
+    if (legacyPathFromUrl) {
+      assertNoLegacyAttachmentPath(legacyPathFromUrl);
     }
 
     pendingUploads.set(intent.attachmentId, {
@@ -128,6 +170,11 @@ export class FirebaseUploadService implements UploadDataService {
     const pending = Array.from(pendingUploads.values()).find((entry) => entry.uploadUrl === path);
     if (!pending) {
       throw new Error('Upload intent not found.');
+    }
+    assertNoLegacyAttachmentPath(pending.storagePath);
+    const legacyPathFromUrl = extractPathFromLegacyStorageUrl(path);
+    if (legacyPathFromUrl) {
+      assertNoLegacyAttachmentPath(legacyPathFromUrl);
     }
 
     const mimeType = (file as File).type || 'application/octet-stream';

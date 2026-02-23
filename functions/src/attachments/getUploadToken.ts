@@ -33,9 +33,8 @@ function inferFormat(fileName: string): string {
 }
 
 function assertPathOwnership(uid: string, storagePath: string): void {
-  const ownsUsersPath = storagePath.startsWith(`users/${uid}/attachments/`);
   const ownsAttachmentPath = storagePath.startsWith(`attachments/${uid}/`);
-  if (!ownsUsersPath && !ownsAttachmentPath) {
+  if (!ownsAttachmentPath) {
     throw new HttpsError("permission-denied", "Invalid storage ownership.");
   }
 }
@@ -104,6 +103,8 @@ export const getUploadToken = onCall({ cors: true }, async (request) => {
   const rawParentId = String(request.data?.parentId ?? "").trim();
   const rawType = String(request.data?.type ?? "").trim().toUpperCase();
   const rawFileName = String(request.data?.fileName ?? "").trim();
+  const rawContentType = String(request.data?.contentType ?? "").trim().toLowerCase();
+  const rawSize = Number(request.data?.size ?? 0);
 
   if (
     !rawParentType ||
@@ -137,7 +138,7 @@ export const getUploadToken = onCall({ cors: true }, async (request) => {
   let maxBytes = IMAGE_MAX_BYTES;
 
   if (type === "IMAGE") {
-    storagePath = `users/${uid}/attachments/${attachmentId}/${fileName}`;
+    storagePath = `attachments/${uid}/${attachmentId}/${fileName}`;
     expectedMimePrefix = "image/";
     maxBytes = IMAGE_MAX_BYTES;
   } else {
@@ -150,6 +151,23 @@ export const getUploadToken = onCall({ cors: true }, async (request) => {
     storagePath = `attachments/${uid}/${attachmentId}.pdf`;
     expectedMimePrefix = "application/pdf";
     maxBytes = DOCUMENT_MAX_BYTES;
+  }
+
+  if (!Number.isFinite(rawSize) || rawSize <= 0) {
+    throw new HttpsError("invalid-argument", "Invalid file size.");
+  }
+  if (rawSize > maxBytes) {
+    throw new HttpsError("invalid-argument", "File exceeds maximum allowed size.");
+  }
+
+  if (!rawContentType) {
+    throw new HttpsError("invalid-argument", "Missing contentType.");
+  }
+  if (type === "IMAGE" && !rawContentType.startsWith("image/")) {
+    throw new HttpsError("invalid-argument", "Only image uploads are allowed for IMAGE type.");
+  }
+  if (type === "DOCUMENT" && rawContentType !== "application/pdf") {
+    throw new HttpsError("invalid-argument", "Only PDF uploads are allowed for DOCUMENT type.");
   }
 
   assertPathOwnership(uid, storagePath);
@@ -176,6 +194,8 @@ export const getUploadToken = onCall({ cors: true }, async (request) => {
     storagePath,
     expectedMimePrefix,
     maxBytes,
+    declaredContentType: rawContentType,
+    declaredSize: rawSize,
     status: "issued",
     expiresAt: Timestamp.fromMillis(expiresAtMs),
     createdAt: now,

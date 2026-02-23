@@ -20,6 +20,10 @@ export class FirebaseStorageAdapter implements StorageAdapter {
     file: Blob,
     onProgress?: (progress: number) => void
   ): Promise<string> {
+    if (path.startsWith("users/") && path.includes("/attachments/")) {
+      throw new Error("DIRECT_STORAGE_UPLOAD_DISABLED_USE_SIGNED_INTENT");
+    }
+
     const storage = getFirebaseStorage();
     const storageRef = ref(storage, path);
     const uploadTask = uploadBytesResumable(storageRef, file);

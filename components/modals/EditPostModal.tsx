@@ -1,9 +1,9 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import Modal from '../ui/Modal.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import Button from '../ui/Button.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { Post, PostVisibilityScope, PostAttachment } from '../../types/entities.ts';
+import { Post, PostVisibilityScope } from '../../types/entities.ts';
 import { useEditPost } from '../../lib/hooks/useEditPost.ts';
 import { useToast } from '../../store/toast.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
@@ -12,9 +12,6 @@ import { GlobeIcon } from '../icons/GlobeIcon.tsx';
 import { UsersIcon } from '../icons/UsersIcon.tsx';
 import { EyeOffIcon } from '../icons/EyeOffIcon.tsx';
 import { ClockIcon } from '../icons/ClockIcon.tsx';
-import { AttachmentListV1 } from '../content/AttachmentRendererV1.tsx';
-import { MediaIcon } from '../icons/MediaIcon.tsx';
-import { useAttachmentUpload } from '../../lib/hooks/useAttachmentUpload.ts';
 
 interface EditPostModalProps {
     post: Post;
@@ -25,21 +22,16 @@ interface EditPostModalProps {
 const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) => {
     const { lang, isRTL } = useI18n();
     const { showToast } = useToast();
-    const fileInputRef = useRef<HTMLInputElement>(null);
     
     // Core State - Restricted to spec-allowed fields
     const [text, setText] = useState(post.content.text || '');
     const [visibility, setVisibility] = useState<PostVisibilityScope>(post.visibility);
-    const [attachments, setAttachments] = useState<PostAttachment[]>(post.attachments || []);
     
     const { mutate: editPost, isLoading } = useEditPost();
-    const { upload, isUploading } = useAttachmentUpload();
 
     const isPublished = post.status === 'published';
     const [timeLeft, setTimeLeft] = useState<number | null>(null);
-
-    // POST_EDITING_POLICY_V1: Interaction check for attachment locking
-    const hasInteractions = (post.counters?.likes > 0) || (post.counters?.comments > 0) || (post.counters?.reposts > 0);
+    const hasCanonicalAttachments = (post.content?.attachments?.length || 0) > 0;
 
     // POST_EDITING_POLICY_V1: 15-minute (900s) grace period tracking
     useEffect(() => {
@@ -63,7 +55,7 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
 
     const handleSave = () => {
         const trimmed = text.trim();
-        if (!trimmed && attachments.length === 0) {
+        if (!trimmed && !hasCanonicalAttachments) {
             showToast(lang === 'en' ? "Your post needs some content." : "منشورك يحتاج لمحتوى.");
             return;
         }
@@ -74,11 +66,6 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
             visibility: visibility
         };
 
-        // Only send attachments if they were modified AND allowed
-        if (!hasInteractions && JSON.stringify(attachments) !== JSON.stringify(post.attachments)) {
-            editPayload.attachments = attachments;
-        }
-
         editPost(editPayload, {
             onSuccess: () => {
                 showToast(lang === 'en' ? "Post updated!" : "تم تحديث المنشور!");
@@ -88,29 +75,6 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
                 showToast(err.message || (lang === 'en' ? "Failed to update post." : "فشل تحديث المنشور."));
             }
         });
-    };
-
-    const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file || hasInteractions) return;
-
-        const att = await upload({
-            file,
-            type: 'IMAGE',
-            parentId: post.id,
-            parentType: 'posts'
-        });
-
-        if (att) {
-            setAttachments(prev => [...prev, att]);
-        }
-    };
-
-    const handleRemoveAttachment = (id: string) => {
-        if (hasInteractions) return;
-        setAttachments(prev => prev.filter(att => 
-            'attachmentId' in att ? att.attachmentId !== id : (att as any).id !== id
-        ));
     };
 
     const visibilityOptions: { id: PostVisibilityScope; en: string; ar: string; icon: React.FC<any> }[] = [
@@ -129,9 +93,8 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
     const hasChanges = useMemo(() => {
         const textChanged = text !== post.content.text;
         const visChanged = visibility !== post.visibility;
-        const attChanged = !hasInteractions && JSON.stringify(attachments) !== JSON.stringify(post.attachments);
-        return textChanged || visChanged || attChanged;
-    }, [text, visibility, attachments, post, hasInteractions]);
+        return textChanged || visChanged;
+    }, [text, visibility, post]);
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -170,51 +133,20 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
                         />
                     </div>
 
-                    {/* ATTACHMENT_EDIT_POLICY_V1: Conditional UI */}
+                    {/* ATTACHMENT_EDIT_POLICY_V1: Hard locked during beta */}
                     <div>
-                        <div className="flex justify-between items-center mb-2 px-1">
+                        <div className="mb-2 px-1">
                             <BilingualText role="Caption" className="!text-slate-400 uppercase tracking-widest text-[10px] font-bold">
                                 {lang === 'en' ? 'Attachments' : 'المرفقات'}
                             </BilingualText>
-                            {!hasInteractions && !isLoading && (
-                                <button 
-                                    onClick={() => fileInputRef.current?.click()}
-                                    className="text-[10px] font-bold text-accent uppercase hover:underline"
-                                >
-                                    {lang === 'en' ? '+ Add Image' : '+ إضافة صورة'}
-                                </button>
-                            )}
-                            <input type="file" ref={fileInputRef} onChange={handleImageUpload} accept="image/*" className="hidden" />
                         </div>
-                        
-                        {hasInteractions && (
-                            <div className="px-3 py-2 bg-amber-500/10 border border-amber-500/20 rounded-lg mb-3">
-                                <p className="text-[10px] text-amber-500 font-bold uppercase tracking-tight">
-                                    {lang === 'en' 
-                                        ? "Attachments are locked because this post has interactions." 
-                                        : "المرفقات مغلقة لأن هذا المنشور لديه تفاعلات."}
-                                </p>
-                            </div>
-                        )}
 
-                        <div className={hasInteractions ? "opacity-60 grayscale-[0.5]" : ""}>
-                            {isUploading && (
-                                <div className="flex items-center gap-2 text-[10px] text-accent font-bold mb-2">
-                                    <LoadingSpinner className="!h-3 !w-3" />
-                                    {lang === 'en' ? 'Uploading attachment...' : 'جاري رفع المرفق...'}
-                                </div>
-                            )}
-                            <AttachmentListV1 
-                                attachments={attachments} 
-                                surface={hasInteractions ? "feed" : "write"} 
-                                onRemove={hasInteractions ? undefined : handleRemoveAttachment}
-                            />
-                            {attachments.length === 0 && (
-                                <div className="p-8 border border-dashed border-white/10 rounded-xl flex flex-col items-center justify-center text-slate-500 opacity-40">
-                                    <MediaIcon className="h-8 w-8 mb-2" />
-                                    <span className="text-xs">{lang === 'en' ? 'No media attached' : 'لا توجد وسائط'}</span>
-                                </div>
-                            )}
+                        <div className="px-3 py-2 bg-slate-500/10 border border-slate-500/20 rounded-lg mb-3">
+                            <p className="text-[10px] text-slate-500 font-bold uppercase tracking-tight">
+                                {lang === 'en'
+                                    ? 'Attachments cannot be edited after publishing (beta limitation).'
+                                    : 'لا يمكن تعديل المرفقات بعد النشر (قيود النسخة التجريبية).'}
+                            </p>
                         </div>
                     </div>
 
@@ -250,7 +182,7 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
                     <Button 
                         variant="primary" 
                         onClick={handleSave} 
-                        disabled={isLoading || !hasChanges || isUploading}
+                        disabled={isLoading || !hasChanges}
                         className="!px-8"
                     >
                         {isLoading ? <LoadingSpinner className="!h-5 !w-5" /> : (lang === 'en' ? 'Update Post' : 'تحديث المنشور')}

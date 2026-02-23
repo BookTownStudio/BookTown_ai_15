@@ -48,7 +48,9 @@ export const useAttachmentUpload = () => {
                 parentType,
                 parentId,
                 type,
-                file.name
+                file.name,
+                file.type,
+                file.size
             );
 
             // STEP 4: Client uploads directly to Storage using the signed authority

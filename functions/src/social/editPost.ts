@@ -9,17 +9,57 @@ import {
 /**
  * editSocialPost
  * Authority: POST_EDITING_POLICY_V1 (LOCKED)
- * Enforces: text and visibility edits, conditional attachment edits, versioned history.
+ * Enforces: text and visibility edits only, immutable attachment/entity fields, versioned history.
  */
 export const editSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId, text, visibility, attachments: clientAttachments } = request.data;
+    const payload =
+        request.data && typeof request.data === "object"
+            ? (request.data as Record<string, unknown>)
+            : {};
+    const postId = typeof payload.postId === "string" ? payload.postId.trim() : "";
+    const text =
+        typeof payload.text === "string"
+            ? payload.text
+            : payload.content &&
+                typeof payload.content === "object" &&
+                typeof (payload.content as Record<string, unknown>).text === "string"
+                ? ((payload.content as Record<string, unknown>).text as string)
+                : undefined;
+    const visibility =
+        typeof payload.visibility === "string" ? payload.visibility.trim() : undefined;
     const uid = caller.uid;
     const isAdmin = getRoleFromClaims(caller) === "superadmin";
 
     if (!postId) {
         throw new HttpsError("invalid-argument", "postId required.");
+    }
+
+    const hasOwn = (obj: Record<string, unknown>, key: string): boolean =>
+        Object.prototype.hasOwnProperty.call(obj, key);
+    const blockedFields: string[] = [];
+    if (hasOwn(payload, "attachments")) blockedFields.push("attachments");
+    if (hasOwn(payload, "primaryEntityType")) blockedFields.push("primaryEntityType");
+    if (hasOwn(payload, "primaryEntityId")) blockedFields.push("primaryEntityId");
+    if (payload.content && typeof payload.content === "object") {
+        const content = payload.content as Record<string, unknown>;
+        if (hasOwn(content, "attachments")) blockedFields.push("content.attachments");
+        if (hasOwn(content, "primaryEntityType")) blockedFields.push("content.primaryEntityType");
+        if (hasOwn(content, "primaryEntityId")) blockedFields.push("content.primaryEntityId");
+    }
+    if (blockedFields.length > 0) {
+        throw new HttpsError("failed-precondition", "ATTACHMENT_EDIT_NOT_ALLOWED", {
+            errorCode: "ATTACHMENT_EDIT_NOT_ALLOWED",
+            blockedFields
+        });
+    }
+
+    if (
+        visibility !== undefined &&
+        !["public", "followers", "private", "restricted"].includes(visibility)
+    ) {
+        throw new HttpsError("invalid-argument", "Invalid visibility.");
     }
 
     const db = admin.firestore();
@@ -41,13 +81,6 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
             // POST_ELLIPSIS_MENU_CONTRACT_V1: blocked_when: post.status !== 'published'
             if (post.status !== 'published') {
                 throw new HttpsError("failed-precondition", "POST_EDIT_BLOCKED: Edits only allowed on published posts.");
-            }
-
-            // 2. Conditional Attachment Enforcement (POST_EDITING_POLICY_V1)
-            const hasInteractions = (post.counters?.likes > 0) || (post.counters?.comments > 0) || (post.counters?.reposts > 0);
-            
-            if (clientAttachments !== undefined && hasInteractions) {
-                throw new HttpsError("failed-precondition", "ATTACHMENT_EDIT_LOCKED: Cannot edit attachments after post has interactions.");
             }
 
             const now = admin.firestore.Timestamp.now();
@@ -84,17 +117,6 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
 
             if (visibility !== undefined && visibility !== post.visibility) {
                 updates['visibility'] = visibility;
-            }
-
-            if (clientAttachments !== undefined && !hasInteractions) {
-                updates['content.attachments'] = clientAttachments.map((a: any, index: number) => ({
-                    attachmentId: a.attachmentId || a.id || 'missing_id',
-                    type: a.type || 'IMAGE',
-                    role: index === 0 ? 'primary' : 'secondary',
-                    renderHint: 'card'
-                }));
-                updates['flags.hasAttachments'] = clientAttachments.length > 0;
-                updates['flags.edited'] = true;
             }
 
             transaction.update(postRef, updates);

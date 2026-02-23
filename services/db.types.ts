@@ -92,7 +92,9 @@ export interface UploadDataService {
     parentType: string,
     parentId: string,
     type: string,
-    fileName: string
+    fileName: string,
+    contentType?: string,
+    size?: number
   ): Promise<{ token: string; uploadUrl: string; attachmentId: string }>;
 
   uploadImage(
