@@ -114,13 +114,59 @@ const PostComposerScreen: React.FC = () => {
       return;
     }
 
+    const structuredTypes = new Set(['book', 'author', 'quote', 'shelf', 'venue']);
+    const structuredAttachment =
+      attachment &&
+      typeof (attachment as { type?: unknown }).type === 'string' &&
+      structuredTypes.has(String((attachment as { type?: unknown }).type).toLowerCase())
+        ? (attachment as { type: string; entityId?: string; bookId?: string; authorId?: string; quoteId?: string; shelfId?: string; venueId?: string })
+        : null;
+    const structuredEntityId = structuredAttachment
+      ? (typeof structuredAttachment.entityId === 'string' && structuredAttachment.entityId.trim()) ||
+        (typeof structuredAttachment.bookId === 'string' && structuredAttachment.bookId.trim()) ||
+        (typeof structuredAttachment.authorId === 'string' && structuredAttachment.authorId.trim()) ||
+        (typeof structuredAttachment.quoteId === 'string' && structuredAttachment.quoteId.trim()) ||
+        (typeof structuredAttachment.shelfId === 'string' && structuredAttachment.shelfId.trim()) ||
+        (typeof structuredAttachment.venueId === 'string' && structuredAttachment.venueId.trim()) ||
+        ''
+      : '';
+
+    if (structuredAttachment && !structuredEntityId) {
+      console.error('[POST_COMPOSER][STRUCTURED_ATTACHMENT_INVALID]', {
+        type: structuredAttachment.type,
+        attachment,
+      });
+      showToast(lang === 'en' ? 'Invalid attachment' : 'مرفق غير صالح');
+      return;
+    }
+
     createPost({
       content: { text: text.trim() },
       attachments: attachment ? [attachment] : [],
       visibility,
       publishToken: crypto.randomUUID()
     }, {
-      onSuccess: () => {
+      onSuccess: (createdPost: any) => {
+        if (structuredAttachment) {
+          const persistedType =
+            typeof createdPost?.primaryEntityType === 'string'
+              ? createdPost.primaryEntityType.trim().toLowerCase()
+              : '';
+          const persistedId =
+            typeof createdPost?.primaryEntityId === 'string'
+              ? createdPost.primaryEntityId.trim()
+              : '';
+          const expectedType = structuredAttachment.type.trim().toLowerCase();
+          if (persistedType !== expectedType || persistedId !== structuredEntityId) {
+            console.error('[POST_COMPOSER][STRUCTURED_ATTACHMENT_DROPPED]', {
+              expectedType,
+              expectedId: structuredEntityId,
+              persistedType,
+              persistedId,
+              postId: createdPost?.id || null,
+            });
+          }
+        }
         showToast(lang === 'en' ? 'Published' : 'تم النشر');
         navigate(currentView.params?.from || { type: 'tab', id: 'social' });
       }

@@ -33,8 +33,36 @@ interface NavigationProviderProps {
     children: ReactNode;
 }
 
+function resolveInitialViewFromPath(): View {
+    if (typeof window === 'undefined') {
+        return { type: 'tab', id: 'home' };
+    }
+
+    const rawPath = window.location.pathname || '/';
+    const normalizedPath = rawPath.replace(/\/+$/, '') || '/';
+    const segments = normalizedPath.split('/').filter(Boolean);
+
+    if (segments.length >= 2 && segments[0] === 'shelf') {
+        let shelfId = '';
+        try {
+            shelfId = decodeURIComponent(segments[1] || '').trim();
+        } catch {
+            shelfId = (segments[1] || '').trim();
+        }
+        if (shelfId.length > 0) {
+            return {
+                type: 'immersive',
+                id: 'shelfDetails',
+                params: { shelfId },
+            };
+        }
+    }
+
+    return { type: 'tab', id: 'home' };
+}
+
 export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children }) => {
-    const [currentView, setCurrentView] = useState<View>({ type: 'tab', id: 'home' });
+    const [currentView, setCurrentView] = useState<View>(() => resolveInitialViewFromPath());
     const [isDrawerOpen, setDrawerOpen] = useState(false);
     const [resetTokens, setResetTokens] = useState(initialResetTokens);
     const [scrollToPost, setScrollToPost] = useState<string | null>(null);

@@ -17,6 +17,10 @@ interface AttachShelfModalProps {
 const AttachShelfModal: React.FC<AttachShelfModalProps> = ({ isOpen, onClose, onSelect }) => {
     const { lang } = useI18n();
     const { data: shelves, isLoading } = useUserShelves();
+    const handleSelectShelf = (shelf: Shelf) => {
+        onSelect(shelf);
+        onClose();
+    };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -31,8 +35,9 @@ const AttachShelfModal: React.FC<AttachShelfModalProps> = ({ isOpen, onClose, on
                     {!isLoading && shelves && shelves.length > 0 ? (
                         shelves.map(shelf => (
                             <button
+                                type="button"
                                 key={shelf.id}
-                                onClick={() => onSelect(shelf)}
+                                onClick={() => handleSelectShelf(shelf)}
                                 className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-black/5 dark:border-white/5"
                             >
                                 <div className="w-10 h-10 rounded bg-slate-200 dark:bg-slate-700 flex items-center justify-center">

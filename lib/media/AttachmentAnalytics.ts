@@ -36,6 +36,12 @@ interface EventPayload {
 let eventQueue: EventPayload[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
+const readNonEmptyString = (value: unknown): string =>
+    typeof value === 'string' ? value.trim() : '';
+
+const readFiniteNumber = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) ? value : null;
+
 const flush = async () => {
     if (eventQueue.length === 0) return;
 
@@ -75,16 +81,28 @@ export const AttachmentAnalytics = {
         // 2. Data Resolution
         const isV1 = 'attachmentId' in attachment;
         const v1 = isV1 ? (attachment as AttachmentV1) : null;
+        const metadata =
+            isV1 && v1?.metadata && typeof v1.metadata === 'object'
+                ? (v1.metadata as Record<string, unknown>)
+                : {};
+        const uploaderRaw = metadata.uploader;
+        const uploader =
+            uploaderRaw && typeof uploaderRaw === 'object'
+                ? (uploaderRaw as Record<string, unknown>)
+                : {};
 
         const payload: EventPayload = {
             event,
-            attachmentId: isV1 ? v1!.attachmentId : 'legacy',
+            attachmentId:
+                isV1 && typeof v1?.attachmentId === 'string' && v1.attachmentId.trim().length > 0
+                    ? v1.attachmentId
+                    : 'legacy',
             attachmentType: isV1
-                ? v1!.type
+                ? (typeof v1?.type === 'string' && v1.type.trim().length > 0 ? v1.type : 'UNKNOWN')
                 : (attachment as any).type?.toUpperCase() || 'UNKNOWN',
             surface,
-            ownerUid: isV1 ? v1!.metadata.uploader.uid : undefined,
-            fileSizeBytes: isV1 ? v1!.metadata.size : 0,
+            ownerUid: isV1 ? (readNonEmptyString(uploader.uid) || undefined) : undefined,
+            fileSizeBytes: isV1 ? (readFiniteNumber(metadata.size) ?? 0) : 0,
             renderMode: options.renderMode
         };
 

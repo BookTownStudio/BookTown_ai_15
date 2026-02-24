@@ -7,18 +7,24 @@ import GlassCard from '../ui/GlassCard.tsx';
 
 interface AuthorCardMiniProps {
     author: Author;
+    mode?: 'navigate' | 'select';
+    onSelect?: (author: Author) => void;
 }
 
-const AuthorCardMini: React.FC<AuthorCardMiniProps> = ({ author }) => {
+const AuthorCardMini: React.FC<AuthorCardMiniProps> = ({ author, mode = 'navigate', onSelect }) => {
     const { lang, isRTL } = useI18n();
     const { navigate, currentView } = useNavigation();
 
     const handlePress = () => {
+        if (mode === 'select') {
+            onSelect?.(author);
+            return;
+        }
         navigate({ type: 'immersive', id: 'authorDetails', params: { authorId: author.id, from: currentView } });
     };
 
     return (
-        <button onClick={handlePress} className="w-full text-left">
+        <button type="button" onClick={handlePress} className="w-full text-left">
             <GlassCard className="!p-3 hover:bg-black/5 dark:hover:bg-white/10 transition-colors duration-200">
                 <div className={`flex items-center gap-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
                     <img src={author.avatarUrl} alt={lang === 'en' ? author.nameEn : author.nameAr} className="h-14 w-14 rounded-full flex-shrink-0" />

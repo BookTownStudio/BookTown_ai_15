@@ -31,6 +31,7 @@ const AUTHOR_SEARCH_LIMIT = 24;
 const AUTHOR_BOOKS_LIMIT = 60;
 const RELATED_BOOKS_LIMIT = 12;
 const TRENDING_BOOKS_LIMIT = 20;
+const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 
 type SuccessEnvelope<T> = {
   success: true;
@@ -224,6 +225,49 @@ async function callEndpoint<TRequest, TResponse>(
   return extractCallableData<TResponse>(endpoint, result.data);
 }
 
+function extractInternalBookCoverPath(candidate: string): string {
+  const normalized = candidate.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (INTERNAL_BOOK_COVER_PATH_RE.test(normalized)) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+
+    if (parsed.hostname === "storage.googleapis.com") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (segments.length >= 4 && segments[1] === "books") {
+        const path = segments.slice(1).join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      if (segments.length >= 3 && segments[0] === "books") {
+        const path = segments.join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      return "";
+    }
+
+    if (parsed.hostname === "firebasestorage.googleapis.com") {
+      const marker = "/o/";
+      const markerIndex = parsed.pathname.indexOf(marker);
+      if (markerIndex === -1) {
+        return "";
+      }
+      const encodedObjectPath = parsed.pathname.slice(markerIndex + marker.length);
+      const objectPath = decodeURIComponent(encodedObjectPath);
+      return INTERNAL_BOOK_COVER_PATH_RE.test(objectPath) ? objectPath : "";
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
 async function resolveCoverUrl(book: any): Promise<string> {
   const candidate =
     book?.cover?.medium ||
@@ -235,15 +279,25 @@ async function resolveCoverUrl(book: any): Promise<string> {
     return "";
   }
 
-  if (!candidate.startsWith("books/")) {
-    return candidate;
+  const normalizedCandidate = candidate.trim();
+  if (!normalizedCandidate) {
+    return "";
+  }
+
+  const internalCoverPath = extractInternalBookCoverPath(normalizedCandidate);
+  if (!internalCoverPath) {
+    return normalizedCandidate;
   }
 
   try {
     const storage = getFirebaseStorage();
-    return await getDownloadURL(storageRef(storage, candidate));
-  } catch {
-    return typeof book.coverUrl === "string" ? book.coverUrl : "";
+    return await getDownloadURL(storageRef(storage, internalCoverPath));
+  } catch (error) {
+    console.error("[CATALOG][COVER_RESOLVE_FAILED]", {
+      internalCoverPath,
+      error: String(error),
+    });
+    return "";
   }
 }
 

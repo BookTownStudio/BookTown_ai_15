@@ -41,22 +41,22 @@ export const useDuplicateShelf = () => {
       newCoverUrl
     }: DuplicateShelfVariables) => {
       if (!uid) throw new Error('AUTH_REQUIRED');
-
-      // 1. Deep clone entries (membership logic only)
-      // We explicitly copy the map to avoid reference leakage
-      const clonedEntries = sourceShelf.entries
-        ? JSON.parse(JSON.stringify(sourceShelf.entries))
-        : {};
-
-      // 2. Orchestrate creation
-      // dataService.shelves.createShelf handles server timestamps and isSystem=false
-      return await dataService.shelves.createShelf(uid, {
+      const duplicated = await dataService.shelves.duplicateShelf(uid, sourceShelf.id, {
         titleEn: newTitleEn,
         titleAr: newTitleAr,
-        entries: clonedEntries,
-        // Optional: inherit cover if not overridden
-        userCoverUrl: newCoverUrl || sourceShelf.userCoverUrl
-      } as any);
+      });
+
+      if (newCoverUrl && newCoverUrl.trim()) {
+        await dataService.shelves.updateShelf(uid, duplicated.id, {
+          userCoverUrl: newCoverUrl.trim(),
+        } as Partial<Shelf>);
+        return {
+          ...duplicated,
+          userCoverUrl: newCoverUrl.trim(),
+        };
+      }
+
+      return duplicated;
     },
 
     onSuccess: () => {

@@ -442,6 +442,46 @@ export const apiContracts = {
       }
     ),
 
+    duplicateShelf: defineContract(
+      z
+        .object({
+          sourceShelfId: z.string().min(1),
+          titleEn: z.string().min(1).max(120).optional(),
+          titleAr: z.string().min(1).max(120).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          id: z.string().min(1),
+          ownerId: z.string().min(1),
+          titleEn: z.string().min(1),
+          titleAr: z.string().min(1),
+          entries: z.record(z.string(), z.record(z.string(), z.unknown())),
+          orderedBookIds: z.array(z.string().min(1)).optional(),
+          userCoverUrl: z.string().min(1).nullable().optional(),
+          isSystem: z.boolean(),
+          copiedFrom: z
+            .object({
+              shelfId: z.string().min(1),
+              ownerId: z.string().min(1),
+              createdAt: z.unknown().optional(),
+              copiedAt: z.string().min(1),
+            })
+            .strict(),
+          createdAt: z.string().min(1),
+          updatedAt: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useDuplicateShelf.ts",
+          "app/shelf-details.tsx",
+        ],
+      }
+    ),
+
     createDirectConversation: defineContract(
       z
         .object({

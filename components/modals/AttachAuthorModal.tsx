@@ -19,6 +19,10 @@ const AttachAuthorModal: React.FC<AttachAuthorModalProps> = ({ isOpen, onClose, 
     const { lang } = useI18n();
     const [searchQuery, setSearchQuery] = useState('');
     const { data: authors, isLoading } = useSearchUserAuthors(searchQuery);
+    const handleSelectAuthor = (author: Author) => {
+        onSelect(author);
+        onClose();
+    };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -42,9 +46,12 @@ const AttachAuthorModal: React.FC<AttachAuthorModalProps> = ({ isOpen, onClose, 
                     
                     {!isLoading && authors && authors.length > 0 ? (
                         authors.map(author => (
-                            <div key={author.id} onClick={() => onSelect(author)} className="cursor-pointer">
-                                <AuthorCardMini author={author} />
-                            </div>
+                            <AuthorCardMini
+                                key={author.id}
+                                author={author}
+                                mode="select"
+                                onSelect={handleSelectAuthor}
+                            />
                         ))
                     ) : (
                         !isLoading && (

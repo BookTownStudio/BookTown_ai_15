@@ -277,6 +277,27 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
     })),
   ];
 
+  if (primaryStructured) {
+    const hasCanonicalPrimary = attachmentRefs.some(
+      (attachment) =>
+        attachment.role === "primary" &&
+        attachment.type === primaryStructured.type &&
+        attachment.attachmentId === primaryStructured.entityId &&
+        (attachment as { entityId?: string }).entityId === primaryStructured.entityId
+    );
+    if (!hasCanonicalPrimary) {
+      logger.error("[SOCIAL][STRUCTURED_ATTACHMENT_DROPPED]", {
+        uid,
+        entityType: primaryStructured.type,
+        entityId: primaryStructured.entityId,
+      });
+      throw new HttpsError(
+        "internal",
+        "Structured attachment persistence contract failed."
+      );
+    }
+  }
+
   // Construct Locked Schema (POST_MODEL_V1)
   const postData: any = {
     authorId: uid,

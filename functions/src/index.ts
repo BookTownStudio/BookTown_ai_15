@@ -93,6 +93,7 @@ import {
 import { api as apiRaw } from "./api";
 import { sitemap as sitemapRaw } from "./ssr/sitemap";
 import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
+import { duplicateShelf as duplicateShelfRaw } from "./shelves/duplicateShelf";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { canonicalizeRoleClaim } from "./shared/auth";
 
@@ -456,6 +457,10 @@ export const transitionModerationStage = wrapCallableV2(
 export const incrementPostView = wrapCallableV2(
   "incrementPostView",
   incrementPostViewRaw
+);
+export const duplicateShelf = wrapCallableV2(
+  "duplicateShelf",
+  duplicateShelfRaw
 );
 
 // Quotes

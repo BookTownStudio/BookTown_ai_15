@@ -53,24 +53,31 @@ export const useUserShelves = (ownerId?: string) => {
 export const useShelfEntries = (
   shelfId: string | undefined,
   ownerId?: string,
-  options?: { resolveBooks?: boolean }
+  options?: { resolveBooks?: boolean; limit?: number }
 ) => {
   const { effectiveUid } = useAuth();
   const finalUid = ownerId || effectiveUid;
+  const requestUid = finalUid || 'public';
 
-  const enabled = !!finalUid && !!shelfId;
+  const enabled = !!shelfId;
 
   return useQuery<(ShelfEntry & { book?: Book })[]>({
-    queryKey: queryKeys.user.shelfEntries(
-      finalUid ?? undefined,
-      shelfId
-    ) as unknown as any[],
+    queryKey: [
+      ...queryKeys.user.shelfEntries(finalUid ?? undefined, shelfId),
+      {
+        resolveBooks: options?.resolveBooks ?? true,
+        limit: typeof options?.limit === 'number' ? Math.trunc(options.limit) : undefined,
+      },
+    ] as unknown as any[],
 
     queryFn: async () => {
       return await dataService.shelves.getShelfEntries(
-        finalUid!,
+        requestUid,
         shelfId!,
-        { resolveBooks: options?.resolveBooks ?? true }
+        {
+          resolveBooks: options?.resolveBooks ?? true,
+          ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+        }
       );
     },
 

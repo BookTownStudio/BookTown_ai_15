@@ -2,6 +2,8 @@ import express from "express";
 import { onRequest } from "firebase-functions/v2/https";
 import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
+import { admin } from "./firebaseAdmin";
+import { getSignedUrl } from "./attachments/storageSignedUrl";
 
 type SearchBookResponse = {
   id: string;
@@ -24,6 +26,9 @@ type SearchBookResponse = {
   downloadable: boolean;
   isEbookAvailable: boolean;
 };
+
+const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
+const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
 
 function toSearchBookResponse(raw: any): SearchBookResponse | null {
   const sourceRaw = String(raw?.source || "").trim();
@@ -73,6 +78,48 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     downloadable: ebookAvailable,
     isEbookAvailable: ebookAvailable,
   };
+}
+
+function extractInternalBookCoverPath(candidate: string, expectedBucket: string): string {
+  const raw = candidate.trim();
+  if (!raw) {
+    return "";
+  }
+
+  if (INTERNAL_BOOK_COVER_PATH_RE.test(raw)) {
+    return raw;
+  }
+
+  try {
+    const parsed = new URL(raw);
+    if (parsed.hostname === "storage.googleapis.com") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (segments.length >= 4 && segments[0] === expectedBucket && segments[1] === "books") {
+        const path = segments.slice(1).join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      if (segments.length >= 3 && segments[0] === "books") {
+        const path = segments.join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      return "";
+    }
+
+    if (parsed.hostname === "firebasestorage.googleapis.com") {
+      const marker = "/o/";
+      const markerIndex = parsed.pathname.indexOf(marker);
+      if (markerIndex === -1) {
+        return "";
+      }
+      const encodedObjectPath = parsed.pathname.slice(markerIndex + marker.length);
+      const objectPath = decodeURIComponent(encodedObjectPath);
+      return INTERNAL_BOOK_COVER_PATH_RE.test(objectPath) ? objectPath : "";
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
 }
 
 const app = express();
@@ -137,9 +184,52 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       ebookOnly,
       language: lang,
     });
-    const results = resultsRaw
+    const parsedResults = resultsRaw
       .map((row: any) => toSearchBookResponse(row))
       .filter((row: SearchBookResponse | null): row is SearchBookResponse => row !== null);
+    const signedCoverByBookId = new Map<string, string>();
+    const results = await Promise.all(
+      parsedResults.map(async (row) => {
+        const internalCoverPath = extractInternalBookCoverPath(
+          row.coverUrl,
+          DEFAULT_STORAGE_BUCKET
+        );
+        if (!internalCoverPath) {
+          return row;
+        }
+
+        const coverKey = row.bookId || internalCoverPath;
+        if (signedCoverByBookId.has(coverKey)) {
+          return {
+            ...row,
+            coverUrl: signedCoverByBookId.get(coverKey) || "",
+          };
+        }
+
+        try {
+          const signedCoverUrl = await getSignedUrl({
+            bucket: DEFAULT_STORAGE_BUCKET,
+            path: internalCoverPath,
+            intent: "cover",
+          });
+          signedCoverByBookId.set(coverKey, signedCoverUrl);
+          return {
+            ...row,
+            coverUrl: signedCoverUrl,
+          };
+        } catch (error) {
+          console.warn("[API][SEARCH][COVER_SIGN_FAILED]", {
+            bookId: row.bookId,
+            path: internalCoverPath,
+            error: String(error),
+          });
+          return {
+            ...row,
+            coverUrl: "",
+          };
+        }
+      })
+    );
 
     const latencyMs = Date.now() - startTime;
 

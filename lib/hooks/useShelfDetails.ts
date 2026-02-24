@@ -7,14 +7,15 @@ import { queryKeys } from '../queryKeys.ts';
 export const useShelfDetails = (shelfId?: string, ownerId?: string) => {
     const { effectiveUid } = useAuth();
     const finalUid = ownerId || effectiveUid;
+    const requestUid = finalUid || 'public';
 
     return useQuery<Shelf>({
         queryKey: queryKeys.user.shelfDetails(finalUid ?? undefined, shelfId) as unknown as any[],
         queryFn: async () => {
-            // Invariant: if this runs, uid and shelfId must exist
-            return await dataService.shelves.getShelf(finalUid!, shelfId!);
+            // External shelf deep-links can resolve without an authenticated session.
+            return await dataService.shelves.getShelf(requestUid, shelfId!);
         },
-        enabled: !!finalUid && !!shelfId,
+        enabled: !!shelfId,
 
         // ✅ Performance tuning (aligned with shelves + entries)
         staleTime: 1000 * 60 * 2,        // 2 minutes fresh

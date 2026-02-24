@@ -271,7 +271,9 @@ export interface Shelf {
     titleEn: string;
     titleAr: string;
     entries: { [bookId: string]: ShelfEntry };
+    orderedBookIds?: string[];
     userCoverUrl?: string;
+    visibility?: 'public' | 'unlisted' | 'private';
     bookCount?: number;
     createdAt?: any;
     updatedAt?: any;
@@ -279,6 +281,12 @@ export interface Shelf {
     isVirtual?: boolean;
     isDeletable?: boolean;
     isEditable?: boolean;
+    copiedFrom?: {
+        shelfId: string;
+        ownerId: string;
+        createdAt?: any;
+        copiedAt?: any;
+    };
 }
 
 export interface RecommendedShelf {

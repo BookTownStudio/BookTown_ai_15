@@ -11,12 +11,49 @@ import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
 import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 
+const readNonEmptyString = (value: unknown): string =>
+    typeof value === 'string' ? value.trim() : '';
+
+const resolveCreatedAtLabel = (attachment: AttachmentV1 | null): string => {
+    if (!attachment) return '-';
+
+    const metadata =
+        attachment.metadata && typeof attachment.metadata === 'object'
+            ? (attachment.metadata as Record<string, unknown>)
+            : {};
+    const timestampsRaw = (attachment as unknown as { timestamps?: unknown }).timestamps;
+    const timestamps =
+        timestampsRaw && typeof timestampsRaw === 'object'
+            ? (timestampsRaw as Record<string, unknown>)
+            : {};
+
+    const createdAtValue =
+        readNonEmptyString(metadata.createdAt) ||
+        readNonEmptyString(metadata.uploadedAt) ||
+        readNonEmptyString(timestamps.createdAt) ||
+        readNonEmptyString((attachment as unknown as { createdAt?: unknown }).createdAt);
+    if (!createdAtValue) return '-';
+
+    const parsed = new Date(createdAtValue);
+    if (Number.isNaN(parsed.getTime())) {
+        return '-';
+    }
+    return parsed.toLocaleDateString();
+};
+
 const AttachmentViewerOverlay: React.FC = () => {
     const { lang } = useI18n();
     const { activeAttachment, closeViewer } = useAttachmentViewer();
 
     const isV1 = activeAttachment && 'attachmentId' in activeAttachment;
-    const v1 = activeAttachment as AttachmentV1;
+    const v1 = isV1 ? (activeAttachment as AttachmentV1) : null;
+    const attachmentType = typeof v1?.type === 'string' ? v1.type : 'ATTACHMENT';
+    const createdAtLabel = resolveCreatedAtLabel(v1);
+    const imageAlt =
+        typeof (v1?.payload as { alt?: unknown } | undefined)?.alt === 'string' &&
+        ((v1?.payload as { alt?: string }).alt || '').trim().length > 0
+            ? (v1?.payload as { alt: string }).alt
+            : 'attachment image';
     
     // ATTACHMENT_SECURITY_V1: Fullscreen-scoped secure URL
     const { data: secureUrl, isLoading: isResolving } = useAttachmentUrl(v1?.attachmentId, 'feed');
@@ -49,14 +86,14 @@ const AttachmentViewerOverlay: React.FC = () => {
             return <div className="text-red-400 font-bold">Secure access denied</div>;
         }
 
-        switch (v1.type) {
+        switch (attachmentType) {
             case 'IMAGE':
                 return (
                     <motion.img 
                         initial={{ scale: 0.9, opacity: 0 }}
                         animate={{ scale: 1, opacity: 1 }}
                         src={secureUrl.url} 
-                        alt="" 
+                        alt={imageAlt}
                         className="max-w-full max-h-[85vh] object-contain shadow-2xl rounded-sm" 
                     />
                 );
@@ -72,7 +109,7 @@ const AttachmentViewerOverlay: React.FC = () => {
             default:
                 return (
                     <div className="bg-slate-800 p-8 rounded-2xl border border-white/10 text-center max-w-sm">
-                        <p className="text-white font-bold">{v1.type}</p>
+                        <p className="text-white font-bold">{attachmentType}</p>
                         <p className="text-white/60 text-sm mt-2">Enhanced viewer coming soon.</p>
                     </div>
                 );
@@ -108,7 +145,7 @@ const AttachmentViewerOverlay: React.FC = () => {
                     <footer className="absolute bottom-10 left-0 right-0 text-center z-10 px-8">
                         <div className="inline-block px-4 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md">
                             <p className="text-[10px] font-black text-white/40 uppercase tracking-[0.2em]">
-                                {v1.type} • {new Date(v1.metadata.createdAt).toLocaleDateString()}
+                                {attachmentType} • {createdAtLabel}
                             </p>
                         </div>
                     </footer>

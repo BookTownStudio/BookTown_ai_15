@@ -18,9 +18,14 @@ import {
   serverTimestamp,
   deleteField,
 } from "firebase/firestore";
+import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
 
-import { getFirebaseDb, getFirebaseFunctions } from "../lib/firebase.ts";
+import {
+  getFirebaseDb,
+  getFirebaseFunctions,
+  getFirebaseStorage,
+} from "../lib/firebase.ts";
 
 import {
   PostStats,
@@ -75,6 +80,9 @@ const MAX_VENUE_FIELD_LENGTH = 240;
 const MAX_DM_LIST_LIMIT = 200;
 const FOLLOWING_FEED_PAGE_SIZE = 20;
 const FOLLOWING_FEED_IN_BATCH_SIZE = 10;
+const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
+const missingInternalBookCoverPathCache = new Set<string>();
+const loggedMissingInternalBookCoverPathCache = new Set<string>();
 
 type FollowingFeedCursor = {
   v: 1;
@@ -149,6 +157,128 @@ const decodeFollowingFeedCursor = (
     };
   } catch {
     return null;
+  }
+};
+
+const extractInternalBookCoverPath = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const candidate = value.trim();
+  if (!candidate) {
+    return "";
+  }
+
+  if (INTERNAL_BOOK_COVER_PATH_RE.test(candidate)) {
+    return candidate;
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "https:") {
+      return "";
+    }
+
+    if (parsed.hostname === "storage.googleapis.com") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (segments.length >= 4 && segments[1] === "books") {
+        const path = segments.slice(1).join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      if (segments.length >= 3 && segments[0] === "books") {
+        const path = segments.join("/");
+        return INTERNAL_BOOK_COVER_PATH_RE.test(path) ? path : "";
+      }
+      return "";
+    }
+
+    if (parsed.hostname === "firebasestorage.googleapis.com") {
+      const marker = "/o/";
+      const markerIndex = parsed.pathname.indexOf(marker);
+      if (markerIndex === -1) {
+        return "";
+      }
+      const encodedObjectPath = parsed.pathname.slice(markerIndex + marker.length);
+      const objectPath = decodeURIComponent(encodedObjectPath);
+      return INTERNAL_BOOK_COVER_PATH_RE.test(objectPath) ? objectPath : "";
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+};
+
+const normalizeExternalCoverUrl = (value: unknown): string => {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const candidate = value.trim();
+  if (!candidate) {
+    return "";
+  }
+
+  if (extractInternalBookCoverPath(candidate)) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(candidate);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+};
+
+const resolveInternalBookCoverUrl = async (
+  value: unknown,
+  fallbackExternalUrl?: string
+): Promise<string> => {
+  const internalPath = extractInternalBookCoverPath(value);
+  const normalizedFallbackExternalUrl = normalizeExternalCoverUrl(
+    fallbackExternalUrl
+  );
+
+  if (!internalPath) {
+    return normalizeExternalCoverUrl(value) || normalizedFallbackExternalUrl;
+  }
+
+  if (missingInternalBookCoverPathCache.has(internalPath)) {
+    return normalizedFallbackExternalUrl;
+  }
+
+  try {
+    const storage = getFirebaseStorage();
+    return await getDownloadURL(storageRef(storage, internalPath));
+  } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code || "")
+        : "";
+
+    if (errorCode === "storage/object-not-found") {
+      missingInternalBookCoverPathCache.add(internalPath);
+      if (!loggedMissingInternalBookCoverPathCache.has(internalPath)) {
+        loggedMissingInternalBookCoverPathCache.add(internalPath);
+        console.warn("[SOCIAL][COVER_MISSING_FALLBACK]", {
+          internalPath,
+          fallback: normalizedFallbackExternalUrl || "placeholder",
+        });
+      }
+      return normalizedFallbackExternalUrl;
+    }
+
+    console.error("[SOCIAL][COVER_RESOLVE_FAILED]", {
+      internalPath,
+      errorCode,
+      error: String(error),
+    });
+    return normalizedFallbackExternalUrl;
   }
 };
 
@@ -1245,6 +1375,54 @@ class FirebaseShelfService {
     return { id: shelfRef.id, ...shelfData } as unknown as Shelf;
   }
 
+  async duplicateShelf(
+    uid: string,
+    sourceShelfId: string,
+    options?: { titleEn?: string; titleAr?: string }
+  ): Promise<Shelf> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedSourceShelfId = ensureNonEmptyString(
+      sourceShelfId,
+      "sourceShelfId",
+      190
+    );
+    const titleEn =
+      typeof options?.titleEn === "string" && options.titleEn.trim().length > 0
+        ? options.titleEn.trim().slice(0, 120)
+        : undefined;
+    const titleAr =
+      typeof options?.titleAr === "string" && options.titleAr.trim().length > 0
+        ? options.titleAr.trim().slice(0, 120)
+        : undefined;
+
+    const duplicated = await callEndpoint<
+      { sourceShelfId: string; titleEn?: string; titleAr?: string },
+      Record<string, unknown>
+    >("duplicateShelf", {
+      sourceShelfId: normalizedSourceShelfId,
+      ...(titleEn ? { titleEn } : {}),
+      ...(titleAr ? { titleAr } : {}),
+    });
+
+    const duplicatedShelfId =
+      typeof duplicated.id === "string" ? duplicated.id.trim() : "";
+    if (!duplicatedShelfId) {
+      throw new Error("[duplicateShelf] Invalid response payload.");
+    }
+
+    const duplicatedOwnerId =
+      typeof duplicated.ownerId === "string" ? duplicated.ownerId.trim() : "";
+    if (duplicatedOwnerId && duplicatedOwnerId !== normalizedUid) {
+      throw new Error("FAILED_PRECONDITION: duplicateShelf owner mismatch.");
+    }
+
+    return {
+      ...(duplicated as Shelf),
+      id: duplicatedShelfId,
+      ownerId: duplicatedOwnerId || normalizedUid,
+    } as Shelf;
+  }
+
   async updateShelf(uid: string, shelfId: string, updates: Partial<Shelf>): Promise<void> {
     const db = getDb();
     if (!db) return;
@@ -1264,7 +1442,7 @@ class FirebaseShelfService {
   async getShelfEntries(
     uid: string,
     shelfId: string,
-    options?: { resolveBooks?: boolean }
+    options?: { resolveBooks?: boolean; limit?: number }
   ): Promise<any[]> {
     const db = getDb();
     if (!db) return [];
@@ -1301,13 +1479,18 @@ class FirebaseShelfService {
       bookId,
       ...(entry || {}),
     }));
+    const boundedLimit =
+      typeof options?.limit === "number" && Number.isFinite(options.limit)
+        ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
+        : rawEntries.length;
+    const boundedEntries = rawEntries.slice(0, boundedLimit);
 
     if (options?.resolveBooks === false) {
-      return rawEntries;
+      return boundedEntries;
     }
 
     const hydrated = await Promise.all(
-      rawEntries.map(async (entry) => {
+      boundedEntries.map(async (entry) => {
         try {
           const book = await firebaseCatalogService.getBook(entry.bookId);
           return { ...entry, book };
@@ -2311,9 +2494,71 @@ class FirebaseSocialService {
       this.fetchCollectionDocsByIds(db, "venues", Array.from(idsByType.venue)),
     ]);
 
+    const resolvedBookCoverMap = new Map<string, string>();
+    await Promise.all(
+      Array.from(books.entries()).map(async ([id, data]) => {
+        const coverRecord =
+          data.cover && typeof data.cover === "object"
+            ? (data.cover as Record<string, unknown>)
+            : null;
+
+        const orderedCoverCandidates = [
+          typeof data.coverUrl === "string" ? data.coverUrl.trim() : "",
+          coverRecord && typeof coverRecord.medium === "string"
+            ? coverRecord.medium.trim()
+            : "",
+          coverRecord && typeof coverRecord.original === "string"
+            ? coverRecord.original.trim()
+            : "",
+          coverRecord && typeof coverRecord.large === "string"
+            ? coverRecord.large.trim()
+            : "",
+          coverRecord && typeof coverRecord.small === "string"
+            ? coverRecord.small.trim()
+            : "",
+        ].filter((candidate) => candidate.length > 0);
+
+        if (orderedCoverCandidates.length === 0) {
+          return;
+        }
+
+        let preferredCoverCandidate = orderedCoverCandidates[0];
+        for (const candidate of orderedCoverCandidates) {
+          if (extractInternalBookCoverPath(candidate)) {
+            preferredCoverCandidate = candidate;
+            break;
+          }
+        }
+
+        const fallbackExternalCoverUrl =
+          orderedCoverCandidates
+            .map((candidate) => normalizeExternalCoverUrl(candidate))
+            .find((candidate) => candidate.length > 0) || "";
+
+        const resolvedCoverUrl = await resolveInternalBookCoverUrl(
+          preferredCoverCandidate,
+          fallbackExternalCoverUrl
+        );
+
+        if (resolvedCoverUrl !== preferredCoverCandidate) {
+          resolvedBookCoverMap.set(id, resolvedCoverUrl);
+        }
+      })
+    );
+
     const entityMap = new Map<string, HydratedFeedEntity>();
     for (const [id, data] of books) {
-      entityMap.set(`book:${id}`, { type: "book", id, data });
+      const hasResolvedCover = resolvedBookCoverMap.has(id);
+      const resolvedCoverUrl = hasResolvedCover
+        ? resolvedBookCoverMap.get(id) ?? ""
+        : "";
+      const hydratedBookData = hasResolvedCover
+        ? ({
+            ...data,
+            coverUrl: resolvedCoverUrl,
+          } as Record<string, unknown>)
+        : data;
+      entityMap.set(`book:${id}`, { type: "book", id, data: hydratedBookData });
     }
     for (const [id, data] of authors) {
       entityMap.set(`author:${id}`, { type: "author", id, data });
@@ -2698,11 +2943,39 @@ class FirebaseSocialService {
       throw new Error("INVALID_ARGUMENT: publishToken is required.");
     }
 
-    const mappedAttachments = Array.isArray(post?.attachments)
-      ? post.attachments.map((attachment: any) =>
+    const rawAttachments = Array.isArray(post?.attachments) ? post.attachments : [];
+    const structuredInputCount = rawAttachments.filter((attachment: any) => {
+      const type =
+        typeof attachment?.type === "string" ? attachment.type.trim().toLowerCase() : "";
+      return FirebaseSocialService.STRUCTURED_ENTITY_TYPES.has(
+        type as "book" | "author" | "quote" | "shelf" | "venue"
+      );
+    }).length;
+
+    const mappedAttachments = rawAttachments.length > 0
+      ? rawAttachments.map((attachment: any) =>
           this.normalizeCreatePostAttachment(attachment)
         )
       : [];
+    const structuredMappedCount = mappedAttachments.filter(
+      (attachment) => "entityId" in attachment
+    ).length;
+
+    if (structuredInputCount > 0 && structuredMappedCount === 0) {
+      console.error("[SOCIAL][STRUCTURED_ATTACHMENT_DROPPED]", {
+        uid: normalizedUid,
+        structuredInputCount,
+      });
+      throw new Error(
+        "FAILED_PRECONDITION: Structured attachment dropped during createPost normalization."
+      );
+    }
+
+    if (structuredMappedCount > 1) {
+      throw new Error(
+        "INVALID_ARGUMENT: Exactly one structured attachment is allowed per post."
+      );
+    }
 
     const result = await callEndpoint<
       {

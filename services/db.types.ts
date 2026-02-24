@@ -286,6 +286,11 @@ export interface ShelfDataService {
     uid: string,
     shelf: Omit<Shelf, 'id' | 'ownerId'> & { id?: string }
   ): Promise<Shelf>;
+  duplicateShelf(
+    uid: string,
+    sourceShelfId: string,
+    options?: { titleEn?: string; titleAr?: string }
+  ): Promise<Shelf>;
 
   updateShelf(uid: string, shelfId: string, updates: Partial<Shelf>): Promise<void>;
   deleteShelf(uid: string, shelfId: string): Promise<void>;
@@ -293,7 +298,7 @@ export interface ShelfDataService {
   getShelfEntries(
     uid: string,
     shelfId: string,
-    options?: { resolveBooks?: boolean }
+    options?: { resolveBooks?: boolean; limit?: number }
   ): Promise<(ShelfEntry & { book?: Book })[]>;
 
   addBookToShelf(uid: string, shelfId: string, bookId: string, book?: Book): Promise<void>;

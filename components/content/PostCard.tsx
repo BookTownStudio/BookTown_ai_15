@@ -299,6 +299,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             }
 
             if (refType && resolvedEntityId) {
+                const hydratedData =
+                    hydratedType === refType && hydratedId === resolvedEntityId && hydratedEntity?.data
+                        ? hydratedEntity.data
+                        : null;
+
                 if (refType === 'book') {
                     return {
                         type: 'book',
@@ -328,26 +333,45 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 }
 
                 if (refType === 'author') {
+                    const authorName =
+                        (hydratedData && typeof hydratedData.nameEn === 'string' ? hydratedData.nameEn : '') ||
+                        (hydratedData && typeof hydratedData.nameAr === 'string' ? hydratedData.nameAr : '') ||
+                        'Author';
+                    const authorPhoto =
+                        hydratedData && typeof hydratedData.avatarUrl === 'string'
+                            ? hydratedData.avatarUrl
+                            : '';
                     return {
                         type: 'author',
                         authorId: resolvedEntityId,
-                        authorName: '',
-                        authorPhoto: '',
+                        authorName,
+                        authorPhoto,
                     };
                 }
 
                 if (refType === 'shelf') {
+                    const shelfName =
+                        (hydratedData && typeof hydratedData.titleEn === 'string' ? hydratedData.titleEn : '') ||
+                        (hydratedData && typeof hydratedData.titleAr === 'string' ? hydratedData.titleAr : '') ||
+                        'Shelf';
+                    const hydratedBookCount =
+                        hydratedData && typeof hydratedData.bookCount === 'number' && Number.isFinite(hydratedData.bookCount)
+                            ? Math.max(0, Math.trunc(hydratedData.bookCount))
+                            : 0;
                     const ownerId =
                         (typeof (ref as { ownerId?: unknown }).ownerId === 'string'
                             ? (ref as { ownerId: string }).ownerId.trim()
+                            : '') ||
+                        (hydratedData && typeof hydratedData.ownerId === 'string'
+                            ? hydratedData.ownerId
                             : '') ||
                         (post?.authorId || '');
                     return {
                         type: 'shelf',
                         shelfId: resolvedEntityId,
                         ownerId,
-                        shelfName: '',
-                        bookCount: 0,
+                        shelfName,
+                        bookCount: hydratedBookCount,
                         covers: [],
                     };
                 }

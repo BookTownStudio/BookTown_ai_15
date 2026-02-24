@@ -122,6 +122,7 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
   const intentParentId = String(intent.parentId ?? "");
   const intentPurpose = String(intent.purpose ?? "");
   const intentFormat = String(intent.format ?? "");
+  const intentType = String(intent.type ?? "").toUpperCase();
   const intentStoragePath = String(intent.storagePath ?? "");
   const expectedMimePrefix = String(intent.expectedMimePrefix ?? "");
   const maxBytesRaw = Number(intent.maxBytes ?? 0);
@@ -195,6 +196,28 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
   // Persist attachment metadata (AUTHORITATIVE)
   // -------------------------------------------------
   const now = FieldValue.serverTimestamp();
+  const nowIso = new Date().toISOString();
+  const canonicalAttachmentType =
+    intentType === "IMAGE" || intentType === "DOCUMENT"
+      ? intentType
+      : intentPurpose === "ebook"
+        ? "DOCUMENT"
+        : "IMAGE";
+  const canonicalMetadata = {
+    attachmentId,
+    type: canonicalAttachmentType,
+    contentType: mimeType,
+    mimeType,
+    size,
+    createdAt: nowIso,
+    uploadedAt: nowIso,
+    uploader: {
+      uid,
+    },
+    storagePath: intentStoragePath,
+    parentType: intentParentType,
+    parentId: intentParentId,
+  };
 
   await db
     .collection("attachments")
@@ -215,6 +238,9 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
         },
         visibility: "private",
         status: "active",
+        metadata: canonicalMetadata,
+        createdAt: now,
+        uploadedAt: now,
         finalizedAt: now,
         updatedAt: now,
       },
