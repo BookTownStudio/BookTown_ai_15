@@ -120,16 +120,18 @@ service cloud.firestore {
     }
 
     function isPublicPostById(postId) {
-      return postId is string
-        && postId.size() > 0
-        && exists(/databases/$(database)/documents/posts/$(postId))
-        && (
-          let postData = get(/databases/$(database)/documents/posts/$(postId)).data;
-          resolvePostVisibility(postData) == "public"
-          && postData.isDeleted != true
-          && (!("status" in postData) || postData.status == "published")
-        );
-    }
+  return postId is string
+    && postId.size() > 0
+    && exists(/databases/$(database)/documents/posts/$(postId))
+    && resolvePostVisibility(
+         get(/databases/$(database)/documents/posts/$(postId)).data
+       ) == "public"
+    && get(/databases/$(database)/documents/posts/$(postId)).data.isDeleted != true
+    && (
+         !("status" in get(/databases/$(database)/documents/posts/$(postId)).data)
+         || get(/databases/$(database)/documents/posts/$(postId)).data.status == "published"
+       );
+}
 
     function canReadAttachmentByData(attachmentData) {
       let uploaderUid =
