@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { queryKeys } from '../queryKeys.ts';
 import { callCallableEndpoint } from '../callable.ts';
+import { useToast } from '../../store/toast.tsx';
 
 interface DeletePostVariables {
     postId: string;
@@ -14,6 +15,7 @@ interface DeletePostVariables {
  */
 export const useDeletePost = () => {
     const queryClient = useQueryClient();
+    const { showPostDeleteUndo } = useToast();
 
     return useMutation({
         mutationFn: async (variables: DeletePostVariables) => {
@@ -29,6 +31,7 @@ export const useDeletePost = () => {
                 queryKeys.social.post(variables.postId) as unknown as any[]
             );
             queryClient.invalidateQueries(['social']);
+            showPostDeleteUndo(variables.postId);
         }
     });
 };
