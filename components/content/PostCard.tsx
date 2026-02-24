@@ -60,6 +60,18 @@ const normalizeStructuredType = (value: unknown): StructuredEntityType | null =>
     return null;
 };
 
+const toIsoTimestamp = (value: unknown): string => {
+    if (!value) return '';
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object' && value !== null) {
+        const candidate = value as { toDate?: () => Date };
+        if (typeof candidate.toDate === 'function') {
+            return candidate.toDate().toISOString();
+        }
+    }
+    return '';
+};
+
 const resolveAttachmentFromHydratedEntity = (
     refTypeRaw: unknown,
     refIdRaw: unknown,
@@ -174,7 +186,15 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     
     const isRestricted = post?.visibility === 'restricted';
     const isDeleted = post?.status === 'deleted';
-    const isOwner = user?.uid === post?.authorId;
+    const currentUserId = typeof user?.uid === 'string' ? user.uid.trim() : '';
+    const postAuthorId = typeof post?.authorId === 'string' ? post.authorId.trim() : '';
+    const isOwner = currentUserId.length > 0 && postAuthorId.length > 0 && currentUserId === postAuthorId;
+    const editedAt = toIsoTimestamp(
+        (post as Post & { lastEditedAt?: unknown })?.editedAt ||
+        (post as Post & { lastEditedAt?: unknown })?.lastEditedAt
+    );
+    const showEditedBadge = editedAt.length > 0;
+    const editedLabel = lang === 'en' ? 'Edited' : 'معدل';
 
     const displayBody = useMemo(() => {
         if (isDeleted && !isOwner) return lang === 'en' ? "This content is unavailable" : "هذا المحتوى غير متوفر";
@@ -206,6 +226,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     const menuRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const viewTrackedRef = useRef(false);
+
+    useEffect(() => {
+        if (!postAuthorId) {
+            console.warn('[SOCIAL][POSTCARD_OWNER_MISSING_AUTHOR_ID]', {
+                postId: post?.id || null
+            });
+        }
+    }, [post?.id, postAuthorId]);
 
     useEffect(() => {
         if (viewMode !== 'flow' || viewTrackedRef.current || !post?.id || isDeleted) return;
@@ -471,7 +499,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         return (
             <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden">
                 <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
-                <div className="absolute top-32 left-0 right-0 z-20 px-6 flex items-center justify-between">
+                <div className="absolute top-32 left-0 right-0 z-50 px-6 relative">
                     <div className="flex items-center gap-3 cursor-pointer" onClick={handleOpenAuthorProfile}>
                         <img src={authorAvatar} alt={authorName} className="h-10 w-10 rounded-full border-2 border-white/30 bg-slate-800" />
                         <div>
@@ -481,9 +509,30 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <BilingualText role="Caption" className="!text-white/80 drop-shadow-md">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                {showEditedBadge && (
+                                    <span className="text-[10px] font-medium uppercase tracking-wide text-white/55">{editedLabel}</span>
+                                )}
                             </div>
                         </div>
                     </div>
+                    {isOwner && (
+                        <div className="absolute right-6 top-1/2 -translate-y-1/2 z-[70]" ref={menuRef}>
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
+                                className="p-2 rounded-full bg-black/35 border border-white/20 text-white/85 hover:text-white hover:bg-black/50 transition-colors"
+                                aria-label={lang === 'en' ? 'Post actions' : 'إجراءات المنشور'}
+                            >
+                                <EllipsisIcon className="h-5 w-5 rotate-90" />
+                            </button>
+                            {isMenuOpen && (
+                                <div className={cn("absolute top-full z-[60] mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
+                                    <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setEditModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><EditIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Edit' : 'تعديل'}</button>
+                                    <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"><TrashIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Delete' : 'حذف'}</button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
                 <div className="relative z-10 flex flex-col h-full justify-center items-center p-8 pr-24 text-center">
                     {/* POST_COMPOSER_DRAFT_V1: Truncate to 3 lines in feed modes. Click triggers overlay. */}
@@ -494,6 +543,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
                     </div>
                 </div>
+                {isEditModalOpen && post && <EditPostModal post={post} isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} />}
+                {isDeleteModalOpen && post && <ConfirmDeleteModal isOpen={isDeleteModalOpen} onClose={() => setIsDeleteModalOpen(false)} onConfirm={() => deletePost({ postId: post.id })} isDeleting={isDeleting} itemName={post.content.text || 'this post'} itemType="post" />}
             </div>
         );
     }
@@ -518,6 +569,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                             <BilingualText role="Caption" className="truncate !text-[11px] opacity-60">
                                 {post?.authorHandle} • {timeAgo(post?.timestamps?.createdAt || "")}
                             </BilingualText>
+                            {showEditedBadge && (
+                                <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{editedLabel}</span>
+                            )}
                         </div>
                         {isOwner && (
                             <button onClick={() => setEditModalOpen(true)} className="p-1 text-slate-400 hover:text-accent transition-colors">
@@ -557,6 +611,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                                     <BilingualText className="font-bold">{authorName}</BilingualText>
                                 </button>
                                 <BilingualText role="Caption">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                {showEditedBadge && (
+                                    <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{editedLabel}</span>
+                                )}
                                 <VisibilityBadge />
                             </div>
                         </div>

@@ -5,6 +5,7 @@ import {
     assertActiveAuthenticatedUser,
     getRoleFromClaims,
 } from "../shared/auth";
+import { checkUserMutationQuota } from "../utils/mutationQuota";
 
 /**
  * editSocialPost
@@ -83,6 +84,8 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
                 throw new HttpsError("failed-precondition", "POST_EDIT_BLOCKED: Edits only allowed on published posts.");
             }
 
+            await checkUserMutationQuota(db, transaction, uid, "editPost");
+
             const now = admin.firestore.Timestamp.now();
             const createdAt = post.timestamps.createdAt instanceof admin.firestore.Timestamp 
                 ? post.timestamps.createdAt 
@@ -90,9 +93,15 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
             
             const secondsSincePublish = now.seconds - createdAt.seconds;
             const GRACE_PERIOD = 900; // 15 minutes (POST_EDITING_POLICY_V1)
+            const currentEditVersionRaw = typeof post.editVersion === "number" && Number.isFinite(post.editVersion)
+                ? post.editVersion
+                : 0;
+            const currentEditVersion = Math.max(0, Math.trunc(currentEditVersionRaw));
+            const nextEditVersion = currentEditVersion + 1;
 
             const updates: any = {
                 'timestamps.updatedAt': now,
+                'editedAt': now,
                 'lastEditedAt': now,
                 'editVersion': admin.firestore.FieldValue.increment(1)
             };
@@ -106,8 +115,32 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
                 editedBy: uid,
                 timestamp: now,
                 isWithinGracePeriod: secondsSincePublish <= GRACE_PERIOD,
-                editVersion: (post.editVersion || 0) + 1
+                editVersion: nextEditVersion
             });
+
+            const versionsRef = db
+                .collection("post_versions")
+                .doc(postId)
+                .collection("versions");
+            const versionId = `v_${String(nextEditVersion).padStart(10, "0")}`;
+            const versionRef = versionsRef.doc(versionId);
+            transaction.set(versionRef, {
+                postId,
+                versionId,
+                version: nextEditVersion,
+                previousText: post.content.text ?? null,
+                previousAttachments: post.content.attachments || [],
+                previousVisibility: post.visibility ?? "public",
+                editorUid: uid,
+                createdAt: now,
+                timestamp: now,
+            });
+
+            if (nextEditVersion > 20) {
+                const staleVersion = nextEditVersion - 20;
+                const staleVersionId = `v_${String(staleVersion).padStart(10, "0")}`;
+                transaction.delete(versionsRef.doc(staleVersionId));
+            }
 
             // 4. Field Updates
             if (text !== undefined && text.trim() !== post.content.text) {
@@ -130,7 +163,7 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
                 context: { 
                     target_owner_uid: post.authorId, 
                     isGracePeriod: secondsSincePublish <= GRACE_PERIOD,
-                    editVersion: (post.editVersion || 0) + 1
+                    editVersion: nextEditVersion
                 },
                 createdAt: now,
                 version: "1.0"

@@ -3,6 +3,7 @@ import { admin } from "./firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { recomputeUserStats } from "./userStats/recomputeUserStats";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { checkUserMutationQuota } from "./utils/mutationQuota";
 
 type StructuredEntityType = "book" | "author" | "quote" | "shelf" | "venue";
 
@@ -311,6 +312,7 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
     },
     primaryEntityType: primaryStructured?.type ?? null,
     primaryEntityId: primaryStructured?.entityId ?? null,
+    editedAt: null,
 
     visibility,
     status: "published",
@@ -347,6 +349,8 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         if (idempotencySnap.exists) {
             return { success: true, postId: idempotencySnap.data()?.postId, isDuplicate: true };
         }
+
+        await checkUserMutationQuota(db, transaction, uid, "createPost");
 
         const postRef = db.collection('posts').doc();
         transaction.set(postRef, postData);

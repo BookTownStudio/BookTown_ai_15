@@ -19,7 +19,7 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
 
     const { postId, action, reportId, note } = request.data;
     
-    // Actions: dismiss, hide, restrict, soft_delete, hard_delete
+    // Actions: dismiss, hide, restrict, soft_delete, hard_delete(compat -> soft_delete)
     const VALID_ACTIONS = ["dismiss", "hide", "restrict", "soft_delete", "hard_delete"];
     
     if (!postId || !VALID_ACTIONS.includes(action)) {
@@ -35,7 +35,7 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
     try {
         await db.runTransaction(async (transaction) => {
             const postSnap = await transaction.get(postRef);
-            if (!postSnap.exists && action !== 'hard_delete') {
+            if (!postSnap.exists) {
                 throw new HttpsError("not-found", "Post not found.");
             }
 
@@ -69,29 +69,30 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
             }
             
             const post = postSnap.data();
+            const effectiveAction = action === "hard_delete" ? "soft_delete" : action;
             const updates: any = { 'timestamps.updatedAt': now };
 
             // Visibility Effects Mapping
-            if (action === "hide") {
+            if (effectiveAction === "hide") {
                 updates.visibility = "private"; // removed_from_feeds
-            } else if (action === "restrict") {
+            } else if (effectiveAction === "restrict") {
                 updates.visibility = "restricted"; // limited_distribution
-            } else if (action === "soft_delete") {
+            } else if (effectiveAction === "soft_delete") {
                 updates.status = "deleted"; // author_visible_only per normalization
+                updates.isDeleted = true;
+                updates.deletedAt = now;
                 updates['timestamps.deletedAt'] = now;
-            } else if (action === "hard_delete") {
-                transaction.delete(postRef);
             }
 
-            if (action !== 'hard_delete' && action !== 'dismiss') {
+            if (effectiveAction !== 'dismiss') {
                 transaction.update(postRef, updates);
             }
 
             // Update Report State
             if (reportId) {
                 transaction.update(db.collection('reports').doc(reportId), {
-                    status: action === 'dismiss' ? 'dismissed' : 'action_taken',
-                    resolution: action,
+                    status: effectiveAction === 'dismiss' ? 'dismissed' : 'action_taken',
+                    resolution: effectiveAction,
                     resolvedBy: uid,
                     resolvedAt: now
                 });
@@ -100,7 +101,8 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
             // IMMUTABLE AUDIT LOG (POST_MODERATION_V1)
             const auditRef = db.collection('moderation_log').doc();
             transaction.set(auditRef, {
-                action,
+                action: effectiveAction,
+                requestedAction: action,
                 postId,
                 authorId: post?.authorId || 'unknown',
                 moderatorId: uid,

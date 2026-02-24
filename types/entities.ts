@@ -459,6 +459,7 @@ export interface Post {
         edited: boolean;
         hasAttachments: boolean;
     };
+    editedAt?: string | null;
 
     attachments?: PostAttachment[];
     comments?: PostComment[];

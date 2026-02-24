@@ -80,6 +80,7 @@ const MAX_VENUE_FIELD_LENGTH = 240;
 const MAX_DM_LIST_LIMIT = 200;
 const FOLLOWING_FEED_PAGE_SIZE = 20;
 const FOLLOWING_FEED_IN_BATCH_SIZE = 10;
+const FEED_HYDRATION_MAX_POSTS = 20;
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const missingInternalBookCoverPathCache = new Set<string>();
 const loggedMissingInternalBookCoverPathCache = new Set<string>();
@@ -2464,6 +2465,15 @@ class FirebaseSocialService {
       return contexts.map((context) => context.post);
     }
 
+    const hydrationStartedAt =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    const boundedContexts =
+      contexts.length > FEED_HYDRATION_MAX_POSTS
+        ? contexts.slice(0, FEED_HYDRATION_MAX_POSTS)
+        : contexts;
+
     const idsByType: Record<PrimaryStructuredEntityType, Set<string>> = {
       book: new Set(),
       author: new Set(),
@@ -2473,7 +2483,7 @@ class FirebaseSocialService {
     };
     const primaryByPostId = new Map<string, { type: PrimaryStructuredEntityType; id: string }>();
 
-    for (const context of contexts) {
+    for (const context of boundedContexts) {
       const primary = this.extractPrimaryEntityRef(context.raw, context.post);
       if (!primary) {
         continue;
@@ -2483,7 +2493,20 @@ class FirebaseSocialService {
     }
 
     if (primaryByPostId.size === 0) {
-      return contexts.map((context) => context.post);
+      const hydrationEndedAt =
+        typeof performance !== "undefined" && typeof performance.now === "function"
+          ? performance.now()
+          : Date.now();
+      console.info("[SOCIAL][FEED_HYDRATION_MS]", {
+        ms: Math.max(0, Math.round(hydrationEndedAt - hydrationStartedAt)),
+        posts: boundedContexts.length,
+        uniqueBooks: 0,
+        uniqueAuthors: 0,
+        uniqueQuotes: 0,
+        uniqueShelves: 0,
+        uniqueVenues: 0,
+      });
+      return boundedContexts.map((context) => context.post);
     }
 
     const [books, authors, quotes, shelves, venues] = await Promise.all([
@@ -2578,7 +2601,7 @@ class FirebaseSocialService {
       entityMap.set(`venue:${id}`, { type: "venue", id, data });
     }
 
-    return contexts.map((context) => {
+    const hydratedPosts = boundedContexts.map((context) => {
       const primary = primaryByPostId.get(context.post.id);
       if (!primary) {
         return context.post;
@@ -2601,6 +2624,22 @@ class FirebaseSocialService {
 
       return enriched;
     });
+
+    const hydrationEndedAt =
+      typeof performance !== "undefined" && typeof performance.now === "function"
+        ? performance.now()
+        : Date.now();
+    console.info("[SOCIAL][FEED_HYDRATION_MS]", {
+      ms: Math.max(0, Math.round(hydrationEndedAt - hydrationStartedAt)),
+      posts: boundedContexts.length,
+      uniqueBooks: idsByType.book.size,
+      uniqueAuthors: idsByType.author.size,
+      uniqueQuotes: idsByType.quote.size,
+      uniqueShelves: idsByType.shelf.size,
+      uniqueVenues: idsByType.venue.size,
+    });
+
+    return hydratedPosts;
   }
 
   private decodeFollowingCursorFromLegacySnapshot(

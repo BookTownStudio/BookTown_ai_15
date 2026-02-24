@@ -62,6 +62,7 @@ export function normalizePost(data: any): Post {
     const updatedAt = getIso(data.timestamps?.updatedAt || data.updatedAt || null);
     const publishedAt = getIso(data.timestamps?.publishedAt || (data.status === 'published' ? createdAt : null));
     const deletedAt = getIso(data.timestamps?.deletedAt || data.deletedAt || null);
+    const editedAt = getIso(data.editedAt || data.lastEditedAt || null);
     
     // Resolve counters
     const counters = {
@@ -97,9 +98,10 @@ export function normalizePost(data: any): Post {
             deletedAt
         },
         flags: {
-            edited: !!(data.flags?.edited ?? data.isEdited),
+            edited: !!(data.flags?.edited ?? data.isEdited ?? editedAt),
             hasAttachments: attachments.length > 0
         },
+        editedAt,
         attachments: data.attachments,
         comments: data.comments,
         isFeatured: !!data.isFeatured

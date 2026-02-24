@@ -175,6 +175,22 @@ const ShelfDetailsScreen: React.FC = () => {
   const creatorAvatar =
     creatorProfile?.avatarUrl ||
     `https://api.dicebear.com/8.x/lorelei/svg?seed=${sourceOwnerId || 'shelf'}`;
+  const shelfDescription = useMemo(() => {
+    if (!shelf) return '';
+    const localized =
+      lang === 'en'
+        ? (typeof (shelf as { descriptionEn?: unknown }).descriptionEn === 'string'
+            ? (shelf as { descriptionEn: string }).descriptionEn
+            : '')
+        : (typeof (shelf as { descriptionAr?: unknown }).descriptionAr === 'string'
+            ? (shelf as { descriptionAr: string }).descriptionAr
+            : '');
+    const fallback =
+      typeof (shelf as { description?: unknown }).description === 'string'
+        ? (shelf as { description: string }).description
+        : '';
+    return (localized || fallback).trim();
+  }, [shelf, lang]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-900 text-white">
@@ -207,46 +223,62 @@ const ShelfDetailsScreen: React.FC = () => {
 
           {!isLoading && shelf && (
             <>
-              <section className="rounded-2xl border border-white/10 bg-white/5 p-4 space-y-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <BilingualText role="H1" className="!text-2xl truncate">
-                      {lang === 'en' ? shelf.titleEn : shelf.titleAr || shelf.titleEn}
-                    </BilingualText>
-                    <div className="mt-2 flex items-center gap-2 min-w-0">
-                      <img src={creatorAvatar} alt={creatorName} className="h-7 w-7 rounded-full object-cover" />
-                      <BilingualText className="text-sm text-white/80 truncate">{creatorName}</BilingualText>
-                      {visibilityBadge && (
-                        <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-white/15 text-white/60">
-                          {visibilityBadge}
-                        </span>
-                      )}
-                    </div>
+              <section className="rounded-2xl border border-white/10 bg-white/5 p-4">
+                <div className="min-w-0">
+                  <BilingualText role="H1" className="!text-2xl truncate">
+                    {lang === 'en' ? shelf.titleEn : shelf.titleAr || shelf.titleEn}
+                  </BilingualText>
+                  <div className="mt-2 flex items-center gap-2 min-w-0">
+                    <img src={creatorAvatar} alt={creatorName} className="h-7 w-7 rounded-full object-cover" />
+                    <BilingualText className="text-sm text-white/80 truncate">{creatorName}</BilingualText>
+                    {visibilityBadge && (
+                      <span className="text-[10px] uppercase tracking-wide px-2 py-0.5 rounded-full border border-white/15 text-white/60">
+                        {visibilityBadge}
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-3 text-xs text-white/60">
+                    {lang === 'en' ? 'Books' : 'الكتب'}: {orderedEntries.length}
                   </div>
                 </div>
+              </section>
 
-                <div className="text-xs text-white/60">
-                  {lang === 'en' ? 'Books' : 'الكتب'}: {orderedEntries.length}
-                </div>
-
-                <div className="flex items-center gap-2">
+              <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-3">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <Button
                     variant="primary"
                     onClick={handleDuplicate}
                     disabled={isDuplicating}
-                    className="!h-9 !px-4"
+                    className="!h-10 !px-4 sm:flex-1"
                   >
                     <PlusIcon className="h-4 w-4 mr-2" />
                     {lang === 'en' ? 'Add to My Shelves' : 'أضف إلى رفوفي'}
                   </Button>
-                  <Button variant="ghost" onClick={handleShare} className="!h-9 !px-4 border border-white/10">
+                  <Button
+                    variant="ghost"
+                    onClick={handleShare}
+                    className="!h-10 !px-4 border border-white/10 sm:w-auto"
+                  >
                     <ShareIcon className="h-4 w-4 mr-2" />
                     {lang === 'en' ? 'Share' : 'مشاركة'}
                   </Button>
                 </div>
               </section>
 
+              {shelfDescription && (
+                <section className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+                  <BilingualText className="text-sm text-white/75 leading-relaxed whitespace-pre-wrap">
+                    {shelfDescription}
+                  </BilingualText>
+                </section>
+              )}
+
+              <div className="h-px bg-white/10" />
+
               <section className="space-y-2">
+                <BilingualText className="text-xs uppercase tracking-wide text-white/50 px-1">
+                  {lang === 'en' ? 'Books in Order' : 'الكتب بالترتيب'}
+                </BilingualText>
                 {orderedEntries.length === 0 ? (
                   <BilingualText className="text-center text-white/70 py-12">
                     {lang === 'en' ? 'This shelf is empty.' : 'هذا الرف فارغ.'}

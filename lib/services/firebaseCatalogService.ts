@@ -32,6 +32,9 @@ const AUTHOR_BOOKS_LIMIT = 60;
 const RELATED_BOOKS_LIMIT = 12;
 const TRENDING_BOOKS_LIMIT = 20;
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
+const missingInternalCoverPathCache = new Set<string>();
+const loggedMissingInternalCoverPathCache = new Set<string>();
+const resolvedInternalCoverUrlCache = new Map<string, string>();
 
 type SuccessEnvelope<T> = {
   success: true;
@@ -268,36 +271,97 @@ function extractInternalBookCoverPath(candidate: string): string {
   return "";
 }
 
+function normalizeExternalCoverUrl(candidate: string): string {
+  const normalized = candidate.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (extractInternalBookCoverPath(normalized)) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return "";
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
 async function resolveCoverUrl(book: any): Promise<string> {
-  const candidate =
-    book?.cover?.medium ||
-    book?.cover?.original ||
-    book?.coverUrl ||
-    "";
+  const orderedCandidates = [
+    typeof book?.cover?.medium === "string" ? book.cover.medium : "",
+    typeof book?.cover?.original === "string" ? book.cover.original : "",
+    typeof book?.cover?.large === "string" ? book.cover.large : "",
+    typeof book?.cover?.small === "string" ? book.cover.small : "",
+    typeof book?.coverUrl === "string" ? book.coverUrl : "",
+  ]
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
 
-  if (typeof candidate !== "string" || candidate.length === 0) {
+  if (orderedCandidates.length === 0) {
     return "";
   }
 
-  const normalizedCandidate = candidate.trim();
-  if (!normalizedCandidate) {
-    return "";
+  let preferredCandidate = orderedCandidates[0];
+  for (const candidate of orderedCandidates) {
+    if (extractInternalBookCoverPath(candidate)) {
+      preferredCandidate = candidate;
+      break;
+    }
   }
 
-  const internalCoverPath = extractInternalBookCoverPath(normalizedCandidate);
+  const fallbackExternalUrl =
+    orderedCandidates
+      .map((candidate) => normalizeExternalCoverUrl(candidate))
+      .find((candidate) => candidate.length > 0) || "";
+
+  const internalCoverPath = extractInternalBookCoverPath(preferredCandidate);
   if (!internalCoverPath) {
-    return normalizedCandidate;
+    return fallbackExternalUrl;
+  }
+
+  if (resolvedInternalCoverUrlCache.has(internalCoverPath)) {
+    return resolvedInternalCoverUrlCache.get(internalCoverPath) || fallbackExternalUrl;
+  }
+
+  if (missingInternalCoverPathCache.has(internalCoverPath)) {
+    return fallbackExternalUrl;
   }
 
   try {
     const storage = getFirebaseStorage();
-    return await getDownloadURL(storageRef(storage, internalCoverPath));
+    const signedUrl = await getDownloadURL(storageRef(storage, internalCoverPath));
+    resolvedInternalCoverUrlCache.set(internalCoverPath, signedUrl);
+    return signedUrl;
   } catch (error) {
+    const errorCode =
+      error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code || "")
+        : "";
+
+    if (errorCode === "storage/object-not-found") {
+      missingInternalCoverPathCache.add(internalCoverPath);
+      if (!loggedMissingInternalCoverPathCache.has(internalCoverPath)) {
+        loggedMissingInternalCoverPathCache.add(internalCoverPath);
+        console.warn("[CATALOG][COVER_MISSING_FALLBACK]", {
+          internalCoverPath,
+          fallback: fallbackExternalUrl || "placeholder",
+        });
+      }
+      return fallbackExternalUrl;
+    }
+
     console.error("[CATALOG][COVER_RESOLVE_FAILED]", {
       internalCoverPath,
+      errorCode,
       error: String(error),
     });
-    return "";
+    return fallbackExternalUrl;
   }
 }
 

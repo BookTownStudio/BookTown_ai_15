@@ -147,6 +147,24 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
 
   await duplicateRef.set(duplicatePayload);
 
+  try {
+    await db.collection("social_metrics").add({
+      event: "shelf_duplicated",
+      sourceShelfId,
+      sourceOwnerId,
+      newShelfId: duplicateRef.id,
+      duplicatorUid: uid,
+      timestamp: admin.firestore.FieldValue.serverTimestamp(),
+    });
+  } catch (analyticsError) {
+    logger.warn("[SHELF][DUPLICATE_ANALYTICS_FAILED]", {
+      uid,
+      sourceShelfId,
+      newShelfId: duplicateRef.id,
+      error: String(analyticsError),
+    });
+  }
+
   logger.info("[SHELF][DUPLICATED]", {
     uid,
     sourceShelfId,

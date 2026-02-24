@@ -5,13 +5,14 @@ import {
     assertActiveAuthenticatedUser,
     getRoleFromClaims,
 } from "../shared/auth";
+import { checkUserMutationQuota } from "../utils/mutationQuota";
 
-const RESTORE_WINDOW_HOURS = 72; // Spec: restoreWindowHours: 72
+const RESTORE_WINDOW_MINUTES = 5;
 
 /**
  * deleteSocialPost
  * Authority: POST_DELETION_POLICY_V1 (LOCKED)
- * Modes: soft (reversible), hard (permanent).
+ * Modes: soft (reversible), hard (accepted for compatibility, enforced as soft).
  */
 export const deleteSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
@@ -35,102 +36,66 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
     try {
         const result = await db.runTransaction(async (transaction) => {
             const snap = await transaction.get(postRef);
-            // FIX: Replaced 'action' with 'type' and checked for 'hard' deletion mode to resolve the "Cannot find name 'action'" error.
-            if (!snap.exists && type !== 'hard') {
+            if (!snap.exists) {
                 throw new HttpsError("not-found", "POST_NOT_FOUND");
             }
 
             const post = snap.data();
             const isOwner = post?.authorId === uid;
+            const requestedType = type === "hard" ? "hard" : "soft";
 
-            // 1. Authorization Authority (Spec Enforcement)
-            if (type === 'soft' && !isOwner && !isModerator) {
+            // 1. Authorization Authority
+            if (!isOwner && !isModerator) {
                 throw new HttpsError("permission-denied", "POST_DELETE_FORBIDDEN");
             }
-            
-            if (type === 'hard' && !isModerator) {
-                throw new HttpsError("permission-denied", "POST_DELETE_FORBIDDEN: Hard delete restricted to moderators.");
-            }
-            if (type === 'hard' && (!reportId || typeof reportId !== "string")) {
-                throw new HttpsError("invalid-argument", "reportId is required for hard delete.");
-            }
+
+            await checkUserMutationQuota(db, transaction, uid, "deletePost");
 
             const now = admin.firestore.Timestamp.now();
+            const wasAlreadyDeleted = post?.isDeleted === true || post?.status === "deleted";
 
-            if (type === 'soft') {
-                // POST_DELETION_POLICY_V1: isDeleted: true, deletedAt, deletedBy
+            // POST_DELETION_POLICY_V2: always soft delete (retain document)
+            if (!wasAlreadyDeleted) {
                 transaction.update(postRef, {
                     status: 'deleted',
                     isDeleted: true,
                     deletedBy: uid,
+                    deletedAt: now,
                     'timestamps.deletedAt': now,
                     'timestamps.updatedAt': now
                 });
-
-                // Audit Log
-                const auditRef = db.collection('activity_log').doc();
-                transaction.set(auditRef, {
-                    verb: 'post_deleted',
-                    actor: { uid, type: 'user' },
-                    object: { entity_type: 'post', entity_id: postId },
-                    context: { 
-                        action: 'soft_delete',
-                        target_owner_uid: post?.authorId,
-                        visibility: 'restricted'
-                    },
-                    createdAt: now,
-                    version: "1.0"
-                });
-
-                return { success: true, mode: 'soft' };
-            } 
-            
-            if (type === 'hard') {
-                const hardDeleteReportId = reportId as string;
-                const reportRef = db.collection('reports').doc(hardDeleteReportId);
-                const reportSnap = await transaction.get(reportRef);
-                if (!reportSnap.exists) {
-                    throw new HttpsError("not-found", "Report not found.");
-                }
-
-                const report = (reportSnap.data() || {}) as Record<string, unknown>;
-                const reportStatus = typeof report.status === "string" ? report.status : "";
-                const reportEntityId = typeof report.entityId === "string" ? report.entityId : "";
-                if (reportStatus !== "under_review") {
-                    throw new HttpsError("failed-precondition", "Report must be under_review for hard delete.");
-                }
-                if (reportEntityId !== postId) {
-                    throw new HttpsError("failed-precondition", "Report target mismatch for hard delete.");
-                }
-
-                // Permanent Cascade: Remove document
-                transaction.delete(postRef);
-                transaction.update(reportRef, {
-                    status: "action_taken",
-                    resolution: "hard_delete",
-                    resolvedBy: uid,
-                    resolvedAt: now,
-                });
-
-                // In a production environment, this would trigger a cleanup function for storage assets
-                const auditRef = db.collection('activity_log').doc();
-                transaction.set(auditRef, {
-                    verb: 'post_deleted',
-                    actor: { uid, type: 'user' },
-                    object: { entity_type: 'post', entity_id: postId },
-                    context: { 
-                        action: 'hard_delete',
-                        target_owner_uid: post?.authorId,
-                        visibility: 'hidden'
-                    },
-                    createdAt: now,
-                    version: "1.0"
-                });
-
-                return { success: true, mode: 'hard' };
             }
 
-            throw new HttpsError("invalid-argument", "Invalid deletion type.");
+            if (typeof reportId === "string" && reportId.trim() && isModerator) {
+                const reportRef = db.collection("reports").doc(reportId.trim());
+                const reportSnap = await transaction.get(reportRef);
+                if (reportSnap.exists) {
+                    transaction.update(reportRef, {
+                        status: "action_taken",
+                        resolution: "soft_delete",
+                        resolvedBy: uid,
+                        resolvedAt: now,
+                    });
+                }
+            }
+
+            // Audit Log
+            const auditRef = db.collection('activity_log').doc();
+            transaction.set(auditRef, {
+                verb: 'post_deleted',
+                actor: { uid, type: 'user' },
+                object: { entity_type: 'post', entity_id: postId },
+                context: {
+                    action: 'soft_delete',
+                    requestedType,
+                    target_owner_uid: post?.authorId,
+                    visibility: 'restricted'
+                },
+                createdAt: now,
+                version: "1.0"
+            });
+
+            return { success: true, mode: 'soft' as const };
         });
 
         return result;
@@ -143,7 +108,7 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
 
 /**
  * restoreSocialPost
- * Reversal logic for soft-deleted posts within the 72-hour window.
+ * Reversal logic for soft-deleted posts within the 5-minute undo window.
  */
 export const restoreSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
@@ -163,18 +128,22 @@ export const restoreSocialPost = onCall({ cors: true }, async (request) => {
             if (post.authorId !== uid) throw new HttpsError("permission-denied", "POST_RESTORE_FORBIDDEN");
             if (!post.isDeleted) throw new HttpsError("failed-precondition", "Post is not deleted.");
 
-            const deletedAt = post.timestamps?.deletedAt as admin.firestore.Timestamp;
+            const deletedAt = (post.deletedAt || post.timestamps?.deletedAt) as admin.firestore.Timestamp | undefined;
+            if (!deletedAt || typeof deletedAt.seconds !== "number") {
+                throw new HttpsError("failed-precondition", "POST_RESTORE_WINDOW_UNAVAILABLE");
+            }
             const now = admin.firestore.Timestamp.now();
-            const elapsedHours = (now.seconds - deletedAt.seconds) / 3600;
+            const elapsedMinutes = (now.seconds - deletedAt.seconds) / 60;
 
-            if (elapsedHours > RESTORE_WINDOW_HOURS) {
-                throw new HttpsError("failed-precondition", "POST_DELETE_WINDOW_EXCEEDED: Restore window (72h) has expired.");
+            if (elapsedMinutes > RESTORE_WINDOW_MINUTES) {
+                throw new HttpsError("failed-precondition", "POST_DELETE_WINDOW_EXCEEDED: Restore window (5m) has expired.");
             }
 
             transaction.update(postRef, {
                 status: 'published',
                 isDeleted: false,
                 deletedBy: null,
+                deletedAt: null,
                 'timestamps.deletedAt': null,
                 'timestamps.updatedAt': now
             });
