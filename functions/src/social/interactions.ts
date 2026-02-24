@@ -2,6 +2,9 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
+import {
+    assertViewerCanInteractWithPost,
+} from "./postAccess";
 
 const db = admin.firestore();
 
@@ -29,7 +32,13 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
 
             if (!postSnap.exists) throw new HttpsError("not-found", "Post not found.");
             
-            const post = postSnap.data()!;
+            const post = postSnap.data() as Record<string, unknown>;
+            const { authorId, visibility } = await assertViewerCanInteractWithPost({
+                postId,
+                postData: post,
+                viewerUid: uid,
+                transaction,
+            });
             const isLiking = !likeSnap.exists;
             const now = admin.firestore.FieldValue.serverTimestamp();
 
@@ -48,8 +57,8 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
                     actor: { uid, type: 'user' },
                     object: { entity_type: 'post', entity_id: postId },
                     context: { 
-                        target_owner_uid: post.authorId, 
-                        visibility: post.visibility || 'public' 
+                        target_owner_uid: authorId, 
+                        visibility,
                     },
                     createdAt: now,
                     version: "1.0"
@@ -91,10 +100,16 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
             const postSnap = await transaction.get(postRef);
             if (!postSnap.exists) throw new HttpsError("not-found", "Original post missing.");
             
-            const post = postSnap.data()!;
+            const post = postSnap.data() as Record<string, unknown>;
+            const { authorId, visibility } = await assertViewerCanInteractWithPost({
+                postId,
+                postData: post,
+                viewerUid: uid,
+                transaction,
+            });
             
             // SECURITY: no_self_repost (POST_INTERACTION_V1)
-            if (post.authorId === uid) {
+            if (authorId === uid) {
                 throw new HttpsError("failed-precondition", "POST_REPOST_FORBIDDEN: Ownership prevents repost.");
             }
 
@@ -116,8 +131,8 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
                     actor: { uid, type: 'user' },
                     object: { entity_type: 'post', entity_id: postId },
                     context: { 
-                        target_owner_uid: post.authorId, 
-                        visibility: 'public' 
+                        target_owner_uid: authorId, 
+                        visibility,
                     },
                     createdAt: now,
                     version: "1.0"

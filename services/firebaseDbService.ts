@@ -2701,7 +2701,8 @@ class FirebaseSocialService {
       let q = query(
         postsRef,
         where("authorId", "in", authorBatch),
-        orderBy("createdAt", "desc"),
+        where("status", "==", "published"),
+        orderBy("timestamps.createdAt", "desc"),
         orderBy(documentId(), "desc"),
         limit(perBatchLimit)
       );

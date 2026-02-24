@@ -5,6 +5,7 @@ import {
     assertActiveAuthenticatedUser,
     getRoleFromClaims,
 } from "../shared/auth";
+import { assertViewerCanInteractWithPost } from "./postAccess";
 
 const db = admin.firestore();
 const COMMENT_EDIT_WINDOW_MINUTES = 15;
@@ -40,7 +41,13 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
             const postSnap = await transaction.get(postRef);
             if (!postSnap.exists) throw new HttpsError("not-found", "Post not found.");
             
-            const post = postSnap.data()!;
+            const post = postSnap.data() as Record<string, unknown>;
+            const { authorId, visibility } = await assertViewerCanInteractWithPost({
+                postId,
+                postData: post,
+                viewerUid: uid,
+                transaction,
+            });
 
             // 1. Create comment
             transaction.set(commentRef, {
@@ -63,8 +70,8 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
                 actor: { uid, type: 'user' },
                 object: { entity_type: 'post', entity_id: postId },
                 context: { 
-                    target_owner_uid: post.authorId, 
-                    visibility: post.visibility || 'public',
+                    target_owner_uid: authorId, 
+                    visibility,
                     commentId: commentId
                 },
                 createdAt: now,
@@ -97,11 +104,23 @@ export const editSocialComment = onCall({ cors: true }, async (request) => {
         throw new HttpsError("invalid-argument", "Missing required fields.");
     }
 
-    const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
+    const postRef = db.collection("posts").doc(postId);
+    const commentRef = postRef.collection('comments').doc(commentId);
 
     try {
         return await db.runTransaction(async (transaction) => {
-            const snap = await transaction.get(commentRef);
+            const [postSnap, snap] = await Promise.all([
+                transaction.get(postRef),
+                transaction.get(commentRef),
+            ]);
+            if (!postSnap.exists) throw new HttpsError("not-found", "Post not found.");
+            await assertViewerCanInteractWithPost({
+                postId,
+                postData: postSnap.data() as Record<string, unknown>,
+                viewerUid: uid,
+                transaction,
+            });
+
             if (!snap.exists) throw new HttpsError("not-found", "Comment not found.");
 
             const comment = snap.data()!;
@@ -110,7 +129,15 @@ export const editSocialComment = onCall({ cors: true }, async (request) => {
             }
 
             // Window enforcement
-            const createdAt = comment.timestamp as admin.firestore.Timestamp;
+            const createdAt =
+                comment.timestamp instanceof admin.firestore.Timestamp
+                    ? comment.timestamp
+                    : comment.createdAt instanceof admin.firestore.Timestamp
+                        ? comment.createdAt
+                        : null;
+            if (!createdAt) {
+                throw new HttpsError("failed-precondition", "COMMENT_EDIT_WINDOW_EXCEEDED: Comment timestamp unavailable.");
+            }
             const now = admin.firestore.Timestamp.now();
             const diffMs = now.toMillis() - createdAt.toMillis();
             
@@ -150,8 +177,16 @@ export const deleteSocialComment = onCall({ cors: true }, async (request) => {
     const role = getRoleFromClaims(caller);
     const isModerator = role === "moderator" || role === "superadmin";
 
-    const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
-    const snap = await commentRef.get();
+    const postRef = db.collection("posts").doc(postId);
+    const commentRef = postRef.collection('comments').doc(commentId);
+    const [postSnap, snap] = await Promise.all([postRef.get(), commentRef.get()]);
+
+    if (!postSnap.exists) throw new HttpsError("not-found", "Post not found.");
+    await assertViewerCanInteractWithPost({
+        postId,
+        postData: postSnap.data() as Record<string, unknown>,
+        viewerUid: uid,
+    });
 
     if (!snap.exists) throw new HttpsError("not-found", "Comment missing.");
     
@@ -182,16 +217,28 @@ export const likeSocialComment = onCall({ cors: true }, async (request) => {
         throw new HttpsError("invalid-argument", "postId and commentId are required.");
     }
 
-    const commentRef = db.collection('posts').doc(postId).collection('comments').doc(commentId);
+    const postRef = db.collection("posts").doc(postId);
+    const commentRef = postRef.collection('comments').doc(commentId);
     const likeRef = db.collection('users').doc(uid).collection('comment_likes').doc(`${postId}_${commentId}`);
     const now = admin.firestore.FieldValue.serverTimestamp();
 
     try {
         return await db.runTransaction(async (transaction) => {
-            const [commentSnap, likeSnap] = await Promise.all([
+            const [postSnap, commentSnap, likeSnap] = await Promise.all([
+                transaction.get(postRef),
                 transaction.get(commentRef),
                 transaction.get(likeRef),
             ]);
+
+            if (!postSnap.exists) {
+                throw new HttpsError("not-found", "Post not found.");
+            }
+            await assertViewerCanInteractWithPost({
+                postId,
+                postData: postSnap.data() as Record<string, unknown>,
+                viewerUid: uid,
+                transaction,
+            });
 
             if (!commentSnap.exists) {
                 throw new HttpsError("not-found", "Comment not found.");

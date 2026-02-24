@@ -119,6 +119,43 @@ service cloud.firestore {
         );
     }
 
+    function isPublicPostById(postId) {
+      return postId is string
+        && postId.size() > 0
+        && exists(/databases/$(database)/documents/posts/$(postId))
+        && (
+          let postData = get(/databases/$(database)/documents/posts/$(postId)).data;
+          resolvePostVisibility(postData) == "public"
+          && postData.isDeleted != true
+          && (!("status" in postData) || postData.status == "published")
+        );
+    }
+
+    function canReadAttachmentByData(attachmentData) {
+      let uploaderUid =
+        attachmentData.uploader is map
+        && attachmentData.uploader.uid is string
+          ? attachmentData.uploader.uid
+          : "";
+
+      let parentType = attachmentData.parentType is string
+        ? attachmentData.parentType
+        : "";
+      let parentId = attachmentData.parentId is string
+        ? attachmentData.parentId
+        : "";
+
+      return (
+        isSignedIn()
+        && uploaderUid.size() > 0
+        && request.auth.uid == uploaderUid
+      )
+      || (
+        parentType == "posts"
+        && isPublicPostById(parentId)
+      );
+    }
+
     /* =========================
        USERS
        ========================= */
@@ -416,7 +453,7 @@ service cloud.firestore {
        ATTACHMENTS
        ========================= */
     match /attachments/{attachmentId} {
-      allow get: if true;
+      allow get: if canReadAttachmentByData(resource.data);
       allow list: if false;
       allow create, update: if false;
       allow delete: if false;
