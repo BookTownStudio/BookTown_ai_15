@@ -86,11 +86,12 @@ const AttachmentActionMenu: React.FC<AttachmentActionMenuProps> = ({ attachment,
     );
 };
 
-const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: any; maxHeight: number; surface: RenderSurface }> = ({ attachment, url, payload, maxHeight, surface }) => {
+const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: any; maxHeight: number | string; surface: RenderSurface }> = ({ attachment, url, payload, maxHeight, surface }) => {
     const safePayload =
         payload && typeof payload === 'object'
             ? payload
             : {};
+    const isExhibitionSurface = surface === 'feed';
     const fallbackAlt = 'attachment image';
     const resolvedAlt =
         typeof safePayload.alt === 'string' && safePayload.alt.trim().length > 0
@@ -98,8 +99,13 @@ const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: a
             : fallbackAlt;
     return (
         <div 
-            className="w-full overflow-hidden rounded-lg bg-slate-800 flex items-center justify-center min-h-[100px]"
-            style={{ maxHeight }}
+            className={cn(
+                "relative w-full overflow-hidden bg-slate-800 flex items-center justify-center shadow-[0_18px_34px_-22px_rgba(0,0,0,0.95)]",
+                isExhibitionSurface
+                    ? "rounded-[1.7rem] border border-white/12 min-h-[54vh] md:min-h-[62vh] max-h-[72vh]"
+                    : "rounded-xl min-h-[100px]"
+            )}
+            style={isExhibitionSurface ? undefined : { maxHeight }}
         >
             <img 
                 src={url} 
@@ -107,29 +113,49 @@ const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: a
                 loading="lazy"
                 onLoad={() => AttachmentAnalytics.track('attachment_rendered', attachment, surface)}
                 onError={() => AttachmentAnalytics.track('attachment_failed', attachment, surface)}
-                className="w-full h-full object-cover transition-opacity duration-300"
+                className={cn(
+                    "w-full h-full object-cover transition-opacity duration-300",
+                    isExhibitionSurface && "scale-[1.01]"
+                )}
             />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/62 via-black/18 to-transparent" />
+            {isExhibitionSurface && (
+                <div className="pointer-events-none absolute left-4 top-4">
+                    <AttachmentTypeLabel label="MEDIA" />
+                </div>
+            )}
         </div>
     );
 };
 
-const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight: number; surface: RenderSurface }> = ({ attachment, payload, maxHeight, surface }) => {
+const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight: number | string; surface: RenderSurface }> = ({ attachment, payload, maxHeight, surface }) => {
     const { lang } = useI18n();
     const safePayload =
         payload && typeof payload === 'object'
             ? payload
             : {};
+    const isExhibitionSurface = surface === 'feed';
     useEffect(() => {
         AttachmentAnalytics.track('attachment_rendered', attachment, surface);
     }, [attachment, surface]);
 
     return (
         <div 
-            className="relative rounded-lg overflow-hidden bg-black flex items-center justify-center"
-            style={{ height: maxHeight }}
+            className={cn(
+                "relative overflow-hidden bg-black flex items-center justify-center",
+                isExhibitionSurface
+                    ? "rounded-[1.7rem] border border-white/12 min-h-[54vh] md:min-h-[62vh] max-h-[72vh]"
+                    : "rounded-lg"
+            )}
+            style={isExhibitionSurface ? undefined : { height: maxHeight }}
         >
             {typeof safePayload.thumbnail === 'string' && safePayload.thumbnail.length > 0 && (
                 <img src={safePayload.thumbnail} alt="Poster" className="absolute inset-0 w-full h-full object-cover opacity-50" />
+            )}
+            {isExhibitionSurface && (
+                <div className="pointer-events-none absolute left-4 top-4">
+                    <AttachmentTypeLabel label="VIDEO" />
+                </div>
             )}
             <div className="z-10 flex flex-col items-center">
                 <PlayIcon className="h-10 w-10 text-white/50" />
@@ -141,16 +167,22 @@ const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight
     );
 };
 
-const AudioView: React.FC<{ attachment: PostAttachment; maxHeight: number; surface: RenderSurface }> = ({ attachment, maxHeight, surface }) => {
+const AudioView: React.FC<{ attachment: PostAttachment; maxHeight: number | string; surface: RenderSurface }> = ({ attachment, maxHeight, surface }) => {
     const { lang } = useI18n();
+    const isExhibitionSurface = surface === 'feed';
     useEffect(() => {
         AttachmentAnalytics.track('attachment_rendered', attachment, surface);
     }, [attachment, surface]);
 
     return (
         <div 
-            className="flex items-center gap-3 p-3 bg-slate-800/50 rounded-lg border border-white/5"
-            style={{ maxHeight }}
+            className={cn(
+                "flex items-center gap-3 p-3 bg-slate-800/50 border border-white/5",
+                isExhibitionSurface
+                    ? "rounded-[1.2rem] min-h-[22vh] md:min-h-[26vh]"
+                    : "rounded-lg"
+            )}
+            style={isExhibitionSurface ? undefined : { maxHeight }}
         >
             <div className="h-8 w-8 rounded-full bg-accent/10 flex items-center justify-center text-accent/50">
                 <VolumeXIcon className="h-4 w-4" />
@@ -174,7 +206,10 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
     }, [attachment, surface]);
 
     return (
-        <GlassCard className="flex items-center gap-3 !p-3 border-dashed border-white/10 opacity-80">
+        <GlassCard className={cn(
+            "flex items-center gap-3 !p-3 border-dashed border-white/10 opacity-80",
+            surface === 'feed' && "rounded-[1.2rem] min-h-[20vh]"
+        )}>
             <FileIcon className="h-5 w-5 text-slate-500" />
             <div className="min-w-0 flex-grow">
                 <BilingualText className="font-bold text-sm truncate">
@@ -190,76 +225,162 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
     );
 };
 
-const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: string }> = ({ title, author, coverUrl }) => (
-    <div className="flex items-center gap-3 p-2 bg-white/5 rounded-lg border border-white/5 opacity-80">
-        {coverUrl ? (
-            <img src={coverUrl} className="h-10 w-7 object-cover rounded shadow-sm" alt="" />
-        ) : (
-            <div className="h-10 w-7 rounded bg-white/10" />
-        )}
-        <div className="min-w-0">
-            <BilingualText className="font-bold text-[11px] truncate">{title}</BilingualText>
-            <BilingualText role="Caption" className="!text-[9px] truncate">{author}</BilingualText>
-        </div>
-    </div>
+const AttachmentTypeLabel: React.FC<{ label: string }> = ({ label }) => (
+    <span className="inline-flex items-center rounded-full border border-white/20 bg-black/45 px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white/78 uppercase shadow-[0_6px_20px_-12px_rgba(0,0,0,0.9)]">
+        {label}
+    </span>
 );
 
-const QuoteReferenceCard: React.FC<{ text: string }> = ({ text }) => (
-    <div className="p-3 bg-black/10 italic text-[11px] border-l-2 border-white/10 rounded-r-lg text-slate-400">
-        "{text}"
+const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: string; rating?: number; surface?: RenderSurface }> = ({ title, author, coverUrl, rating = 0, surface = 'feed' }) => {
+    const safeRating = Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
+    const isExhibitionSurface = surface === 'feed';
+    return (
+        <div className={cn(
+            "relative overflow-hidden border border-[#0077B6]/35 bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] p-3 shadow-[0_12px_28px_-16px_rgba(0,119,182,0.7)]",
+            isExhibitionSurface
+                ? "rounded-[1.7rem] min-h-[56vh] md:min-h-[64vh] max-h-[72vh] px-4 py-4"
+                : "rounded-xl"
+        )}>
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.26),transparent_56%)]" />
+            <div className={cn(
+                "relative flex items-start gap-3",
+                isExhibitionSurface && "h-full"
+            )}>
+                <div className="flex-shrink-0">
+                    {coverUrl ? (
+                        <img src={coverUrl} className={cn(
+                            "object-cover shadow-lg",
+                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-24 w-16 rounded-md"
+                        )} alt="" />
+                    ) : (
+                        <div className={cn(
+                            "bg-white/10",
+                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-24 w-16 rounded-md"
+                        )} />
+                    )}
+                </div>
+                <div className={cn("min-w-0 flex-1", isExhibitionSurface && "flex flex-col justify-between h-full py-1")}>
+                    <AttachmentTypeLabel label="FROM THE BOOK" />
+                    <div>
+                        <BilingualText className={cn(
+                            "mt-2 font-semibold leading-snug text-white",
+                            isExhibitionSurface ? "text-[1.05rem] md:text-[1.15rem] line-clamp-3" : "text-[13px] truncate"
+                        )}>{title}</BilingualText>
+                        <BilingualText role="Caption" className={cn(
+                            "mt-1 text-white/65",
+                            isExhibitionSurface ? "!text-[12px] line-clamp-2" : "!text-[10px] truncate"
+                        )}>{author}</BilingualText>
+                    </div>
+                    <div className={cn(
+                        "mt-2 text-[#8ecdf2] tracking-wide",
+                        isExhibitionSurface ? "text-[12px]" : "text-[11px]"
+                    )}>{'★'.repeat(Math.round(safeRating)) || '☆☆☆☆☆'}</div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const QuoteReferenceCard: React.FC<{ text: string; surface?: RenderSurface }> = ({ text, surface = 'feed' }) => {
+    const isExhibitionSurface = surface === 'feed';
+    return (
+    <div className={cn(
+        "relative border border-white/15 bg-gradient-to-r from-[#111a24] to-[#0c1118] px-4 py-3.5 text-slate-200 shadow-[0_12px_30px_-22px_rgba(255,255,255,0.45)]",
+        isExhibitionSurface
+            ? "rounded-[1.7rem] min-h-[48vh] md:min-h-[56vh] max-h-[68vh] flex flex-col justify-between"
+            : "rounded-xl"
+    )}>
+        <AttachmentTypeLabel label="QUOTE" />
+        <div className="mt-3 flex gap-2">
+            <span className={cn(
+                "leading-none text-[#8ecdf2]",
+                isExhibitionSurface ? "text-[2.3rem]" : "text-2xl"
+            )}>“</span>
+            <p className={cn(
+                "italic text-white/80",
+                isExhibitionSurface ? "text-[1rem] leading-[1.65] line-clamp-[10]" : "text-[13px] leading-relaxed line-clamp-3"
+            )}>{text}</p>
+        </div>
     </div>
-);
+    );
+};
 
 const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?: string }> = ({
     name,
     avatarUrl,
     country,
 }) => (
-    <div className="flex items-center gap-3 p-2 bg-white/5 rounded-lg border border-white/5 opacity-80">
+    <div className="flex items-center gap-3 rounded-xl border border-white/12 bg-gradient-to-r from-[#101821] to-[#0b1118] px-3 py-2.5 shadow-[0_10px_24px_-18px_rgba(255,255,255,0.5)]">
         {avatarUrl ? (
-            <img src={avatarUrl} className="h-10 w-10 object-cover rounded-full shadow-sm" alt="" />
+            <img src={avatarUrl} className="h-11 w-11 object-cover rounded-full shadow-md" alt="" />
         ) : (
-            <div className="h-10 w-10 rounded-full bg-white/10" />
+            <div className="h-11 w-11 rounded-full bg-white/10" />
         )}
         <div className="min-w-0">
-            <BilingualText className="font-bold text-[11px] truncate">{name || 'Author'}</BilingualText>
-            <BilingualText role="Caption" className="!text-[9px] truncate">{country || ''}</BilingualText>
+            <AttachmentTypeLabel label="AUTHOR" />
+            <BilingualText className="font-semibold text-[12px] text-white/90 truncate">{name || 'Author'}</BilingualText>
+            <BilingualText role="Caption" className="!text-[10px] text-white/55 truncate">{country || ''}</BilingualText>
         </div>
     </div>
 );
 
 const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number }> = ({ name, bookCount }) => (
-    <div className="flex items-center justify-between gap-3 p-2 bg-white/5 rounded-lg border border-white/5 opacity-80">
-        <div className="min-w-0">
-            <BilingualText className="font-bold text-[11px] truncate">{name || 'Shelf'}</BilingualText>
-            <BilingualText role="Caption" className="!text-[9px] truncate">
+    <div className="relative rounded-xl border border-[#0077B6]/30 bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-3 py-3 shadow-[0_12px_28px_-18px_rgba(0,119,182,0.65)]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_60%)]" />
+        <div className="relative flex items-center gap-3">
+            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center border border-white/15">
+                <MediaIcon className="h-5 w-5 text-white/65" />
+            </div>
+            <div className="min-w-0 flex-1">
+                <AttachmentTypeLabel label="FROM THE SHELF" />
+                <BilingualText className="mt-2 font-semibold text-[12px] text-white/90 truncate">{name || 'Shelf'}</BilingualText>
+                <BilingualText role="Caption" className="!text-[10px] text-white/60 truncate">
                 {Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : ''}
-            </BilingualText>
-        </div>
-        <div className="h-8 w-8 rounded-md bg-white/10 flex items-center justify-center">
-            <MediaIcon className="h-4 w-4 text-white/40" />
+                </BilingualText>
+            </div>
         </div>
     </div>
 );
 
-const HookedBookReferenceView: React.FC<{ id: string }> = ({ id }) => {
+const VenueReferenceCard: React.FC<{ name?: string; type?: string }> = ({ name, type }) => (
+    <div className="rounded-xl border border-white/15 bg-gradient-to-r from-[#10131a] to-[#121924] px-3 py-3 shadow-[0_12px_30px_-20px_rgba(255,255,255,0.5)]">
+        <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0">
+                <AttachmentTypeLabel label="EVENT" />
+                <BilingualText className="mt-2 font-semibold text-[12px] text-white/90 truncate">{name || 'Venue'}</BilingualText>
+                <BilingualText role="Caption" className="!text-[10px] text-white/55 truncate">{type || ''}</BilingualText>
+            </div>
+            <div className="h-10 w-10 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center">
+                <GlobeIcon className="h-4 w-4 text-white/70" />
+            </div>
+        </div>
+    </div>
+);
+
+const HookedBookReferenceView: React.FC<{ id: string; surface: RenderSurface }> = ({ id, surface }) => {
     const { data: book, isLoading } = useBookCatalog(id);
     if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
     if (!book) return null;
+    const rating =
+        typeof (book as Record<string, unknown>).rating === 'number'
+            ? ((book as Record<string, unknown>).rating as number)
+            : 0;
     return (
         <BookReferenceCard
             title={book.titleEn}
             author={book.authorEn}
             coverUrl={book.coverUrl}
+            rating={rating}
+            surface={surface}
         />
     );
 };
 
-const HookedQuoteReferenceView: React.FC<{ id: string; owner?: string }> = ({ id, owner }) => {
+const HookedQuoteReferenceView: React.FC<{ id: string; owner?: string; surface: RenderSurface }> = ({ id, owner, surface }) => {
     const { data: quote, isLoading } = useQuoteDetails(id, owner);
     if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
     if (!quote) return null;
-    return <QuoteReferenceCard text={quote.textEn} />;
+    return <QuoteReferenceCard text={quote.textEn} surface={surface} />;
 };
 
 const UnresolvedReferenceView: React.FC = () => (
@@ -376,6 +497,7 @@ const ReferenceView: React.FC<{
                     ? hydrated.authorAr
                     : '';
         const hydratedCover = typeof hydrated?.coverUrl === 'string' ? hydrated.coverUrl : '';
+        const hydratedRating = typeof hydrated?.rating === 'number' ? hydrated.rating : 0;
 
         if (hydratedTitle || hydratedAuthor || hydratedCover) {
             return (
@@ -383,6 +505,8 @@ const ReferenceView: React.FC<{
                     title={hydratedTitle || 'Book'}
                     author={hydratedAuthor}
                     coverUrl={hydratedCover}
+                    rating={hydratedRating}
+                    surface={surface}
                 />
             );
         }
@@ -391,7 +515,7 @@ const ReferenceView: React.FC<{
             return <UnresolvedReferenceView />;
         }
 
-        return <HookedBookReferenceView id={id} />;
+        return <HookedBookReferenceView id={id} surface={surface} />;
     }
 
     const hydratedText =
@@ -404,14 +528,14 @@ const ReferenceView: React.FC<{
                     : '';
 
     if (hydratedText) {
-        return <QuoteReferenceCard text={hydratedText} />;
+        return <QuoteReferenceCard text={hydratedText} surface={surface} />;
     }
 
     if (surface === 'feed') {
         return <UnresolvedReferenceView />;
     }
 
-    return <HookedQuoteReferenceView id={id} owner={owner} />;
+    return <HookedQuoteReferenceView id={id} owner={owner} surface={surface} />;
 };
 
 interface AttachmentRendererV1Props {
@@ -479,7 +603,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
 
     const maxHeightMap: Record<RenderSurface, number> = {
         home: 160,
-        feed: 400,
+        feed: 560,
         drawer: 64,
         read: 480,
         write: 200
@@ -587,6 +711,14 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                             'Shelf'
                         }
                         bookCount={typeof legacy.bookCount === 'number' ? legacy.bookCount : undefined}
+                    />
+                );
+                break;
+            case 'venue':
+                visual = (
+                    <VenueReferenceCard
+                        name={readNonEmptyString(legacy.venueName) || readNonEmptyString(legacy.title) || 'Venue'}
+                        type={readNonEmptyString(legacy.venueType)}
                     />
                 );
                 break;
@@ -723,7 +855,10 @@ export const AttachmentListV1: React.FC<{
     const maxAutoLoad = (surface === 'feed' || surface === 'home') ? 1 : attachments.length;
 
     return (
-        <div className="mt-3 flex flex-col gap-3">
+        <div className={cn(
+            "mt-3 flex flex-col",
+            surface === 'feed' ? "gap-4" : "gap-3"
+        )}>
             {attachments.map((att, i) => (
                 <AttachmentRendererV1 
                     key={('attachmentId' in att ? att.attachmentId : i)} 

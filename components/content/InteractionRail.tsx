@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Post } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
@@ -11,7 +11,6 @@ import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { cn } from '../../lib/utils.ts';
 import { usePostInteractions } from '../../lib/hooks/usePostInteractions.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
-import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
 
 interface InteractionRailProps {
     post: Post | null;
@@ -41,33 +40,32 @@ const ActionButton: React.FC<{
 }) => (
     <button 
         className={cn(
-            "flex flex-col items-center gap-1 group transition-all duration-200",
-            (disabled || loading) ? "opacity-40 cursor-not-allowed grayscale" : "opacity-100"
+            "flex flex-col items-center gap-2.5 group transition-all duration-200",
+            (disabled || loading) ? "opacity-35 cursor-not-allowed grayscale" : "opacity-85"
         )} 
         disabled={disabled || loading}
         {...props}
     >
         <div className={cn(
-            "h-10 w-10 rounded-full bg-black/30 backdrop-blur-sm flex items-center justify-center shadow-lg transition-all duration-200",
-            (!disabled && !loading) && "group-hover:scale-110 group-hover:bg-white/20",
-            active && "bg-white/20 ring-1 ring-white/30",
+            "h-8 w-8 rounded-full bg-black/16 backdrop-blur-sm flex items-center justify-center border border-white/12 transition-all duration-200",
+            (!disabled && !loading) && "group-hover:scale-105 group-hover:bg-white/14 group-hover:border-white/30",
+            active && "bg-[#0077B6]/22 ring-1 ring-[#0077B6]/35 border-[#0077B6]/35",
             containerClassName
         )}>
-            {loading ? <LoadingSpinner className="h-4 w-4" /> : <Icon className={cn("h-5 w-5", iconClassName)} />}
+            {loading ? <LoadingSpinner className="h-3 w-3" /> : <Icon className={cn("h-3.5 w-3.5", iconClassName)} />}
         </div>
-        {count !== undefined && <span className="text-xs font-semibold text-white/90 drop-shadow-md">{count}</span>}
+        {count !== undefined && <span className="text-[10px] font-semibold text-white/60 drop-shadow-sm">{count}</span>}
     </button>
 );
 
 const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussion, onNewPost }) => {
     const { lang } = useI18n();
     const { user } = useAuth();
-    const [isExpanded, setIsExpanded] = useState(true);
 
     // Authority: Consolidate all engagement for this postId
     const { 
         isLiked, isBookmarked, isReposted, 
-        counts, isLoading, isTransitioning,
+        counts, isTransitioning,
         actions 
     } = usePostInteractions(post?.id, post || undefined);
 
@@ -82,8 +80,8 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
             props: { 
                 icon: PlusIcon, 
                 label: lang === 'en' ? 'New Post' : 'منشور جديد',
-                containerClassName: "h-12 w-12 bg-white !opacity-100 shadow-2xl",
-                iconClassName: "h-6 w-6 text-slate-900 stroke-[2.5px]",
+                containerClassName: "h-9 w-9 bg-white/95 !opacity-100 shadow-[0_10px_24px_-12px_rgba(0,0,0,0.9)] border-white/60",
+                iconClassName: "h-4 w-4 text-slate-900 stroke-[2.4px]",
                 onClick: () => onNewPost?.()
             } 
         },
@@ -150,30 +148,12 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
     ], [post, lang, isLiked, isBookmarked, isReposted, counts, isTransitioning, actions, onOpenDiscussion, onNewPost, canInteract, canRepost, canShare]);
 
     return (
-        <div className="fixed bottom-24 right-4 z-40 flex flex-col items-center">
-            <div className="flex flex-col-reverse items-center gap-3">
-                {actionsConfig.map((action, index) => (
-                    <div
-                        key={action.id}
-                        className={cn(
-                            "transition-all duration-200 ease-out origin-bottom",
-                            isExpanded ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 scale-50 translate-y-6 pointer-events-none'
-                        )}
-                        style={{ transitionDelay: `${index * 50}ms` }}
-                    >
-                        <ActionButton {...action.props} />
-                    </div>
+        <div className="fixed right-3 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center rounded-[1.7rem] border border-white/10 bg-black/22 px-2 py-3.5 backdrop-blur-md shadow-[0_20px_44px_-30px_rgba(0,0,0,0.9)]">
+            <div className="flex flex-col-reverse items-center gap-5">
+                {actionsConfig.map((action) => (
+                    <ActionButton key={action.id} {...action.props} />
                 ))}
             </div>
-
-            <button 
-                className="flex flex-col items-center gap-1 group mt-3"
-                onClick={() => setIsExpanded(!isExpanded)}
-            >
-                <div className="h-8 w-8 rounded-full bg-black/40 backdrop-blur-sm flex items-center justify-center text-white/70 shadow-lg">
-                    <ChevronRightIcon className={cn("h-5 w-5 transition-transform duration-200", isExpanded ? 'rotate-90' : '-rotate-90')} />
-                </div>
-            </button>
         </div>
     );
 };

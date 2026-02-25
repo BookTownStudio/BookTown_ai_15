@@ -92,23 +92,37 @@ service cloud.firestore {
           );
     }
 
+    function isReadablePostState(postData) {
+      return postData.isDeleted != true
+        && (
+          !("status" in postData)
+          || (
+            postData.status is string
+            && postData.status == "published"
+          )
+        );
+    }
+
     function canReadPostByData(postData) {
       let visibility = resolvePostVisibility(postData);
       let authorId = postData.authorId is string ? postData.authorId : "";
 
-      return visibility == "public"
-        || (
-          visibility == "followers"
-          && isSignedIn()
-          && (
-            request.auth.uid == authorId
-            || isFollowerOf(authorId)
+      return isReadablePostState(postData)
+        && (
+          visibility == "public"
+          || (
+            visibility == "followers"
+            && isSignedIn()
+            && (
+              request.auth.uid == authorId
+              || isFollowerOf(authorId)
+            )
           )
-        )
-        || (
-          visibility == "private"
-          && isSignedIn()
-          && request.auth.uid == authorId
+          || (
+            visibility == "private"
+            && isSignedIn()
+            && request.auth.uid == authorId
+          )
         );
     }
 
@@ -709,7 +723,11 @@ service cloud.firestore {
       allow create, update, delete: if false;
 
       match /comments/{commentId} {
-        allow read: if canReadPostById(postId);
+        allow read: if canReadPostById(postId)
+          && (
+            !("status" in resource.data)
+            || resource.data.status == "published"
+          );
         allow create, update, delete: if false;
       }
     }

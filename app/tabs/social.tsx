@@ -193,7 +193,7 @@ const SocialScreen: React.FC = () => {
      * handleOpenThread
      * Implementation of POST_DISCUSSION_NAVIGATION_V1 Contract.
      * TRIGGER: comment_icon click from InteractionRail.
-     * MANDATORY_PARAMS: postId, prefetchedPost, from (current view).
+     * MANDATORY_PARAMS: postId, from (current view).
      */
     const handleOpenThread = (post: Post) => {
         if (!post || !post.id) return;
@@ -207,8 +207,11 @@ const SocialScreen: React.FC = () => {
             id: 'postDiscussion', 
             params: { 
                 postId: post.id, 
-                prefetchedPost: post,
-                from: currentView
+                from: {
+                    type: 'tab',
+                    id: 'social',
+                    params: { highlightPostId: post.id },
+                }
             } 
         });
     };
@@ -270,7 +273,7 @@ const SocialScreen: React.FC = () => {
                             key={post.id} 
                             id={`post-${post.id}`} 
                             data-post-id={post.id}
-                            className="h-screen w-full flex-shrink-0 snap-start"
+                            className="h-screen w-full flex-shrink-0 snap-start px-3 md:px-5 py-4 md:py-5"
                         >
                             <PostCard 
                                 post={post} 
@@ -347,10 +350,10 @@ const SocialScreen: React.FC = () => {
                             <BilingualText role="Caption" className="uppercase tracking-wider text-accent mb-2 px-2">
                                 {lang === 'en' ? 'Posts' : 'منشورات'}
                             </BilingualText>
-                            <div className="space-y-4">
-                                {searchResults.posts.map(post => (
-                                    <PostCard 
-                                        key={post.id} 
+                                    <div className="space-y-6">
+                                        {searchResults.posts.map(post => (
+                                            <PostCard 
+                                                key={post.id} 
                                         post={post} 
                                         viewMode="list" 
                                         onOpenDiscussion={() => handleOpenThread(post)}
@@ -487,7 +490,7 @@ const SocialScreen: React.FC = () => {
             <div 
                 ref={mainContentRef} 
                 className={cn(
-                    "h-screen w-full bg-black overflow-y-scroll snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
+                    "h-screen w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
                     isSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 )}
             >

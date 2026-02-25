@@ -1,5 +1,5 @@
 import React, { useRef, useMemo } from 'react';
-import { motion, PanInfo } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { XIcon } from '../../components/icons/XIcon.tsx';
@@ -8,6 +8,9 @@ import ThreadComments from '../../components/content/ThreadComments.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { cn } from '../../lib/utils.ts';
 import { Post, ThreadPost } from '../../types/entities.ts';
+import { useQuery } from '../../lib/react-query.ts';
+import { dataService } from '../../services/dataService.ts';
+import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 
 /**
  * PostDiscussionScreen
@@ -15,53 +18,68 @@ import { Post, ThreadPost } from '../../types/entities.ts';
  */
 const PostDiscussionScreen: React.FC = () => {
   const { lang, isRTL } = useI18n();
-  const { currentView, navigate, navigateToSocialAndHighlight } = useNavigation();
+  const { currentView, navigate } = useNavigation();
   const composerRef = useRef<HTMLInputElement>(null);
 
-  // DATA_CONTRACT: Only use prefetchedPost from navigation params. No fetching allowed.
   const params = currentView.type === 'immersive' ? currentView.params : {};
-  const postId = params?.postId;
+  const postId = typeof params?.postId === 'string' ? params.postId.trim() : '';
   const prefetchedPost = params?.prefetchedPost as Post | undefined;
+
+  const prefetchedForRoute =
+    prefetchedPost && typeof prefetchedPost.id === 'string' && prefetchedPost.id === postId
+      ? prefetchedPost
+      : undefined;
+
+  const {
+    data: fetchedPost,
+    isLoading: isPostLoading,
+    isError: isPostError,
+  } = useQuery<Post>({
+    queryKey: ['social', 'post-discussion', postId],
+    queryFn: () => dataService.social.getPost(postId),
+    enabled: postId.length > 0,
+    staleTime: 30000,
+    ...(prefetchedForRoute ? { initialData: prefetchedForRoute } : {}),
+  } as any);
+
+  const sourcePost = fetchedPost || prefetchedForRoute;
 
   const handleBack = React.useCallback(() => {
     const fromView = params?.from;
-    if (fromView && fromView.type === 'tab' && fromView.id === 'social' && postId) {
-      navigateToSocialAndHighlight(postId);
-    } else if (fromView) {
-      navigate(fromView);
-    } else {
-      navigate({ type: 'tab', id: 'social' });
+    if (fromView && typeof window !== 'undefined') {
+      window.history.back();
+      return;
     }
-  }, [params?.from, navigate, navigateToSocialAndHighlight, postId]);
 
-  const handleDragEnd = (_: any, info: PanInfo) => {
-    if (info.offset.y > 100 && info.velocity.y > 300) {
-      handleBack();
+    if (fromView) {
+      navigate(fromView, { replace: true });
+    } else {
+      navigate({ type: 'tab', id: 'social' }, { replace: true });
     }
-  };
+  }, [params?.from, navigate]);
 
   // -----------------------------
   // 🔒 HOOKS MUST BE UNCONDITIONAL
   // -----------------------------
 
   const threadPost: ThreadPost | null = useMemo(() => {
-    if (!prefetchedPost) return null;
+    if (!sourcePost) return null;
 
     return {
-      id: prefetchedPost.id,
-      authorId: prefetchedPost.authorId,
-      authorName: prefetchedPost.authorName,
-      authorHandle: prefetchedPost.authorHandle,
-      authorAvatar: prefetchedPost.authorAvatar,
-      createdAt: prefetchedPost.timestamps.createdAt,
-      visibility: prefetchedPost.visibility,
-      status: prefetchedPost.status,
+      id: sourcePost.id,
+      authorId: sourcePost.authorId,
+      authorName: sourcePost.authorName,
+      authorHandle: sourcePost.authorHandle,
+      authorAvatar: sourcePost.authorAvatar,
+      createdAt: sourcePost.timestamps.createdAt,
+      visibility: sourcePost.visibility,
+      status: sourcePost.status,
       content: {
-        text: prefetchedPost.content.text,
-        attachments: prefetchedPost.content.attachments
+        text: sourcePost.content.text,
+        attachments: sourcePost.content.attachments
       }
     };
-  }, [prefetchedPost]);
+  }, [sourcePost]);
 
   const timeLabel = useMemo(() => {
     if (!threadPost) return '';
@@ -71,87 +89,108 @@ const PostDiscussionScreen: React.FC = () => {
     );
   }, [threadPost, lang]);
 
-  // -----------------------------
-  // UI_GUARD (NOW SAFE)
-  // -----------------------------
+  if (!postId) {
+    return null;
+  }
 
-  if (!postId || !prefetchedPost || !threadPost) return null;
+  const postUnavailable =
+    (!isPostLoading && (!threadPost || isPostError)) ||
+    (threadPost && threadPost.status !== 'published');
+
+  const hasPrimaryAttachment =
+    !!threadPost?.content?.attachments && threadPost.content.attachments.length > 0;
 
   return (
     <div
-      className="h-screen w-full flex flex-col justify-end bg-black/50 backdrop-blur-[2px]"
+      className="h-screen w-full bg-gradient-to-b from-[#050a12] via-[#060d18] to-[#03060d] text-white"
       role="dialog"
       aria-modal="true"
     >
-      {/* DISMISS_BEHAVIOR: click_backdrop */}
-      <div className="absolute inset-0 z-0" onClick={handleBack} />
-
       <motion.div
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 28, stiffness: 250 }}
-        drag="y"
-        dragConstraints={{ top: 0 }}
-        dragElastic={{ bottom: 0.5 }}
-        onDragEnd={handleDragEnd}
-        className="relative z-10 w-full h-[90vh] bg-white dark:bg-slate-900 rounded-t-[32px] shadow-2xl flex flex-col overflow-hidden"
+        initial={{ opacity: 0, y: 18 }}
+        animate={{ opacity: 1, y: 0 }}
+        exit={{ opacity: 0, y: 12 }}
+        transition={{ duration: 0.2, ease: 'easeOut' }}
+        className="h-full w-full flex flex-col"
       >
-        {/* Drag Handle */}
-        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
-          <div className="w-10 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
-        </div>
+        {isPostLoading && (
+          <div className="flex-grow flex items-center justify-center">
+            <LoadingSpinner />
+          </div>
+        )}
 
-        {/* Header */}
-        <header className="flex-shrink-0 px-6 py-4 border-b border-black/5 dark:border-white/5 bg-white dark:bg-slate-900">
-          <div className={cn(
-            'flex items-start justify-between gap-4',
-            isRTL ? 'flex-row-reverse' : 'flex-row'
-          )}>
-            <div className={cn(
-              'flex items-center gap-3 min-w-0',
-              isRTL && 'flex-row-reverse'
-            )}>
-              <img
-                src={threadPost.authorAvatar}
-                alt={threadPost.authorName}
-                className="h-9 w-9 rounded-full object-cover border border-black/5 dark:border-white/10"
-              />
-              <div className="min-w-0">
-                <BilingualText className="font-bold text-sm truncate">
-                  {threadPost.authorName}
-                </BilingualText>
-                <BilingualText role="Caption" className="!text-[10px] opacity-60">
-                  {threadPost.authorHandle} • {timeLabel}
-                </BilingualText>
+        {postUnavailable && !isPostLoading && (
+          <div className="flex-grow flex items-center justify-center px-6">
+            <div className="text-center">
+              <BilingualText role="Body" className="text-sm opacity-70">
+                {lang === 'en' ? 'Post unavailable.' : 'المنشور غير متاح.'}
+              </BilingualText>
+            </div>
+          </div>
+        )}
+
+        {!isPostLoading && !postUnavailable && threadPost && (
+          <>
+            <header className="flex-shrink-0 px-4 md:px-6 pt-6 pb-4 border-b border-white/10 bg-black/20 backdrop-blur-md">
+              <div className={cn(
+                'flex items-start justify-between gap-4',
+                isRTL ? 'flex-row-reverse' : 'flex-row'
+              )}>
+                <div className={cn(
+                  'flex items-center gap-3 min-w-0',
+                  isRTL && 'flex-row-reverse'
+                )}>
+                  <img
+                    src={threadPost.authorAvatar}
+                    alt={threadPost.authorName}
+                    className="h-8 w-8 rounded-full object-cover border border-white/20"
+                  />
+                  <div className="min-w-0">
+                    <BilingualText className="font-semibold text-[13px] text-white/85 truncate">
+                      {threadPost.authorName}
+                    </BilingualText>
+                    <BilingualText role="Caption" className="!text-[10px] !text-white/52">
+                      {threadPost.authorHandle} • {timeLabel}
+                    </BilingualText>
+                  </div>
+                </div>
+
+                <Button
+                  variant="icon"
+                  onClick={handleBack}
+                  className="!bg-white/10 !text-white/80 !p-1.5 !h-8 !w-8 rounded-full border border-white/20"
+                >
+                  <XIcon className="h-4 w-4" />
+                </Button>
+              </div>
+
+              <div className="mt-3 rounded-2xl border border-white/12 bg-black/30 overflow-hidden">
+                <div className="h-12 bg-gradient-to-r from-[#0a2235] via-[#17354d] to-[#0a1e2e] relative">
+                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.35),transparent_58%)]" />
+                  {hasPrimaryAttachment && (
+                    <span className="absolute left-3 top-2.5 inline-flex items-center rounded-full border border-white/25 bg-black/40 px-2 py-0.5 text-[9px] font-bold tracking-[0.14em] text-white/75 uppercase">
+                      {lang === 'en' ? 'Exhibition' : 'عرض'}
+                    </span>
+                  )}
+                </div>
+                <div className="px-3 py-2.5">
+                  <BilingualText
+                    role="Body"
+                    className="text-[13px] leading-relaxed line-clamp-2 text-white/76"
+                  >
+                    {threadPost.content.text}
+                  </BilingualText>
+                </div>
+              </div>
+            </header>
+
+            <div className="flex-grow overflow-y-auto">
+              <div className="container mx-auto max-w-3xl min-h-full">
+                <ThreadComments post={threadPost} composerRef={composerRef} />
               </div>
             </div>
-
-            <Button
-              variant="icon"
-              onClick={handleBack}
-              className="!bg-slate-100 dark:!bg-slate-800 !p-1.5 !h-8 !w-8 rounded-full"
-            >
-              <XIcon className="h-4 w-4" />
-            </Button>
-          </div>
-
-          <div className="mt-3 px-1">
-            <BilingualText
-              role="Body"
-              className="text-sm line-clamp-2 italic opacity-70"
-            >
-              {threadPost.content.text}
-            </BilingualText>
-          </div>
-        </header>
-
-        {/* Body */}
-        <div className="flex-grow overflow-y-auto">
-          <div className="container mx-auto max-w-2xl min-h-full">
-            <ThreadComments post={threadPost} composerRef={composerRef} />
-          </div>
-        </div>
+          </>
+        )}
       </motion.div>
     </div>
   );

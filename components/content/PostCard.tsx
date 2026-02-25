@@ -182,7 +182,7 @@ const resolveAttachmentFromHydratedEntity = (
 const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDiscussion, surface = 'feed' }) => {
     const { lang, isRTL } = useI18n();
     const { user } = useAuth();
-    const { navigate, currentView, navigateToSocialAndHighlight } = useNavigation();
+    const { navigate, currentView } = useNavigation();
     
     const isRestricted = post?.visibility === 'restricted';
     const isDeleted = post?.status === 'deleted';
@@ -434,11 +434,24 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
     const handleCommentIntent = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (viewMode === 'list') {
-            navigateToSocialAndHighlight(post.id);
-        } else {
+        if (!post?.id) return;
+        if (onOpenDiscussion) {
             onOpenDiscussion?.();
+            return;
         }
+
+        navigate({
+            type: 'immersive',
+            id: 'postDiscussion',
+            params: {
+                postId: post.id,
+                from: {
+                    type: 'tab',
+                    id: 'social',
+                    params: { highlightPostId: post.id },
+                },
+            },
+        });
     };
 
     const handleOpenAuthorProfile = (e: React.MouseEvent) => {
@@ -497,50 +510,60 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
     if (viewMode === 'flow') {
         return (
-            <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-slate-800 to-slate-950" />
-                <div className="absolute top-32 left-0 right-0 z-50 px-6 relative">
-                    <div className="flex items-center gap-3 cursor-pointer" onClick={handleOpenAuthorProfile}>
-                        <img src={authorAvatar} alt={authorName} className="h-10 w-10 rounded-full border-2 border-white/30 bg-slate-800" />
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <BilingualText className="font-bold !text-white drop-shadow-md">{authorName}</BilingualText>
-                                <VisibilityBadge />
+            <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden rounded-[1.75rem] border border-white/10">
+                <div className="absolute inset-0 bg-gradient-to-b from-[#06111d] via-[#081a29] to-[#02070e]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.22),transparent_48%)]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/28 to-black/8" />
+                <div className="relative z-10 flex h-full flex-col">
+                    <header className="px-6 md:px-8 pt-6 md:pt-8">
+                        <div className="flex items-start justify-between gap-4">
+                            <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={handleOpenAuthorProfile}>
+                                <img src={authorAvatar} alt={authorName} className="h-9 w-9 rounded-full border border-white/25 bg-slate-800 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" />
+                                <div className="min-w-0">
+                                    <div className="flex items-center gap-2">
+                                        <BilingualText className="font-semibold text-[13px] !text-white/84 drop-shadow-sm truncate">{authorName}</BilingualText>
+                                        <VisibilityBadge />
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                        <BilingualText role="Caption" className="!text-white/52 text-[10px] drop-shadow-sm">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                        {showEditedBadge && (
+                                            <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/38">{editedLabel}</span>
+                                        )}
+                                    </div>
+                                </div>
                             </div>
-                            <div className="flex items-center gap-1.5">
-                                <BilingualText role="Caption" className="!text-white/80 drop-shadow-md">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
-                                {showEditedBadge && (
-                                    <span className="text-[10px] font-medium uppercase tracking-wide text-white/55">{editedLabel}</span>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                    {isOwner && (
-                        <div className="absolute right-6 top-1/2 -translate-y-1/2 z-[70]" ref={menuRef}>
-                            <button
-                                type="button"
-                                onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
-                                className="p-2 rounded-full bg-black/35 border border-white/20 text-white/85 hover:text-white hover:bg-black/50 transition-colors"
-                                aria-label={lang === 'en' ? 'Post actions' : 'إجراءات المنشور'}
-                            >
-                                <EllipsisIcon className="h-5 w-5 rotate-90" />
-                            </button>
-                            {isMenuOpen && (
-                                <div className={cn("absolute top-full z-[60] mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
-                                    <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setEditModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><EditIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Edit' : 'تعديل'}</button>
-                                    <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"><TrashIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Delete' : 'حذف'}</button>
+                            {isOwner && (
+                                <div className="relative z-[70]" ref={menuRef}>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
+                                        className="p-2 rounded-full bg-black/28 border border-white/18 text-white/72 hover:text-white hover:bg-black/45 transition-colors"
+                                        aria-label={lang === 'en' ? 'Post actions' : 'إجراءات المنشور'}
+                                    >
+                                        <EllipsisIcon className="h-4.5 w-4.5 rotate-90" />
+                                    </button>
+                                    {isMenuOpen && (
+                                        <div className={cn("absolute top-full z-[60] mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
+                                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setEditModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><EditIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Edit' : 'تعديل'}</button>
+                                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"><TrashIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Delete' : 'حذف'}</button>
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
-                    )}
-                </div>
-                <div className="relative z-10 flex flex-col h-full justify-center items-center p-8 pr-24 text-center">
-                    {/* POST_COMPOSER_DRAFT_V1: Truncate to 3 lines in feed modes. Click triggers overlay. */}
-                    <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity">
-                        <BilingualText role="Body" className="text-xl max-w-lg drop-shadow-sm line-clamp-3">{displayBody}</BilingualText>
-                    </div>
-                    <div className="w-full max-md mt-6 min-h-[1px]">
-                        <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
+                    </header>
+
+                    <div className="flex-1 flex flex-col px-6 md:px-8 pb-9 md:pb-11 pt-4 md:pt-6">
+                        <div className="flex-1 flex items-center justify-center">
+                            <div className="w-full max-w-4xl">
+                                <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
+                            </div>
+                        </div>
+                        <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity mx-auto w-full max-w-2xl text-center mt-6">
+                            <BilingualText role="Body" className="font-serif text-[1.85rem] leading-[1.55] md:text-[2.2rem] md:leading-[1.58] drop-shadow-md line-clamp-3 tracking-[0.01em] text-white/95">
+                                {displayBody}
+                            </BilingualText>
+                        </div>
                     </div>
                 </div>
                 {isEditModalOpen && post && <EditPostModal post={post} isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} />}
@@ -593,7 +616,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     }
 
     return (
-        <GlassCard className="!p-4 relative">
+        <GlassCard className="!p-5 md:!p-6 relative border border-white/10 bg-gradient-to-b from-[#0a1420]/95 to-[#07111b]/95 shadow-[0_18px_36px_-24px_rgba(0,0,0,0.95)]">
+            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.14),transparent_52%)]" />
             <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                 <button
                     type="button"
@@ -603,14 +627,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 >
                     <img src={authorAvatar} alt={authorName} className="h-12 w-12 rounded-full bg-slate-800" />
                 </button>
-                <div className="flex-grow">
+                <div className="flex-grow relative z-10">
                     <div className="flex justify-between items-start">
                         <div className="flex-grow text-left">
                             <div className={`flex items-baseline gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
                                 <button type="button" onClick={handleOpenAuthorProfile}>
-                                    <BilingualText className="font-bold">{authorName}</BilingualText>
+                                    <BilingualText className="font-semibold !text-[15px] text-white/90">{authorName}</BilingualText>
                                 </button>
-                                <BilingualText role="Caption">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                <BilingualText role="Caption" className="!text-[11px] text-white/55">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
                                 {showEditedBadge && (
                                     <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{editedLabel}</span>
                                 )}
@@ -637,12 +661,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     </div>
                     {/* POST_COMPOSER_DRAFT_V1: Truncate to 3 lines in list mode as well. Click triggers overlay. */}
                     <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity">
-                        <BilingualText role="Body" className="mt-1 line-clamp-3">{displayBody}</BilingualText>
+                        <BilingualText role="Body" className="mt-3 font-serif !text-[1.2rem] leading-[1.55] text-white/92 line-clamp-3">
+                            {displayBody}
+                        </BilingualText>
                     </div>
-                    <div className="min-h-[1px] mt-3">
-                         <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
+                    <div className="min-h-[1px] mt-5">
+                         <AttachmentListV1 attachments={resolvedAttachments} surface={surface === 'feed' ? 'read' : surface} />
                     </div>
-                    <div className={`mt-3 flex items-center justify-between text-slate-500 dark:text-white/60 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
+                    <div className={`mt-5 flex items-center justify-between text-slate-500 dark:text-white/60 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                         <Button variant="ghost" className="!text-inherit hover:!text-sky-400 !px-2" onClick={handleCommentIntent} disabled={isRestricted && !isOwner}>
                             <ChatIcon className="h-5 w-5 mr-2" /> 
                             <span className="text-sm">{counts?.commentsCount || 0}</span>

@@ -67,41 +67,43 @@ const CommentItem: React.FC<{
 
     return (
         <div className={cn(
-            "flex gap-3 py-4 px-6 animate-fade-in group border-b border-black/5 dark:border-white/5", 
+            "relative flex gap-3 py-4 px-4 md:px-6 animate-fade-in group border-b border-white/8", 
             isRTL ? "flex-row-reverse text-right" : "flex-row text-left",
-            comment.parentId && (isRTL ? "mr-10 border-r-2 border-slate-100" : "ml-10 border-l-2 border-slate-100")
+            comment.parentId && (isRTL
+                ? "mr-8 md:mr-11 pr-3 border-r border-[#0077B6]/45 bg-[#08111e]/65 rounded-l-xl"
+                : "ml-8 md:ml-11 pl-3 border-l border-[#0077B6]/45 bg-[#08111e]/65 rounded-r-xl")
         )}>
-            <button onClick={() => navigate({ type: 'immersive', id: 'profile', params: { userId: comment.authorId, from: currentView } })} className="flex-shrink-0 h-8 w-8">
-                <img src={comment.authorAvatar} alt={comment.authorName} className="h-8 w-8 rounded-full border border-black/5 dark:border-white/10 object-cover bg-slate-100 dark:bg-slate-800" />
+            <button onClick={() => navigate({ type: 'immersive', id: 'profile', params: { userId: comment.authorId, from: currentView } })} className="flex-shrink-0 h-7 w-7">
+                <img src={comment.authorAvatar} alt={comment.authorName} className="h-7 w-7 rounded-full border border-white/20 object-cover bg-slate-100 dark:bg-slate-800" />
             </button>
             <div className="flex-grow min-w-0">
                 <div className={cn("flex items-baseline justify-between", isRTL && "flex-row-reverse")}>
                     <div className={cn("flex items-baseline gap-2", isRTL && "flex-row-reverse")}>
-                        <BilingualText className="font-bold text-[13px] text-slate-900 dark:text-white leading-none">{comment.authorName}</BilingualText>
-                        <BilingualText role="Caption" className="!text-[10px] !text-slate-400">
+                        <BilingualText className="font-semibold text-[12px] text-white/88 leading-none">{comment.authorName}</BilingualText>
+                        <BilingualText role="Caption" className="!text-[10px] !text-white/45">
                             {comment.authorHandle} • {timeAgo(comment.createdAt)}
                         </BilingualText>
                     </div>
 
                     <div className="relative" ref={menuRef}>
-                        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-1 text-slate-300 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-1 text-white/35 opacity-0 group-hover:opacity-100 transition-opacity">
                             <VerticalEllipsisIcon className="h-3 w-3" />
                         </button>
                         {isMenuOpen && (
-                            <div className={cn("absolute z-20 mt-1 w-36 bg-white dark:bg-slate-800 shadow-xl border border-black/5 dark:border-white/10 rounded-lg overflow-hidden py-1", isRTL ? "left-0" : "right-0")}>
+                            <div className={cn("absolute z-20 mt-1 w-36 bg-slate-900 shadow-xl border border-white/10 rounded-lg overflow-hidden py-1", isRTL ? "left-0" : "right-0")}>
                                 {isOwner ? (
                                     <>
-                                        <button onClick={() => { onEdit(comment.id, comment.text); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5">
-                                            <EditIcon className="h-3 w-3 text-slate-400" />
+                                        <button onClick={() => { onEdit(comment.id, comment.text); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs text-white/85 flex items-center gap-2 hover:bg-white/10">
+                                            <EditIcon className="h-3 w-3 text-white/60" />
                                             <span>{lang === 'en' ? 'Edit' : 'تعديل'}</span>
                                         </button>
-                                        <button onClick={() => { if(confirm('Delete?')) onDelete(comment.id); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5 text-red-400">
+                                        <button onClick={() => { if(confirm('Delete?')) onDelete(comment.id); setIsMenuOpen(false); }} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-red-500/10 text-red-400">
                                             <TrashIcon className="h-3 w-3" />
                                             <span>{lang === 'en' ? 'Delete' : 'حذف'}</span>
                                         </button>
                                     </>
                                 ) : (
-                                    <button onClick={handleReport} className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-black/5 dark:hover:bg-white/5">
+                                    <button onClick={handleReport} className="w-full text-left px-3 py-2 text-xs text-white/80 flex items-center gap-2 hover:bg-white/10">
                                         <FlagIcon className="h-3 w-3 text-red-400" />
                                         <span>{lang === 'en' ? 'Report' : 'إبلاغ'}</span>
                                     </button>
@@ -111,7 +113,7 @@ const CommentItem: React.FC<{
                     </div>
                 </div>
                 
-                <BilingualText className="mt-1 !text-[14px] !text-slate-700 dark:!text-slate-300 leading-relaxed">
+                <BilingualText className="mt-1 !text-[14px] !text-white/86 leading-relaxed">
                     {comment.text}
                 </BilingualText>
 
@@ -121,7 +123,7 @@ const CommentItem: React.FC<{
                         disabled={!canInteract}
                         className={cn(
                             "flex items-center gap-1.5 text-[10px] font-bold transition-all",
-                            comment.liked ? "text-pink-500" : "text-slate-400 hover:text-slate-600"
+                            comment.liked ? "text-pink-500" : "text-white/45 hover:text-white/70"
                         )}
                     >
                         <LikeIcon className={cn("h-3.5 w-3.5", comment.liked && "fill-current")} />
@@ -130,7 +132,7 @@ const CommentItem: React.FC<{
                     <button 
                         onClick={() => onReply(comment)} 
                         disabled={!canInteract}
-                        className="text-[10px] font-bold text-slate-400 hover:text-accent transition-colors"
+                        className="text-[10px] font-bold text-white/45 hover:text-accent transition-colors"
                     >
                         {lang === 'en' ? 'Reply' : 'رد'}
                     </button>
@@ -192,13 +194,13 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
     }, [hasMore, status, fetchNextPage]);
 
     return (
-        <div className="flex flex-col min-h-full">
-            <div className="px-6 py-3 flex items-center justify-between border-b border-black/5 dark:border-white/5 bg-slate-50/30 dark:bg-white/[0.02]">
-                <BilingualText role="Label" className="!text-slate-400 !text-[9px] tracking-widest font-black uppercase">
+        <div className="flex flex-col min-h-full bg-transparent">
+            <div className="px-4 md:px-6 py-3 flex items-center justify-between border-b border-white/10 bg-[#070f1a]/80 backdrop-blur-sm sticky top-0 z-20">
+                <BilingualText role="Label" className="!text-white/45 !text-[9px] tracking-widest font-black uppercase">
                     {lang === 'en' ? 'Replies' : 'الردود'}
                 </BilingualText>
                 {status === 'success' && (
-                    <span className="text-[9px] font-black text-slate-400 uppercase tracking-tighter">
+                    <span className="text-[9px] font-black text-white/45 uppercase tracking-tighter">
                         {comments.length}
                     </span>
                 )}
@@ -229,7 +231,7 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
                             />
                         ))
                     ) : status === 'success' && (
-                        <div className="py-24 text-center px-10 animate-fade-in opacity-40">
+                        <div className="py-24 text-center px-10 animate-fade-in opacity-45">
                             <BilingualText role="Body" className="!text-sm">
                                 {lang === 'en' ? 'No comments yet. Start the conversation!' : 'لا توجد تعليقات بعد. ابدأ النقاش!'}
                             </BilingualText>
@@ -243,13 +245,13 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
             </div>
 
             {/* STICKY COMPOSER: POST_DISCUSSION_SURFACE_V1 */}
-            <div className="sticky bottom-0 left-0 right-0 z-50 bg-white dark:bg-slate-900 border-t border-black/5 dark:border-white/10 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(0,0,0,0.06)]">
+            <div className="sticky bottom-0 left-0 right-0 z-50 bg-[#07101c]/95 border-t border-white/12 pb-[env(safe-area-inset-bottom)] backdrop-blur-md shadow-[0_-16px_40px_-26px_rgba(0,0,0,0.88)]">
                 {replyingTo && (
                     <div className={cn(
-                        "px-6 py-2 bg-slate-50 dark:bg-slate-800/50 flex items-center justify-between animate-fade-in-up border-b border-black/5 dark:border-white/5",
+                        "px-4 md:px-6 py-2 bg-black/25 flex items-center justify-between animate-fade-in-up border-b border-white/10",
                         isRTL && "flex-row-reverse"
                     )}>
-                        <p className="text-[10px] font-bold text-slate-400 truncate">
+                        <p className="text-[10px] font-bold text-white/55 truncate">
                             {lang === 'en' ? `Replying to ${replyingTo.authorHandle}` : `الرد على ${replyingTo.authorHandle}`}
                         </p>
                         <button onClick={() => setReplyingTo(null)} className="text-[10px] font-black text-accent uppercase">
@@ -260,13 +262,13 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
                 
                 <div className="container mx-auto max-w-2xl p-4">
                     {!user ? (
-                        <div className="bg-slate-100 dark:bg-slate-800/50 rounded-full px-6 py-3 text-center opacity-60">
-                            <p className="text-xs font-bold text-slate-400">
+                        <div className="bg-white/6 border border-white/10 rounded-full px-6 py-3 text-center opacity-75">
+                            <p className="text-xs font-bold text-white/55">
                                 {lang === 'en' ? 'Sign in to join the discussion' : 'سجل الدخول للانضمام إلى النقاش'}
                             </p>
                         </div>
                     ) : (
-                        <div className="relative flex items-center bg-slate-100 dark:bg-slate-800 rounded-full px-4 py-1.5 focus-within:ring-1 focus-within:ring-accent/50 transition-all">
+                        <div className="relative flex items-center bg-white/8 border border-white/12 rounded-full px-4 py-1.5 focus-within:ring-1 focus-within:ring-accent/60 focus-within:bg-white/12 transition-all">
                             <input
                                 ref={composerRef}
                                 type="text"
@@ -276,12 +278,12 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
                                 placeholder={lang === 'en' ? (replyingTo ? 'Add a reply...' : 'Add a comment...') : (replyingTo ? 'أضف رداً...' : 'أضف تعليقاً...')}
                                 dir={isRTL ? 'rtl' : 'ltr'}
                                 disabled={isSubmitting}
-                                className="flex-grow bg-transparent py-2 px-2 text-slate-900 dark:text-white placeholder:text-slate-500 outline-none text-[15px]"
+                                className="flex-grow bg-transparent py-2 px-2 text-white placeholder:text-white/45 outline-none text-[15px]"
                             />
                             <button 
                                 onClick={handleSend}
                                 disabled={!commentText.trim() || isSubmitting}
-                                className="p-2 text-accent disabled:opacity-20 transition-all hover:scale-110 active:scale-95 flex-shrink-0"
+                                className="p-2 text-accent disabled:opacity-20 transition-all hover:scale-105 active:scale-95 flex-shrink-0"
                                 aria-label="Send"
                             >
                                 {isSubmitting ? <LoadingSpinner className="h-4 w-4" /> : <SendIcon className="h-5 w-5" />}

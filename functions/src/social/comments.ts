@@ -23,11 +23,18 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
         text?: string;
         parentId?: string;
     };
+    const normalizedParentId =
+        typeof parentId === "string" && parentId.trim().length > 0
+            ? parentId.trim()
+            : null;
     const uid = caller.uid;
     const email = typeof caller.token.email === "string" ? caller.token.email : "";
 
     if (!postId || !text || !text.trim()) {
         throw new HttpsError("invalid-argument", "Missing text.");
+    }
+    if (normalizedParentId && (normalizedParentId.includes("/") || normalizedParentId.length > 128)) {
+        throw new HttpsError("invalid-argument", "INVALID_PARENT_COMMENT_ID");
     }
 
     const postRef = db.collection('posts').doc(postId);
@@ -49,6 +56,24 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
                 transaction,
             });
 
+            if (normalizedParentId) {
+                const parentRef = postRef.collection("comments").doc(normalizedParentId);
+                const parentSnap = await transaction.get(parentRef);
+                if (!parentSnap.exists) {
+                    throw new HttpsError("invalid-argument", "PARENT_COMMENT_NOT_FOUND");
+                }
+                const parent = parentSnap.data() as Record<string, unknown>;
+                if (
+                    typeof parent.status === "string" &&
+                    parent.status.trim().toLowerCase() !== "published"
+                ) {
+                    throw new HttpsError(
+                        "failed-precondition",
+                        "PARENT_COMMENT_NOT_REPLYABLE"
+                    );
+                }
+            }
+
             // 1. Create comment
             transaction.set(commentRef, {
                 authorId: uid,
@@ -57,7 +82,7 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
                 authorAvatar: caller.token?.picture || `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`,
                 text: text.trim(),
                 timestamp: now,
-                parentId: typeof parentId === "string" && parentId.trim() ? parentId.trim() : null,
+                parentId: normalizedParentId,
                 likesCount: 0,
                 status: 'published',
                 version: 1
