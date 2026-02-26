@@ -30,6 +30,8 @@ const ACTION_MATRIX: Record<RenderSurface, string[]> = {
     write: ['remove', 'reorder', 'replace']
 };
 
+const mediaFeedDiagnosticsLogged = new Set<string>();
+
 interface AttachmentActionMenuProps {
     attachment: PostAttachment;
     surface: RenderSurface;
@@ -102,28 +104,23 @@ const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: a
             className={cn(
                 "relative w-full overflow-hidden bg-slate-800 flex items-center justify-center shadow-[0_14px_24px_-20px_rgba(0,0,0,0.72)]",
                 isExhibitionSurface
-                    ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh]"
+                    ? "rounded-[0.7rem] aspect-[4/5] min-h-[240px] max-h-[72dvh]"
                     : "rounded-xl min-h-[100px]"
             )}
             style={isExhibitionSurface ? undefined : { maxHeight }}
         >
-            <img 
-                src={url} 
-                alt={resolvedAlt}
-                loading="lazy"
-                onLoad={() => AttachmentAnalytics.track('attachment_rendered', attachment, surface)}
-                onError={() => AttachmentAnalytics.track('attachment_failed', attachment, surface)}
-                className={cn(
-                    "w-full h-full object-cover transition-opacity duration-300",
-                    isExhibitionSurface && "scale-[1.01]"
-                )}
-            />
+           <img 
+    src={url} 
+    alt={resolvedAlt}
+    loading="lazy"
+    onLoad={() => AttachmentAnalytics.track('attachment_rendered', attachment, surface)}
+    onError={() => AttachmentAnalytics.track('attachment_failed', attachment, surface)}
+    className={cn(
+        "w-full h-auto object-cover transition-opacity duration-300",
+        isExhibitionSurface && "scale-[1.01]"
+    )}
+/>
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/52 via-black/14 to-transparent" />
-            {isExhibitionSurface && (
-                <div className="pointer-events-none absolute left-4 top-4">
-                    <AttachmentTypeLabel label="MEDIA" />
-                </div>
-            )}
         </div>
     );
 };
@@ -144,7 +141,7 @@ const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight
             className={cn(
                 "relative overflow-hidden bg-black flex items-center justify-center",
                 isExhibitionSurface
-                    ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh]"
+                    ? "rounded-[0.7rem] w-full max-h-[72dvh]"
                     : "rounded-lg"
             )}
             style={isExhibitionSurface ? undefined : { height: maxHeight }}
@@ -226,7 +223,7 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
 };
 
 const AttachmentTypeLabel: React.FC<{ label: string }> = ({ label }) => (
-    <span className="inline-flex items-center rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white/78 uppercase shadow-[0_6px_16px_-12px_rgba(0,0,0,0.82)]">
+    <span className="inline-flex items-center rounded-full border border-white/12 bg-black/34 px-2.5 py-1 text-[10px] font-semibold tracking-[0.12em] text-white/74 uppercase shadow-[0_6px_16px_-12px_rgba(0,0,0,0.72)]">
         {label}
     </span>
 );
@@ -260,7 +257,7 @@ const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: st
                     )}
                 </div>
                 <div className={cn("min-w-0 flex-1", isExhibitionSurface && "flex flex-col justify-between h-full py-1")}>
-                    <AttachmentTypeLabel label="FROM THE BOOK" />
+                    <AttachmentTypeLabel label="Book" />
                     <div>
                         <BilingualText className={cn(
                             "mt-2 font-semibold leading-snug text-white",
@@ -290,7 +287,6 @@ const QuoteReferenceCard: React.FC<{ text: string; surface?: RenderSurface }> = 
             ? "rounded-[0.7rem] aspect-[4/5] max-h-[68dvh] flex flex-col justify-between"
             : "rounded-xl"
     )}>
-        <AttachmentTypeLabel label="QUOTE" />
         <div className="mt-3 flex gap-2">
             <span className={cn(
                 "leading-none text-[#8ecdf2]",
@@ -317,7 +313,7 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
             <div className="h-11 w-11 rounded-full bg-white/10" />
         )}
         <div className="min-w-0">
-            <AttachmentTypeLabel label="AUTHOR" />
+            <AttachmentTypeLabel label="Author" />
             <BilingualText className="font-semibold text-[12px] text-white/90 truncate">{name || 'Author'}</BilingualText>
             <BilingualText role="Caption" className="!text-[10px] text-white/55 truncate">{country || ''}</BilingualText>
         </div>
@@ -325,10 +321,10 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
 );
 
 const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: string[] }> = ({ name, bookCount, covers = [] }) => (
-    <div className="relative rounded-[0.7rem] bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-3 py-3 shadow-[0_10px_20px_-16px_rgba(0,119,182,0.48)] min-h-[24vh]">
+    <div className="relative rounded-[0.85rem] bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-4 py-3.5 shadow-[0_12px_24px_-16px_rgba(0,119,182,0.58)] min-h-[30vh]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_60%)]" />
         <div className="relative flex items-center gap-3 h-full">
-            <div className="h-full min-h-[84px] w-[42%] max-w-[120px] rounded-[0.6rem] bg-white/8 flex items-center justify-center overflow-hidden">
+            <div className="h-full min-h-[112px] w-[48%] max-w-[156px] rounded-[0.7rem] bg-white/10 flex items-center justify-center overflow-hidden">
                 {covers.length > 0 ? (
                     <div className="grid grid-cols-2 gap-1 p-1 w-full h-full">
                         {covers.slice(0, 4).map((cover, idx) => (
@@ -339,12 +335,14 @@ const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: 
                     <MediaIcon className="h-5 w-5 text-white/65" />
                 )}
             </div>
-            <div className="min-w-0 flex-1">
-                <AttachmentTypeLabel label="FROM THE SHELF" />
-                <BilingualText className="mt-2 font-semibold text-[13px] text-white/90 line-clamp-2">{name || 'Shelf'}</BilingualText>
-                <BilingualText role="Caption" className="!text-[10px] text-white/60 truncate">
-                {Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : ''}
-                </BilingualText>
+            <div className="min-w-0 flex-1 flex flex-col justify-between py-1">
+                <div>
+                    <AttachmentTypeLabel label="Shelf" />
+                    <BilingualText className="mt-2.5 font-semibold text-[15px] text-white/90 line-clamp-3">{name || 'Shelf'}</BilingualText>
+                </div>
+                <div className="mt-3 inline-flex w-fit items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/80">
+                    {Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : 'Collection'}
+                </div>
             </div>
         </div>
     </div>
@@ -354,7 +352,7 @@ const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: s
     <div className="rounded-[0.7rem] bg-gradient-to-r from-[#10131a] to-[#121924] px-3 py-3 shadow-[0_10px_20px_-16px_rgba(255,255,255,0.34)] min-h-[20vh]">
         <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
-                <AttachmentTypeLabel label="EVENT" />
+                <AttachmentTypeLabel label="Venue" />
                 <BilingualText className="mt-2 font-semibold text-[13px] text-white/92 truncate">
                     {dateLabel || name || 'Venue'}
                 </BilingualText>
@@ -403,6 +401,16 @@ const UnresolvedReferenceView: React.FC = () => (
 
 const readNonEmptyString = (value: unknown): string =>
     typeof value === 'string' ? value.trim() : '';
+
+const firstNonEmpty = (...values: unknown[]): string => {
+    for (const value of values) {
+        const normalized = readNonEmptyString(value);
+        if (normalized.length > 0) {
+            return normalized;
+        }
+    }
+    return '';
+};
 
 type StructuredNavigationTarget =
     | { id: 'bookDetails'; params: { bookId: string } }
@@ -557,6 +565,8 @@ interface AttachmentRendererV1Props {
     autoLoad?: boolean;
 }
 
+console.log("ATTACHMENT_RENDERER_VERSION_3");
+
 const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment, surface, onRemove, autoLoad = true }) => {
     const { viewAttachment } = useAttachmentViewer();
     const { navigate, currentView } = useNavigation();
@@ -570,7 +580,8 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     const allowed = ACTION_MATRIX[surface];
 
     useEffect(() => {
-        if (!isV1 || !autoLoad) {
+        // autoLoad means eager-load this attachment without viewport gating.
+        if (!isV1 || autoLoad) {
             setIsInViewport(true);
             return;
         }
@@ -592,7 +603,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         return () => observer.disconnect();
     }, [isV1, autoLoad]);
 
-    const v1Type = typeof v1?.type === 'string' ? v1.type : '';
+    const v1Type = typeof v1?.type === 'string' ? v1.type.toUpperCase() : '';
     const v1Payload: Record<string, unknown> =
         v1?.payload && typeof v1.payload === 'object'
             ? (v1.payload as Record<string, unknown>)
@@ -601,6 +612,18 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         v1?.metadata && typeof v1.metadata === 'object'
             ? (v1.metadata as Record<string, unknown>)
             : {};
+    const resolveMediaSrc = (resolvedSignedUrl: string): string =>
+        firstNonEmpty(
+            resolvedSignedUrl,
+            v1Payload.url,
+            v1Payload.previewUrl,
+            v1Payload.imageUrl,
+            (v1Payload as Record<string, unknown>).downloadURL,
+            (v1Payload as Record<string, unknown>).downloadUrl,
+            v1Metadata.previewUrl,
+            (v1Metadata as Record<string, unknown>).url,
+            (v1Metadata as Record<string, unknown>).signedUrl
+        );
 
     const isReferenceV1 =
         v1Type === 'BOOK_REFERENCE' || v1Type === 'QUOTE_REFERENCE';
@@ -612,6 +635,50 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         shouldResolveSecureUrl ? v1!.attachmentId : undefined,
         surface
     );
+
+    useEffect(() => {
+        if (!import.meta.env.DEV || surface !== 'feed') return;
+
+        const legacyType = !isV1
+            ? readNonEmptyString((attachment as any)?.type).toLowerCase()
+            : '';
+        const isMediaLike = isV1
+            ? v1Type === 'IMAGE' || v1Type === 'MEDIA'
+            : legacyType === 'media' || legacyType === 'image';
+        if (!isMediaLike) return;
+
+        const diagnosticId = isV1
+            ? firstNonEmpty(v1?.attachmentId, 'unknown')
+            : firstNonEmpty((attachment as any)?.attachmentId, (attachment as any)?.id, 'legacy');
+        const key = `${isV1 ? 'v1' : 'legacy'}:${diagnosticId}`;
+        if (mediaFeedDiagnosticsLogged.has(key)) return;
+        mediaFeedDiagnosticsLogged.add(key);
+
+        console.info('[SOCIAL][MEDIA_FEED_DIAGNOSTIC]', {
+            key,
+            isV1,
+            type: isV1 ? v1Type : legacyType,
+            isResolvingUrl,
+            isUrlError,
+            hasSecureUrl: Boolean(secureUrl?.url),
+            payloadUrl: firstNonEmpty((v1Payload as any)?.url, (attachment as any)?.url),
+            payloadPreviewUrl: firstNonEmpty((v1Payload as any)?.previewUrl, (attachment as any)?.previewUrl),
+            payloadImageUrl: firstNonEmpty((v1Payload as any)?.imageUrl, (attachment as any)?.imageUrl),
+            metadataPreviewUrl: firstNonEmpty((v1Metadata as any)?.previewUrl, (attachment as any)?.metadata?.previewUrl),
+            storagePath: firstNonEmpty((v1Metadata as any)?.storagePath, (attachment as any)?.storagePath),
+        });
+    }, [
+        attachment,
+        isResolvingUrl,
+        isUrlError,
+        isV1,
+        secureUrl?.url,
+        surface,
+        v1?.attachmentId,
+        v1Metadata,
+        v1Payload,
+        v1Type,
+    ]);
 
     const maxHeightMap: Record<RenderSurface, number> = {
         home: 160,
@@ -745,7 +812,55 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     />
                 );
                 break;
-            case 'media': visual = <ImageView attachment={attachment} url={legacy.url} payload={{}} maxHeight={maxHeightMap[surface]} surface={surface} />; break;
+            case 'media': {
+                const legacyPayload =
+                    legacy.payload && typeof legacy.payload === 'object'
+                        ? legacy.payload as Record<string, unknown>
+                        : {};
+                const legacyMetadata =
+                    legacy.metadata && typeof legacy.metadata === 'object'
+                        ? legacy.metadata as Record<string, unknown>
+                        : {};
+                const legacyUrl = firstNonEmpty(
+                    legacy.url,
+                    legacy.previewUrl,
+                    legacy.imageUrl,
+                    legacyPayload.url,
+                    legacyPayload.previewUrl,
+                    legacyPayload.imageUrl,
+                    legacyMetadata.previewUrl,
+                    legacyMetadata.url
+                );
+                visual = legacyUrl
+                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} />
+                    : <UnresolvedReferenceView />;
+                break;
+            }
+            case 'image':
+            case 'IMAGE': {
+                const legacyPayload =
+                    legacy.payload && typeof legacy.payload === 'object'
+                        ? legacy.payload as Record<string, unknown>
+                        : {};
+                const legacyMetadata =
+                    legacy.metadata && typeof legacy.metadata === 'object'
+                        ? legacy.metadata as Record<string, unknown>
+                        : {};
+                const legacyUrl = firstNonEmpty(
+                    legacy.url,
+                    legacy.previewUrl,
+                    legacy.imageUrl,
+                    legacyPayload.url,
+                    legacyPayload.previewUrl,
+                    legacyPayload.imageUrl,
+                    legacyMetadata.previewUrl,
+                    legacyMetadata.url
+                );
+                visual = legacyUrl
+                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} />
+                    : <UnresolvedReferenceView />;
+                break;
+            }
             default:
                 if (isStructuredAttachment(attachment)) {
                     visual = <UnresolvedReferenceView />;
@@ -754,16 +869,10 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                 return null;
         }
     } else {
-        const inlineFeedUrl =
-            surface === 'feed'
-                ? (
-                    (typeof v1Payload.url === 'string' ? v1Payload.url : '') ||
-                    (typeof v1Payload.previewUrl === 'string' ? v1Payload.previewUrl : '') ||
-                    (typeof v1Metadata.previewUrl === 'string' ? v1Metadata.previewUrl : '')
-                )
-                : '';
-        const resolvedUrl = (shouldResolveSecureUrl ? (secureUrl?.url || '') : '') || inlineFeedUrl;
-        const requiresResolvedUrl = v1Type === 'IMAGE';
+        const resolvedUrl = resolveMediaSrc(
+    secureUrl?.url || ''
+);
+        const requiresResolvedUrl = v1Type === 'IMAGE' || v1Type === 'MEDIA';
 
         const hasRenderableUrl = resolvedUrl.length > 0;
 
@@ -776,7 +885,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     )}
                 >
                     <div className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">
-                        {v1Type === 'IMAGE' ? 'MEDIA' : v1Type === 'VIDEO' ? 'VIDEO' : v1Type === 'AUDIO' ? 'AUDIO' : v1Type === 'DOCUMENT' ? 'DOC' : 'ATTACHMENT'}
+                        {v1Type === 'VIDEO' ? 'VIDEO' : v1Type === 'AUDIO' ? 'AUDIO' : v1Type === 'DOCUMENT' ? 'DOC' : ''}
                     </div>
                 </div>
             );
@@ -788,58 +897,90 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                 </div>
             );
         } else {
-            switch (v1Type) {
-                case 'IMAGE': visual = <ImageView attachment={attachment} url={resolvedUrl} payload={v1Payload} maxHeight={maxHeightMap[surface]} surface={surface} />; break; 
-                case 'VIDEO': visual = <VideoView attachment={attachment} payload={v1Payload} maxHeight={maxHeightMap[surface]} surface={surface} />; break; 
-                case 'AUDIO': visual = <AudioView attachment={attachment} maxHeight={maxHeightMap[surface]} surface={surface} />; break;
-                case 'DOCUMENT': visual = <DocumentView attachment={attachment} payload={v1Payload} surface={surface} />; break;
-                case 'LINK': 
-                    visual = <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-xs opacity-60"><GlobeIcon className="h-4 w-4 inline mr-2"/>{typeof v1Payload.url === 'string' ? v1Payload.url : ''}</div>; 
-                    AttachmentAnalytics.track('attachment_rendered', attachment, surface);
-                    break;
-                case 'BOOK_REFERENCE': {
-                    const entityId = typeof v1Payload.entityId === 'string' ? v1Payload.entityId : '';
-                    if (!entityId) {
-                        visual = <UnresolvedReferenceView />;
-                        break;
-                    }
-                    visual = (
-                        <ReferenceView
-                            type="BOOK"
-                            id={entityId}
-                            surface={surface}
-                            hydrated={
-                                (v1Payload.hydratedEntity && typeof v1Payload.hydratedEntity === 'object')
-                                    ? v1Payload.hydratedEntity as Record<string, unknown>
-                                    : null
-                            }
-                        />
-                    );
-                    break;
+           switch (v1Type) {
+
+    case 'MEDIA':
+  case 'MEDIA':
+case 'IMAGE':
+    visual = (
+        <ImageView
+            attachment={attachment}
+            url={resolvedUrl}
+            payload={v1Payload}
+            maxHeight={maxHeightMap[surface]}
+            surface={surface}
+        />
+    );
+    break;
+
+    case 'VIDEO':
+        visual = <VideoView attachment={attachment} payload={v1Payload} maxHeight={maxHeightMap[surface]} surface={surface} />;
+        break;
+
+    case 'AUDIO':
+        visual = <AudioView attachment={attachment} maxHeight={maxHeightMap[surface]} surface={surface} />;
+        break;
+
+    case 'DOCUMENT':
+        visual = <DocumentView attachment={attachment} payload={v1Payload} surface={surface} />;
+        break;
+
+    case 'LINK':
+        visual = (
+            <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-xs opacity-60">
+                <GlobeIcon className="h-4 w-4 inline mr-2" />
+                {typeof v1Payload.url === 'string' ? v1Payload.url : ''}
+            </div>
+        );
+        AttachmentAnalytics.track('attachment_rendered', attachment, surface);
+        break;
+
+    case 'BOOK_REFERENCE': {
+        const entityId = typeof v1Payload.entityId === 'string' ? v1Payload.entityId : '';
+        if (!entityId) {
+            visual = <UnresolvedReferenceView />;
+            break;
+        }
+        visual = (
+            <ReferenceView
+                type="BOOK"
+                id={entityId}
+                surface={surface}
+                hydrated={
+                    (v1Payload.hydratedEntity && typeof v1Payload.hydratedEntity === 'object')
+                        ? v1Payload.hydratedEntity as Record<string, unknown>
+                        : null
                 }
-                case 'QUOTE_REFERENCE': {
-                    const entityId = typeof v1Payload.entityId === 'string' ? v1Payload.entityId : '';
-                    if (!entityId) {
-                        visual = <UnresolvedReferenceView />;
-                        break;
-                    }
-                    visual = (
-                        <ReferenceView
-                            type="QUOTE"
-                            id={entityId}
-                            owner={typeof v1Payload.ownerId === 'string' ? v1Payload.ownerId : undefined}
-                            surface={surface}
-                            hydrated={
-                                (v1Payload.hydratedEntity && typeof v1Payload.hydratedEntity === 'object')
-                                    ? v1Payload.hydratedEntity as Record<string, unknown>
-                                    : null
-                            }
-                        />
-                    );
-                    break;
+            />
+        );
+        break;
+    }
+
+    case 'QUOTE_REFERENCE': {
+        const entityId = typeof v1Payload.entityId === 'string' ? v1Payload.entityId : '';
+        if (!entityId) {
+            visual = <UnresolvedReferenceView />;
+            break;
+        }
+        visual = (
+            <ReferenceView
+                type="QUOTE"
+                id={entityId}
+                owner={typeof v1Payload.ownerId === 'string' ? v1Payload.ownerId : undefined}
+                surface={surface}
+                hydrated={
+                    (v1Payload.hydratedEntity && typeof v1Payload.hydratedEntity === 'object')
+                        ? v1Payload.hydratedEntity as Record<string, unknown>
+                        : null
                 }
-                default: visual = <div className="p-4 border border-dashed opacity-30 flex items-center justify-center"><MediaIcon /></div>;
-            }
+            />
+        );
+        break;
+    }
+
+    default:
+        visual = <div className="p-4 border border-dashed opacity-30 flex items-center justify-center"><MediaIcon /></div>;
+}
         }
     }
 

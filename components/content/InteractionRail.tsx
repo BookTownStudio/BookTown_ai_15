@@ -152,30 +152,38 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
     return (
         <div
             className={cn(
-                "fixed right-3 md:right-4 z-40 flex flex-col items-center justify-end border border-white/10 bg-black/25 backdrop-blur-md shadow-[0_16px_36px_-28px_rgba(0,0,0,0.9)] transition-all duration-[250ms] ease-in-out",
-                "bottom-[calc(env(safe-area-inset-bottom)+76px+9vh)]",
-                isCollapsed
-                    ? "w-9 rounded-full px-2 py-2.5"
-                    : "w-[54px] rounded-[999px] px-2 py-2.5"
+                "fixed right-3 md:right-4 z-40 flex flex-col items-center",
+                "bottom-[calc(var(--bottom-nav-height,66px)+12px)]"
             )}
         >
-            <div className={cn(
-                "flex flex-col-reverse items-center gap-6 mb-2 transition-all duration-[250ms] ease-in-out",
-                isCollapsed && "pointer-events-none max-h-0 opacity-0 overflow-hidden"
-            )}>
+            <div
+                className={cn(
+                    "mb-2 flex flex-col-reverse items-center gap-5 rounded-[999px] border border-white/10 bg-black/22 px-2 py-2.5 backdrop-blur-md shadow-[0_14px_28px_-24px_rgba(0,0,0,0.82)] transition-all duration-[250ms] ease-in-out origin-bottom",
+                    isCollapsed
+                        ? "pointer-events-none max-h-0 opacity-0 translate-y-1.5 overflow-hidden !p-0 !border-transparent !shadow-none"
+                        : "max-h-[420px] opacity-100 translate-y-0"
+                )}
+            >
                 {actionsConfig.map((action) => (
                     <ActionButton key={action.id} {...action.props} />
                 ))}
             </div>
 
-            <button
-                type="button"
-                onClick={() => setIsCollapsed((prev) => !prev)}
-                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/8 text-white/65 hover:bg-white/14 hover:text-white transition-colors"
-                aria-label={isCollapsed ? (lang === 'en' ? 'Expand actions' : 'توسيع الإجراءات') : (lang === 'en' ? 'Collapse actions' : 'طي الإجراءات')}
+            <div
+                className={cn(
+                    "flex h-8 items-center justify-center rounded-full border border-white/10 bg-black/28 backdrop-blur-md shadow-[0_10px_20px_-18px_rgba(0,0,0,0.9)] transition-all duration-[250ms] ease-in-out",
+                    isCollapsed ? "w-9" : "w-[52px]"
+                )}
             >
-                <ChevronLeftIcon className={cn("h-3.5 w-3.5 transition-transform duration-[250ms] ease-in-out", isCollapsed && "rotate-180")} />
-            </button>
+                <button
+                    type="button"
+                    onClick={() => setIsCollapsed((prev) => !prev)}
+                    className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/8 text-white/65 hover:bg-white/14 hover:text-white transition-colors"
+                    aria-label={isCollapsed ? (lang === 'en' ? 'Expand actions' : 'توسيع الإجراءات') : (lang === 'en' ? 'Collapse actions' : 'طي الإجراءات')}
+                >
+                    <ChevronLeftIcon className={cn("h-3.5 w-3.5 transition-transform duration-[250ms] ease-in-out", isCollapsed && "rotate-180")} />
+                </button>
+            </div>
         </div>
     );
 };

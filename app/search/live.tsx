@@ -103,6 +103,40 @@ const LiveSearchScreen: React.FC = () => {
     }
   };
 
+  const handleAddResult = async (result: SearchResultDTO) => {
+    if (busyId) return;
+
+    try {
+      setBusyId(result.externalId);
+
+      const res = await ingestBook({
+        bookId: result.externalId,
+        source: result.source,
+        rawBook: result.rawBook ?? result
+      });
+
+      const canonicalId = res?.editionId || res?.bookId;
+      if (!canonicalId) {
+        throw new Error('Ingestion did not return canonical identifier');
+      }
+
+      showToast(
+        lang === 'en'
+          ? 'Book added to your library.'
+          : 'تمت إضافة الكتاب إلى مكتبتك.'
+      );
+    } catch (err) {
+      console.error('[LIVE_SEARCH][INGEST_ADD_FAILED]', err);
+      showToast(
+        lang === 'en'
+          ? 'Failed to add book.'
+          : 'فشل إضافة الكتاب.'
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   const validResults: SearchResultDTO[] =
     (results || [])
       .map((b: any) => {
@@ -166,7 +200,7 @@ const LiveSearchScreen: React.FC = () => {
                 lang={lang}
                 isBusy={busyId === r.externalId}
                 onOpen={handleOpenResult}
-                onAdd={handleOpenResult}
+                onAdd={handleAddResult}
               />
             ))}
           </div>

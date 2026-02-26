@@ -294,8 +294,14 @@ const SocialScreen: React.FC = () => {
             searchResults.posts.length > 0;
 
         return (
-            <div className="fixed inset-0 top-[calc(env(safe-area-inset-top)+3.75rem)] z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
-                <div className="container mx-auto max-w-md px-4 py-4 space-y-6 pb-24">
+            <div className="fixed inset-0 top-[calc(env(safe-area-inset-top)+3.25rem)] z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
+                <div
+                    className="mx-auto w-full max-w-[42rem] px-4 py-4 space-y-6 pb-24"
+                    style={{
+                        paddingLeft: 'max(14px, env(safe-area-inset-left))',
+                        paddingRight: 'max(14px, env(safe-area-inset-right))'
+                    }}
+                >
                     {isSearching && <div className="flex justify-center py-8"><LoadingSpinner /></div>}
 
                     {!user && debouncedQuery && (
@@ -384,25 +390,31 @@ const SocialScreen: React.FC = () => {
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-30 pt-[max(4px,env(safe-area-inset-top))] transition-all duration-300">
-                <div className="w-full flex h-16 items-center justify-center px-3 md:px-4 relative">
+            <header className="fixed top-0 left-0 right-0 z-30 pt-[max(2px,env(safe-area-inset-top))] transition-all duration-300">
+                <div
+                    className="w-full flex h-14 items-center justify-center relative"
+                    style={{
+                        paddingLeft: 'max(12px, env(safe-area-inset-left))',
+                        paddingRight: 'max(12px, env(safe-area-inset-right))'
+                    }}
+                >
                     {isSearchOpen ? (
-                        <div className="w-full max-w-xl flex items-center gap-2.5 animate-fade-in-up">
+                        <div className="w-full max-w-[42rem] flex items-center gap-2 animate-fade-in-up">
                             <div className="flex-grow relative group">
                                 <input 
                                     ref={searchInputRef}
                                     type="text" 
-                                    className="w-full bg-white/10 border border-white/15 rounded-2xl py-2.5 pl-11 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
+                                    className="w-full bg-white/10 border border-white/15 rounded-2xl py-2 pl-10 pr-11 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
                                     placeholder={lang === 'en' ? "Search..." : "بحث..."}
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
-                                <SearchIcon className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-white/50 group-focus-within:text-accent transition-colors" />
+                                <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-white/50 group-focus-within:text-accent transition-colors" />
                                 <button 
                                     onClick={handleCloseSearch} 
-                                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
                                 >
-                                    <XCircleIcon className="h-5 w-5" />
+                                    <XCircleIcon className="h-4.5 w-4.5" />
                                 </button>
                             </div>
                         </div>
@@ -411,9 +423,9 @@ const SocialScreen: React.FC = () => {
                             <div className="flex items-center gap-2.5">
                                 <button 
                                     onClick={() => setIsSearchOpen(true)}
-                                    className="p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
+                                    className="p-1.5 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
                                 >
-                                    <SearchIcon className="h-4.5 w-4.5" />
+                                    <SearchIcon className="h-4 w-4" />
                                 </button>
 
                                 <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-sm border border-white/10" role="tablist">
@@ -422,7 +434,7 @@ const SocialScreen: React.FC = () => {
                                             key={tab.id}
                                             onClick={() => handleScopeChange(tab.id)}
                                             className={cn(
-                                                "whitespace-nowrap rounded-full py-1.5 px-4 text-[13px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
+                                            "whitespace-nowrap rounded-full py-1.5 px-3.5 text-[12px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
                                                 scope === tab.id
                                                     ? 'bg-white text-slate-900 shadow'
                                                     : 'text-white/70 hover:bg-white/20 hover:text-white'
@@ -436,13 +448,13 @@ const SocialScreen: React.FC = () => {
                                     <button
                                         onClick={() => setMoreFiltersOpen(prev => !prev)}
                                         className={cn(
-                                            "rounded-full p-1.5 text-sm font-medium transition-colors relative",
+                                            "rounded-full p-1 text-sm font-medium transition-colors relative",
                                             filters.length > 0
                                                 ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
                                                 : 'text-white/70 hover:bg-white/20 hover:text-white'
                                         )}
                                     >
-                                        <VerticalEllipsisIcon className="h-4.5 w-4.5" />
+                                        <VerticalEllipsisIcon className="h-4 w-4" />
                                         {filters.length > 0 && (
                                             <div className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full animate-pulse shadow-sm" />
                                         )}
@@ -490,12 +502,13 @@ const SocialScreen: React.FC = () => {
             <div 
                 ref={mainContentRef} 
                 className={cn(
-                    "h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
+                    "h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overflow-x-hidden overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
                     isSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 )}
                 style={{
-                    scrollPaddingTop: 'calc(env(safe-area-inset-top) + 82px)',
-                    scrollPaddingBottom: 'calc(var(--bottom-nav-height, 66px) + 12px)'
+                    ['--social-top-chrome-offset' as any]: 'calc(env(safe-area-inset-top) + 64px)',
+                    scrollPaddingTop: 'calc(var(--social-top-chrome-offset) + 10px)',
+                    scrollPaddingBottom: 'calc(var(--bottom-nav-height, 66px) + 14px)'
                 }}
             >
                 {renderFeedContent()}

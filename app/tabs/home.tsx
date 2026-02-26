@@ -160,6 +160,30 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const handleAddResult = async (result: SearchResultDTO) => {
+    if (busyId) return;
+
+    try {
+      setBusyId(result.externalId);
+
+      const res = await ingestBook({
+        bookId: result.externalId,
+        source: result.source,
+        rawBook: result.rawBook ?? result
+      });
+
+      const canonicalId = res?.editionId || res?.bookId;
+      if (!canonicalId) throw new Error('Missing canonical ID');
+
+      showToast(lang === 'en' ? 'Book added to your library.' : 'تمت إضافة الكتاب إلى مكتبتك.');
+    } catch (err) {
+      console.error('[HOME][INGEST_ADD_FAILED]', err);
+      showToast(lang === 'en' ? 'Failed to add book.' : 'فشل إضافة الكتاب.');
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   /* -------------------------------
      Render Search Results
   -------------------------------- */
@@ -206,7 +230,7 @@ const HomeScreen: React.FC = () => {
                 lang={lang}
                 isBusy={busyId === result.externalId}
                 onOpen={handleOpenResult}
-                onAdd={handleOpenResult}
+                onAdd={handleAddResult}
               />
             ))}
           </div>

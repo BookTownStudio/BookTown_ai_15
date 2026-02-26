@@ -72,6 +72,79 @@ const toIsoTimestamp = (value: unknown): string => {
     return '';
 };
 
+const readNonEmptyString = (value: unknown): string =>
+    typeof value === 'string' ? value.trim() : '';
+
+const toNonNegativeCount = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) && value >= 0
+        ? Math.trunc(value)
+        : null;
+
+const resolveShelfBookCount = (data: Record<string, unknown> | null): number => {
+    if (!data) return 0;
+
+    const directCount =
+        toNonNegativeCount(data.bookCount) ??
+        toNonNegativeCount(data.itemsCount) ??
+        toNonNegativeCount(data.totalBooks) ??
+        toNonNegativeCount((data.counters as Record<string, unknown> | undefined)?.totalBooks) ??
+        null;
+    if (directCount !== null) return directCount;
+
+    const entries =
+        data.entries && typeof data.entries === 'object'
+            ? (data.entries as Record<string, unknown>)
+            : null;
+    if (entries) {
+        return Object.keys(entries).length;
+    }
+
+    const bookIds = Array.isArray(data.bookIds)
+        ? data.bookIds.filter((id) => typeof id === 'string' && id.trim().length > 0)
+        : [];
+    if (bookIds.length > 0) return bookIds.length;
+
+    const books = Array.isArray(data.books) ? data.books : [];
+    if (books.length > 0) return books.length;
+
+    return 0;
+};
+
+const resolveShelfCovers = (data: Record<string, unknown> | null): string[] => {
+    if (!data) return [];
+
+    const directCovers = Array.isArray(data.covers)
+        ? data.covers.filter((cover): cover is string => typeof cover === 'string' && cover.trim().length > 0)
+        : [];
+    if (directCovers.length > 0) {
+        return directCovers.slice(0, 4);
+    }
+
+    const entries =
+        data.entries && typeof data.entries === 'object'
+            ? (data.entries as Record<string, unknown>)
+            : null;
+    if (!entries) return [];
+
+    const extracted: string[] = [];
+    for (const entry of Object.values(entries)) {
+        if (!entry || typeof entry !== 'object') continue;
+        const entryObj = entry as Record<string, unknown>;
+        const snapshot =
+            entryObj.snapshot && typeof entryObj.snapshot === 'object'
+                ? (entryObj.snapshot as Record<string, unknown>)
+                : null;
+        const cover =
+            readNonEmptyString(snapshot?.coverUrl) ||
+            readNonEmptyString(entryObj.coverUrl);
+        if (!cover) continue;
+        extracted.push(cover);
+        if (extracted.length >= 4) break;
+    }
+
+    return extracted;
+};
+
 const resolveAttachmentFromHydratedEntity = (
     refTypeRaw: unknown,
     refIdRaw: unknown,
@@ -150,12 +223,8 @@ const resolveAttachmentFromHydratedEntity = (
     }
 
     if (refType === 'shelf') {
-        const covers = Array.isArray(data.covers)
-            ? data.covers.filter((cover): cover is string => typeof cover === 'string')
-            : [];
-        const bookCount = typeof data.bookCount === 'number' && Number.isFinite(data.bookCount)
-            ? Math.max(0, Math.trunc(data.bookCount))
-            : 0;
+        const bookCount = resolveShelfBookCount(data);
+        const covers = resolveShelfCovers(data);
         return {
             type: 'shelf',
             shelfId: refId,
@@ -292,20 +361,31 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
     const flowTextClampClass = useMemo(() => {
         const textLength = displayBody.trim().length;
-        if (textLength <= 120) return '';
+        if (textLength <= 140) return '';
 
-        const isTallViewport = viewportHeight >= 900;
-        const isMediumViewport = viewportHeight >= 760;
+        const isTallViewport = viewportHeight >= 920;
+        const isMediumViewport = viewportHeight >= 780;
 
-        if (textLength <= 280) {
-            if (isTallViewport) return 'line-clamp-5';
-            if (isMediumViewport) return 'line-clamp-4';
-            return 'line-clamp-3';
+        if (textLength <= 320) {
+            if (isTallViewport) return 'line-clamp-7';
+            if (isMediumViewport) return 'line-clamp-6';
+            return 'line-clamp-5';
         }
 
-        if (isTallViewport) return 'line-clamp-4';
-        return 'line-clamp-3';
+        if (textLength <= 520) {
+            if (isTallViewport) return 'line-clamp-6';
+            return 'line-clamp-5';
+        }
+
+        return isTallViewport ? 'line-clamp-6' : 'line-clamp-5';
     }, [displayBody, viewportHeight]);
+
+    const flowTextSizeClass = useMemo(() => {
+        const textLength = displayBody.trim().length;
+        if (textLength > 520) return "text-[1.67rem] md:text-[1.98rem]";
+        if (textLength > 360) return "text-[1.74rem] md:text-[2.06rem]";
+        return "text-[1.85rem] md:text-[2.2rem]";
+    }, [displayBody]);
 
     const resolvedAttachments = useMemo(() => {
         const refs = post?.content?.attachments || [];
@@ -413,10 +493,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         (hydratedData && typeof hydratedData.titleEn === 'string' ? hydratedData.titleEn : '') ||
                         (hydratedData && typeof hydratedData.titleAr === 'string' ? hydratedData.titleAr : '') ||
                         'Shelf';
-                    const hydratedBookCount =
-                        hydratedData && typeof hydratedData.bookCount === 'number' && Number.isFinite(hydratedData.bookCount)
-                            ? Math.max(0, Math.trunc(hydratedData.bookCount))
-                            : 0;
+                    const hydratedBookCount = resolveShelfBookCount(hydratedData);
+                    const hydratedCovers = resolveShelfCovers(hydratedData);
                     const ownerId =
                         (typeof (ref as { ownerId?: unknown }).ownerId === 'string'
                             ? (ref as { ownerId: string }).ownerId.trim()
@@ -431,7 +509,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         ownerId,
                         shelfName,
                         bookCount: hydratedBookCount,
-                        covers: [],
+                        covers: hydratedCovers,
                     };
                 }
 
@@ -547,8 +625,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 <div className="absolute inset-0 bg-gradient-to-t from-black/72 via-black/24 to-black/10" />
                 <div className="relative z-10 flex h-full flex-col">
                     <header
-                        className="pl-5 md:pl-7 pr-[92px] md:pr-[104px]"
-                        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 82px)' }}
+                        className="pl-5 md:pl-7 pr-[108px] md:pr-[120px]"
+                        style={{ paddingTop: 'calc(var(--social-top-chrome-offset, env(safe-area-inset-top) + 72px) + 14px)' }}
                     >
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={handleOpenAuthorProfile}>
@@ -575,10 +653,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                                     <button
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }}
-                                        className="p-2 rounded-full bg-black/28 border border-white/18 text-white/72 hover:text-white hover:bg-black/45 transition-colors"
+                                        className="p-1.5 rounded-full bg-black/18 border border-white/10 text-white/58 hover:text-white/82 hover:bg-black/26 transition-colors"
                                         aria-label={lang === 'en' ? 'Post actions' : 'إجراءات المنشور'}
                                     >
-                                        <EllipsisIcon className="h-4.5 w-4.5 rotate-90" />
+                                        <EllipsisIcon className="h-4 w-4 rotate-90" />
                                     </button>
                                     {isMenuOpen && (
                                         <div className={cn("absolute top-full z-[60] mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
@@ -592,8 +670,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     </header>
 
                     <div
-                        className="flex-1 flex flex-col pl-5 md:pl-7 pr-[92px] md:pr-[104px] pt-4 md:pt-5"
-                        style={{ paddingBottom: 'max(24vh, calc(var(--bottom-nav-height, 66px) + 12px))' }}
+                        className="flex-1 flex flex-col pl-5 md:pl-7 pr-[108px] md:pr-[120px] pt-4 md:pt-5"
+                        style={{ paddingBottom: 'max(26vh, calc(var(--bottom-nav-height, 66px) + 16px))' }}
                     >
                         <div className="flex-1 flex items-center justify-center">
                             <div className="w-full max-w-4xl">
@@ -604,8 +682,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                             <BilingualText
                                 role="Body"
                                 className={cn(
-                                    "font-serif text-[1.85rem] leading-[1.55] md:text-[2.2rem] md:leading-[1.58] drop-shadow-md tracking-[0.01em] text-white/95",
-                                    flowTextClampClass
+                                    "font-serif leading-[1.55] md:leading-[1.58] drop-shadow-md tracking-[0.01em] text-white/95",
+                                    flowTextClampClass,
+                                    flowTextSizeClass
                                 )}
                             >
                                 {displayBody}
