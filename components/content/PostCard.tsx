@@ -673,10 +673,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         className="flex-1 flex flex-col pl-5 md:pl-7 pr-[108px] md:pr-[120px] pt-4 md:pt-5"
                         style={{ paddingBottom: 'max(26vh, calc(var(--bottom-nav-height, 66px) + 16px))' }}
                     >
-                        <div className="flex-1 flex items-center justify-center">
-                            <div className="w-full max-w-4xl">
-                                <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
-                            </div>
+                        <div className="w-full max-w-4xl mx-auto">
+                            <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
                         </div>
                         <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity mx-auto w-full max-w-2xl text-center mt-6">
                             <BilingualText

@@ -88,38 +88,58 @@ const AttachmentActionMenu: React.FC<AttachmentActionMenuProps> = ({ attachment,
     );
 };
 
-const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: any; maxHeight: number | string; surface: RenderSurface }> = ({ attachment, url, payload, maxHeight, surface }) => {
+const ImageView: React.FC<{
+    attachment: PostAttachment;
+    url: string;
+    payload?: any;
+    maxHeight: number | string;
+    surface: RenderSurface;
+}> = ({ attachment, url, payload, maxHeight, surface }) => {
+
     const safePayload =
         payload && typeof payload === 'object'
             ? payload
             : {};
+
     const isExhibitionSurface = surface === 'feed';
+
     const fallbackAlt = 'attachment image';
+
     const resolvedAlt =
         typeof safePayload.alt === 'string' && safePayload.alt.trim().length > 0
             ? safePayload.alt
             : fallbackAlt;
+
     return (
-        <div 
+        <div
             className={cn(
-                "relative w-full overflow-hidden bg-slate-800 flex items-center justify-center shadow-[0_14px_24px_-20px_rgba(0,0,0,0.72)]",
+                "relative w-full overflow-hidden bg-slate-800 shadow-[0_14px_24px_-20px_rgba(0,0,0,0.72)]",
                 isExhibitionSurface
-                    ? "rounded-[0.7rem] aspect-[4/5] min-h-[240px] max-h-[72dvh]"
-                    : "rounded-xl min-h-[100px]"
+                    ? "rounded-[0.7rem]"
+                    : "rounded-xl"
             )}
-            style={isExhibitionSurface ? undefined : { maxHeight }}
+            style={
+                isExhibitionSurface
+                    ? undefined
+                    : { maxHeight }
+            }
         >
-           <img 
-    src={url} 
-    alt={resolvedAlt}
-    loading="lazy"
-    onLoad={() => AttachmentAnalytics.track('attachment_rendered', attachment, surface)}
-    onError={() => AttachmentAnalytics.track('attachment_failed', attachment, surface)}
-    className={cn(
-        "w-full h-auto object-cover transition-opacity duration-300",
-        isExhibitionSurface && "scale-[1.01]"
-    )}
-/>
+            <img
+                src={url}
+                alt={resolvedAlt}
+                loading="lazy"
+                onLoad={() =>
+                    AttachmentAnalytics.track('attachment_rendered', attachment, surface)
+                }
+                onError={() =>
+                    AttachmentAnalytics.track('attachment_failed', attachment, surface)
+                }
+                className={cn(
+                    "block w-full h-auto object-cover transition-opacity duration-300",
+                    isExhibitionSurface && "scale-[1.01]"
+                )}
+            />
+
             <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/52 via-black/14 to-transparent" />
         </div>
     );
@@ -146,6 +166,7 @@ const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight
             )}
             style={isExhibitionSurface ? undefined : { height: maxHeight }}
         >
+
             {typeof safePayload.thumbnail === 'string' && safePayload.thumbnail.length > 0 && (
                 <img src={safePayload.thumbnail} alt="Poster" className="absolute inset-0 w-full h-full object-cover opacity-50" />
             )}
@@ -565,8 +586,6 @@ interface AttachmentRendererV1Props {
     autoLoad?: boolean;
 }
 
-console.log("ATTACHMENT_RENDERER_VERSION_3");
-
 const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment, surface, onRemove, autoLoad = true }) => {
     const { viewAttachment } = useAttachmentViewer();
     const { navigate, currentView } = useNavigation();
@@ -900,8 +919,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
            switch (v1Type) {
 
     case 'MEDIA':
-  case 'MEDIA':
-case 'IMAGE':
+    case 'IMAGE':
     visual = (
         <ImageView
             attachment={attachment}
