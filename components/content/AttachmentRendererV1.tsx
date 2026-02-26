@@ -95,6 +95,7 @@ const ImageView: React.FC<{
     maxHeight: number | string;
     surface: RenderSurface;
 }> = ({ attachment, url, payload, maxHeight, surface }) => {
+    console.log("IMAGE_VIEW_ACTIVE");
 
     const safePayload =
         payload && typeof payload === 'object'
@@ -124,6 +125,7 @@ const ImageView: React.FC<{
                     : { maxHeight }
             }
         >
+            {console.log("IMAGE_VIEW_RENDERING", url)}
             <img
                 src={url}
                 alt={resolvedAlt}
@@ -140,7 +142,7 @@ const ImageView: React.FC<{
                 )}
             />
 
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/52 via-black/14 to-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
         </div>
     );
 };
