@@ -223,6 +223,9 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+    const [viewportHeight, setViewportHeight] = useState<number>(
+        typeof window !== 'undefined' ? window.innerHeight : 800
+    );
     const menuRef = useRef<HTMLDivElement>(null);
     const cardRef = useRef<HTMLDivElement>(null);
     const viewTrackedRef = useRef(false);
@@ -266,6 +269,17 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isMenuOpen]);
 
+    useEffect(() => {
+        if (viewMode !== 'flow' || typeof window === 'undefined') return;
+
+        const handleResize = () => {
+            setViewportHeight(window.innerHeight || 800);
+        };
+
+        window.addEventListener('resize', handleResize, { passive: true });
+        return () => window.removeEventListener('resize', handleResize);
+    }, [viewMode]);
+
     const timeAgo = (dateString: string) => {
         if (!dateString) return "...";
         const seconds = Math.floor((new Date().getTime() - new Date(dateString).getTime()) / 1000);
@@ -275,6 +289,23 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         if (interval > 1) return Math.floor(interval) + (lang === 'en' ? "h" : "س");
         return Math.floor(seconds / 60) + (lang === 'en' ? "m" : "د");
     }
+
+    const flowTextClampClass = useMemo(() => {
+        const textLength = displayBody.trim().length;
+        if (textLength <= 120) return '';
+
+        const isTallViewport = viewportHeight >= 900;
+        const isMediumViewport = viewportHeight >= 760;
+
+        if (textLength <= 280) {
+            if (isTallViewport) return 'line-clamp-5';
+            if (isMediumViewport) return 'line-clamp-4';
+            return 'line-clamp-3';
+        }
+
+        if (isTallViewport) return 'line-clamp-4';
+        return 'line-clamp-3';
+    }, [displayBody, viewportHeight]);
 
     const resolvedAttachments = useMemo(() => {
         const refs = post?.content?.attachments || [];
@@ -510,22 +541,29 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
 
     if (viewMode === 'flow') {
         return (
-            <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden rounded-[1.75rem] border border-white/10">
-                <div className="absolute inset-0 bg-gradient-to-b from-[#06111d] via-[#081a29] to-[#02070e]" />
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.22),transparent_48%)]" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/78 via-black/28 to-black/8" />
+            <div ref={cardRef} className="relative h-full w-full flex-shrink-0 text-white overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-b from-[#040a12] via-[#07131f] to-[#02060d]" />
+                <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_50%)]" />
+                <div className="absolute inset-0 bg-gradient-to-t from-black/72 via-black/24 to-black/10" />
                 <div className="relative z-10 flex h-full flex-col">
-                    <header className="px-6 md:px-8 pt-6 md:pt-8">
+                    <header
+                        className="pl-5 md:pl-7 pr-[92px] md:pr-[104px]"
+                        style={{ paddingTop: 'calc(env(safe-area-inset-top) + 82px)' }}
+                    >
                         <div className="flex items-start justify-between gap-4">
                             <div className="flex items-center gap-3 cursor-pointer min-w-0" onClick={handleOpenAuthorProfile}>
-                                <img src={authorAvatar} alt={authorName} className="h-9 w-9 rounded-full border border-white/25 bg-slate-800 shadow-[0_0_0_1px_rgba(255,255,255,0.06)]" />
+                                <img src={authorAvatar} alt={authorName} className="h-8 w-8 rounded-full border border-white/20 bg-slate-800" />
                                 <div className="min-w-0">
                                     <div className="flex items-center gap-2">
-                                        <BilingualText className="font-semibold text-[13px] !text-white/84 drop-shadow-sm truncate">{authorName}</BilingualText>
+                                        <BilingualText className="font-semibold text-[12px] !text-white/74 drop-shadow-sm truncate">
+                                            {post?.authorHandle || '@user'}
+                                        </BilingualText>
                                         <VisibilityBadge />
                                     </div>
                                     <div className="flex items-center gap-1.5">
-                                        <BilingualText role="Caption" className="!text-white/52 text-[10px] drop-shadow-sm">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                        <BilingualText role="Caption" className="!text-white/44 text-[10px] drop-shadow-sm">
+                                            {authorName} · {timeAgo(post?.timestamps?.createdAt || "")}
+                                        </BilingualText>
                                         {showEditedBadge && (
                                             <span className="text-[10px] font-medium uppercase tracking-[0.12em] text-white/38">{editedLabel}</span>
                                         )}
@@ -553,14 +591,23 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         </div>
                     </header>
 
-                    <div className="flex-1 flex flex-col px-6 md:px-8 pb-9 md:pb-11 pt-4 md:pt-6">
+                    <div
+                        className="flex-1 flex flex-col pl-5 md:pl-7 pr-[92px] md:pr-[104px] pt-4 md:pt-5"
+                        style={{ paddingBottom: 'max(24vh, calc(var(--bottom-nav-height, 66px) + 12px))' }}
+                    >
                         <div className="flex-1 flex items-center justify-center">
                             <div className="w-full max-w-4xl">
                                 <AttachmentListV1 attachments={resolvedAttachments} surface={surface} />
                             </div>
                         </div>
                         <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity mx-auto w-full max-w-2xl text-center mt-6">
-                            <BilingualText role="Body" className="font-serif text-[1.85rem] leading-[1.55] md:text-[2.2rem] md:leading-[1.58] drop-shadow-md line-clamp-3 tracking-[0.01em] text-white/95">
+                            <BilingualText
+                                role="Body"
+                                className={cn(
+                                    "font-serif text-[1.85rem] leading-[1.55] md:text-[2.2rem] md:leading-[1.58] drop-shadow-md tracking-[0.01em] text-white/95",
+                                    flowTextClampClass
+                                )}
+                            >
                                 {displayBody}
                             </BilingualText>
                         </div>
@@ -616,8 +663,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     }
 
     return (
-        <GlassCard className="!p-5 md:!p-6 relative border border-white/10 bg-gradient-to-b from-[#0a1420]/95 to-[#07111b]/95 shadow-[0_18px_36px_-24px_rgba(0,0,0,0.95)]">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.14),transparent_52%)]" />
+        <GlassCard className="!p-5 md:!p-6 relative !border-transparent !bg-transparent !shadow-none">
+            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.08),transparent_56%)]" />
             <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                 <button
                     type="button"

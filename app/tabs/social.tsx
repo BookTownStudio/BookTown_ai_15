@@ -232,12 +232,12 @@ const SocialScreen: React.FC = () => {
 
     const renderFeedContent = () => {
         if (isLoading && posts.length === 0) {
-            return <div className="h-screen w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
+            return <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
         }
 
         if (isError) {
             return (
-                <div className="h-screen w-full flex items-center justify-center bg-slate-900 p-8">
+                <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-900 p-8">
                     <ErrorState 
                         onRetry={() => refetch()} 
                         title={lang === 'en' ? "Feed Unavailable" : "التغذية غير متوفرة"}
@@ -248,7 +248,7 @@ const SocialScreen: React.FC = () => {
         
         if (posts.length === 0) {
              return (
-                <div className="h-screen w-full flex flex-col items-center justify-center text-center p-8 bg-black">
+                <div className="h-[100dvh] w-full flex flex-col items-center justify-center text-center p-8 bg-black">
                     <EmptyState 
                         icon={FeedIcon}
                         titleEn={scope === 'following' ? "No posts from follows" : "Quiet in the library"}
@@ -273,7 +273,7 @@ const SocialScreen: React.FC = () => {
                             key={post.id} 
                             id={`post-${post.id}`} 
                             data-post-id={post.id}
-                            className="h-screen w-full flex-shrink-0 snap-start px-3 md:px-5 py-4 md:py-5"
+                            className="h-[100dvh] w-full flex-shrink-0 snap-start"
                         >
                             <PostCard 
                                 post={post} 
@@ -294,7 +294,7 @@ const SocialScreen: React.FC = () => {
             searchResults.posts.length > 0;
 
         return (
-            <div className="fixed inset-0 top-24 z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
+            <div className="fixed inset-0 top-[calc(env(safe-area-inset-top)+3.75rem)] z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
                 <div className="container mx-auto max-w-md px-4 py-4 space-y-6 pb-24">
                     {isSearching && <div className="flex justify-center py-8"><LoadingSpinner /></div>}
 
@@ -384,15 +384,15 @@ const SocialScreen: React.FC = () => {
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-30 backdrop-blur-md transition-all duration-300">
-                <div className="container mx-auto flex h-24 items-end justify-center px-4 pb-4 relative">
+            <header className="fixed top-0 left-0 right-0 z-30 pt-[max(4px,env(safe-area-inset-top))] transition-all duration-300">
+                <div className="w-full flex h-16 items-center justify-center px-3 md:px-4 relative">
                     {isSearchOpen ? (
-                        <div className="w-full max-w-md flex items-center gap-3 animate-fade-in-up">
+                        <div className="w-full max-w-xl flex items-center gap-2.5 animate-fade-in-up">
                             <div className="flex-grow relative group">
                                 <input 
                                     ref={searchInputRef}
                                     type="text" 
-                                    className="w-full bg-white/10 border border-white/20 rounded-2xl py-2.5 pl-11 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
+                                    className="w-full bg-white/10 border border-white/15 rounded-2xl py-2.5 pl-11 pr-12 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
                                     placeholder={lang === 'en' ? "Search..." : "بحث..."}
                                     value={searchQuery}
                                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -407,22 +407,22 @@ const SocialScreen: React.FC = () => {
                             </div>
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center gap-3 animate-fade-in-up w-full">
-                            <div className="flex items-center gap-3 mt-8">
+                        <div className="flex items-center justify-center animate-fade-in-up w-full">
+                            <div className="flex items-center gap-2.5">
                                 <button 
                                     onClick={() => setIsSearchOpen(true)}
-                                    className="p-2.5 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
+                                    className="p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
                                 >
-                                    <SearchIcon className="h-5 w-5" />
+                                    <SearchIcon className="h-4.5 w-4.5" />
                                 </button>
 
-                                <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-md" role="tablist">
+                                <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-sm border border-white/10" role="tablist">
                                     {TABS.map(tab => (
                                         <button
                                             key={tab.id}
                                             onClick={() => handleScopeChange(tab.id)}
                                             className={cn(
-                                                "whitespace-nowrap rounded-full py-2 px-5 text-sm font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
+                                                "whitespace-nowrap rounded-full py-1.5 px-4 text-[13px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
                                                 scope === tab.id
                                                     ? 'bg-white text-slate-900 shadow'
                                                     : 'text-white/70 hover:bg-white/20 hover:text-white'
@@ -436,13 +436,13 @@ const SocialScreen: React.FC = () => {
                                     <button
                                         onClick={() => setMoreFiltersOpen(prev => !prev)}
                                         className={cn(
-                                            "rounded-full p-2 text-sm font-medium transition-colors relative",
+                                            "rounded-full p-1.5 text-sm font-medium transition-colors relative",
                                             filters.length > 0
                                                 ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
                                                 : 'text-white/70 hover:bg-white/20 hover:text-white'
                                         )}
                                     >
-                                        <VerticalEllipsisIcon className="h-5 w-5" />
+                                        <VerticalEllipsisIcon className="h-4.5 w-4.5" />
                                         {filters.length > 0 && (
                                             <div className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full animate-pulse shadow-sm" />
                                         )}
@@ -490,13 +490,17 @@ const SocialScreen: React.FC = () => {
             <div 
                 ref={mainContentRef} 
                 className={cn(
-                    "h-screen w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
+                    "h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
                     isSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 )}
+                style={{
+                    scrollPaddingTop: 'calc(env(safe-area-inset-top) + 82px)',
+                    scrollPaddingBottom: 'calc(var(--bottom-nav-height, 66px) + 12px)'
+                }}
             >
                 {renderFeedContent()}
                 {isFetchingNextPage && (
-                    <div className="h-screen w-full flex-shrink-0 snap-start flex items-center justify-center">
+                    <div className="h-[100dvh] w-full flex-shrink-0 snap-start flex items-center justify-center">
                         <LoadingSpinner />
                     </div>
                 )}

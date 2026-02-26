@@ -1,10 +1,11 @@
 // components/content/SearchResultCard.tsx
 
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { cn } from '../../lib/utils.ts';
 import BilingualText from '../ui/BilingualText.tsx';
 import Button from '../ui/Button.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
+import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import { EyeIcon } from '../icons/EyeIcon.tsx';
 import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
@@ -65,6 +66,17 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   isBusy = false,
   className = ''
 }) => {
+  const [didAdd, setDidAdd] = useState(false);
+  const addFeedbackTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (addFeedbackTimerRef.current) {
+        window.clearTimeout(addFeedbackTimerRef.current);
+      }
+    };
+  }, []);
+
   const title =
     lang === 'en'
       ? result.titleEn
@@ -85,6 +97,16 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     } else {
       onOpen?.(result);
     }
+  };
+
+  const triggerAddFeedback = () => {
+    setDidAdd(true);
+    if (addFeedbackTimerRef.current) {
+      window.clearTimeout(addFeedbackTimerRef.current);
+    }
+    addFeedbackTimerRef.current = window.setTimeout(() => {
+      setDidAdd(false);
+    }, 900);
   };
 
   return (
@@ -180,15 +202,21 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
             <Button
               variant="icon"
               aria-label="Add book"
-              className="!h-9 !w-9"
+              className={cn(
+                "!h-9 !w-9 transition-all",
+                didAdd && "!bg-accent/20 !border !border-accent/40"
+              )}
               disabled={isBusy}
               onClick={(e) => {
                 e.stopPropagation();
                 onAdd(result);
+                triggerAddFeedback();
               }}
             >
               {isBusy ? (
                 <LoadingSpinner className="!h-4 !w-4" />
+              ) : didAdd ? (
+                <CheckCircleIcon className="h-5 w-5 text-accent" />
               ) : (
                 <PlusIcon className="h-5 w-5" />
               )}

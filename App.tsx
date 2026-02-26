@@ -181,12 +181,12 @@ const AppContent: React.FC = () => {
     if (showSplash) return <SplashScreen fading={isFading} />;
     
     // Auth loading screen (Standardized dark placeholder)
-    if (isAuthLoading) return <div className="h-screen w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
+    if (isAuthLoading) return <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
     
     // Block feature access until identity is confirmed and readiness gate is resolved
     if (user && !isInitialized) {
         return (
-            <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 text-white p-8">
+            <div className="h-[100dvh] w-full flex flex-col items-center justify-center bg-slate-900 text-white p-8">
                 <LoadingSpinner />
                 <p className="mt-4 text-slate-400 font-medium animate-pulse">Setting up your library...</p>
             </div>
@@ -200,7 +200,7 @@ const AppContent: React.FC = () => {
 
     return (
         <div className={cn(
-            "h-screen w-full selection:bg-accent selection:text-white relative overflow-hidden",
+            "h-[100dvh] w-full selection:bg-accent selection:text-white relative overflow-hidden",
             isSocialTabActive ? "bg-black" : "bg-gray-50 dark:bg-slate-900"
         )}>
             <OfflineBanner />

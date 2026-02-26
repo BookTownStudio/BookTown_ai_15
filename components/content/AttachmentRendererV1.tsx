@@ -100,9 +100,9 @@ const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: a
     return (
         <div 
             className={cn(
-                "relative w-full overflow-hidden bg-slate-800 flex items-center justify-center shadow-[0_18px_34px_-22px_rgba(0,0,0,0.95)]",
+                "relative w-full overflow-hidden bg-slate-800 flex items-center justify-center shadow-[0_14px_24px_-20px_rgba(0,0,0,0.72)]",
                 isExhibitionSurface
-                    ? "rounded-[1.7rem] border border-white/12 min-h-[54vh] md:min-h-[62vh] max-h-[72vh]"
+                    ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh]"
                     : "rounded-xl min-h-[100px]"
             )}
             style={isExhibitionSurface ? undefined : { maxHeight }}
@@ -118,7 +118,7 @@ const ImageView: React.FC<{ attachment: PostAttachment; url: string; payload?: a
                     isExhibitionSurface && "scale-[1.01]"
                 )}
             />
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/62 via-black/18 to-transparent" />
+            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/52 via-black/14 to-transparent" />
             {isExhibitionSurface && (
                 <div className="pointer-events-none absolute left-4 top-4">
                     <AttachmentTypeLabel label="MEDIA" />
@@ -144,7 +144,7 @@ const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight
             className={cn(
                 "relative overflow-hidden bg-black flex items-center justify-center",
                 isExhibitionSurface
-                    ? "rounded-[1.7rem] border border-white/12 min-h-[54vh] md:min-h-[62vh] max-h-[72vh]"
+                    ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh]"
                     : "rounded-lg"
             )}
             style={isExhibitionSurface ? undefined : { height: maxHeight }}
@@ -177,9 +177,9 @@ const AudioView: React.FC<{ attachment: PostAttachment; maxHeight: number | stri
     return (
         <div 
             className={cn(
-                "flex items-center gap-3 p-3 bg-slate-800/50 border border-white/5",
+                "flex items-center gap-3 p-3 bg-slate-800/40",
                 isExhibitionSurface
-                    ? "rounded-[1.2rem] min-h-[22vh] md:min-h-[26vh]"
+                    ? "rounded-[0.9rem] min-h-[22vh] md:min-h-[26vh]"
                     : "rounded-lg"
             )}
             style={isExhibitionSurface ? undefined : { maxHeight }}
@@ -207,8 +207,8 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
 
     return (
         <GlassCard className={cn(
-            "flex items-center gap-3 !p-3 border-dashed border-white/10 opacity-80",
-            surface === 'feed' && "rounded-[1.2rem] min-h-[20vh]"
+            "flex items-center gap-3 !p-3 border-dashed border-white/10 opacity-80 !shadow-none",
+            surface === 'feed' && "rounded-[0.7rem] min-h-[20vh] !border-white/0 !bg-white/4"
         )}>
             <FileIcon className="h-5 w-5 text-slate-500" />
             <div className="min-w-0 flex-grow">
@@ -226,7 +226,7 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
 };
 
 const AttachmentTypeLabel: React.FC<{ label: string }> = ({ label }) => (
-    <span className="inline-flex items-center rounded-full border border-white/20 bg-black/45 px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white/78 uppercase shadow-[0_6px_20px_-12px_rgba(0,0,0,0.9)]">
+    <span className="inline-flex items-center rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[10px] font-bold tracking-[0.14em] text-white/78 uppercase shadow-[0_6px_16px_-12px_rgba(0,0,0,0.82)]">
         {label}
     </span>
 );
@@ -236,9 +236,9 @@ const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: st
     const isExhibitionSurface = surface === 'feed';
     return (
         <div className={cn(
-            "relative overflow-hidden border border-[#0077B6]/35 bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] p-3 shadow-[0_12px_28px_-16px_rgba(0,119,182,0.7)]",
+            "relative overflow-hidden bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] p-3 shadow-[0_10px_22px_-16px_rgba(0,119,182,0.58)]",
             isExhibitionSurface
-                ? "rounded-[1.7rem] min-h-[56vh] md:min-h-[64vh] max-h-[72vh] px-4 py-4"
+                ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh] px-4 py-4"
                 : "rounded-xl"
         )}>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.26),transparent_56%)]" />
@@ -285,9 +285,9 @@ const QuoteReferenceCard: React.FC<{ text: string; surface?: RenderSurface }> = 
     const isExhibitionSurface = surface === 'feed';
     return (
     <div className={cn(
-        "relative border border-white/15 bg-gradient-to-r from-[#111a24] to-[#0c1118] px-4 py-3.5 text-slate-200 shadow-[0_12px_30px_-22px_rgba(255,255,255,0.45)]",
+        "relative bg-gradient-to-r from-[#111a24] to-[#0c1118] px-4 py-3.5 text-slate-200 shadow-[0_10px_22px_-20px_rgba(255,255,255,0.35)]",
         isExhibitionSurface
-            ? "rounded-[1.7rem] min-h-[48vh] md:min-h-[56vh] max-h-[68vh] flex flex-col justify-between"
+            ? "rounded-[0.7rem] aspect-[4/5] max-h-[68dvh] flex flex-col justify-between"
             : "rounded-xl"
     )}>
         <AttachmentTypeLabel label="QUOTE" />
@@ -310,7 +310,7 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
     avatarUrl,
     country,
 }) => (
-    <div className="flex items-center gap-3 rounded-xl border border-white/12 bg-gradient-to-r from-[#101821] to-[#0b1118] px-3 py-2.5 shadow-[0_10px_24px_-18px_rgba(255,255,255,0.5)]">
+    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#101821] to-[#0b1118] px-3 py-2.5 shadow-[0_8px_18px_-16px_rgba(255,255,255,0.36)]">
         {avatarUrl ? (
             <img src={avatarUrl} className="h-11 w-11 object-cover rounded-full shadow-md" alt="" />
         ) : (
@@ -324,16 +324,24 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
     </div>
 );
 
-const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number }> = ({ name, bookCount }) => (
-    <div className="relative rounded-xl border border-[#0077B6]/30 bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-3 py-3 shadow-[0_12px_28px_-18px_rgba(0,119,182,0.65)]">
+const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: string[] }> = ({ name, bookCount, covers = [] }) => (
+    <div className="relative rounded-[0.7rem] bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-3 py-3 shadow-[0_10px_20px_-16px_rgba(0,119,182,0.48)] min-h-[24vh]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_60%)]" />
-        <div className="relative flex items-center gap-3">
-            <div className="h-12 w-12 rounded-lg bg-white/10 flex items-center justify-center border border-white/15">
-                <MediaIcon className="h-5 w-5 text-white/65" />
+        <div className="relative flex items-center gap-3 h-full">
+            <div className="h-full min-h-[84px] w-[42%] max-w-[120px] rounded-[0.6rem] bg-white/8 flex items-center justify-center overflow-hidden">
+                {covers.length > 0 ? (
+                    <div className="grid grid-cols-2 gap-1 p-1 w-full h-full">
+                        {covers.slice(0, 4).map((cover, idx) => (
+                            <img key={`${cover}-${idx}`} src={cover} alt="" className="h-full w-full object-cover rounded-sm" loading="lazy" />
+                        ))}
+                    </div>
+                ) : (
+                    <MediaIcon className="h-5 w-5 text-white/65" />
+                )}
             </div>
             <div className="min-w-0 flex-1">
                 <AttachmentTypeLabel label="FROM THE SHELF" />
-                <BilingualText className="mt-2 font-semibold text-[12px] text-white/90 truncate">{name || 'Shelf'}</BilingualText>
+                <BilingualText className="mt-2 font-semibold text-[13px] text-white/90 line-clamp-2">{name || 'Shelf'}</BilingualText>
                 <BilingualText role="Caption" className="!text-[10px] text-white/60 truncate">
                 {Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : ''}
                 </BilingualText>
@@ -342,15 +350,19 @@ const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number }> = ({ na
     </div>
 );
 
-const VenueReferenceCard: React.FC<{ name?: string; type?: string }> = ({ name, type }) => (
-    <div className="rounded-xl border border-white/15 bg-gradient-to-r from-[#10131a] to-[#121924] px-3 py-3 shadow-[0_12px_30px_-20px_rgba(255,255,255,0.5)]">
+const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: string; locationLabel?: string }> = ({ name, type, dateLabel, locationLabel }) => (
+    <div className="rounded-[0.7rem] bg-gradient-to-r from-[#10131a] to-[#121924] px-3 py-3 shadow-[0_10px_20px_-16px_rgba(255,255,255,0.34)] min-h-[20vh]">
         <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
                 <AttachmentTypeLabel label="EVENT" />
-                <BilingualText className="mt-2 font-semibold text-[12px] text-white/90 truncate">{name || 'Venue'}</BilingualText>
-                <BilingualText role="Caption" className="!text-[10px] text-white/55 truncate">{type || ''}</BilingualText>
+                <BilingualText className="mt-2 font-semibold text-[13px] text-white/92 truncate">
+                    {dateLabel || name || 'Venue'}
+                </BilingualText>
+                <BilingualText role="Caption" className="!text-[10px] text-white/58 truncate">
+                    {locationLabel || type || ''}
+                </BilingualText>
             </div>
-            <div className="h-10 w-10 rounded-lg bg-white/10 border border-white/15 flex items-center justify-center">
+            <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center">
                 <GlobeIcon className="h-4 w-4 text-white/70" />
             </div>
         </div>
@@ -384,7 +396,7 @@ const HookedQuoteReferenceView: React.FC<{ id: string; owner?: string; surface: 
 };
 
 const UnresolvedReferenceView: React.FC = () => (
-    <div className="p-3 bg-white/5 border border-white/10 rounded-lg text-[11px] text-slate-400">
+    <div className="p-3 bg-white/5 rounded-[0.7rem] text-[11px] text-slate-400">
         Reference unavailable
     </div>
 );
@@ -711,6 +723,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                             'Shelf'
                         }
                         bookCount={typeof legacy.bookCount === 'number' ? legacy.bookCount : undefined}
+                        covers={Array.isArray(legacy.covers) ? legacy.covers : []}
                     />
                 );
                 break;
@@ -719,6 +732,16 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     <VenueReferenceCard
                         name={readNonEmptyString(legacy.venueName) || readNonEmptyString(legacy.title) || 'Venue'}
                         type={readNonEmptyString(legacy.venueType)}
+                        dateLabel={
+                            readNonEmptyString(legacy.eventDate) ||
+                            readNonEmptyString(legacy.venueDate) ||
+                            ''
+                        }
+                        locationLabel={
+                            readNonEmptyString(legacy.location) ||
+                            readNonEmptyString(legacy.venueLocation) ||
+                            ''
+                        }
                     />
                 );
                 break;
@@ -739,18 +762,27 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     (typeof v1Metadata.previewUrl === 'string' ? v1Metadata.previewUrl : '')
                 )
                 : '';
-        const resolvedUrl = shouldResolveSecureUrl ? (secureUrl?.url || '') : inlineFeedUrl;
+        const resolvedUrl = (shouldResolveSecureUrl ? (secureUrl?.url || '') : '') || inlineFeedUrl;
         const requiresResolvedUrl = v1Type === 'IMAGE';
+
+        const hasRenderableUrl = resolvedUrl.length > 0;
 
         if (!isInViewport || (shouldResolveSecureUrl && isResolvingUrl)) {
             visual = (
-                <div className="flex items-center justify-center p-6 bg-white/5 rounded-lg border border-white/5 animate-pulse" style={{ height: 100 }}>
-                    <MediaIcon className="h-5 w-5 text-white/20" />
+                <div
+                    className={cn(
+                        "flex items-center justify-center p-6 bg-white/5 rounded-[0.7rem] animate-pulse",
+                        surface === 'feed' ? "aspect-[4/5]" : "min-h-[100px]"
+                    )}
+                >
+                    <div className="text-[10px] font-semibold tracking-[0.12em] uppercase text-white/40">
+                        {v1Type === 'IMAGE' ? 'MEDIA' : v1Type === 'VIDEO' ? 'VIDEO' : v1Type === 'AUDIO' ? 'AUDIO' : v1Type === 'DOCUMENT' ? 'DOC' : 'ATTACHMENT'}
+                    </div>
                 </div>
             );
-        } else if ((shouldResolveSecureUrl && isUrlError) || (requiresResolvedUrl && !resolvedUrl)) {
+        } else if ((shouldResolveSecureUrl && isUrlError && !hasRenderableUrl) || (requiresResolvedUrl && !hasRenderableUrl)) {
              visual = (
-                <div className="flex flex-col items-center justify-center p-6 bg-red-950/20 rounded-lg border border-red-900/20 text-red-400 text-[10px] text-center gap-2">
+                <div className="flex flex-col items-center justify-center p-6 bg-red-950/20 rounded-[0.7rem] text-red-400 text-[10px] text-center gap-2">
                     <VolumeXIcon className="h-4 w-4 opacity-50" />
                     <span>Attachment unavailable</span>
                 </div>

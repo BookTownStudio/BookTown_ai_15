@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import BilingualText from '../ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { HomeIcon } from '../icons/HomeIcon.tsx';
@@ -8,6 +8,7 @@ import { WriteIcon } from '../icons/WriteIcon.tsx';
 import { SocialIcon } from '../icons/SocialIcon.tsx';
 import { TabName } from '../../types/navigation.ts';
 import { useNavigation } from '../../store/navigation.tsx';
+import { cn } from '../../lib/utils.ts';
 
 interface BottomNavBarProps {
     activeTab: TabName;
@@ -24,6 +25,10 @@ const TABS: { id: TabName; en: string; ar: string; icon: React.FC<React.SVGProps
 const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
     const { lang } = useI18n();
     const { setActiveTab, resetTab } = useNavigation();
+    const [isHidden, setIsHidden] = useState(false);
+    const lastScrollTopRef = useRef(0);
+    const downDeltaRef = useRef(0);
+    const revealTimerRef = useRef<number | null>(null);
 
     const handleTabClick = (tabId: TabName) => {
         if (tabId === activeTab) {
@@ -33,9 +38,75 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
         }
     };
 
+    useEffect(() => {
+        document.documentElement.style.setProperty('--bottom-nav-height', 'calc(66px + env(safe-area-inset-bottom))');
+    }, []);
+
+    useEffect(() => {
+        const scheduleReveal = () => {
+            if (revealTimerRef.current) {
+                window.clearTimeout(revealTimerRef.current);
+            }
+            revealTimerRef.current = window.setTimeout(() => {
+                setIsHidden(false);
+            }, 900);
+        };
+
+        const resolveScrollTop = (target: EventTarget | null): number => {
+            if (!target) return window.scrollY || 0;
+            if (target === document || target === document.body || target === document.documentElement) {
+                return window.scrollY || document.documentElement.scrollTop || 0;
+            }
+            if (target instanceof HTMLElement) {
+                return target.scrollTop;
+            }
+            return window.scrollY || 0;
+        };
+
+        const onScroll = (event: Event) => {
+            const currentTop = Math.max(0, resolveScrollTop(event.target));
+            const delta = currentTop - lastScrollTopRef.current;
+
+            if (Math.abs(delta) < 4) {
+                scheduleReveal();
+                return;
+            }
+
+            if (delta > 0) {
+                downDeltaRef.current += delta;
+                if (downDeltaRef.current >= 150) {
+                    setIsHidden(true);
+                    downDeltaRef.current = 0;
+                }
+            } else {
+                downDeltaRef.current = 0;
+                if (currentTop <= 24) {
+                    setIsHidden(false);
+                }
+            }
+
+            lastScrollTopRef.current = currentTop;
+            scheduleReveal();
+        };
+
+        window.addEventListener('scroll', onScroll, { passive: true, capture: true });
+        return () => {
+            window.removeEventListener('scroll', onScroll, true);
+            if (revealTimerRef.current) {
+                window.clearTimeout(revealTimerRef.current);
+            }
+        };
+    }, []);
+
     return (
-        <div className="fixed bottom-0 left-0 right-0 z-20 h-[66px] bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-t border-black/10 dark:border-white/10">
-            <div className="container mx-auto flex h-full items-center justify-around px-4 pb-2">
+        <div
+            className={cn(
+                "fixed bottom-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-t border-black/10 dark:border-white/10 transition-all duration-200 ease-in-out",
+                isHidden ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-100 translate-y-0"
+            )}
+            style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+        >
+            <div className="mx-auto flex h-[66px] w-full items-center justify-around px-4">
                 {TABS.map((tab) => {
                     const isActive = activeTab === tab.id;
                     return (

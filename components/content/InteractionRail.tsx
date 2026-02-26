@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Post } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
@@ -11,6 +11,7 @@ import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { cn } from '../../lib/utils.ts';
 import { usePostInteractions } from '../../lib/hooks/usePostInteractions.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
+import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
 
 interface InteractionRailProps {
     post: Post | null;
@@ -47,12 +48,12 @@ const ActionButton: React.FC<{
         {...props}
     >
         <div className={cn(
-            "h-8 w-8 rounded-full bg-black/16 backdrop-blur-sm flex items-center justify-center border border-white/12 transition-all duration-200",
+            "h-7 w-7 rounded-full bg-black/16 backdrop-blur-sm flex items-center justify-center border border-white/12 transition-all duration-200",
             (!disabled && !loading) && "group-hover:scale-105 group-hover:bg-white/14 group-hover:border-white/30",
             active && "bg-[#0077B6]/22 ring-1 ring-[#0077B6]/35 border-[#0077B6]/35",
             containerClassName
         )}>
-            {loading ? <LoadingSpinner className="h-3 w-3" /> : <Icon className={cn("h-3.5 w-3.5", iconClassName)} />}
+            {loading ? <LoadingSpinner className="h-3 w-3" /> : <Icon className={cn("h-3 w-3", iconClassName)} />}
         </div>
         {count !== undefined && <span className="text-[10px] font-semibold text-white/60 drop-shadow-sm">{count}</span>}
     </button>
@@ -61,6 +62,7 @@ const ActionButton: React.FC<{
 const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussion, onNewPost }) => {
     const { lang } = useI18n();
     const { user } = useAuth();
+    const [isCollapsed, setIsCollapsed] = useState(false);
 
     // Authority: Consolidate all engagement for this postId
     const { 
@@ -80,8 +82,8 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
             props: { 
                 icon: PlusIcon, 
                 label: lang === 'en' ? 'New Post' : 'منشور جديد',
-                containerClassName: "h-9 w-9 bg-white/95 !opacity-100 shadow-[0_10px_24px_-12px_rgba(0,0,0,0.9)] border-white/60",
-                iconClassName: "h-4 w-4 text-slate-900 stroke-[2.4px]",
+                containerClassName: "h-8 w-8 bg-white/95 !opacity-100 shadow-[0_8px_18px_-12px_rgba(0,0,0,0.9)] border-white/60",
+                iconClassName: "h-3.5 w-3.5 text-slate-900 stroke-[2.4px]",
                 onClick: () => onNewPost?.()
             } 
         },
@@ -148,12 +150,32 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
     ], [post, lang, isLiked, isBookmarked, isReposted, counts, isTransitioning, actions, onOpenDiscussion, onNewPost, canInteract, canRepost, canShare]);
 
     return (
-        <div className="fixed right-3 top-1/2 -translate-y-1/2 z-40 flex flex-col items-center rounded-[1.7rem] border border-white/10 bg-black/22 px-2 py-3.5 backdrop-blur-md shadow-[0_20px_44px_-30px_rgba(0,0,0,0.9)]">
-            <div className="flex flex-col-reverse items-center gap-5">
+        <div
+            className={cn(
+                "fixed right-3 md:right-4 z-40 flex flex-col items-center justify-end border border-white/10 bg-black/25 backdrop-blur-md shadow-[0_16px_36px_-28px_rgba(0,0,0,0.9)] transition-all duration-[250ms] ease-in-out",
+                "bottom-[calc(env(safe-area-inset-bottom)+76px+9vh)]",
+                isCollapsed
+                    ? "w-9 rounded-full px-2 py-2.5"
+                    : "w-[54px] rounded-[999px] px-2 py-2.5"
+            )}
+        >
+            <div className={cn(
+                "flex flex-col-reverse items-center gap-6 mb-2 transition-all duration-[250ms] ease-in-out",
+                isCollapsed && "pointer-events-none max-h-0 opacity-0 overflow-hidden"
+            )}>
                 {actionsConfig.map((action) => (
                     <ActionButton key={action.id} {...action.props} />
                 ))}
             </div>
+
+            <button
+                type="button"
+                onClick={() => setIsCollapsed((prev) => !prev)}
+                className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/8 text-white/65 hover:bg-white/14 hover:text-white transition-colors"
+                aria-label={isCollapsed ? (lang === 'en' ? 'Expand actions' : 'توسيع الإجراءات') : (lang === 'en' ? 'Collapse actions' : 'طي الإجراءات')}
+            >
+                <ChevronLeftIcon className={cn("h-3.5 w-3.5 transition-transform duration-[250ms] ease-in-out", isCollapsed && "rotate-180")} />
+            </button>
         </div>
     );
 };
