@@ -25,7 +25,7 @@ export type IngestionFailureClass =
   | "UNKNOWN";
 
 /**
- * Firestore record stored in `bookIngestions/{ingestionId}`
+ * Firestore record stored in `book_ingestions/{ingestionKey}`
  * This is the single source of truth for ingestion lifecycle.
  */
 export interface IngestionRecord {

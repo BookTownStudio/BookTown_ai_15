@@ -6,9 +6,10 @@ import {
     Ebook,
     ExternalSource
 } from '../types/entities.ts';
+import { SearchResultDTO } from '../types/bookSearch.ts';
 
 import { getFirebaseDb } from '../lib/firebase.ts';
-import { performFederatedSearch } from './federatedSearch.ts';
+import { bookSearchService } from './bookSearchService.ts';
 
 import {
     collection,
@@ -45,34 +46,22 @@ export class LibrarySearchService implements LibrarySearchDataService {
         queryText: string,
         options: { lang?: string; limit?: number; ebookOnly?: boolean } = {}
     ): Promise<BookEdition[]> {
-
-        const results: BookEdition[] = [];
-
         const { limit: resultLimit = 10, ebookOnly = false } = options;
-
-        // Federated Search (authoritative pass-through)
         try {
-            const externalResults = await performFederatedSearch(queryText, ebookOnly);
+            const response = await bookSearchService.searchBooks({
+                query: queryText,
+                ebookOnly,
+                lang: options.lang,
+                limit: resultLimit,
+            });
 
-            for (const ext of externalResults) {
-                const mapped = this.mapLegacyToEdition(ext.book);
-
-                // 🔒 ENFORCE EBOOK FILTER SERVER-SIDE
-                if (ebookOnly && !mapped.ebookAvailable) {
-                    continue;
-                }
-
-                results.push(mapped);
-
-                // Respect limit
-                if (results.length >= resultLimit) break;
-            }
-
+            return response.results.map((result) =>
+                this.mapSearchResultToEdition(result)
+            );
         } catch (e) {
-            console.error('[LIBRARY_SEARCH] Federated fallback failed:', e);
+            console.error('[LIBRARY_SEARCH] Unified endpoint search failed:', e);
+            return [];
         }
-
-        return results;
     }
 
     async getEdition(editionId: string): Promise<BookEdition | null> {
@@ -192,39 +181,33 @@ export class LibrarySearchService implements LibrarySearchDataService {
     /**
      * Internal mapper to bridge legacy 'Book' type to new 'BookEdition' schema
      */
-    private mapLegacyToEdition(book: any): BookEdition {
-        const editionId =
-            book.editionId ||
-            book.id ||
-            `external_${Math.random().toString(36).slice(2)}`;
-        const authors = Array.isArray(book.authors)
-            ? book.authors.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
-            : [book.authorEn || book.author].filter(Boolean);
-        const sourceRaw = String(book.source || '').trim();
-        const normalizedSource = sourceRaw === 'googleBooks'
+    private mapSearchResultToEdition(result: SearchResultDTO): BookEdition {
+        const authors = Array.isArray(result.authors) && result.authors.length > 0
+            ? result.authors.filter((value: unknown) => typeof value === 'string' && value.trim().length > 0)
+            : [result.authorEn].filter(Boolean);
+
+        const normalizedSource = result.source === 'googleBooks'
             ? 'google_books'
-            : sourceRaw === 'openLibrary'
+            : result.source === 'openLibrary'
             ? 'open_library'
-            : editionId.startsWith('gb_')
-            ? 'google_books'
-            : 'open_library';
-        const downloadable = Boolean(book.downloadable);
-        const ebookAvailable = downloadable;
+            : 'booktown';
+        const downloadable = Boolean(result.downloadable);
+        const ebookAvailable = Boolean(result.isEbookAvailable);
 
         return {
-            editionId,
-            bookId: book.bookId || book.workId || editionId,
-            language: book.language || 'en',
-            title: book.title || book.titleEn,
+            editionId: result.editionId || result.id,
+            bookId: result.bookId || result.id,
+            language: result.language || 'en',
+            title: result.title || result.titleEn,
             subtitle: '',
             authors,
             publisher: 'External Provider',
-            publishedDate: book.publicationDate || book.publishedDate,
-            pageCount: book.pageCount,
-            categories: book.genresEn || [],
+            publishedDate: null,
+            pageCount: null,
+            categories: [],
             dimensions: {},
-            coverImages: { medium: book.coverUrl },
-            description: book.description || book.descriptionEn || '',
+            coverImages: { medium: result.coverUrl || null },
+            description: result.description || result.descriptionEn || '',
             editionFormat: 'ebook',
             ebookAvailable,
             otherIdentifiers: [],

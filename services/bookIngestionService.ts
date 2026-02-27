@@ -2,7 +2,6 @@
 
 import { httpsCallable } from 'firebase/functions';
 import { getFirebaseFunctions } from '../lib/firebase.ts';
-// FIX: Added import of Book type to support the new ensureBookExists method.
 import { Book } from '../types/entities.ts';
 
 /**
@@ -128,23 +127,17 @@ export const bookIngestionService = {
     }
   },
 
-  // FIX: Added ensureBookExists method to handle conditional ingestion as required by shelfActions.ts
   /**
    * ensureBookExists
-   * High-level orchestrator that checks if a book needs ingestion
-   * before local persistence operations.
+   * Enforces V2 ingestion boundary:
+   * external IDs are not ingested from shelf actions.
    */
   async ensureBookExists(params: { bookId: string; bookHint?: Book }): Promise<void> {
-    const { bookId, bookHint } = params;
+    const { bookId } = params;
     const isExternal = bookId.startsWith('gb_') || bookId.startsWith('ol_');
 
-    if (isExternal && bookHint) {
-      const source = bookId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
-      await this.ingest({
-        bookId,
-        source: source as any,
-        rawBook: bookHint,
-      });
+    if (isExternal) {
+      throw new Error('EXTERNAL_BOOK_REQUIRES_DETAILS_INGESTION');
     }
   },
 };

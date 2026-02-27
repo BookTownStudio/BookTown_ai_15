@@ -74,11 +74,38 @@ const PostComposerScreen: React.FC = () => {
   const [debouncedText] = useDebounce(text, AUTOSAVE_DEBOUNCE);
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);
   const [debouncedAttachment] = useDebounce(attachment, AUTOSAVE_DEBOUNCE);
+  const attachedBookRef = useRef<string>('');
 
   useEffect(() => {
     const stored = localStorage.getItem(DRAFTS_KEY);
     if (stored) setDrafts(JSON.parse(stored));
   }, []);
+
+  useEffect(() => {
+    const attachedBook =
+      currentView.type === 'immersive' &&
+      currentView.id === 'postComposer' &&
+      currentView.params &&
+      typeof currentView.params.attachedBook === 'object'
+        ? (currentView.params.attachedBook as Record<string, unknown>)
+        : null;
+
+    const attachedBookId =
+      attachedBook && typeof attachedBook.id === 'string'
+        ? attachedBook.id.trim()
+        : '';
+
+    if (!attachedBookId) return;
+    if (attachedBookRef.current === attachedBookId) return;
+
+    attachedBookRef.current = attachedBookId;
+    setAttachment({
+      type: 'book',
+      entityId: attachedBookId,
+      bookId: attachedBookId,
+    } as PostAttachment);
+    showToast(lang === 'en' ? 'Book attached.' : 'تم إرفاق الكتاب.');
+  }, [currentView, lang, showToast]);
 
   useEffect(() => {
     if (!debouncedText.trim() && !debouncedAttachment) return;

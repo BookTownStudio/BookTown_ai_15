@@ -9,18 +9,7 @@ import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import { EyeIcon } from '../icons/EyeIcon.tsx';
 import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
-
-export interface SearchResultDTO {
-  externalId: string;
-  source: 'googleBooks' | 'openLibrary';
-  titleEn: string;
-  titleAr?: string;
-  authorEn?: string;
-  authorAr?: string;
-  coverUrl?: string;
-  isEbookAvailable?: boolean;
-  rawBook?: any;
-}
+import { SearchResultDTO } from '../../types/bookSearch.ts';
 
 interface SearchResultCardProps {
   result: SearchResultDTO;

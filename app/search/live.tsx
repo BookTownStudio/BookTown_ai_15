@@ -1,9 +1,9 @@
 // app/search/live.tsx
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { useLiveBookSearch } from '../../lib/hooks/useLiveBookSearch.ts';
+import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
@@ -15,37 +15,10 @@ import { useSearchHistory } from '../../lib/hooks/useSearchHistory.ts';
 import CameraCaptureModal from '../../components/modals/CameraCaptureModal.tsx';
 import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
-import { useBookIngestion } from '../../lib/hooks/useBookIngestion.ts';
-import SearchResultCard, {
-  SearchResultDTO
-} from '../../components/content/SearchResultCard.tsx';
-
-const normalizeIngestionSource = (
-  source: unknown,
-  externalId: string
-): 'googleBooks' | 'openLibrary' => {
-  const value = String(source || '').trim();
-
-  if (
-    value === 'googleBooks' ||
-    value === 'google_books' ||
-    value === 'googlebooks' ||
-    value === 'GOOGLE_BOOKS'
-  ) {
-    return 'googleBooks';
-  }
-
-  if (
-    value === 'openLibrary' ||
-    value === 'open_library' ||
-    value === 'openlibrary' ||
-    value === 'OPEN_LIBRARY'
-  ) {
-    return 'openLibrary';
-  }
-
-  return externalId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
-};
+import SearchResultCard from '../../components/content/SearchResultCard.tsx';
+import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import { SearchResultDTO } from '../../types/bookSearch.ts';
+import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 
 const LiveSearchScreen: React.FC = () => {
   const { navigate, currentView } = useNavigation();
@@ -58,8 +31,11 @@ const LiveSearchScreen: React.FC = () => {
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
 
   const { history, addToHistory } = useSearchHistory();
-  const { mutateAsync: ingestBook } = useBookIngestion();
-  const { data: results, isLoading } = useLiveBookSearch(query, false);
+  const { data: searchResponse, isLoading } = useBookSearch(query, {
+    ebookOnly: false,
+    lang,
+    limit: 15,
+  });
   const { mutate: identifyBook, isLoading: isAnalyzingImage } =
     useIdentifyBook();
 
@@ -70,29 +46,15 @@ const LiveSearchScreen: React.FC = () => {
     if (busyId) return;
 
     try {
-      setBusyId(result.externalId);
-
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
-      });
-
-      const canonicalId =
-        res?.editionId ||
-        res?.bookId;
-
-      if (!canonicalId) {
-        throw new Error('Ingestion did not return canonical identifier');
-      }
+      setBusyId(result.id);
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: { bookId: canonicalId, from: currentView }
+        params: buildBookDetailsParams(result, currentView)
       });
     } catch (err) {
-      console.error('[LIVE_SEARCH][INGEST_FAILED]', err);
+      console.error('[LIVE_SEARCH][OPEN_FAILED]', err);
       showToast(
         lang === 'en'
           ? 'Failed to open book.'
@@ -107,26 +69,16 @@ const LiveSearchScreen: React.FC = () => {
     if (busyId) return;
 
     try {
-      setBusyId(result.externalId);
-
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
+      setBusyId(result.id);
+      navigate({
+        type: 'immersive',
+        id: 'bookDetails',
+        params: buildBookDetailsParams(result, currentView, {
+          pendingAction: 'NONE',
+        }),
       });
-
-      const canonicalId = res?.editionId || res?.bookId;
-      if (!canonicalId) {
-        throw new Error('Ingestion did not return canonical identifier');
-      }
-
-      showToast(
-        lang === 'en'
-          ? 'Book added to your library.'
-          : 'تمت إضافة الكتاب إلى مكتبتك.'
-      );
     } catch (err) {
-      console.error('[LIVE_SEARCH][INGEST_ADD_FAILED]', err);
+      console.error('[LIVE_SEARCH][ADD_OPEN_FAILED]', err);
       showToast(
         lang === 'en'
           ? 'Failed to add book.'
@@ -137,24 +89,16 @@ const LiveSearchScreen: React.FC = () => {
     }
   };
 
-  const validResults: SearchResultDTO[] =
-    (results || [])
-      .map((b: any) => {
-        const externalId = b.id || b.editionId || b.bookId;
-        if (!externalId || typeof externalId !== 'string') return null;
+  const validResults: SearchResultDTO[] = searchResponse?.results || [];
 
-        return {
-          externalId,
-          source: normalizeIngestionSource(b.source, externalId),
-          titleEn: b.titleEn || b.title,
-          titleAr: b.titleAr,
-          authorEn: b.authorEn || b.author,
-          authorAr: b.authorAr,
-          coverUrl: b.coverUrl,
-          rawBook: b
-        } as SearchResultDTO;
-      })
-      .filter((item): item is SearchResultDTO => item !== null);
+  useEffect(() => {
+    if (query.trim().length < 2) return;
+    logBookEngineV2('BOOK_SEARCH_V2_SURFACE_LIVE', {
+      query: query.trim().slice(0, 80),
+      resultCount: validResults.length,
+      isLoading: isLoading || isAnalyzingImage,
+    });
+  }, [isAnalyzingImage, isLoading, query, validResults.length]);
 
   return (
     <div className="h-screen w-full flex flex-col bg-slate-900">
@@ -195,10 +139,10 @@ const LiveSearchScreen: React.FC = () => {
           <div className="space-y-3">
             {validResults.map(r => (
               <SearchResultCard
-                key={r.externalId}
+                key={r.id}
                 result={r}
                 lang={lang}
-                isBusy={busyId === r.externalId}
+                isBusy={busyId === r.id}
                 onOpen={handleOpenResult}
                 onAdd={handleAddResult}
               />

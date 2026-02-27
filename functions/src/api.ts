@@ -1,5 +1,6 @@
 import express from "express";
 import { onRequest } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
 import { admin } from "./firebaseAdmin";
@@ -10,7 +11,8 @@ type SearchBookResponse = {
   editionId: string;
   bookId: string;
   externalId: string;
-  source: "googleBooks" | "openLibrary";
+  source: "booktown" | "googleBooks" | "openLibrary";
+  resultType: "canonical" | "external";
   title: string;
   titleEn: string;
   titleAr: string;
@@ -25,6 +27,9 @@ type SearchBookResponse = {
   hasEbook: boolean;
   downloadable: boolean;
   isEbookAvailable: boolean;
+  confidence: number;
+  rank: number;
+  rawBook?: Record<string, unknown>;
 };
 
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
@@ -33,7 +38,9 @@ const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
 function toSearchBookResponse(raw: any): SearchBookResponse | null {
   const sourceRaw = String(raw?.source || "").trim();
   const source =
-    sourceRaw === "googleBooks"
+    sourceRaw === "booktown"
+      ? "booktown"
+      : sourceRaw === "googleBooks"
       ? "googleBooks"
       : sourceRaw === "openLibrary"
       ? "openLibrary"
@@ -55,7 +62,13 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
   const externalId = String(raw?.externalId || "").trim();
   const hasEbook = Boolean(raw?.hasEbook);
   const downloadable = Boolean(raw?.downloadable);
-  const ebookAvailable = hasEbook && downloadable;
+  const ebookAvailable = Boolean(raw?.isEbookAvailable ?? hasEbook);
+  const resultType =
+    String(raw?.resultType || "").trim() === "external"
+      ? "external"
+      : "canonical";
+  const confidenceRaw = Number(raw?.confidence);
+  const rankRaw = Number(raw?.rank);
 
   return {
     id: String(raw?.id || editionId),
@@ -63,6 +76,7 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     bookId,
     externalId,
     source,
+    resultType,
     title,
     titleEn: String(raw?.titleEn || title),
     titleAr: String(raw?.titleAr || ""),
@@ -74,9 +88,15 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     descriptionAr: String(raw?.descriptionAr || ""),
     coverUrl: String(raw?.coverUrl || ""),
     language: String(raw?.language || "en"),
-    hasEbook: ebookAvailable,
-    downloadable: ebookAvailable,
+    hasEbook,
+    downloadable,
     isEbookAvailable: ebookAvailable,
+    confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
+    rank: Number.isFinite(rankRaw) ? rankRaw : 999,
+    rawBook:
+      raw?.rawBook && typeof raw.rawBook === "object"
+        ? (raw.rawBook as Record<string, unknown>)
+        : undefined,
   };
 }
 
@@ -171,20 +191,53 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     const q = req.query.q as string | undefined;
     const ebookOnly = req.query.ebookOnly === "true";
     const lang = req.query.lang as string | undefined;
+    const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limitRaw =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const limit =
+      typeof limitRaw === "number" && Number.isFinite(limitRaw)
+        ? Math.max(1, Math.min(30, Math.trunc(limitRaw)))
+        : undefined;
+    const queryPreview = (q || "").trim().slice(0, 80);
+
+    logger.info("BOOK_SEARCH_V2_API", {
+      phase: "request",
+      q: queryPreview,
+      ebookOnly,
+      lang: lang || "auto",
+      limit: limit ?? null,
+      hasCursor: Boolean(cursor),
+    });
 
     if (!q || q.trim().length < 2) {
-      return res.status(200).json({ results: [] });
+      logger.info("BOOK_SEARCH_V2_API", {
+        phase: "response",
+        q: queryPreview,
+        canonicalCount: 0,
+        externalCount: 0,
+        hasMore: false,
+        cursorUsed: false,
+        reason: "short_query",
+      });
+      return res.status(200).json({
+        results: [],
+        nextCursor: null,
+        hasMore: false,
+        cursorUsed: false,
+      });
     }
 
     console.log(
       `[API][SEARCH] Query="${q}" ebookOnly=${ebookOnly} lang=${lang}`
     );
 
-    const resultsRaw = await unifiedSearch(q, {
+    const searchResponse = await unifiedSearch(q, {
       ebookOnly,
       language: lang,
+      cursor,
+      limit,
     });
-    const parsedResults = resultsRaw
+    const parsedResults = searchResponse.results
       .map((row: any) => toSearchBookResponse(row))
       .filter((row: SearchBookResponse | null): row is SearchBookResponse => row !== null);
     const signedCoverByBookId = new Map<string, string>();
@@ -238,6 +291,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     // --------------------------------------------------
     try {
       const providerMix: Record<string, number> = {
+        booktown: 0,
         googleBooks: 0,
         openLibrary: 0,
         other: 0,
@@ -270,14 +324,18 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
         filters: {
           ebookOnly,
           language: lang,
+          cursorUsed: searchResponse.cursorUsed,
+          limit,
         },
         resultCount: results.length,
         latencyMs,
         providerMix,
         orderingHash,
         page: 1,
-        cursorUsed: false,
-        partial: false,
+        cursorUsed: searchResponse.cursorUsed,
+        partial: searchResponse.hasMore,
+        canonicalCount: searchResponse.canonicalCount,
+        externalCount: searchResponse.externalCount,
         timestamp: new Date().toISOString(),
       };
 
@@ -286,10 +344,35 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       console.warn("[SEARCH_OBSERVABILITY_FAILED]", obsErr);
     }
 
-    return res.status(200).json({ results });
+    logger.info("BOOK_SEARCH_V2_API", {
+      phase: "response",
+      q: queryPreview,
+      canonicalCount: searchResponse.canonicalCount,
+      externalCount: searchResponse.externalCount,
+      hasMore: searchResponse.hasMore,
+      cursorUsed: searchResponse.cursorUsed,
+      resultCount: results.length,
+      latencyMs,
+    });
+
+    return res.status(200).json({
+      results,
+      nextCursor: searchResponse.nextCursor,
+      hasMore: searchResponse.hasMore,
+      cursorUsed: searchResponse.cursorUsed,
+    });
   } catch (error) {
     console.error("[API][SEARCH_BOOKS_ERROR]", error);
-    return res.status(200).json({ results: [] });
+    logger.error("BOOK_SEARCH_V2_API", {
+      phase: "error",
+      error: String(error),
+    });
+    return res.status(200).json({
+      results: [],
+      nextCursor: null,
+      hasMore: false,
+      cursorUsed: false,
+    });
   }
 });
 

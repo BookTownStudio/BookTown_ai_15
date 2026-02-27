@@ -11,7 +11,7 @@ import { useUserShelves, useShelfEntries } from '../../lib/hooks/useUserShelves.
 import { useQuickRecs } from '../../lib/hooks/useQuickRecs.ts';
 import BookCard from '../../components/content/BookCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useLiveBookSearch } from '../../lib/hooks/useLiveBookSearch.ts';
+import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import CollapsibleSection from '../../components/ui/CollapsibleSection.tsx';
 import HomeSearchBar from '../../components/content/HomeSearchBar.tsx';
 import CameraCaptureModal from '../../components/modals/CameraCaptureModal.tsx';
@@ -22,46 +22,19 @@ import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
 import PageTransition from '../../components/ui/PageTransition.tsx';
 import PageShell from '../../components/layout/PageShell.tsx';
 import { useToast } from '../../store/toast.tsx';
-import { useBookIngestion } from '../../lib/hooks/useBookIngestion.ts';
-import SearchResultCard, {
-  SearchResultDTO
-} from '../../components/content/SearchResultCard.tsx';
+import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
 import { cn } from '../../lib/utils.ts';
 import { useCurrentlyReading } from '../../lib/hooks/useCurrentlyReading.ts';
+import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import { SearchResultDTO } from '../../types/bookSearch.ts';
+import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 
 /* -------------------------------
    Constants
 -------------------------------- */
 const EBOOK_ONLY_STORAGE_KEY = 'booktown.search.ebookOnly';
 const CURRENTLY_READING_ID = 'currently-reading';
-
-const normalizeIngestionSource = (
-  source: unknown,
-  externalId: string
-): 'googleBooks' | 'openLibrary' => {
-  const value = String(source || '').trim();
-
-  if (
-    value === 'googleBooks' ||
-    value === 'google_books' ||
-    value === 'googlebooks' ||
-    value === 'GOOGLE_BOOKS'
-  ) {
-    return 'googleBooks';
-  }
-
-  if (
-    value === 'openLibrary' ||
-    value === 'open_library' ||
-    value === 'openlibrary' ||
-    value === 'OPEN_LIBRARY'
-  ) {
-    return 'openLibrary';
-  }
-
-  return externalId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
-};
 
 /* -------------------------------
    Home Screen
@@ -81,7 +54,6 @@ const HomeScreen: React.FC = () => {
    */
   const { items: continueReadingItems, isLoading: isProgressLoading } = useCurrentlyReading(8);
   const { addToHistory } = useSearchHistory();
-  const { mutateAsync: ingestBook } = useBookIngestion();
 
   const [isSearching, setIsSearching] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -122,10 +94,26 @@ const HomeScreen: React.FC = () => {
     } catch {}
   }, [ebookOnly]);
 
-  const { data: searchResults, isLoading: isSearchingBooks } =
-    useLiveBookSearch(searchQuery, ebookOnly);
+  const {
+    data: searchResponse,
+    isLoading: isSearchingBooks
+  } = useBookSearch(searchQuery, {
+    ebookOnly,
+    lang,
+    limit: 15
+  });
 
   const { isLoading: isAnalyzingImage } = useIdentifyBook();
+
+  useEffect(() => {
+    if (searchQuery.trim().length < 2) return;
+    logBookEngineV2('BOOK_SEARCH_V2_SURFACE_HOME', {
+      query: searchQuery.trim().slice(0, 80),
+      resultCount: searchResponse?.results?.length || 0,
+      isLoading: isSearchingBooks,
+      ebookOnly,
+    });
+  }, [ebookOnly, isSearchingBooks, searchQuery, searchResponse?.results?.length]);
 
   /* -------------------------------
      Open Search Result
@@ -134,26 +122,17 @@ const HomeScreen: React.FC = () => {
     if (busyId) return;
 
     try {
-      setBusyId(result.externalId);
-
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
-      });
-
-      const canonicalId = res?.editionId || res?.bookId;
-      if (!canonicalId) throw new Error('Missing canonical ID');
+      setBusyId(result.id);
 
       setIsSearching(false);
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: { bookId: canonicalId, from: currentView }
+        params: buildBookDetailsParams(result, currentView)
       });
     } catch (err) {
-      console.error('[HOME][INGEST_FAILED]', err);
+      console.error('[HOME][OPEN_FAILED]', err);
       showToast(lang === 'en' ? 'Failed to open book.' : 'فشل فتح الكتاب.');
     } finally {
       setBusyId(null);
@@ -164,20 +143,16 @@ const HomeScreen: React.FC = () => {
     if (busyId) return;
 
     try {
-      setBusyId(result.externalId);
-
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
+      setBusyId(result.id);
+      navigate({
+        type: 'immersive',
+        id: 'bookDetails',
+        params: buildBookDetailsParams(result, currentView, {
+          pendingAction: 'NONE'
+        })
       });
-
-      const canonicalId = res?.editionId || res?.bookId;
-      if (!canonicalId) throw new Error('Missing canonical ID');
-
-      showToast(lang === 'en' ? 'Book added to your library.' : 'تمت إضافة الكتاب إلى مكتبتك.');
     } catch (err) {
-      console.error('[HOME][INGEST_ADD_FAILED]', err);
+      console.error('[HOME][ADD_OPEN_FAILED]', err);
       showToast(lang === 'en' ? 'Failed to add book.' : 'فشل إضافة الكتاب.');
     } finally {
       setBusyId(null);
@@ -188,25 +163,7 @@ const HomeScreen: React.FC = () => {
      Render Search Results
   -------------------------------- */
   const renderSearchResults = () => {
-    const validResults: SearchResultDTO[] =
-      (searchResults || [])
-        .map((b: any) => {
-          const externalId = b.id || b.editionId || b.bookId;
-          if (!externalId || typeof externalId !== 'string') return null;
-
-          return {
-            externalId,
-            source: normalizeIngestionSource(b.source, externalId),
-            titleEn: b.titleEn || b.title,
-            titleAr: b.titleAr,
-            authorEn: b.authorEn || b.author,
-            authorAr: b.authorAr,
-            coverUrl: b.coverUrl,
-            isEbookAvailable: b.isEbookAvailable,
-            rawBook: b
-          } as SearchResultDTO;
-        })
-        .filter((item): item is SearchResultDTO => item !== null);
+    const validResults: SearchResultDTO[] = searchResponse?.results || [];
 
     return (
       <div className="pt-4 min-h-[40vh]">
@@ -225,10 +182,10 @@ const HomeScreen: React.FC = () => {
           <div className="space-y-3">
             {validResults.map(result => (
               <SearchResultCard
-                key={result.externalId}
+                key={result.id}
                 result={result}
                 lang={lang}
-                isBusy={busyId === result.externalId}
+                isBusy={busyId === result.id}
                 onOpen={handleOpenResult}
                 onAdd={handleAddResult}
               />

@@ -8,12 +8,15 @@ import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 
 import { useI18n } from '../../store/i18n.tsx';
 import { useToast } from '../../store/toast.tsx';
+import { useNavigation } from '../../store/navigation.tsx';
 
-import { useLiveBookSearch } from '../../lib/hooks/useLiveBookSearch.ts';
-import { useBookIngestion } from '../../lib/hooks/useBookIngestion.ts';
+import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
+import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 
 import { Book } from '../../types/entities.ts';
 import SearchResultCard from '../content/SearchResultCard.tsx';
+import { SearchResultDTO } from '../../types/bookSearch.ts';
 
 interface SelectBookModalProps {
   isOpen: boolean;
@@ -28,47 +31,73 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
 }) => {
   const { lang } = useI18n();
   const { showToast } = useToast();
+  const { navigate, currentView } = useNavigation();
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [busyId, setBusyId] = useState<string | null>(null);
 
-  const {
-    data: searchResults,
-    isLoading: isSearching
-  } = useLiveBookSearch(searchQuery, false);
+  const { data: searchResponse, isLoading: isSearching } = useBookSearch(searchQuery, {
+    ebookOnly: false,
+    lang,
+    limit: 15,
+  });
 
-  const {
-    mutateAsync: ingestBook,
-    isPending: isIngesting
-  } = useBookIngestion();
+  React.useEffect(() => {
+    if (!isOpen) return;
+    if (searchQuery.trim().length < 2) return;
 
-  const handleSelect = async (externalBook: Book) => {
+    logBookEngineV2('BOOK_SEARCH_V2_SURFACE_ATTACH_BOOK', {
+      query: searchQuery.trim().slice(0, 80),
+      resultCount: searchResponse?.results?.length || 0,
+      isLoading: isSearching,
+    });
+  }, [isOpen, isSearching, searchQuery, searchResponse?.results?.length]);
+
+  const mapResultToBook = (result: SearchResultDTO): Book => ({
+    id: result.bookId,
+    authorId: '',
+    titleEn: result.titleEn || result.title,
+    titleAr: result.titleAr || '',
+    authorEn: result.authorEn || '',
+    authorAr: result.authorAr || '',
+    coverUrl: result.coverUrl || '',
+    descriptionEn: result.descriptionEn || result.description || '',
+    descriptionAr: result.descriptionAr || '',
+    genresEn: [],
+    genresAr: [],
+    rating: 0,
+    ratingsCount: 0,
+    isEbookAvailable: result.isEbookAvailable,
+  });
+
+  const handleSelect = async (result: SearchResultDTO) => {
+    if (busyId) return;
     try {
-      const res = await ingestBook({
-        bookId: externalBook.id,
-        // FIX: 'source' property does not exist on 'Book' type. Infer source from ID prefix for ingestion.
-        source: (externalBook.id.startsWith('gb_') ? 'googleBooks' : 'openLibrary') as 'googleBooks' | 'openLibrary',
-        rawBook: externalBook
-      });
+      setBusyId(result.id);
 
-      if (!res?.bookId) {
-        showToast(
-          lang === 'en'
-            ? 'Failed to attach book'
-            : 'فشل إرفاق الكتاب'
-        );
+      if (result.resultType === 'canonical') {
+        onBookSelect(mapResultToBook(result));
+        onClose();
         return;
       }
 
-      // Pass the updated book object to the parent
-      onBookSelect({ ...externalBook, id: res.bookId });
+      navigate({
+        type: 'immersive',
+        id: 'bookDetails',
+        params: buildBookDetailsParams(result, currentView, {
+          pendingAction: 'ATTACH_TO_POST',
+        }),
+      });
       onClose();
     } catch (err) {
-      console.error('[SelectBookModal][INGEST_FAILED]', err);
+      console.error('[SelectBookModal][SELECT_FAILED]', err);
       showToast(
         lang === 'en'
           ? 'Something went wrong'
           : 'حدث خطأ غير متوقع'
       );
+    } finally {
+      setBusyId(null);
     }
   };
 
@@ -94,7 +123,7 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
         />
 
         <div className="mt-4 space-y-2">
-          {(isSearching || isIngesting) && (
+          {(isSearching || busyId !== null) && (
             <div className="flex justify-center pt-8">
               <LoadingSpinner />
             </div>
@@ -102,7 +131,7 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
 
           {!isSearching &&
             searchQuery.length > 1 &&
-            (!searchResults || searchResults.length === 0) && (
+            (!searchResponse?.results || searchResponse.results.length === 0) && (
               <BilingualText className="text-center pt-8 text-slate-500">
                 {lang === 'en'
                   ? 'No results found.'
@@ -111,25 +140,15 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
             )}
 
           {!isSearching &&
-            searchResults &&
-            searchResults.map((book) => (
+            searchResponse?.results &&
+            searchResponse.results.map((result) => (
               <SearchResultCard
-                key={book.id}
-                result={{
-                  externalId: book.id,
-                  // FIX: 'source' property does not exist on 'Book' type. Infer source from ID prefix for SearchResultDTO compatibility.
-                  source: (book.id.startsWith('gb_') ? 'googleBooks' : 'openLibrary') as 'googleBooks' | 'openLibrary',
-                  titleEn: book.titleEn,
-                  titleAr: book.titleAr,
-                  authorEn: book.authorEn,
-                  authorAr: book.authorAr,
-                  coverUrl: book.coverUrl,
-                  rawBook: book
-                }}
+                key={result.id}
+                result={result}
                 lang={lang}
-                onAdd={() => handleSelect(book)}
-                onOpen={() => handleSelect(book)}
-                isBusy={isIngesting}
+                onAdd={() => handleSelect(result)}
+                onOpen={() => handleSelect(result)}
+                isBusy={busyId === result.id}
               />
             ))}
         </div>

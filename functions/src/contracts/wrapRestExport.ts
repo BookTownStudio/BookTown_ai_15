@@ -38,6 +38,14 @@ function normalizeRequestPayload(endpointKey: string, req: Request): unknown {
   if (endpointKey === "searchBooks") {
     const q = typeof req.query.q === "string" ? req.query.q : "";
     const lang = typeof req.query.lang === "string" ? req.query.lang : undefined;
+    const cursor =
+      typeof req.query.cursor === "string" ? req.query.cursor : undefined;
+    const limitRaw =
+      typeof req.query.limit === "string" ? Number(req.query.limit) : undefined;
+    const limit =
+      typeof limitRaw === "number" && Number.isFinite(limitRaw)
+        ? Math.trunc(limitRaw)
+        : undefined;
 
     const ebookOnlyRaw = req.query.ebookOnly;
     const ebookOnly =
@@ -50,6 +58,8 @@ function normalizeRequestPayload(endpointKey: string, req: Request): unknown {
     return {
       q,
       lang,
+      ...(cursor ? { cursor } : {}),
+      ...(limit === undefined ? {} : { limit }),
       ...(ebookOnly === undefined ? {} : { ebookOnly }),
     };
   }

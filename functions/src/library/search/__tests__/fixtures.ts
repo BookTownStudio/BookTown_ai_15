@@ -2,7 +2,7 @@ type LocalEditionFixture = {
   id: string;
   editionId: string;
   bookId: string;
-  source: "googleBooks" | "openLibrary";
+  source: "booktown";
   externalId: string;
   title: string;
   titleEn: string;
@@ -17,14 +17,19 @@ type LocalEditionFixture = {
   language: string;
   hasEbook: boolean;
   downloadable: boolean;
-  searchTitleNormalized: string;
-  searchAuthorNormalized: string;
-  searchTokens: string[];
+  isbn13?: string;
+  isbn10?: string;
+  normalizedTitle: string;
+  authorNamesNormalized: string[];
+  search: {
+    tokens: string[];
+  };
+  canonicalKey: string;
 };
 
 const base = (
   id: string,
-  source: "googleBooks" | "openLibrary",
+  source: "booktown",
   title: string,
   authors: string[],
   downloadable: boolean,
@@ -52,14 +57,17 @@ const base = (
     language: "en",
     hasEbook: downloadable,
     downloadable,
-    searchTitleNormalized: titleNorm,
-    searchAuthorNormalized: authorNorm,
-    searchTokens: Array.from(
+    normalizedTitle: titleNorm,
+    authorNamesNormalized: [authorNorm],
+    search: {
+      tokens: Array.from(
       new Set([
         ...tokenize(titleNorm),
         ...authors.flatMap((entry) => tokenize(normalize(entry))),
       ])
-    ),
+      ),
+    },
+    canonicalKey: `${normalize(authors[0] || "unknown")}::${titleNorm}`,
     ...extra,
   };
 };
@@ -67,87 +75,105 @@ const base = (
 export const LOCAL_EDITIONS: LocalEditionFixture[] = [
   base(
     "e1",
-    "googleBooks",
+    "booktown",
     "Harry Potter and the Philosopher Stone",
     ["J. K. Rowling"],
-    true
+    true,
+    {
+      isbn13: "9780747532743",
+      isbn10: "0747532745",
+    }
   ),
   base(
     "e2",
-    "googleBooks",
+    "booktown",
     "Harry Potter and the Chamber of Secrets",
     ["J. K. Rowling"],
     true
   ),
   base(
     "e3",
-    "openLibrary",
+    "booktown",
     "Harry Potter and the Prisoner of Azkaban",
     ["J. K. Rowling"],
     false
   ),
   base(
     "e4",
-    "openLibrary",
+    "booktown",
     "Harry S Truman Conference Proceedings",
     ["Historian"],
     false
   ),
   base(
     "e5",
-    "googleBooks",
+    "booktown",
     "Steppenwolf",
     ["Hermann Hesse"],
     false
   ),
   base(
     "e6",
-    "googleBooks",
+    "booktown",
     "Siddhartha",
     ["Hermann Hesse"],
     false
   ),
   base(
     "e7",
-    "openLibrary",
+    "booktown",
     "J. K. Rowling A Biography",
     ["Biographer"],
     false
   ),
   base(
     "e8",
-    "googleBooks",
+    "booktown",
     "Ebook Filter Primary Novel",
     ["Test Author"],
     true
   ),
   base(
     "e9",
-    "openLibrary",
+    "booktown",
     "Ebook Filter Print Edition",
     ["Test Author"],
     false
   ),
   base(
     "e10",
-    "googleBooks",
+    "booktown",
     "Ebook Filter Digital Edition",
     ["Test Author"],
     true
   ),
   base(
     "e11",
-    "openLibrary",
+    "booktown",
     "Financial Strategy",
     ["Patel"],
     false
   ),
   base(
     "e12",
-    "openLibrary",
+    "booktown",
     "Financial Report 2022",
     ["Gov Agency"],
     false
+  ),
+  base(
+    "e13",
+    "booktown",
+    "Harry Potter and the Goblet of Fire",
+    ["J. K. Rowling"],
+    true
+  ),
+  base(
+    "e14",
+    "booktown",
+    "Harry Potter and the Order of the Phoenix",
+    ["J. K. Rowling"],
+    true
   ),
 ];
 

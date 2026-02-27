@@ -8,51 +8,24 @@ import InputField from '../ui/InputField.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useLiveBookSearch } from '../../lib/hooks/useLiveBookSearch.ts';
+import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import { useToggleBookOnShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
-import { useBookIngestion } from '../../lib/hooks/useBookIngestion.ts';
 import { useBookUpload } from '../../lib/hooks/useBookUpload.ts';
 import { useQueryClient } from '../../lib/react-query.ts';
 import { useToast } from '../../store/toast.tsx';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import { queryKeys } from '../../lib/queryKeys.ts';
-import SearchResultCard, {
-  SearchResultDTO
-} from '../content/SearchResultCard.tsx';
+import SearchResultCard from '../content/SearchResultCard.tsx';
+import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import { SearchResultDTO } from '../../types/bookSearch.ts';
+import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
   onClose: () => void;
   targetShelfId?: string | null;
 }
-
-const normalizeIngestionSource = (
-  source: unknown,
-  externalId: string
-): 'googleBooks' | 'openLibrary' => {
-  const value = String(source || '').trim();
-
-  if (
-    value === 'googleBooks' ||
-    value === 'google_books' ||
-    value === 'googlebooks' ||
-    value === 'GOOGLE_BOOKS'
-  ) {
-    return 'googleBooks';
-  }
-
-  if (
-    value === 'openLibrary' ||
-    value === 'open_library' ||
-    value === 'openlibrary' ||
-    value === 'OPEN_LIBRARY'
-  ) {
-    return 'openLibrary';
-  }
-
-  return externalId.startsWith('gb_') ? 'googleBooks' : 'openLibrary';
-};
 
 const AddBookModal: React.FC<AddBookModalProps> = ({
   isOpen,
@@ -74,12 +47,32 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const [isUploadBusy, setIsUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const { data: searchResults, isLoading: isSearching } =
-    useLiveBookSearch(searchQuery, false);
-
-  const { mutateAsync: ingestBook } = useBookIngestion();
+  const { data: searchResponse, isLoading: isSearching } = useBookSearch(searchQuery, {
+    ebookOnly: false,
+    lang,
+    limit: 15,
+  });
   const { mutate: toggleBook } = useToggleBookOnShelf();
   const { mutateAsync: uploadUserBook } = useBookUpload();
+
+  React.useEffect(() => {
+    if (!isOpen || activeTab !== 'search') return;
+    if (searchQuery.trim().length < 2) return;
+
+    logBookEngineV2('BOOK_SEARCH_V2_SURFACE_ADD_TO_SHELF', {
+      query: searchQuery.trim().slice(0, 80),
+      resultCount: searchResponse?.results?.length || 0,
+      isLoading: isSearching,
+      targetShelfId: targetShelfId || null,
+    });
+  }, [
+    activeTab,
+    isOpen,
+    isSearching,
+    searchQuery,
+    searchResponse?.results?.length,
+    targetShelfId,
+  ]);
 
   const targetShelf = targetShelfId
     ? shelves?.find((s) => s.id === targetShelfId)
@@ -111,24 +104,28 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     if (!targetShelfId || busyId) return;
 
     try {
-      setBusyId(result.externalId);
+      setBusyId(result.id);
 
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
-      });
-
-      const canonicalId = res?.bookId;
-      if (!canonicalId) throw new Error('No canonical ID returned');
+      if (result.resultType !== 'canonical') {
+        navigate({
+          type: 'immersive',
+          id: 'bookDetails',
+          params: buildBookDetailsParams(result, currentView, {
+            pendingAction: 'ADD_TO_SHELF',
+            pendingShelfId: targetShelfId,
+          }),
+        });
+        onClose();
+        return;
+      }
 
       toggleBook(
         {
           shelfId: targetShelfId,
-          bookId: canonicalId,
+          bookId: result.bookId,
           book: {
-            id: canonicalId,
-            titleEn: result.titleEn,
+            id: result.bookId,
+            titleEn: result.titleEn || result.title,
             titleAr: result.titleAr,
             authorEn: result.authorEn,
             authorAr: result.authorAr,
@@ -163,21 +160,12 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     if (busyId) return;
 
     try {
-      setBusyId(result.externalId);
-
-      const res = await ingestBook({
-        bookId: result.externalId,
-        source: result.source,
-        rawBook: result.rawBook ?? result
-      });
-
-      const canonicalId = res?.bookId;
-      if (!canonicalId) throw new Error('No canonical ID returned');
+      setBusyId(result.id);
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: { bookId: canonicalId, from: currentView }
+        params: buildBookDetailsParams(result, currentView)
       });
     } catch (err) {
       console.error('[AddBookModal][OPEN_FAILED]', err);
@@ -186,25 +174,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
-  const normalizedResults: SearchResultDTO[] =
-    (searchResults || [])
-      .map((b: any) => {
-        const externalId = b.id || b.editionId || b.bookId;
-        if (!externalId || typeof externalId !== 'string') return null;
-
-        return {
-          externalId,
-          source: normalizeIngestionSource(b.source, externalId),
-          titleEn: b.titleEn || b.title,
-          titleAr: b.titleAr,
-          authorEn: b.authorEn || b.author,
-          authorAr: b.authorAr,
-          coverUrl: b.coverUrl,
-          isEbookAvailable: b.isEbookAvailable,
-          rawBook: b
-        } as SearchResultDTO;
-      })
-      .filter((item): item is SearchResultDTO => item !== null);
+  const normalizedResults: SearchResultDTO[] = searchResponse?.results || [];
 
   const mode: 'discovery' | 'insertion' =
     targetShelfId ? 'insertion' : 'discovery';
@@ -481,11 +451,11 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
               {!isSearching &&
                 normalizedResults.map((result) => (
                   <SearchResultCard
-                    key={result.externalId}
+                    key={result.id}
                     result={result}
                     lang={lang}
                     mode={mode}
-                    isBusy={busyId === result.externalId}
+                    isBusy={busyId === result.id}
                     onAdd={handleAdd}
                     onOpen={handleOpen}
                   />

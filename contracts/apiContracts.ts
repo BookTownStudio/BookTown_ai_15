@@ -119,7 +119,8 @@ const searchBookSchema = z
     editionId: z.string().min(1),
     bookId: z.string().min(1),
     externalId: z.string(),
-    source: z.enum(["googleBooks", "openLibrary"]),
+    source: z.enum(["booktown", "googleBooks", "openLibrary"]),
+    resultType: z.enum(["canonical", "external"]),
     title: z.string().min(1),
     titleEn: z.string().min(1),
     titleAr: z.string(),
@@ -134,6 +135,9 @@ const searchBookSchema = z
     hasEbook: z.boolean(),
     downloadable: z.boolean(),
     isEbookAvailable: z.boolean(),
+    confidence: z.number().min(0).max(1),
+    rank: z.number().int().nonnegative(),
+    rawBook: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 
@@ -1912,18 +1916,23 @@ export const apiContracts = {
           q: z.string().min(2),
           ebookOnly: z.boolean().optional(),
           lang: z.string().min(2).max(8).optional(),
+          cursor: z.string().min(1).optional(),
+          limit: z.number().int().min(1).max(30).optional(),
         })
         .strict(),
       z
         .object({
           results: z.array(searchBookSchema),
+          nextCursor: z.string().nullable(),
+          hasMore: z.boolean(),
+          cursorUsed: z.boolean(),
         })
         .strict(),
       "rest",
       {
         method: "GET",
         route: "/api/search/books",
-        callSites: ["services/federatedSearch.ts"],
+        callSites: ["services/bookSearchService.ts"],
       }
     ),
 

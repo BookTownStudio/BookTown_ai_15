@@ -1,6 +1,6 @@
 // app/book-details.tsx
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import PageTransition from '../components/ui/PageTransition.tsx';
 import ErrorState from '../components/ui/ErrorState.tsx';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
@@ -14,6 +14,8 @@ import { useBookReviews } from '../lib/hooks/useBookReviews.ts';
 import { useBookShelfStatus } from '../lib/hooks/useBookShelfStatus.ts';
 import { useRelatedBooks } from '../lib/hooks/useRelatedBooks.ts';
 import { useSubmitReview } from '../lib/hooks/useSubmitReview.ts';
+import { useBookIngestion } from '../lib/hooks/useBookIngestion.ts';
+import { useToggleBookOnShelf } from '../lib/hooks/useToggleBookOnShelf.ts';
 import { useAuth } from '../lib/auth.tsx';
 
 import Button from '../components/ui/Button.tsx';
@@ -37,6 +39,9 @@ import {
 
 import { cn } from '../lib/utils.ts';
 import { mockBooks } from '../data/mocks.ts';
+import { SearchResultDTO } from '../types/bookSearch.ts';
+import { resolveIngestionSource } from '../lib/books/searchNavigation.ts';
+import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 
@@ -45,9 +50,27 @@ const BookDetailsScreen: React.FC = () => {
   const { lang, isRTL } = useI18n();
   const { showToast } = useToast();
   const { user } = useAuth();
+  const { mutateAsync: ingestBook } = useBookIngestion();
+  const { mutate: toggleBook } = useToggleBookOnShelf();
 
-  const originalBookId = currentView.type === 'immersive' ? currentView.params?.bookId : undefined;
-  const reviewAction = currentView.type === 'immersive' ? currentView.params?.reviewAction : undefined;
+  const params =
+    currentView.type === 'immersive'
+      ? (currentView.params as Record<string, unknown> | undefined) || {}
+      : {};
+
+  const originalBookId = typeof params?.bookId === 'string' ? params.bookId : undefined;
+  const reviewAction = typeof params?.reviewAction === 'string' ? params.reviewAction : undefined;
+  const pendingAction = typeof params?.pendingAction === 'string' ? params.pendingAction : 'NONE';
+  const pendingShelfId = typeof params?.pendingShelfId === 'string' ? params.pendingShelfId : '';
+  const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
+  const hasExternalPendingSearch =
+    pendingSearchResult?.resultType === 'external';
+
+  const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
+  const [isResolvingExternal, setIsResolvingExternal] = useState(false);
+  const [externalResolveFailed, setExternalResolveFailed] = useState(false);
+  const ingestionStartedRef = useRef<string>('');
+  const pendingActionRef = useRef<string>('');
 
   const randomBookId = useMemo(() => {
     if (originalBookId !== 'surprise') return null;
@@ -55,7 +78,10 @@ const BookDetailsScreen: React.FC = () => {
     return keys[Math.floor(Math.random() * keys.length)];
   }, [originalBookId]);
 
-  const bookId = originalBookId === 'surprise' ? randomBookId : originalBookId;
+  const bookId =
+    originalBookId === 'surprise'
+      ? randomBookId
+      : resolvedExternalBookId || (hasExternalPendingSearch ? undefined : originalBookId);
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
@@ -63,6 +89,184 @@ const BookDetailsScreen: React.FC = () => {
   
   useRelatedBooks(book || undefined);
   const submitReview = useSubmitReview();
+
+  useEffect(() => {
+    ingestionStartedRef.current = '';
+    pendingActionRef.current = '';
+    setResolvedExternalBookId(null);
+    setIsResolvingExternal(false);
+    setExternalResolveFailed(false);
+  }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
+
+  useEffect(() => {
+    if (pendingSearchResult) {
+      logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+        phase: 'payload_received',
+        resultType: pendingSearchResult.resultType,
+        source: pendingSearchResult.source,
+        id: pendingSearchResult.id,
+        externalId: pendingSearchResult.externalId || null,
+      });
+      return;
+    }
+
+    if (originalBookId) {
+      logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+        phase: 'payload_received',
+        resultType: 'canonical',
+        bookId: originalBookId,
+      });
+    }
+  }, [originalBookId, pendingSearchResult]);
+
+  useEffect(() => {
+    if (!hasExternalPendingSearch || !pendingSearchResult) return;
+
+    const source = resolveIngestionSource(pendingSearchResult);
+    if (!source) {
+      showToast(lang === 'en' ? 'Invalid external source.' : 'مصدر خارجي غير صالح.');
+      return;
+    }
+
+    const effectKey = `${pendingSearchResult.id}:${source}`;
+    if (ingestionStartedRef.current === effectKey) return;
+    ingestionStartedRef.current = effectKey;
+    setIsResolvingExternal(true);
+    setExternalResolveFailed(false);
+
+    logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+      phase: 'invoke_ingest',
+      source,
+      id: pendingSearchResult.id,
+      externalId: pendingSearchResult.externalId || pendingSearchResult.id,
+    });
+
+    ingestBook({
+      bookId: pendingSearchResult.externalId || pendingSearchResult.id,
+      source,
+      rawBook: pendingSearchResult.rawBook || {
+        id: pendingSearchResult.externalId || pendingSearchResult.id,
+        externalId: pendingSearchResult.externalId || pendingSearchResult.id,
+        source,
+        title: pendingSearchResult.title,
+        titleEn: pendingSearchResult.titleEn,
+        titleAr: pendingSearchResult.titleAr,
+        authors: pendingSearchResult.authors,
+        authorEn: pendingSearchResult.authorEn,
+        authorAr: pendingSearchResult.authorAr,
+        description: pendingSearchResult.description,
+        descriptionEn: pendingSearchResult.descriptionEn,
+        descriptionAr: pendingSearchResult.descriptionAr,
+      },
+    })
+      .then((result) => {
+        const canonicalId = result?.bookId || result?.editionId;
+        if (!canonicalId) {
+          throw new Error('INGESTION_NO_CANONICAL_ID');
+        }
+        logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+          phase: 'ingest_resolved',
+          status: result?.status || 'UNKNOWN',
+          canonicalBookId: result?.bookId || null,
+          canonicalEditionId: result?.editionId || null,
+          resolvedId: canonicalId,
+        });
+        setResolvedExternalBookId(canonicalId);
+      })
+      .catch((error) => {
+        console.error('[BOOK_DETAILS][INGEST_ON_LOAD_FAILED]', error);
+        logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+          phase: 'ingest_failed',
+          error: String(error),
+          source,
+          id: pendingSearchResult.id,
+        });
+        setExternalResolveFailed(true);
+        showToast(lang === 'en' ? 'Failed to load this book.' : 'تعذر تحميل هذا الكتاب.');
+      })
+      .finally(() => {
+        setIsResolvingExternal(false);
+      });
+  }, [
+    hasExternalPendingSearch,
+    ingestBook,
+    lang,
+    pendingSearchResult,
+    showToast,
+  ]);
+
+  useEffect(() => {
+    if (!book || !bookId) return;
+    if (!pendingAction || pendingAction === 'NONE') return;
+
+    const actionKey = `${pendingAction}:${bookId}:${pendingShelfId}`;
+    if (pendingActionRef.current === actionKey) return;
+    pendingActionRef.current = actionKey;
+
+    if (pendingAction === 'ADD_TO_SHELF') {
+      if (!pendingShelfId) return;
+
+      toggleBook(
+        {
+          shelfId: pendingShelfId,
+          bookId,
+          book,
+        },
+        {
+          onSuccess: () => {
+            showToast(lang === 'en' ? 'Book added to shelf.' : 'تمت إضافة الكتاب إلى الرف.');
+            const fromView = params?.from;
+            if (fromView && typeof fromView === 'object') {
+              navigate(fromView as any, { replace: true });
+            }
+          },
+          onError: () => {
+            showToast(lang === 'en' ? 'Failed to add book.' : 'فشل إضافة الكتاب.');
+          },
+        }
+      );
+      return;
+    }
+
+    if (pendingAction === 'ATTACH_TO_POST') {
+      const fromView = params?.from;
+      if (!fromView || typeof fromView !== 'object') return;
+
+      const fromRecord = fromView as Record<string, unknown>;
+      const existingParams =
+        fromRecord.params && typeof fromRecord.params === 'object'
+          ? (fromRecord.params as Record<string, unknown>)
+          : {};
+
+      navigate(
+        {
+          ...(fromRecord as any),
+          params: {
+            ...existingParams,
+            attachedBook: {
+              id: book.id,
+              titleEn: book.titleEn,
+              titleAr: book.titleAr,
+              authorEn: book.authorEn,
+              authorAr: book.authorAr,
+              coverUrl: book.coverUrl,
+            },
+          },
+        } as any,
+        { replace: true }
+      );
+    }
+  }, [
+    book,
+    bookId,
+    lang,
+    navigate,
+    params,
+    pendingAction,
+    pendingShelfId,
+    showToast,
+    toggleBook,
+  ]);
 
   const existingUserReview = useMemo(() => {
     if (!user?.uid || !Array.isArray(reviews)) return null;
@@ -124,7 +328,19 @@ const BookDetailsScreen: React.FC = () => {
     }
   };
 
-  if (isBookLoading || !book) {
+  if (isResolvingExternal || isBookLoading || !book) {
+    if (externalResolveFailed && !isResolvingExternal && !book) {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+          <ErrorState
+            title={lang === 'en' ? 'Book unavailable' : 'الكتاب غير متاح'}
+            message={lang === 'en' ? 'We could not ingest this book.' : 'تعذر استيراد هذا الكتاب.'}
+            onRetry={() => navigate(currentView.params?.from || { type: 'tab', id: 'home' })}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
         <LoadingSpinner />
