@@ -19,6 +19,7 @@ import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
+import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 
 const LiveSearchScreen: React.FC = () => {
   const { navigate, currentView } = useNavigation();
@@ -36,6 +37,11 @@ const LiveSearchScreen: React.FC = () => {
     lang,
     limit: 15,
   });
+  const validResults: SearchResultDTO[] = searchResponse?.results || [];
+  const clickedRankFor = (id: string): number => {
+    const index = validResults.findIndex((entry) => entry.id === id);
+    return index >= 0 ? index + 1 : 1;
+  };
   const { mutate: identifyBook, isLoading: isAnalyzingImage } =
     useIdentifyBook();
 
@@ -47,11 +53,20 @@ const LiveSearchScreen: React.FC = () => {
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView)
+        params: buildBookDetailsParams(result, currentView, {
+          searchQuery: query.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
+        })
       });
     } catch (err) {
       console.error('[LIVE_SEARCH][OPEN_FAILED]', err);
@@ -70,11 +85,19 @@ const LiveSearchScreen: React.FC = () => {
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
       navigate({
         type: 'immersive',
         id: 'bookDetails',
         params: buildBookDetailsParams(result, currentView, {
           pendingAction: 'NONE',
+          searchQuery: query.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
         }),
       });
     } catch (err) {
@@ -88,8 +111,6 @@ const LiveSearchScreen: React.FC = () => {
       setBusyId(null);
     }
   };
-
-  const validResults: SearchResultDTO[] = searchResponse?.results || [];
 
   useEffect(() => {
     if (query.trim().length < 2) return;

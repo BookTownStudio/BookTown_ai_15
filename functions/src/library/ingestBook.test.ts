@@ -178,7 +178,7 @@ async function callIngest(overrides: Record<string, unknown> = {}) {
   const result = await ingestBookCallable.run({
     auth: { uid: "test-user" },
     data: {
-      bookId: "gb_abc123",
+      providerExternalId: "gb_abc123",
       source: "googleBooks",
       rawBook: {
         id: "abc123",
@@ -201,7 +201,12 @@ async function callIngest(overrides: Record<string, unknown> = {}) {
     },
   });
 
-  return result as { bookId: string; editionId: string; status: string };
+  return result as {
+    canonicalBookId: string;
+    bookId: string;
+    editionId: string;
+    status: string;
+  };
 }
 
 describe("ingestBook v2 smoke", () => {
@@ -218,6 +223,8 @@ describe("ingestBook v2 smoke", () => {
       title: "The Deterministic Book (Updated Metadata)",
     });
 
+    expect(first.canonicalBookId).toBe(first.bookId);
+    expect(second.canonicalBookId).toBe(second.bookId);
     expect(first.bookId).toBe(second.bookId);
     expect(first.editionId).toBe(second.editionId);
 

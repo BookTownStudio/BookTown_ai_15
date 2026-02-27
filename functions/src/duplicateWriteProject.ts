@@ -30,6 +30,15 @@ function normalizeCoverUrl(value: unknown): string | null {
   }
 }
 
+function normalizeContentDoc(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") return null;
+  const doc = value as Record<string, unknown>;
+  if (doc.type !== "doc" || doc.version !== 1 || !Array.isArray(doc.content)) return null;
+  const serialized = JSON.stringify(doc);
+  if (serialized.length > 2_000_000) return null;
+  return JSON.parse(serialized) as Record<string, unknown>;
+}
+
 /**
  * duplicateWriteProject
  * Deterministic duplicate with operation-level idempotency.
@@ -88,6 +97,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
         titleEn: `Copy of ${titleEn}`.slice(0, 180),
         titleAr: `نسخة من ${titleAr}`.slice(0, 180),
         content: typeof source.content === "string" ? source.content.slice(0, 2_000_000) : "",
+        contentDoc: normalizeContentDoc(source.contentDoc),
         wordCount:
           typeof source.wordCount === "number" && Number.isFinite(source.wordCount)
             ? Math.max(0, Math.floor(source.wordCount))
@@ -136,6 +146,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
       titleEn: normalizeString(result.data.titleEn, "Untitled Project", 180),
       titleAr: normalizeString(result.data.titleAr, "مشروع غير معنون", 180),
       content: typeof result.data.content === "string" ? result.data.content : "",
+      contentDoc: normalizeContentDoc(result.data.contentDoc) ?? undefined,
       wordCount:
         typeof result.data.wordCount === "number" && Number.isFinite(result.data.wordCount)
           ? Math.max(0, Math.floor(result.data.wordCount))

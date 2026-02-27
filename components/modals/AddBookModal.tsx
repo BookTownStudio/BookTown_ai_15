@@ -20,6 +20,7 @@ import SearchResultCard from '../content/SearchResultCard.tsx';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
+import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -52,6 +53,11 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     lang,
     limit: 15,
   });
+  const normalizedResults: SearchResultDTO[] = searchResponse?.results || [];
+  const clickedRankFor = (id: string): number => {
+    const index = normalizedResults.findIndex((entry) => entry.id === id);
+    return index >= 0 ? index + 1 : 1;
+  };
   const { mutate: toggleBook } = useToggleBookOnShelf();
   const { mutateAsync: uploadUserBook } = useBookUpload();
 
@@ -105,6 +111,11 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
 
       if (result.resultType !== 'canonical') {
         navigate({
@@ -113,6 +124,9 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
           params: buildBookDetailsParams(result, currentView, {
             pendingAction: 'ADD_TO_SHELF',
             pendingShelfId: targetShelfId,
+            searchQuery: searchQuery.trim(),
+            clickedRank: clickedRankFor(result.id),
+            clickTracked: true,
           }),
         });
         onClose();
@@ -161,11 +175,20 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView)
+        params: buildBookDetailsParams(result, currentView, {
+          searchQuery: searchQuery.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
+        })
       });
     } catch (err) {
       console.error('[AddBookModal][OPEN_FAILED]', err);
@@ -173,8 +196,6 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
       setBusyId(null);
     }
   };
-
-  const normalizedResults: SearchResultDTO[] = searchResponse?.results || [];
 
   const mode: 'discovery' | 'insertion' =
     targetShelfId ? 'insertion' : 'discovery';

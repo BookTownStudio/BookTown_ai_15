@@ -1,27 +1,30 @@
 // services/bookIngestionService.ts
 
-import { httpsCallable } from 'firebase/functions';
-import { getFirebaseFunctions } from '../lib/firebase.ts';
 import { Book } from '../types/entities.ts';
+import {
+  ensureCanonicalBook,
+  EnsureCanonicalBookResult,
+} from '../lib/books/ensureCanonicalBook.ts';
 
 /**
  * BookIngestionService
  * 🔒 SINGLE AUTHORITY for triggering server-side book materialization.
  *
  * HARD RULES:
- * - Owns httpsCallable('ingestBook')
+ * - Delegates canonical resolution to ensureCanonicalBook()
  * - Enforces payload contract
  * - Returns canonical identifiers
  * - Never throws (UX must not dead-end)
  */
 
 export type BookIngestionParams = {
-  bookId: string;
+  providerExternalId: string;
   source: 'googleBooks' | 'openLibrary';
   rawBook: any;
 };
 
 export type BookIngestionResult = {
+  canonicalBookId: string;
   bookId: string;
   editionId?: string;
   status?: string;
@@ -64,67 +67,23 @@ export const bookIngestionService = {
   async ingest(
     params: BookIngestionParams
   ): Promise<BookIngestionResult | null> {
-    try {
-      const source = normalizeIngestionSource(params.source);
-      if (!source) {
-        console.warn('[INGESTION_SERVICE][INVALID_SOURCE]', params.source);
-        return null;
-      }
-
-      const functions = getFirebaseFunctions();
-      const ingestFn = httpsCallable(functions, 'ingestBook');
-
-      const result = await ingestFn({
-        bookId: params.bookId,
-        source,
-        rawBook: params.rawBook,
-      });
-
-      /**
-       * Contract-aware response parsing:
-       * - Enforced wrapper: { success: true, data: { ... } }
-       * - Legacy callable: { ... }
-       */
-      const payload = result?.data as any;
-      const data: Partial<BookIngestionResult> | undefined =
-        payload?.success === true && payload?.data
-          ? payload.data
-          : payload;
-
-      if (payload?.success === false) {
-        console.warn(
-          '[INGESTION_SERVICE][BACKEND_FAILURE]',
-          payload?.error
-        );
-        return null;
-      }
-
-      if (data?.bookId) {
-        return {
-          bookId: data.bookId,
-          editionId: data.editionId,
-          status: data.status,
-        };
-      }
-
-      console.warn(
-        '[INGESTION_SERVICE][INVALID_RESPONSE]',
-        data
-      );
-      return null;
-    } catch (error) {
-      /**
-       * Functional Requirement:
-       * - Must not block navigation
-       * - Must not throw
-       * - Must log clearly
-       */
-      console.warn(
-        '[INGESTION_SERVICE][FAILURE]',
-        error
-      );
+    const source = normalizeIngestionSource(params.source);
+    if (!source) {
+      console.warn('[INGESTION_SERVICE][INVALID_SOURCE]', params.source);
       return null;
     }
+
+    const result = await ensureCanonicalBook({
+      providerExternalId: params.providerExternalId,
+      source,
+      rawBook: params.rawBook,
+    });
+
+    if (!result) {
+      return null;
+    }
+
+    return result as EnsureCanonicalBookResult;
   },
 
   /**

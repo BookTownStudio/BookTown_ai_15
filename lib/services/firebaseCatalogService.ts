@@ -1,5 +1,4 @@
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
-import { httpsCallable } from "firebase/functions";
 import type { FirebaseError } from "firebase/app";
 import {
   collection,
@@ -20,10 +19,10 @@ import {
 
 import {
   getFirebaseDb,
-  getFirebaseFunctions,
   getFirebaseStorage,
 } from "../firebase.ts";
 import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts";
+import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
 import type { BookStats } from "../../services/db.types.ts";
 
@@ -400,14 +399,21 @@ export const firebaseCatalogService = {
   },
 
   async ingestBook(params: {
-    bookId: string;
+    providerExternalId?: string;
+    bookId?: string;
     source: "googleBooks" | "openLibrary";
     rawBook: any;
   }) {
-    const functions = getFirebaseFunctions();
-    const ingestFn = httpsCallable(functions, "ingestBook");
-    const result = await ingestFn(params);
-    return result.data;
+    const providerExternalId =
+      typeof params.providerExternalId === "string" && params.providerExternalId.trim().length > 0
+        ? params.providerExternalId
+        : params.bookId || "";
+
+    return ensureCanonicalBook({
+      providerExternalId,
+      source: params.source,
+      rawBook: params.rawBook,
+    });
   },
 
   async searchBooks(queryText: string): Promise<Book[]> {

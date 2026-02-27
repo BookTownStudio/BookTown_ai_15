@@ -10,7 +10,8 @@ import { buildCanonicalKey } from "./persistence/canonicalKey";
 type SupportedSource = "googleBooks" | "openLibrary";
 
 type IngestionRequest = {
-  bookId: string;
+  providerExternalId?: string;
+  bookId?: string;
   source: SupportedSource;
   rawBook: Record<string, unknown>;
 };
@@ -102,7 +103,7 @@ function normalizeIsbn(value: unknown, length: 10 | 13): string {
 }
 
 function extractExternalId(
-  clientBookId: string,
+  providerExternalId: string,
   source: SupportedSource,
   rawBook: Record<string, unknown>
 ): string {
@@ -112,7 +113,7 @@ function extractExternalId(
     asNonEmptyString(rawBook.id) ||
     asNonEmptyString(rawBook.key);
 
-  const fallback = providerIdFromPayload || clientBookId;
+  const fallback = providerIdFromPayload || providerExternalId;
 
   if (source === "googleBooks") {
     return fallback.replace(/^gb_/i, "").trim();
@@ -429,15 +430,17 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
       ? (request.data as { data: IngestionRequest }).data
       : request.data;
 
-  const clientBookId = asNonEmptyString(payload?.bookId || "");
+  const providerExternalId =
+    asNonEmptyString(payload?.providerExternalId || "") ||
+    asNonEmptyString(payload?.bookId || "");
   const source = normalizeSource(payload?.source);
   const rawBook = asRecord(payload?.rawBook);
 
-  if (!clientBookId || !source || !rawBook) {
+  if (!providerExternalId || !source || !rawBook) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
 
-  const externalId = extractExternalId(clientBookId, source, rawBook);
+  const externalId = extractExternalId(providerExternalId, source, rawBook);
   if (!externalId) {
     throw new HttpsError("invalid-argument", "Unable to resolve provider external id.");
   }
@@ -511,6 +514,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
       });
 
       return {
+        canonicalBookId: ingestedBookId,
         bookId: ingestedBookId,
         editionId: `${source}:${externalId}`,
         status: "ALREADY_COMPLETE",
@@ -681,7 +685,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
         ingestionKey,
         source,
         externalId,
-        externalBookId: clientBookId,
+        externalBookId: providerExternalId,
         canonicalKey,
         identityKeys: identityCandidates.map((entry) => entry.key),
         bookId,
@@ -728,6 +732,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
     }
 
     return {
+      canonicalBookId: bookId,
       bookId,
       editionId: `${source}:${externalId}`,
       status: resolvedBookId ? "MERGED" : "CREATED",

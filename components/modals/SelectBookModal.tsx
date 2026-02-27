@@ -13,6 +13,7 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
+import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 
 import { Book } from '../../types/entities.ts';
 import SearchResultCard from '../content/SearchResultCard.tsx';
@@ -41,6 +42,11 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
     lang,
     limit: 15,
   });
+  const searchResults: SearchResultDTO[] = searchResponse?.results || [];
+  const clickedRankFor = (id: string): number => {
+    const index = searchResults.findIndex((entry) => entry.id === id);
+    return index >= 0 ? index + 1 : 1;
+  };
 
   React.useEffect(() => {
     if (!isOpen) return;
@@ -74,6 +80,11 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
     if (busyId) return;
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
 
       if (result.resultType === 'canonical') {
         onBookSelect(mapResultToBook(result));
@@ -86,6 +97,9 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
         id: 'bookDetails',
         params: buildBookDetailsParams(result, currentView, {
           pendingAction: 'ATTACH_TO_POST',
+          searchQuery: searchQuery.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
         }),
       });
       onClose();

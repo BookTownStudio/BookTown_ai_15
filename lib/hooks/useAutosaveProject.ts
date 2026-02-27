@@ -7,7 +7,7 @@ import { queryKeys } from '../queryKeys.ts';
 
 interface AutosaveVariables {
     projectId: string;
-    updates: Partial<Pick<Project, 'titleEn' | 'titleAr' | 'content' | 'wordCount'>>;
+    updates: Partial<Pick<Project, 'titleEn' | 'titleAr' | 'content' | 'contentDoc' | 'wordCount'>>;
 }
 
 export const useAutosaveProject = () => {

@@ -1,17 +1,19 @@
 // lib/hooks/useBookIngestion.ts
 
 import { useMutation } from '@tanstack/react-query';
-import { bookIngestionService } from '../../services/bookIngestionService.ts';
+import { ensureCanonicalBook } from '../books/ensureCanonicalBook.ts';
 
 interface IngestionParams {
-  bookId: string;
+  providerExternalId: string;
   source: 'googleBooks' | 'openLibrary';
   rawBook: any;
 }
 
 interface IngestionResult {
+  canonicalBookId: string;
   bookId: string;
   editionId?: string;
+  status?: string;
 }
 
 /**
@@ -32,13 +34,13 @@ interface IngestionResult {
  */
 export const useBookIngestion = () => {
   return useMutation<IngestionResult | null, unknown, IngestionParams>({
-    mutationFn: async ({ bookId, source, rawBook }) => {
+    mutationFn: async ({ providerExternalId, source, rawBook }) => {
       /**
        * Signature is intentionally object-based
        * to remain forward-compatible with ingestion contracts.
        */
-      return bookIngestionService.ingest({
-        bookId,
+      return ensureCanonicalBook({
+        providerExternalId,
         source,
         rawBook,
       });
@@ -50,9 +52,9 @@ export const useBookIngestion = () => {
      * by the caller using canonicalId.
      */
     onSuccess: (result) => {
-      if (!result?.bookId) {
+      if (!result?.canonicalBookId) {
         console.warn(
-          '[useBookIngestion] No canonical ID returned',
+          '[useBookIngestion] No canonicalBookId returned',
           result
         );
       }

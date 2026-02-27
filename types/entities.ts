@@ -240,6 +240,32 @@ export interface Book {
     ebookAttachmentId?: string; // Reference to secure binary attachment
 }
 
+export type WriteDirection = 'ltr' | 'rtl';
+
+export interface WriteMarkNode {
+    type: 'bold' | 'italic' | 'underline';
+}
+
+export interface WriteContentNode {
+    type: 'paragraph' | 'heading' | 'blockquote' | 'bulletList' | 'orderedList' | 'listItem' | 'horizontalRule' | 'text';
+    attrs?: {
+        level?: 1 | 2 | 3;
+        lang?: string;
+        dir?: WriteDirection;
+        langManual?: boolean;
+    };
+    text?: string;
+    marks?: WriteMarkNode[];
+    content?: WriteContentNode[];
+}
+
+export interface WriteContentDoc {
+    version: 1;
+    type: 'doc';
+    content: WriteContentNode[];
+    plainText?: string;
+}
+
 export interface PublishedBook {
     id: string;
     projectId: string;
@@ -321,6 +347,7 @@ export interface Project {
     updatedAt: string; // ISO string
     createdAt?: string;
     content: string; 
+    contentDoc?: WriteContentDoc;
     isPublished?: boolean;
     publishedBookId?: string;
     revision?: number;

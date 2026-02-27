@@ -29,6 +29,7 @@ import { useCurrentlyReading } from '../../lib/hooks/useCurrentlyReading.ts';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
+import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 
 /* -------------------------------
    Constants
@@ -104,6 +105,11 @@ const HomeScreen: React.FC = () => {
   });
 
   const { isLoading: isAnalyzingImage } = useIdentifyBook();
+  const searchResults = searchResponse?.results || [];
+  const clickedRankFor = (id: string): number => {
+    const index = searchResults.findIndex((entry) => entry.id === id);
+    return index >= 0 ? index + 1 : 1;
+  };
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) return;
@@ -123,13 +129,22 @@ const HomeScreen: React.FC = () => {
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
 
       setIsSearching(false);
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView)
+        params: buildBookDetailsParams(result, currentView, {
+          searchQuery: searchQuery.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
+        })
       });
     } catch (err) {
       console.error('[HOME][OPEN_FAILED]', err);
@@ -144,11 +159,19 @@ const HomeScreen: React.FC = () => {
 
     try {
       setBusyId(result.id);
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result,
+      });
       navigate({
         type: 'immersive',
         id: 'bookDetails',
         params: buildBookDetailsParams(result, currentView, {
-          pendingAction: 'NONE'
+          pendingAction: 'NONE',
+          searchQuery: searchQuery.trim(),
+          clickedRank: clickedRankFor(result.id),
+          clickTracked: true,
         })
       });
     } catch (err) {

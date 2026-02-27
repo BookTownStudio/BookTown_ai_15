@@ -34,6 +34,148 @@ type SearchBookResponse = {
 
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
+const ENABLE_SEARCH_TELEMETRY = process.env.ENABLE_SEARCH_TELEMETRY === "true";
+const QUERY_INTENT_VALUES = ["ISBN", "AUTHOR_INTENT", "TITLE_INTENT", "MIXED_INTENT"] as const;
+type QueryIntent = (typeof QUERY_INTENT_VALUES)[number];
+
+type SearchQueryTelemetryPayload = {
+  normalizedQuery: string;
+  intentType: QueryIntent;
+  canonicalResultCount: number;
+  externalResultCount: number;
+  totalReturned: number;
+  latencyMs: number;
+  internalSearchDurationMs: number;
+  externalFallbackTriggered: boolean;
+  timestamp: string;
+  topCoverageScore: number;
+  topCoverageScores: number[];
+  lowConfidenceTopThree: boolean;
+};
+
+type SearchClickTelemetryPayload = {
+  normalizedQuery: string;
+  intentType: QueryIntent;
+  clickedRank: number;
+  bookId: string;
+  wasCanonical: boolean;
+  timestamp: string;
+};
+
+function normalizeSearchText(value?: string | null): string {
+  if (!value) return "";
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function parseIsbnQuery(queryNorm: string): { isbn13: string; isbn10: string } {
+  const digits = queryNorm.replace(/[^0-9Xx]/g, "").toUpperCase();
+  return {
+    isbn13: /^\d{13}$/.test(digits) ? digits : "",
+    isbn10: /^\d{9}[\dX]$/.test(digits) ? digits : "",
+  };
+}
+
+function classifyIntentForTelemetry(normalizedQuery: string): QueryIntent {
+  const isbn = parseIsbnQuery(normalizedQuery);
+  if (isbn.isbn13 || isbn.isbn10) {
+    return "ISBN";
+  }
+
+  const tokens = normalizedQuery.split(" ").filter((token) => token.length > 1);
+  if (tokens.length === 1) {
+    return "AUTHOR_INTENT";
+  }
+  if (tokens.length >= 2) {
+    return "TITLE_INTENT";
+  }
+  return "MIXED_INTENT";
+}
+
+function parseIntentValue(value: unknown): QueryIntent | null {
+  if (typeof value !== "string") return null;
+  return QUERY_INTENT_VALUES.includes(value as QueryIntent)
+    ? (value as QueryIntent)
+    : null;
+}
+
+function runAfterResponse(res: any, cb: () => Promise<void>): void {
+  res.once("finish", () => {
+    void cb().catch((error) => {
+      logger.warn("SEARCH_V2_TELEMETRY_WRITE_FAILED", {
+        error: String(error),
+      });
+    });
+  });
+}
+
+async function writeSearchQueryTelemetry(payload: SearchQueryTelemetryPayload): Promise<void> {
+  if (!ENABLE_SEARCH_TELEMETRY) return;
+
+  const db = admin.firestore();
+  const queryHash = crypto.createHash("sha256").update(payload.normalizedQuery).digest("hex");
+  const batch = db.batch();
+  const searchLogRef = db.collection("search_logs").doc();
+  const latencyLogRef = db.collection("search_logs").doc();
+  const eventBase = {
+    normalizedQuery: payload.normalizedQuery,
+    queryHash,
+    intentType: payload.intentType,
+    timestamp: payload.timestamp,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  batch.set(searchLogRef, {
+    eventName: "SEARCH_V2_QUERY",
+    ...eventBase,
+    canonicalResultCount: payload.canonicalResultCount,
+    externalResultCount: payload.externalResultCount,
+    totalReturned: payload.totalReturned,
+    latencyMs: payload.latencyMs,
+  });
+
+  batch.set(latencyLogRef, {
+    eventName: "SEARCH_V2_LATENCY",
+    ...eventBase,
+    internalSearchDurationMs: payload.internalSearchDurationMs,
+    externalFallbackTriggered: payload.externalFallbackTriggered,
+    totalDurationMs: payload.latencyMs,
+  });
+
+  if (payload.lowConfidenceTopThree || payload.topCoverageScore < 0.6) {
+    const flagRef = db.collection("search_quality_flags").doc();
+    batch.set(flagRef, {
+      eventName: "SEARCH_V2_LOW_CONFIDENCE",
+      ...eventBase,
+      topCoverageScore: payload.topCoverageScore,
+      topCoverageScores: payload.topCoverageScores.slice(0, 3),
+    });
+  }
+
+  await batch.commit();
+}
+
+async function writeSearchClickTelemetry(payload: SearchClickTelemetryPayload): Promise<void> {
+  if (!ENABLE_SEARCH_TELEMETRY) return;
+
+  const db = admin.firestore();
+  await db.collection("search_clicks").add({
+    eventName: "SEARCH_V2_CLICK",
+    normalizedQuery: payload.normalizedQuery,
+    queryHash: crypto.createHash("sha256").update(payload.normalizedQuery).digest("hex"),
+    intentType: payload.intentType,
+    clickedRank: payload.clickedRank,
+    bookId: payload.bookId,
+    wasCanonical: payload.wasCanonical,
+    timestamp: payload.timestamp,
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+}
 
 function toSearchBookResponse(raw: any): SearchBookResponse | null {
   const sourceRaw = String(raw?.source || "").trim();
@@ -210,6 +352,26 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     });
 
     if (!q || q.trim().length < 2) {
+      const normalizedQuery = normalizeSearchText(q || "");
+      const timestamp = new Date().toISOString();
+
+      runAfterResponse(res, async () => {
+        await writeSearchQueryTelemetry({
+          normalizedQuery,
+          intentType: classifyIntentForTelemetry(normalizedQuery),
+          canonicalResultCount: 0,
+          externalResultCount: 0,
+          totalReturned: 0,
+          latencyMs: Date.now() - startTime,
+          internalSearchDurationMs: 0,
+          externalFallbackTriggered: false,
+          timestamp,
+          topCoverageScore: 0,
+          topCoverageScores: [],
+          lowConfidenceTopThree: false,
+        });
+      });
+
       logger.info("BOOK_SEARCH_V2_API", {
         phase: "response",
         q: queryPreview,
@@ -285,74 +447,59 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     );
 
     const latencyMs = Date.now() - startTime;
+    const normalizedQuery = normalizeSearchText(q);
+    const telemetry = searchResponse.telemetry;
+    const intentType =
+      parseIntentValue(telemetry?.intentType) ||
+      classifyIntentForTelemetry(normalizedQuery);
+    const topCoverageScores = Array.isArray(telemetry?.topCoverageScores)
+      ? telemetry.topCoverageScores
+          .filter((score) => typeof score === "number" && Number.isFinite(score))
+          .slice(0, 3)
+      : [];
 
-    // --------------------------------------------------
-    // B1.7 — SEARCH OBSERVABILITY (NON-BLOCKING)
-    // --------------------------------------------------
-    try {
-      const providerMix: Record<string, number> = {
-        booktown: 0,
-        googleBooks: 0,
-        openLibrary: 0,
-        other: 0,
-      };
-
-      for (const r of results) {
-        if (r?.source && providerMix[r.source] !== undefined) {
-          providerMix[r.source]++;
-        } else {
-          providerMix.other++;
-        }
-      }
-
-      const orderingHash = crypto
-        .createHash("sha256")
-        .update(
-          results
-            .map((r: any) => r.id || r.editionId || "")
-            .join("|")
-        )
-        .digest("hex");
-
-      const observabilityEvent = {
-        event: "SEARCH_QUERY_EXECUTED_V1",
-        normalizedQuery: q.trim().toLowerCase(),
-        queryHash: crypto
-          .createHash("sha256")
-          .update(`${q}|${ebookOnly}|${lang}`)
-          .digest("hex"),
-        filters: {
-          ebookOnly,
-          language: lang,
-          cursorUsed: searchResponse.cursorUsed,
-          limit,
-        },
-        resultCount: results.length,
+    runAfterResponse(res, async () => {
+      await writeSearchQueryTelemetry({
+        normalizedQuery,
+        intentType,
+        canonicalResultCount: searchResponse.canonicalCount,
+        externalResultCount: searchResponse.externalCount,
+        totalReturned: results.length,
         latencyMs,
-        providerMix,
-        orderingHash,
-        page: 1,
-        cursorUsed: searchResponse.cursorUsed,
-        partial: searchResponse.hasMore,
-        canonicalCount: searchResponse.canonicalCount,
-        externalCount: searchResponse.externalCount,
-        timestamp: new Date().toISOString(),
-      };
-
-      console.info("[SEARCH_OBSERVABILITY]", observabilityEvent);
-    } catch (obsErr) {
-      console.warn("[SEARCH_OBSERVABILITY_FAILED]", obsErr);
-    }
+        internalSearchDurationMs:
+          typeof telemetry?.internalSearchDurationMs === "number" &&
+          Number.isFinite(telemetry.internalSearchDurationMs)
+            ? telemetry.internalSearchDurationMs
+            : latencyMs,
+        externalFallbackTriggered: Boolean(telemetry?.externalFallbackTriggered),
+        timestamp: telemetry?.timestamp || new Date().toISOString(),
+        topCoverageScore:
+          typeof telemetry?.topCoverageScore === "number" &&
+          Number.isFinite(telemetry.topCoverageScore)
+            ? telemetry.topCoverageScore
+            : 0,
+        topCoverageScores,
+        lowConfidenceTopThree: Boolean(telemetry?.lowConfidenceTopThree),
+      });
+    });
 
     logger.info("BOOK_SEARCH_V2_API", {
       phase: "response",
       q: queryPreview,
+      normalizedQuery,
+      intentType,
       canonicalCount: searchResponse.canonicalCount,
       externalCount: searchResponse.externalCount,
       hasMore: searchResponse.hasMore,
       cursorUsed: searchResponse.cursorUsed,
       resultCount: results.length,
       latencyMs,
+      internalSearchDurationMs:
+        typeof telemetry?.internalSearchDurationMs === "number" &&
+        Number.isFinite(telemetry.internalSearchDurationMs)
+          ? telemetry.internalSearchDurationMs
+          : latencyMs,
+      externalFallbackTriggered: Boolean(telemetry?.externalFallbackTriggered),
     });
 
     return res.status(200).json({
@@ -374,6 +521,50 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       cursorUsed: false,
     });
   }
+});
+
+/**
+ * POST /api/search/click
+ * Search click telemetry (non-blocking, privacy-safe)
+ */
+apiRouter.post("/search/click", async (req: any, res: any) => {
+  const payload = req?.body && typeof req.body === "object" ? req.body : {};
+  const normalizedQuery = normalizeSearchText(String(payload.normalizedQuery || ""));
+  const intentType =
+    parseIntentValue(payload.intentType) ||
+    classifyIntentForTelemetry(normalizedQuery);
+  const clickedRankRaw = Number(payload.clickedRank);
+  const clickedRank =
+    Number.isFinite(clickedRankRaw) && clickedRankRaw > 0
+      ? Math.trunc(clickedRankRaw)
+      : 1;
+  const bookId = String(payload.bookId || "").trim().slice(0, 128);
+  const wasCanonical = Boolean(payload.wasCanonical);
+  const timestamp = new Date().toISOString();
+
+  runAfterResponse(res, async () => {
+    if (!bookId || !normalizedQuery) {
+      return;
+    }
+    await writeSearchClickTelemetry({
+      normalizedQuery,
+      intentType,
+      clickedRank,
+      bookId,
+      wasCanonical,
+      timestamp,
+    });
+  });
+
+  logger.info("SEARCH_V2_CLICK", {
+    normalizedQuery: normalizedQuery.slice(0, 80),
+    intentType,
+    clickedRank,
+    bookId,
+    wasCanonical,
+  });
+
+  return res.status(202).json({ ok: true });
 });
 
 /**

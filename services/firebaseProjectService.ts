@@ -10,7 +10,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getFirebaseDb, getFirebaseFunctions, getFirebaseStorage } from "../lib/firebase.ts";
-import { Project, PublishedBook } from "../types/entities.ts";
+import { Project, PublishedBook, WriteContentDoc } from "../types/entities.ts";
 import type { ProjectDataService } from "./db.types.ts";
 
 type FailureEnvelope = {
@@ -91,6 +91,7 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
     updatedAt: toIso(payload.updatedAt),
     createdAt: toIso(payload.createdAt),
     content: typeof payload.content === "string" ? payload.content : "",
+    contentDoc: isWriteContentDoc(payload.contentDoc) ? (payload.contentDoc as WriteContentDoc) : undefined,
     isPublished: payload.isPublished === true,
     publishedBookId:
       typeof payload.publishedBookId === "string" && payload.publishedBookId.trim()
@@ -105,6 +106,25 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
         ? payload.coverUrl.trim()
         : undefined,
   };
+}
+
+function isWriteContentDoc(value: unknown): value is WriteContentDoc {
+  if (!value || typeof value !== "object") return false;
+  const doc = value as Record<string, unknown>;
+  return doc.type === "doc" && doc.version === 1 && Array.isArray(doc.content);
+}
+
+function sanitizeContentDoc(value: unknown): WriteContentDoc | undefined {
+  if (!isWriteContentDoc(value)) {
+    return undefined;
+  }
+
+  const serialized = JSON.stringify(value);
+  if (serialized.length > 2_000_000) {
+    throw new Error("contentDoc exceeds maximum allowed size.");
+  }
+
+  return JSON.parse(serialized) as WriteContentDoc;
 }
 
 function assertNonEmptyString(value: unknown, field: string): string {
@@ -159,6 +179,7 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   titleEn?: string;
   titleAr?: string;
   content?: string;
+  contentDoc?: WriteContentDoc;
   wordCount?: number;
   status?: ProjectStatus;
   typeEn?: string;
@@ -169,6 +190,7 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
     titleEn?: string;
     titleAr?: string;
     content?: string;
+    contentDoc?: WriteContentDoc;
     wordCount?: number;
     status?: ProjectStatus;
     typeEn?: string;
@@ -184,6 +206,12 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   }
   if (typeof input.content === "string") {
     updates.content = input.content.slice(0, 2_000_000);
+  }
+  if (input.contentDoc !== undefined) {
+    const normalizedDoc = sanitizeContentDoc(input.contentDoc);
+    if (normalizedDoc) {
+      updates.contentDoc = normalizedDoc;
+    }
   }
   if (typeof input.wordCount === "number" && Number.isFinite(input.wordCount) && input.wordCount >= 0) {
     updates.wordCount = Math.floor(input.wordCount);
@@ -249,6 +277,7 @@ export const firebaseProjectService: ProjectDataService = {
       titleEn: normalizeBoundedString(project.titleEn, "Untitled Project", 180),
       titleAr: normalizeBoundedString(project.titleAr, "مشروع غير معنون", 180),
       content: typeof project.content === "string" ? project.content.slice(0, 2_000_000) : "",
+      contentDoc: sanitizeContentDoc(project.contentDoc),
       wordCount: typeof project.wordCount === "number" ? Math.max(0, Math.floor(project.wordCount)) : 0,
       status: normalizeStatus(project.status),
       typeEn: normalizeBoundedString(project.typeEn, "Draft", 80),
@@ -267,6 +296,7 @@ export const firebaseProjectService: ProjectDataService = {
         status: ProjectStatus;
         wordCount: number;
         content: string;
+        contentDoc?: WriteContentDoc;
         isPublished: boolean;
         createdAt: string;
         updatedAt: string;

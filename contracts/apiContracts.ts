@@ -373,11 +373,56 @@ const writeProjectStatusSchema = z.enum([
   "Final",
 ]);
 
+const writeMarkSchema = z
+  .object({
+    type: z.enum(["bold", "italic", "underline"]),
+  })
+  .strict();
+
+const writeContentNodeSchema: z.ZodType<unknown> = z.lazy(() =>
+  z
+    .object({
+      type: z.enum([
+        "paragraph",
+        "heading",
+        "blockquote",
+        "bulletList",
+        "orderedList",
+        "listItem",
+        "horizontalRule",
+        "text",
+      ]),
+      attrs: z
+        .object({
+          level: z.number().int().min(1).max(3).optional(),
+          lang: z.string().min(2).max(12).optional(),
+          dir: z.enum(["ltr", "rtl"]).optional(),
+          langManual: z.boolean().optional(),
+        })
+        .strict()
+        .optional(),
+      text: z.string().max(20_000).optional(),
+      marks: z.array(writeMarkSchema).max(8).optional(),
+      content: z.array(writeContentNodeSchema).max(2000).optional(),
+    })
+    .strict()
+);
+
+const writeContentDocSchema = z
+  .object({
+    version: z.literal(1),
+    type: z.literal("doc"),
+    content: z.array(writeContentNodeSchema).max(5000),
+    plainText: z.string().max(2_000_000).optional(),
+  })
+  .strict();
+
 const writeProjectUpdatesSchema = z
   .object({
     titleEn: z.string().min(1).max(180).optional(),
     titleAr: z.string().min(1).max(180).optional(),
     content: z.string().max(2_000_000).optional(),
+    contentDoc: writeContentDocSchema.optional(),
     wordCount: z.number().int().nonnegative().optional(),
     status: writeProjectStatusSchema.optional(),
     typeEn: z.string().min(1).max(80).optional(),
@@ -877,13 +922,24 @@ export const apiContracts = {
     ingestBook: defineContract(
       z
         .object({
-          bookId: z.string().min(1),
+          providerExternalId: z.string().min(1).optional(),
+          bookId: z.string().min(1).optional(),
           source: z.enum(["googleBooks", "openLibrary"]),
           rawBook: z.record(z.string(), z.unknown()),
         })
-        .strict(),
+        .strict()
+        .refine(
+          (value) =>
+            (typeof value.providerExternalId === "string" &&
+              value.providerExternalId.trim().length > 0) ||
+            (typeof value.bookId === "string" && value.bookId.trim().length > 0),
+          {
+            message: "providerExternalId_or_bookId_required",
+          }
+        ),
       z
         .object({
+          canonicalBookId: z.string().min(1),
           bookId: z.string().min(1),
           editionId: z.string().min(1).optional(),
           status: z.string().min(1).optional(),
@@ -892,8 +948,7 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: [
-          "services/bookIngestionService.ts",
-          "lib/services/firebaseCatalogService.ts",
+          "lib/books/ensureCanonicalBook.ts",
         ],
       }
     ),
@@ -1574,6 +1629,7 @@ export const apiContracts = {
               titleEn: z.string().min(1).max(180).optional(),
               titleAr: z.string().min(1).max(180).optional(),
               content: z.string().max(2_000_000).optional(),
+              contentDoc: writeContentDocSchema.optional(),
               wordCount: z.number().int().nonnegative().optional(),
               status: writeProjectStatusSchema.optional(),
               typeEn: z.string().min(1).max(80).optional(),
@@ -1593,6 +1649,7 @@ export const apiContracts = {
           titleEn: z.string().min(1),
           titleAr: z.string().min(1),
           content: z.string(),
+          contentDoc: writeContentDocSchema.optional(),
           wordCount: z.number().int().nonnegative(),
           status: writeProjectStatusSchema,
           typeEn: z.string().min(1),
@@ -1667,6 +1724,7 @@ export const apiContracts = {
           titleEn: z.string().min(1),
           titleAr: z.string().min(1),
           content: z.string(),
+          contentDoc: writeContentDocSchema.optional(),
           wordCount: z.number().int().nonnegative(),
           status: writeProjectStatusSchema,
           typeEn: z.string().min(1),

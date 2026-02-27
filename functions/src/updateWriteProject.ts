@@ -17,6 +17,19 @@ function normalizeContent(value: unknown): string | undefined {
   return value.slice(0, 2_000_000);
 }
 
+function normalizeContentDoc(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const doc = value as Record<string, unknown>;
+  if (doc.type !== "doc" || doc.version !== 1 || !Array.isArray(doc.content)) {
+    return undefined;
+  }
+  const serialized = JSON.stringify(doc);
+  if (serialized.length > 2_000_000) {
+    throw new HttpsError("invalid-argument", "contentDoc exceeds maximum allowed size.");
+  }
+  return JSON.parse(serialized) as Record<string, unknown>;
+}
+
 function normalizeWordCount(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return undefined;
@@ -75,6 +88,7 @@ export const updateWriteProject = onCall({ cors: true }, async (request) => {
   const titleEn = normalizeString(updates.titleEn, 180);
   const titleAr = normalizeString(updates.titleAr, 180);
   const content = normalizeContent(updates.content);
+  const contentDoc = normalizeContentDoc(updates.contentDoc);
   const wordCount = normalizeWordCount(updates.wordCount);
   const status = normalizeStatus(updates.status);
   const typeEn = normalizeString(updates.typeEn, 80);
@@ -87,6 +101,7 @@ export const updateWriteProject = onCall({ cors: true }, async (request) => {
   }
   if (titleAr !== undefined) normalizedUpdates.titleAr = titleAr;
   if (content !== undefined) normalizedUpdates.content = content;
+  if (contentDoc !== undefined) normalizedUpdates.contentDoc = contentDoc;
   if (wordCount !== undefined) normalizedUpdates.wordCount = wordCount;
   if (status !== undefined) normalizedUpdates.status = status;
   if (typeEn !== undefined) normalizedUpdates.typeEn = typeEn;

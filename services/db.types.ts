@@ -317,7 +317,8 @@ export interface CatalogDataService {
   createBook(book: Book): Promise<void>;
 
   ingestBook(params: {
-    bookId: string;
+    providerExternalId?: string;
+    bookId?: string;
     source: 'googleBooks' | 'openLibrary';
     rawBook: any;
   }): Promise<any>;

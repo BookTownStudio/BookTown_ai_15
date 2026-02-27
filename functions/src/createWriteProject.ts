@@ -20,6 +20,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
       titleEn?: unknown;
       titleAr?: unknown;
       content?: unknown;
+      contentDoc?: unknown;
       wordCount?: unknown;
       status?: unknown;
       typeEn?: unknown;
@@ -46,6 +47,19 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
   const normalizeContent = (value: unknown): string => {
     if (typeof value !== "string") return "";
     return value.slice(0, 2_000_000);
+  };
+
+  const normalizeContentDoc = (value: unknown): Record<string, unknown> | undefined => {
+    if (!value || typeof value !== "object") return undefined;
+    const doc = value as Record<string, unknown>;
+    if (doc.type !== "doc" || doc.version !== 1 || !Array.isArray(doc.content)) {
+      return undefined;
+    }
+    const serialized = JSON.stringify(doc);
+    if (serialized.length > 2_000_000) {
+      throw new HttpsError("invalid-argument", "contentDoc exceeds maximum allowed size.");
+    }
+    return JSON.parse(serialized) as Record<string, unknown>;
   };
 
   const normalizeWordCount = (value: unknown): number => {
@@ -78,6 +92,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     
     // Content Data
     content: normalizeContent(project.content),
+    contentDoc: normalizeContentDoc(project.contentDoc),
     wordCount: normalizeWordCount(project.wordCount),
     
     // Lifecycle Metadata

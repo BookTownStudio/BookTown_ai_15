@@ -47,10 +47,23 @@ export interface UnifiedSearchResponse {
   cursorUsed: boolean;
   canonicalCount: number;
   externalCount: number;
+  telemetry?: {
+    normalizedQuery: string;
+    intentType: QueryIntent;
+    internalSearchDurationMs: number;
+    totalDurationMs: number;
+    externalFallbackTriggered: boolean;
+    topCoverageScore: number;
+    topCoverageScores: number[];
+    lowConfidenceTopThree: boolean;
+    timestamp: string;
+  };
 }
 
 type RankedResult = UnifiedSearchResult & {
   rankTier: number;
+  computedScore: number;
+  tokenCoverageRatio: number;
   popularityScore: number;
   engagementScore: number;
   recentActivityMs: number;
@@ -61,6 +74,8 @@ type CursorPayload = {
   offset: number;
   fingerprint: string;
 };
+
+type QueryIntent = "ISBN" | "AUTHOR_INTENT" | "TITLE_INTENT" | "MIXED_INTENT";
 
 const INTERNAL_FETCH_POOL = 100;
 const DEFAULT_RETURN_COUNT = 15;
@@ -139,6 +154,124 @@ function parseIsbnQuery(queryNorm: string): { isbn13: string; isbn10: string } {
     isbn13: /^\d{13}$/.test(digits) ? digits : "",
     isbn10: /^\d{9}[\dX]$/.test(digits) ? digits : "",
   };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function computeAdjacencyBonus(queryTokens: string[], titleTokens: string[]): number {
+  if (queryTokens.length < 2 || titleTokens.length < 2) return 0;
+
+  const titleBigrams = new Set<string>();
+  for (let i = 0; i < titleTokens.length - 1; i += 1) {
+    titleBigrams.add(`${titleTokens[i]} ${titleTokens[i + 1]}`);
+  }
+
+  let matchedPairs = 0;
+  for (let i = 0; i < queryTokens.length - 1; i += 1) {
+    if (titleBigrams.has(`${queryTokens[i]} ${queryTokens[i + 1]}`)) {
+      matchedPairs += 1;
+    }
+  }
+
+  return matchedPairs / (queryTokens.length - 1);
+}
+
+function computeLengthNormalizationFactor(queryNorm: string, titleNorm: string): number {
+  if (!queryNorm || !titleNorm) return 0.4;
+  const ratio = queryNorm.length / Math.max(1, titleNorm.length);
+  return clamp(ratio, 0.4, 1);
+}
+
+function computeTierSubScore(params: {
+  titlePrefix: boolean;
+  authorPrefix: boolean;
+  tokenCoverageRatio: number;
+  adjacencyBonus: number;
+  queryNorm: string;
+  titleNorm: string;
+  queryIntent: QueryIntent;
+}): number {
+  const titlePrefixMatchWeight = params.titlePrefix ? 1.0 : 0;
+  const authorPrefixWeight = params.authorPrefix
+    ? params.queryIntent === "AUTHOR_INTENT"
+      ? 0.9
+      : 0.3
+    : 0;
+
+  const weightedSum =
+    titlePrefixMatchWeight +
+    authorPrefixWeight +
+    params.tokenCoverageRatio +
+    params.adjacencyBonus;
+
+  const lengthNormalizationFactor = computeLengthNormalizationFactor(
+    params.queryNorm,
+    params.titleNorm
+  );
+
+  return Math.round(weightedSum * lengthNormalizationFactor * 1_000_000) / 1_000_000;
+}
+
+function detectQueryIntent(
+  queryNorm: string,
+  queryTokens: string[],
+  candidates: Array<{ title: string; authors: string[] }>
+): QueryIntent {
+  const isbnQuery = parseIsbnQuery(queryNorm);
+  if (isbnQuery.isbn13 || isbnQuery.isbn10) {
+    return "ISBN";
+  }
+
+  if (queryTokens.length === 0) {
+    return "MIXED_INTENT";
+  }
+
+  let authorPrefixMatches = 0;
+  let titleTokenHits = 0;
+  let authorTokenHits = 0;
+
+  const singleToken = queryTokens.length === 1 ? queryTokens[0] : "";
+
+  for (const candidate of candidates) {
+    const titleNorm = normalizeSearchText(candidate.title);
+    const authorNorm = normalizeSearchText((candidate.authors || []).join(" "));
+    const titleTokenSet = new Set(tokenize(titleNorm));
+    const authorTokenSet = new Set(tokenize(authorNorm));
+
+    if (singleToken) {
+      let matchedAuthorPrefix = false;
+      for (const token of authorTokenSet) {
+        if (token.startsWith(singleToken)) {
+          matchedAuthorPrefix = true;
+          break;
+        }
+      }
+      if (matchedAuthorPrefix) {
+        authorPrefixMatches += 1;
+      }
+    }
+
+    for (const token of queryTokens) {
+      if (titleTokenSet.has(token)) titleTokenHits += 1;
+      if (authorTokenSet.has(token)) authorTokenHits += 1;
+    }
+  }
+
+  if (singleToken) {
+    const authorPrefixThreshold = Math.max(2, Math.ceil(candidates.length * 0.35));
+    if (authorPrefixMatches >= authorPrefixThreshold) {
+      return "AUTHOR_INTENT";
+    }
+    return "MIXED_INTENT";
+  }
+
+  if (titleTokenHits > authorTokenHits) {
+    return "TITLE_INTENT";
+  }
+
+  return "MIXED_INTENT";
 }
 
 function computeFingerprint(queryNorm: string, options: SearchOptions): string {
@@ -228,8 +361,14 @@ function computeRank(
     authors: string[];
     isbn13?: string;
     isbn10?: string;
+    queryIntent: QueryIntent;
   }
-): { confidence: number; rankTier: number } {
+): {
+  confidence: number;
+  rankTier: number;
+  computedScore: number;
+  tokenCoverageRatio: number;
+} {
   const titleNorm = normalizeSearchText(params.title);
   const authorNorm = normalizeSearchText((params.authors || []).join(" "));
 
@@ -239,32 +378,53 @@ function computeRank(
     (queryIsbn.isbn10.length > 0 && queryIsbn.isbn10 === (params.isbn10 || ""));
 
   if (isIsbnExact) {
-    return { confidence: 1, rankTier: 0 };
+    return { confidence: 1, rankTier: 0, computedScore: 1, tokenCoverageRatio: 1 };
   }
 
   const titleExact = titleNorm.length > 0 && titleNorm === queryNorm;
   const authorExact = authorNorm.length > 0 && authorNorm === queryNorm;
-
-  const titlePrefix = queryNorm.length > 1 && titleNorm.startsWith(queryNorm);
-  const authorPrefix = queryNorm.length > 1 && authorNorm.startsWith(queryNorm);
 
   const titleTokenSet = new Set(tokenize(titleNorm));
   const authorTokenSet = new Set(tokenize(authorNorm));
 
   let titleHits = 0;
   let authorHits = 0;
+  let matchedTokenCount = 0;
 
   for (const token of queryTokens) {
-    if (titleTokenSet.has(token)) titleHits += 1;
-    if (authorTokenSet.has(token)) authorHits += 1;
+    const matchedInTitle = titleTokenSet.has(token);
+    const matchedInAuthor = authorTokenSet.has(token);
+    if (matchedInTitle) titleHits += 1;
+    if (matchedInAuthor) authorHits += 1;
+    if (matchedInTitle || matchedInAuthor) matchedTokenCount += 1;
   }
 
   const tokenCount = Math.max(queryTokens.length, 1);
   const titleCoverage = titleHits / tokenCount;
   const authorCoverage = authorHits / tokenCount;
+  const tokenCoverageRatio = matchedTokenCount / tokenCount;
+
+  const titleTokens = tokenize(titleNorm);
+  const adjacencyBonus = computeAdjacencyBonus(queryTokens, titleTokens);
+  const titlePrefix = queryNorm.length > 1 && titleNorm.startsWith(queryNorm);
+  const authorPrefix = queryNorm.length > 1 && authorNorm.startsWith(queryNorm);
+  const tierSubScore = computeTierSubScore({
+    titlePrefix,
+    authorPrefix,
+    tokenCoverageRatio,
+    adjacencyBonus,
+    queryNorm,
+    titleNorm,
+    queryIntent: params.queryIntent,
+  });
 
   if (queryTokens.length === 1 && authorHits > 0) {
-    return { confidence: 0.84, rankTier: 2 };
+    return {
+      confidence: 0.84,
+      rankTier: 2,
+      computedScore: tierSubScore,
+      tokenCoverageRatio,
+    };
   }
 
   let confidence = 0;
@@ -277,16 +437,28 @@ function computeRank(
   confidence = Math.min(1, confidence);
 
   if (titleExact && (authorHits > 0 || authorExact)) {
-    return { confidence: Math.max(confidence, 0.95), rankTier: 1 };
+    return {
+      confidence: Math.max(confidence, 0.95),
+      rankTier: 1,
+      computedScore: Math.max(confidence, 0.95),
+      tokenCoverageRatio,
+    };
   }
 
   if (titlePrefix || (titleCoverage >= 0.8 && (authorHits > 0 || authorPrefix))) {
-    return { confidence: Math.max(confidence, 0.75), rankTier: 2 };
+    return {
+      confidence: Math.max(confidence, 0.75),
+      rankTier: 2,
+      computedScore: tierSubScore,
+      tokenCoverageRatio,
+    };
   }
 
   return {
     confidence,
     rankTier: 3,
+    computedScore: tierSubScore,
+    tokenCoverageRatio,
   };
 }
 
@@ -311,7 +483,8 @@ function mapCanonicalBook(
   data: Record<string, unknown>,
   queryNorm: string,
   queryTokens: string[],
-  options: SearchOptions
+  options: SearchOptions,
+  queryIntent: QueryIntent = "MIXED_INTENT"
 ): RankedResult | null {
   const title =
     asNonEmptyString(data.title) ||
@@ -350,9 +523,13 @@ function mapCanonicalBook(
     authors,
     isbn13,
     isbn10,
+    queryIntent,
   });
 
   if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+    return null;
+  }
+  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
     return null;
   }
 
@@ -396,6 +573,8 @@ function mapCanonicalBook(
     confidence: rank.confidence,
     rank: rank.rankTier,
     rankTier: rank.rankTier,
+    computedScore: rank.computedScore,
+    tokenCoverageRatio: rank.tokenCoverageRatio,
     popularityScore: Number(data.popularityScore || 0),
     engagementScore: Number(data.engagementScore || 0),
     recentActivityMs: toEpochMillis(data.recentActivityAt || data.updatedAt),
@@ -473,7 +652,8 @@ async function collectCanonicalCandidates(
 async function fetchGoogleExternal(
   query: string,
   queryNorm: string,
-  queryTokens: string[]
+  queryTokens: string[],
+  queryIntent: QueryIntent
 ): Promise<RankedResult[]> {
   const baseUrl = new URL("https://www.googleapis.com/books/v1/volumes");
   baseUrl.searchParams.set("q", query);
@@ -532,9 +712,13 @@ async function fetchGoogleExternal(
       authors: normalizedAuthors,
       isbn13,
       isbn10,
+      queryIntent,
     });
 
     if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+      continue;
+    }
+    if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
       continue;
     }
 
@@ -574,6 +758,8 @@ async function fetchGoogleExternal(
       confidence: rank.confidence,
       rank: rank.rankTier,
       rankTier: rank.rankTier,
+      computedScore: rank.computedScore,
+      tokenCoverageRatio: rank.tokenCoverageRatio,
       popularityScore: 0,
       engagementScore: 0,
       recentActivityMs: 0,
@@ -596,7 +782,8 @@ async function fetchGoogleExternal(
 async function fetchOpenLibraryExternal(
   query: string,
   queryNorm: string,
-  queryTokens: string[]
+  queryTokens: string[],
+  queryIntent: QueryIntent
 ): Promise<RankedResult[]> {
   const baseUrl = new URL("https://openlibrary.org/search.json");
   baseUrl.searchParams.set("q", query);
@@ -636,9 +823,13 @@ async function fetchOpenLibraryExternal(
       authors: normalizedAuthors,
       isbn13,
       isbn10,
+      queryIntent,
     });
 
     if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+      continue;
+    }
+    if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
       continue;
     }
 
@@ -674,6 +865,8 @@ async function fetchOpenLibraryExternal(
       confidence: rank.confidence,
       rank: rank.rankTier,
       rankTier: rank.rankTier,
+      computedScore: rank.computedScore,
+      tokenCoverageRatio: rank.tokenCoverageRatio,
       popularityScore: 0,
       engagementScore: 0,
       recentActivityMs: 0,
@@ -693,19 +886,46 @@ async function fetchOpenLibraryExternal(
   return mapped;
 }
 
+function rerankWithIntent(
+  result: RankedResult,
+  queryNorm: string,
+  queryTokens: string[],
+  queryIntent: QueryIntent
+): RankedResult | null {
+  const rank = computeRank(queryNorm, queryTokens, {
+    title: result.title,
+    authors: result.authors,
+    isbn13: result.isbn13,
+    isbn10: result.isbn10,
+    queryIntent,
+  });
+
+  if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+    return null;
+  }
+  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
+    return null;
+  }
+
+  return {
+    ...result,
+    confidence: rank.confidence,
+    rank: rank.rankTier,
+    rankTier: rank.rankTier,
+    computedScore: rank.computedScore,
+    tokenCoverageRatio: rank.tokenCoverageRatio,
+  };
+}
+
 function compareRanked(a: RankedResult, b: RankedResult): number {
   const typePriority = a.resultType === b.resultType ? 0 : a.resultType === "canonical" ? -1 : 1;
   if (typePriority !== 0) return typePriority;
 
   if (a.rankTier !== b.rankTier) return a.rankTier - b.rankTier;
-  if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+  if (b.computedScore !== a.computedScore) return b.computedScore - a.computedScore;
   if (b.popularityScore !== a.popularityScore) return b.popularityScore - a.popularityScore;
-  if (b.engagementScore !== a.engagementScore) return b.engagementScore - a.engagementScore;
   if (b.recentActivityMs !== a.recentActivityMs) return b.recentActivityMs - a.recentActivityMs;
-
-  const titleCompare = a.normalizedTitle.localeCompare(b.normalizedTitle);
-  if (titleCompare !== 0) return titleCompare;
-
+  if (a.bookId !== b.bookId) return a.bookId.localeCompare(b.bookId);
   return a.id.localeCompare(b.id);
 }
 
@@ -758,6 +978,7 @@ export async function unifiedSearch(
   query: string,
   options: SearchOptions = {}
 ): Promise<UnifiedSearchResponse> {
+  const totalStartMs = Date.now();
   const queryNorm = normalizeSearchText(query);
   const phaseOrder: string[] = ["normalize"];
   if (queryNorm.length < 2) {
@@ -776,6 +997,17 @@ export async function unifiedSearch(
       cursorUsed: false,
       canonicalCount: 0,
       externalCount: 0,
+      telemetry: {
+        normalizedQuery: queryNorm,
+        intentType: "MIXED_INTENT",
+        internalSearchDurationMs: 0,
+        totalDurationMs: Date.now() - totalStartMs,
+        externalFallbackTriggered: false,
+        topCoverageScore: 0,
+        topCoverageScores: [],
+        lowConfidenceTopThree: false,
+        timestamp: new Date().toISOString(),
+      },
     };
   }
 
@@ -883,30 +1115,44 @@ export async function unifiedSearch(
   }
 
   const canonicalCandidates = Array.from(canonicalDedup.values());
-  canonicalCandidates.sort(compareRanked);
+  const queryIntent = detectQueryIntent(
+    queryNorm,
+    queryTokens,
+    canonicalCandidates.map((entry) => ({
+      title: entry.title,
+      authors: entry.authors,
+    }))
+  );
+
+  const rerankedCanonical = canonicalCandidates
+    .map((entry) => rerankWithIntent(entry, queryNorm, queryTokens, queryIntent))
+    .filter((entry): entry is RankedResult => Boolean(entry));
+  rerankedCanonical.sort(compareRanked);
+  const internalSearchDurationMs = Date.now() - totalStartMs;
 
   let externalCandidates: RankedResult[] = [];
   const externalFallbackEnabled = process.env.NODE_ENV !== 'test';
   let googleCount = 0;
   let openLibraryCount = 0;
 
-  if (externalFallbackEnabled && canonicalCandidates.length < EXTERNAL_FALLBACK_TRIGGER) {
+  if (externalFallbackEnabled && rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER) {
     phaseOrder.push("external_fallback");
     const [google, openLibrary] = await Promise.all([
-      fetchGoogleExternal(queryNorm, queryNorm, queryTokens).catch(() => []),
-      fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens).catch(() => []),
+      fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent).catch(() => []),
+      fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent).catch(() => []),
     ]);
 
     externalCandidates = filterAndDedupExternal(
       [...google, ...openLibrary],
-      canonicalCandidates
+      rerankedCanonical
     );
     googleCount = externalCandidates.filter((entry) => entry.source === "googleBooks").length;
     openLibraryCount = externalCandidates.filter((entry) => entry.source === "openLibrary").length;
   }
 
-  const merged = [...canonicalCandidates, ...externalCandidates].sort(compareRanked);
+  const merged = [...rerankedCanonical, ...externalCandidates].sort(compareRanked);
   phaseOrder.push("merge_sort");
+  const totalDurationMs = Date.now() - totalStartMs;
 
   const paginated = merged.slice(startOffset, startOffset + limit);
   const nextOffset = startOffset + paginated.length;
@@ -917,6 +1163,12 @@ export async function unifiedSearch(
         fingerprint,
       })
     : null;
+  const topCoverageScores = merged
+    .slice(0, 3)
+    .map((entry) => Math.round(entry.tokenCoverageRatio * 1_000_000) / 1_000_000);
+  const topCoverageScore = topCoverageScores[0] ?? 0;
+  const lowConfidenceTopThree =
+    topCoverageScores.length === 3 && topCoverageScores.every((score) => score < 0.6);
 
   logger.info("BOOK_SEARCH_V2_ENGINE_TRACE", {
     query: queryNorm.slice(0, 80),
@@ -925,10 +1177,11 @@ export async function unifiedSearch(
       isbn: canonicalPhaseIds.isbn.size,
       tokens: canonicalPhaseIds.tokens.size,
       prefix: canonicalPhaseIds.prefix.size,
-      canonical: canonicalCandidates.length,
+      canonical: rerankedCanonical.length,
     },
     externalFallbackCalled:
-      externalFallbackEnabled && canonicalCandidates.length < EXTERNAL_FALLBACK_TRIGGER,
+      externalFallbackEnabled && rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER,
+    queryIntent,
     providers: {
       googleBooks: googleCount,
       openLibrary: openLibraryCount,
@@ -938,8 +1191,19 @@ export async function unifiedSearch(
 
   return {
     results: paginated.map((entry) => {
-      const { rankTier, popularityScore, engagementScore, recentActivityMs, normalizedTitle, ...publicResult } = entry;
+      const {
+        rankTier,
+        computedScore,
+        tokenCoverageRatio,
+        popularityScore,
+        engagementScore,
+        recentActivityMs,
+        normalizedTitle,
+        ...publicResult
+      } = entry;
       void rankTier;
+      void computedScore;
+      void tokenCoverageRatio;
       void popularityScore;
       void engagementScore;
       void recentActivityMs;
@@ -949,7 +1213,19 @@ export async function unifiedSearch(
     nextCursor,
     hasMore,
     cursorUsed: startOffset > 0,
-    canonicalCount: canonicalCandidates.length,
+    canonicalCount: rerankedCanonical.length,
     externalCount: externalCandidates.length,
+    telemetry: {
+      normalizedQuery: queryNorm,
+      intentType: queryIntent,
+      internalSearchDurationMs,
+      totalDurationMs,
+      externalFallbackTriggered:
+        externalFallbackEnabled && rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER,
+      topCoverageScore,
+      topCoverageScores,
+      lowConfidenceTopThree,
+      timestamp: new Date().toISOString(),
+    },
   };
 }

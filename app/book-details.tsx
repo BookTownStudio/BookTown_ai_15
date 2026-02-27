@@ -14,7 +14,6 @@ import { useBookReviews } from '../lib/hooks/useBookReviews.ts';
 import { useBookShelfStatus } from '../lib/hooks/useBookShelfStatus.ts';
 import { useRelatedBooks } from '../lib/hooks/useRelatedBooks.ts';
 import { useSubmitReview } from '../lib/hooks/useSubmitReview.ts';
-import { useBookIngestion } from '../lib/hooks/useBookIngestion.ts';
 import { useToggleBookOnShelf } from '../lib/hooks/useToggleBookOnShelf.ts';
 import { useAuth } from '../lib/auth.tsx';
 
@@ -40,8 +39,10 @@ import {
 import { cn } from '../lib/utils.ts';
 import { mockBooks } from '../data/mocks.ts';
 import { SearchResultDTO } from '../types/bookSearch.ts';
+import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
 import { resolveIngestionSource } from '../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
+import { trackSearchClick } from '../services/searchTelemetryService.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 
@@ -50,7 +51,6 @@ const BookDetailsScreen: React.FC = () => {
   const { lang, isRTL } = useI18n();
   const { showToast } = useToast();
   const { user } = useAuth();
-  const { mutateAsync: ingestBook } = useBookIngestion();
   const { mutate: toggleBook } = useToggleBookOnShelf();
 
   const params =
@@ -65,6 +65,13 @@ const BookDetailsScreen: React.FC = () => {
   const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
   const hasExternalPendingSearch =
     pendingSearchResult?.resultType === 'external';
+  const searchQueryFromParams =
+    typeof params?.searchQuery === 'string' ? params.searchQuery : '';
+  const clickedRankFromParams =
+    typeof params?.clickedRank === 'number' && Number.isFinite(params.clickedRank)
+      ? Math.max(1, Math.trunc(params.clickedRank))
+      : 1;
+  const clickTrackedFromParams = params?.clickTracked === true;
 
   const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
   const [isResolvingExternal, setIsResolvingExternal] = useState(false);
@@ -120,6 +127,23 @@ const BookDetailsScreen: React.FC = () => {
   }, [originalBookId, pendingSearchResult]);
 
   useEffect(() => {
+    if (!pendingSearchResult) return;
+    if (clickTrackedFromParams) return;
+    if (searchQueryFromParams.trim().length < 2) return;
+
+    trackSearchClick({
+      query: searchQueryFromParams,
+      clickedRank: clickedRankFromParams,
+      result: pendingSearchResult,
+    });
+  }, [
+    clickTrackedFromParams,
+    clickedRankFromParams,
+    pendingSearchResult,
+    searchQueryFromParams,
+  ]);
+
+  useEffect(() => {
     if (!hasExternalPendingSearch || !pendingSearchResult) return;
 
     const source = resolveIngestionSource(pendingSearchResult);
@@ -141,8 +165,8 @@ const BookDetailsScreen: React.FC = () => {
       externalId: pendingSearchResult.externalId || pendingSearchResult.id,
     });
 
-    ingestBook({
-      bookId: pendingSearchResult.externalId || pendingSearchResult.id,
+    ensureCanonicalBook({
+      providerExternalId: pendingSearchResult.externalId || pendingSearchResult.id,
       source,
       rawBook: pendingSearchResult.rawBook || {
         id: pendingSearchResult.externalId || pendingSearchResult.id,
@@ -160,14 +184,14 @@ const BookDetailsScreen: React.FC = () => {
       },
     })
       .then((result) => {
-        const canonicalId = result?.bookId || result?.editionId;
+        const canonicalId = result?.canonicalBookId;
         if (!canonicalId) {
-          throw new Error('INGESTION_NO_CANONICAL_ID');
+          throw new Error('INGESTION_NO_CANONICAL_BOOK_ID');
         }
         logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
           phase: 'ingest_resolved',
           status: result?.status || 'UNKNOWN',
-          canonicalBookId: result?.bookId || null,
+          canonicalBookId: result?.canonicalBookId || null,
           canonicalEditionId: result?.editionId || null,
           resolvedId: canonicalId,
         });
@@ -189,7 +213,6 @@ const BookDetailsScreen: React.FC = () => {
       });
   }, [
     hasExternalPendingSearch,
-    ingestBook,
     lang,
     pendingSearchResult,
     showToast,
