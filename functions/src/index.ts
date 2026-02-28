@@ -25,6 +25,8 @@ import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderPro
 import { getReaderInsights as getReaderInsightsRaw } from "./reader/getReaderInsights";
 import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "./reader/getOrCreateReadingSession";
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "./reader/requestEbookOfflineAccess";
+import { getReaderManifest as getReaderManifestRaw } from "./reader/getReaderManifest";
+import { syncReaderOperations as syncReaderOperationsRaw } from "./reader/syncReaderOperations";
 import {
   getPublicProfile as getPublicProfileRaw,
   updateOwnProfile as updateOwnProfileRaw,
@@ -339,6 +341,14 @@ export const getReaderInsights = wrapCallableV2(
 export const getOrCreateReadingSession = wrapCallableV2(
   "getOrCreateReadingSession",
   getOrCreateReadingSessionRaw
+);
+export const getReaderManifest = wrapCallableV2(
+  "getReaderManifest",
+  getReaderManifestRaw
+);
+export const syncReaderOperations = wrapCallableV2(
+  "syncReaderOperations",
+  syncReaderOperationsRaw
 );
 export const requestEbookOfflineAccess = wrapCallableV2(
   "requestEbookOfflineAccess",

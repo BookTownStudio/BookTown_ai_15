@@ -2,6 +2,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { offlineQueue, QueueItem } from './offlineQueue.ts';
 import { useToast } from '../../store/toast.tsx';
+import { readerSyncQueue } from '../reader/offline/readerSyncQueue.ts';
+import { flushReaderOperations } from '../reader/offline/readerSyncClient.ts';
 
 interface OfflineContextType {
     isOffline: boolean;
@@ -18,7 +20,8 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
     const { showToast } = useToast();
 
     useEffect(() => {
-        const updateCount = () => setPendingCount(offlineQueue.getAll().length);
+        const updateCount = () =>
+            setPendingCount(offlineQueue.getAll().length + readerSyncQueue.count());
         updateCount();
         const interval = setInterval(updateCount, 2000);
         return () => clearInterval(interval);
@@ -57,8 +60,17 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
             await new Promise(resolve => setTimeout(resolve, 500)); // Simulate sync
         });
 
+        try {
+            await flushReaderOperations({
+                batchSize: 20,
+                maxBatches: 5,
+            });
+        } catch (error) {
+            console.warn('[OfflineProvider][READER_SYNC_FAILED]', error);
+        }
+
         setIsSyncing(false);
-        setPendingCount(0);
+        setPendingCount(offlineQueue.getAll().length + readerSyncQueue.count());
         showToast("Sync complete.");
     };
 

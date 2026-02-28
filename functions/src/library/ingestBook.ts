@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import { Buffer } from "buffer";
 
 import { buildCanonicalKey } from "./persistence/canonicalKey";
+import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 
 type SupportedSource = "googleBooks" | "openLibrary";
 
@@ -746,6 +747,37 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
     bookId: transactionResult.bookId,
     editionId: transactionResult.editionId,
   });
+
+  // Best-effort reader manifest preprocessing.
+  // Ingestion must remain successful even if manifest generation cannot run.
+  try {
+    const bookSnap = await db.collection("books").doc(transactionResult.bookId).get();
+    const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
+    const hasAttachment =
+      typeof bookData.ebookAttachmentId === "string" &&
+      bookData.ebookAttachmentId.trim().length > 0;
+    const hasStoragePath =
+      typeof bookData.storagePath === "string" &&
+      bookData.storagePath.trim().length > 0;
+
+    if (hasAttachment || hasStoragePath) {
+      await getOrBuildReaderManifest({
+        uid: request.auth.uid,
+        bookId: transactionResult.bookId,
+      });
+
+      logger.info("[INGEST_V2][READER_MANIFEST_READY]", {
+        bookId: transactionResult.bookId,
+        ingestionKey,
+      });
+    }
+  } catch (error) {
+    logger.warn("[INGEST_V2][READER_MANIFEST_SKIPPED]", {
+      bookId: transactionResult.bookId,
+      ingestionKey,
+      error: String(error),
+    });
+  }
 
   return transactionResult;
 });

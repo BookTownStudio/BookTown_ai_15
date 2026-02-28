@@ -11,6 +11,10 @@ import PdfViewer from '../components/reader/PdfViewer.tsx';
 import EpubViewer from '../components/reader/EpubViewer.tsx';
 import { useToast } from '../store/toast.tsx';
 import { useReadingPreferences } from '../store/reading-prefs.tsx';
+import {
+  enqueueProgressSyncOperation,
+  flushReaderOperations,
+} from '../lib/reader/offline/readerSyncClient.ts';
 
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
@@ -248,10 +252,42 @@ const ReaderScreen: React.FC = () => {
         }
       } catch (error) {
         console.warn('[READER][PROGRESS_PERSIST_FAILED]', error);
+        enqueueProgressSyncOperation({
+          bookId: payload.bookId,
+          currentPage: payload.currentPage,
+          totalPages: payload.totalPages,
+          percentage: payload.percentage,
+          lastPosition: {
+            page: payload.currentPage,
+            totalPages: payload.totalPages,
+            format: payload.format,
+            mode: payload.readingMode,
+          },
+        });
       }
     },
     []
   );
+
+  useEffect(() => {
+    if (!bookId) return;
+    if (typeof window === 'undefined') return;
+
+    const flush = () => {
+      void flushReaderOperations({
+        batchSize: 20,
+        maxBatches: 3,
+      }).catch(error => {
+        console.warn('[READER][SYNC_FLUSH_FAILED]', error);
+      });
+    };
+
+    flush();
+    window.addEventListener('online', flush);
+    return () => {
+      window.removeEventListener('online', flush);
+    };
+  }, [bookId]);
 
   useEffect(() => {
     if (!bookId || !readerSession || loadingSession || renderError) return;

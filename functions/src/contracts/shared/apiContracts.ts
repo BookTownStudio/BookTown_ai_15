@@ -1214,6 +1214,47 @@ export const apiContracts = {
       }
     ),
 
+    getReaderManifest: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          version: z.number().int().positive(),
+          pipelineVersion: z.string().min(1),
+          format: z.enum(["pdf", "epub", "unknown"]),
+          estimatedPageCount: z.number().int().positive().nullable(),
+          locationMap: z
+            .object({
+              version: z.literal("v1"),
+              mode: z.enum(["page", "logical"]),
+              checkpointUnit: z.enum(["page", "spine_item"]),
+            })
+            .strict(),
+          searchIndex: z
+            .object({
+              status: z.enum(["pending", "ready"]),
+              docPath: z.string().min(1),
+            })
+            .strict(),
+          highlightAnchors: z
+            .object({
+              status: z.enum(["pending", "ready"]),
+              docPath: z.string().min(1),
+            })
+            .strict(),
+          generatedAtMs: z.number().int().positive(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useReaderManifest.ts"],
+      }
+    ),
+
     getAttachmentUrl: defineContract(
       z
         .object({
@@ -1870,6 +1911,55 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useReaderProgress.ts"],
+      }
+    ),
+
+    syncReaderOperations: defineContract(
+      z
+        .object({
+          operations: z
+            .array(
+              z
+                .object({
+                  opId: z.string().min(1).max(128),
+                  idempotencyKey: z.string().min(1).max(128),
+                  type: z.enum([
+                    "upsert_progress",
+                    "upsert_highlight",
+                    "delete_highlight",
+                    "upsert_bookmark",
+                    "delete_bookmark",
+                  ]),
+                  bookId: z.string().min(1),
+                  clientTimestampMs: z.number().int().positive(),
+                  payload: z.record(z.unknown()).optional(),
+                })
+                .strict()
+            )
+            .min(1)
+            .max(100),
+        })
+        .strict(),
+      z
+        .object({
+          accepted: z.number().int().nonnegative(),
+          applied: z.number().int().nonnegative(),
+          deduped: z.number().int().nonnegative(),
+          rejected: z.number().int().nonnegative(),
+          errors: z.array(
+            z
+              .object({
+                opId: z.string().min(1),
+                code: z.string().min(1),
+                message: z.string().min(1),
+              })
+              .strict()
+          ),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/reader/offline/useReaderSync.ts"],
       }
     ),
 

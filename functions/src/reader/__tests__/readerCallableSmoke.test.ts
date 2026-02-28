@@ -178,6 +178,11 @@ describe("Reader callable smoke", () => {
     expect(firstSession.resumePage).toBe(1);
     expect(firstSession.format).toBe("epub");
 
+    const manifestAfterFirstOpen = fakeDb.read("reader_manifests", "book_smoke");
+    expect(manifestAfterFirstOpen?.bookId).toBe("book_smoke");
+    expect(manifestAfterFirstOpen?.format).toBe("epub");
+    expect(manifestAfterFirstOpen?.version).toBe(1);
+
     const writeResult = await recordReadingProgressHandler({
       auth,
       data: {
@@ -214,5 +219,8 @@ describe("Reader callable smoke", () => {
     expect(secondSession.resumePage).toBe(5);
     expect(typeof secondSession.signedUrl).toBe("string");
     expect(secondSession.format).toBe("epub");
+
+    const manifestAfterSecondOpen = fakeDb.read("reader_manifests", "book_smoke");
+    expect(manifestAfterSecondOpen?.version).toBe(1);
   });
 });

@@ -3,6 +3,7 @@ import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
+import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
@@ -103,6 +104,19 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
     );
 
     await batch.commit();
+
+    try {
+      await getOrBuildReaderManifest({
+        uid,
+        bookId,
+      });
+    } catch (error) {
+      logger.warn("[USER_UPLOAD][MANIFEST_BUILD_FAILED]", {
+        uid,
+        bookId,
+        error: String(error),
+      });
+    }
 
     logger.info("[USER_UPLOAD][FINALIZED]", {
       uid,
