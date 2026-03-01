@@ -19,6 +19,8 @@ interface ReaderSurfaceProps {
   onPageChange: (currentPage: number, totalPages: number) => void;
   onPdfLoadError: (message: string) => void;
   onEpubLoadError: (message: string) => void;
+  onPdfDocumentLoadSuccess?: (numPages: number) => void;
+  onPdfFirstPageRender?: () => void;
   renderUnsupported: () => React.ReactNode;
 }
 
@@ -33,6 +35,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   onPageChange,
   onPdfLoadError,
   onEpubLoadError,
+  onPdfDocumentLoadSuccess,
+  onPdfFirstPageRender,
   renderUnsupported,
 }) => {
   const fallbackUi = (
@@ -69,6 +73,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           fontSize={fontSize}
           onPageChange={onPageChange}
           onLoadError={onPdfLoadError}
+          onDocumentLoadSuccess={onPdfDocumentLoadSuccess}
+          onFirstPageRender={onPdfFirstPageRender}
         />
       </Suspense>
     );

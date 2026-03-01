@@ -2,7 +2,6 @@
 
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import App from './App.tsx';
 import './index.css';
 
 import { initMediaGuard } from './lib/media/MediaGuard.ts';
@@ -20,10 +19,18 @@ import { queryClient } from './lib/query-client.ts';
 /* ------------------------------------------------------------------ */
 
 // 1️⃣ Initialize Firebase exactly once before anything touches it
-initializeFirebase();
+const isReaderBenchmarkMode =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('readerBenchmark') === '1';
+
+if (!isReaderBenchmarkMode) {
+  initializeFirebase();
+}
 
 // 2️⃣ Enforce MEDIA_PERMISSION_GUARD_V1 at bootstrap
-initMediaGuard();
+if (!isReaderBenchmarkMode) {
+  initMediaGuard();
+}
 
 // 3️⃣ Safe build/version log
 // FIX: Safely access import.meta.env to prevent runtime errors
@@ -43,10 +50,27 @@ if (!rootElement) {
 
 const root = createRoot(rootElement);
 
-root.render(
-  <React.StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <App />
-    </QueryClientProvider>
-  </React.StrictMode>
-);
+async function mount() {
+  if (isReaderBenchmarkMode) {
+    const { default: ReaderPerfBenchmarkApp } = await import(
+      './app/benchmark/ReaderPerfBenchmarkApp.tsx'
+    );
+    root.render(
+      <React.StrictMode>
+        <ReaderPerfBenchmarkApp />
+      </React.StrictMode>
+    );
+    return;
+  }
+
+  const { default: App } = await import('./App.tsx');
+  root.render(
+    <React.StrictMode>
+      <QueryClientProvider client={queryClient}>
+        <App />
+      </QueryClientProvider>
+    </React.StrictMode>
+  );
+}
+
+void mount();

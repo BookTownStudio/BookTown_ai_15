@@ -11,9 +11,13 @@ import { useToast } from '../../store/toast.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 
 import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
-import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import {
+  buildBookDetailsParams,
+  resolveIngestionSource,
+} from '../../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
+import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 
 import { Book } from '../../types/entities.ts';
 import SearchResultCard from '../content/SearchResultCard.tsx';
@@ -76,6 +80,38 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
     isEbookAvailable: result.isEbookAvailable,
   });
 
+  const resolveCanonicalBookId = async (
+    result: SearchResultDTO
+  ): Promise<string | null> => {
+    if (typeof result.bookId === 'string' && result.bookId.trim().length > 0) {
+      return result.bookId.trim();
+    }
+
+    const source = resolveIngestionSource(result);
+    if (!source) return null;
+
+    const resolved = await ensureCanonicalBook({
+      providerExternalId: result.externalId || result.id,
+      source,
+      rawBook: result.rawBook || {
+        id: result.externalId || result.id,
+        externalId: result.externalId || result.id,
+        source,
+        title: result.title,
+        titleEn: result.titleEn,
+        titleAr: result.titleAr,
+        authors: result.authors,
+        authorEn: result.authorEn,
+        authorAr: result.authorAr,
+        description: result.description,
+        descriptionEn: result.descriptionEn,
+        descriptionAr: result.descriptionAr,
+      },
+    });
+
+    return resolved?.canonicalBookId || null;
+  };
+
   const handleSelect = async (result: SearchResultDTO) => {
     if (busyId) return;
     try {
@@ -83,7 +119,10 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
       trackSearchClick({
         query: searchQuery,
         clickedRank: clickedRankFor(result.id),
-        result,
+        result: {
+          ...result,
+          bookId: result.bookId || result.externalId || result.id,
+        },
       });
 
       if (result.resultType === 'canonical') {
@@ -91,11 +130,25 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
         onClose();
         return;
       }
+      const canonicalBookId = await resolveCanonicalBookId(result);
+      if (!canonicalBookId) {
+        showToast(
+          lang === 'en'
+            ? 'This book is unavailable right now.'
+            : 'هذا الكتاب غير متاح حالياً.'
+        );
+        return;
+      }
+      const canonicalNavResult: SearchResultDTO = {
+        ...result,
+        resultType: 'canonical',
+        bookId: canonicalBookId,
+      };
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView, {
+        params: buildBookDetailsParams(canonicalNavResult, currentView, {
           pendingAction: 'ATTACH_TO_POST',
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),

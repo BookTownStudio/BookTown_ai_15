@@ -17,10 +17,14 @@ import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import { queryKeys } from '../../lib/queryKeys.ts';
 import SearchResultCard from '../content/SearchResultCard.tsx';
-import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import {
+  buildBookDetailsParams,
+  resolveIngestionSource,
+} from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
+import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -102,6 +106,38 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
+  const resolveCanonicalBookId = async (
+    result: SearchResultDTO
+  ): Promise<string | null> => {
+    if (typeof result.bookId === 'string' && result.bookId.trim().length > 0) {
+      return result.bookId.trim();
+    }
+
+    const source = resolveIngestionSource(result);
+    if (!source) return null;
+
+    const resolved = await ensureCanonicalBook({
+      providerExternalId: result.externalId || result.id,
+      source,
+      rawBook: result.rawBook || {
+        id: result.externalId || result.id,
+        externalId: result.externalId || result.id,
+        source,
+        title: result.title,
+        titleEn: result.titleEn,
+        titleAr: result.titleAr,
+        authors: result.authors,
+        authorEn: result.authorEn,
+        authorAr: result.authorAr,
+        description: result.description,
+        descriptionEn: result.descriptionEn,
+        descriptionAr: result.descriptionAr,
+      },
+    });
+
+    return resolved?.canonicalBookId || null;
+  };
+
   /**
    * 🔒 Canonical ingest → add to shelf
    * In insertion mode, this is the PRIMARY action
@@ -114,14 +150,31 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
       trackSearchClick({
         query: searchQuery,
         clickedRank: clickedRankFor(result.id),
-        result,
+        result: {
+          ...result,
+          bookId: result.bookId || result.externalId || result.id,
+        },
       });
 
       if (result.resultType !== 'canonical') {
+        const canonicalBookId = await resolveCanonicalBookId(result);
+        if (!canonicalBookId) {
+          showToast(
+            lang === 'en'
+              ? 'This book is unavailable right now.'
+              : 'هذا الكتاب غير متاح حالياً.'
+          );
+          return;
+        }
+        const canonicalNavResult: SearchResultDTO = {
+          ...result,
+          resultType: 'canonical',
+          bookId: canonicalBookId,
+        };
         navigate({
           type: 'immersive',
           id: 'bookDetails',
-          params: buildBookDetailsParams(result, currentView, {
+          params: buildBookDetailsParams(canonicalNavResult, currentView, {
             pendingAction: 'ADD_TO_SHELF',
             pendingShelfId: targetShelfId,
             searchQuery: searchQuery.trim(),
@@ -178,17 +231,34 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
       trackSearchClick({
         query: searchQuery,
         clickedRank: clickedRankFor(result.id),
-        result,
+        result: {
+          ...result,
+          bookId: result.bookId || result.externalId || result.id,
+        },
       });
+      const canonicalBookId = await resolveCanonicalBookId(result);
+      if (!canonicalBookId) {
+        showToast(
+          lang === 'en'
+            ? 'This book is unavailable right now.'
+            : 'هذا الكتاب غير متاح حالياً.'
+        );
+        return;
+      }
+      const canonicalNavResult: SearchResultDTO = {
+        ...result,
+        resultType: 'canonical',
+        bookId: canonicalBookId,
+      };
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView, {
+        params: buildBookDetailsParams(canonicalNavResult, currentView, {
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),
           clickTracked: true,
-        })
+        }),
       });
     } catch (err) {
       console.error('[AddBookModal][OPEN_FAILED]', err);

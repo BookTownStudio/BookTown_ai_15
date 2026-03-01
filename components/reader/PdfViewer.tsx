@@ -21,6 +21,8 @@ interface PdfViewerProps {
   fontSize?: FontSize;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
+  onDocumentLoadSuccess?: (numPages: number) => void;
+  onFirstPageRender?: () => void;
 }
 
 function zoomScaleFromFontSize(fontSize: FontSize): number {
@@ -53,6 +55,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   fontSize = 'md',
   onPageChange,
   onLoadError,
+  onDocumentLoadSuccess,
+  onFirstPageRender,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -66,6 +70,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const [pageNumber, setPageNumber] = useState<number>(1);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(false);
+  const hasReportedFirstPageRenderRef = useRef(false);
 
   useEffect(() => {
     pageNumberRef.current = pageNumber;
@@ -94,6 +99,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     pageNumberRef.current = startPage;
     pageRefs.current = [];
     pageOffsetsRef.current = [];
+    hasReportedFirstPageRenderRef.current = false;
   }, [url, initialPage]);
 
   const rebuildPageOffsets = useCallback(() => {
@@ -105,17 +111,6 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       pageOffsetsRef.current = offsets;
     }
   }, [numPages, readingMode]);
-
-  useEffect(() => {
-    if (readingMode !== 'scroll') return;
-    if (numPages <= 0) return;
-
-    const raf = window.requestAnimationFrame(() => {
-      rebuildPageOffsets();
-    });
-
-    return () => window.cancelAnimationFrame(raf);
-  }, [numPages, pageWidth, readingMode, rebuildPageOffsets, url]);
 
   useEffect(() => {
     if (numPages > 0 || useIframeFallback) return;
@@ -135,8 +130,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       setPageNumber(clamped);
       pageNumberRef.current = clamped;
       onPageChange?.(clamped, numPages);
+      onDocumentLoadSuccess?.(numPages);
     },
-    [initialPage, onPageChange]
+    [initialPage, onDocumentLoadSuccess, onPageChange]
   );
 
   const handleLoadFailure = useCallback(
@@ -240,8 +236,25 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     return Math.max(240, scaled);
   }, [basePageWidth, fontSize]);
 
+  useEffect(() => {
+    if (readingMode !== 'scroll') return;
+    if (numPages <= 0) return;
+
+    const raf = window.requestAnimationFrame(() => {
+      rebuildPageOffsets();
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [numPages, pageWidth, readingMode, rebuildPageOffsets, url]);
+
   const viewerBackground =
     theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#0b0f14';
+
+  const handleFirstPageRender = useCallback(() => {
+    if (hasReportedFirstPageRenderRef.current) return;
+    hasReportedFirstPageRenderRef.current = true;
+    onFirstPageRender?.();
+  }, [onFirstPageRender]);
 
   return (
     <div
@@ -299,6 +312,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 width={pageWidth}
                 renderTextLayer
                 renderAnnotationLayer
+                onRenderSuccess={handleFirstPageRender}
               />
             )}
           </Document>

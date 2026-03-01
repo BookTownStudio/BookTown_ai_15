@@ -38,6 +38,15 @@
   - Lookup p95: <= 0.04 ms.
   - Lookup average: <= 0.02 ms.
 
+## CI-Enforced Browser Timing Gate
+- Pipeline: `npm run ci:reader:browser-perf`.
+- Runtime: Playwright Chromium against `vite preview`.
+- Controlled fixture: `/public/fixtures/reader-benchmark.pdf`.
+- Scenario: load `/?readerBenchmark=1` and capture in-browser timings from reader runtime callbacks.
+- Hard-fail budgets (p95 over 7 measured runs, 1 warmup run discarded):
+  - Cold-open p95: <= 1500 ms.
+  - First-page-render p95: <= 2200 ms.
+
 ## Required Telemetry Events
 - `[READER][SESSION_INIT_REQUEST]`
 - `[READER][SESSION_READY]`
