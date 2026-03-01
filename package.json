@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "perf:reader:gate": "node scripts/readerPerformanceGate.mjs",
+    "ci:reader:perf": "npm run build && npm run perf:reader:gate"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",

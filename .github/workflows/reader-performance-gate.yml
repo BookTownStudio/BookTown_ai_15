@@ -1,0 +1,28 @@
+name: Reader Performance Gate
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  reader-performance-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Reader performance gate
+        run: npm run ci:reader:perf

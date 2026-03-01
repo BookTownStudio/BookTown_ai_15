@@ -22,6 +22,22 @@
 - Fail release if crash-free sessions drop below SLO for two consecutive windows.
 - Fail release if sync error rate exceeds 1% for reader operations.
 
+## CI-Enforced Proxy Gates
+- Pipeline: `npm run ci:reader:perf`.
+- Hard-fail if reader shell no longer lazy-loads engine modules.
+- Hard-fail if PDF scroll-page mapping no longer uses indexed lookup helpers.
+- Cold-open proxy budgets (build artifacts):
+  - Reader shell JS raw: <= 260 KB.
+  - Reader shell JS gzip: <= 80 KB.
+  - PDF engine JS raw: <= 400 KB.
+  - PDF engine JS gzip: <= 120 KB.
+  - EPUB engine JS raw: <= 30 KB.
+  - EPUB engine JS gzip: <= 12 KB.
+  - PDF engine CSS raw: <= 14 KB.
+- Page-turn proxy budgets (deterministic benchmark on 5,000-page synthetic index):
+  - Lookup p95: <= 0.04 ms.
+  - Lookup average: <= 0.02 ms.
+
 ## Required Telemetry Events
 - `[READER][SESSION_INIT_REQUEST]`
 - `[READER][SESSION_READY]`

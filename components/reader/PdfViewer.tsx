@@ -3,6 +3,10 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { FontSize } from '../../store/reading-prefs.tsx';
+import {
+  buildPageOffsetIndex,
+  findPageForAnchor,
+} from '../../lib/reader/runtime/pageOffsetLocator.js';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -53,6 +57,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
+  const pageOffsetsRef = useRef<number[]>([]);
   const pageNumberRef = useRef<number>(1);
   const lastWheelNavAtRef = useRef<number>(0);
 
@@ -88,7 +93,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     setPageNumber(startPage);
     pageNumberRef.current = startPage;
     pageRefs.current = [];
+    pageOffsetsRef.current = [];
   }, [url, initialPage]);
+
+  const rebuildPageOffsets = useCallback(() => {
+    if (readingMode !== 'scroll') return;
+    if (numPages <= 0) return;
+
+    const offsets = buildPageOffsetIndex(pageRefs.current, numPages);
+    if (offsets.length > 0) {
+      pageOffsetsRef.current = offsets;
+    }
+  }, [numPages, readingMode]);
+
+  useEffect(() => {
+    if (readingMode !== 'scroll') return;
+    if (numPages <= 0) return;
+
+    const raf = window.requestAnimationFrame(() => {
+      rebuildPageOffsets();
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [numPages, pageWidth, readingMode, rebuildPageOffsets, url]);
 
   useEffect(() => {
     if (numPages > 0 || useIframeFallback) return;
@@ -168,21 +195,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     if (!viewport) return;
 
     const anchor = viewport.scrollTop + viewport.clientHeight * 0.3;
-    let current = 1;
-
-    for (let index = 0; index < numPages; index += 1) {
-      const node = pageRefs.current[index];
-      if (!node) continue;
-      if (node.offsetTop <= anchor) current = index + 1;
-      else break;
+    if (pageOffsetsRef.current.length !== numPages) {
+      rebuildPageOffsets();
     }
+    const current = findPageForAnchor(pageOffsetsRef.current, anchor);
 
     if (current !== pageNumberRef.current) {
       pageNumberRef.current = current;
       setPageNumber(current);
       onPageChange?.(current, numPages);
     }
-  }, [numPages, onPageChange, readingMode]);
+  }, [numPages, onPageChange, readingMode, rebuildPageOffsets]);
 
   useEffect(() => {
     if (readingMode !== 'scroll') return;

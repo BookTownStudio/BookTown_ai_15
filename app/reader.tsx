@@ -1,46 +1,30 @@
 // app/reader.tsx
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useNavigation } from '../store/navigation.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
 import ReaderSettings from '../components/reader/ReaderSettings.tsx';
-import PdfViewer from '../components/reader/PdfViewer.tsx';
-import EpubViewer from '../components/reader/EpubViewer.tsx';
+import ReaderSurface from '../components/reader/runtime/ReaderSurface.tsx';
 import { useToast } from '../store/toast.tsx';
 import { useReadingPreferences } from '../store/reading-prefs.tsx';
 import {
   enqueueProgressSyncOperation,
   flushReaderOperations,
 } from '../lib/reader/offline/readerSyncClient.ts';
+import { useReaderSessionBootstrap } from '../lib/hooks/useReaderSessionBootstrap.ts';
+import { resolveReaderEngine } from '../lib/reader/runtime/engineSelection.ts';
 
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
+import type { ReaderFormat } from '../lib/reader/runtime/contracts.ts';
 
-type ReaderFormat = 'pdf' | 'epub' | 'unknown';
-
-function inferFormatFromUrl(signedUrl: string): ReaderFormat {
-  try {
-    const parsed = new URL(signedUrl);
-    const path = decodeURIComponent(parsed.pathname).toLowerCase();
-
-    if (path.endsWith('.pdf')) return 'pdf';
-    if (path.endsWith('.epub')) return 'epub';
-
-    const objectPath = decodeURIComponent(
-      (parsed.pathname.split('/o/')[1] || '').split('?')[0] || ''
-    ).toLowerCase();
-    if (objectPath.endsWith('.pdf')) return 'pdf';
-    if (objectPath.endsWith('.epub')) return 'epub';
-  } catch {
-    // ignore parse errors and use fallback below
-  }
-
-  const lower = signedUrl.toLowerCase();
+function inferFormatFromUrl(url: string): ReaderFormat {
+  const lower = url.toLowerCase();
   if (lower.includes('.pdf')) return 'pdf';
-  if (lower.includes('.epub')) return 'epub';
+  if (lower.includes('.epub') || lower.includes('.kepub')) return 'epub';
   return 'unknown';
 }
 
@@ -63,13 +47,12 @@ const ReaderScreen: React.FC = () => {
   // -------------------------------------------------
   // A4.5 — Canonical Reading Session
   // -------------------------------------------------
-  const [readerSession, setReaderSession] = useState<{
-    signedUrl: string;
-    resumePage: number;
-    format: ReaderFormat;
-  } | null>(null);
-
-  const [loadingSession, setLoadingSession] = useState(true);
+  const {
+    session: readerSession,
+    manifest: readerManifest,
+    isLoading: loadingSession,
+    error: sessionError,
+  } = useReaderSessionBootstrap(bookId);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [renderError, setRenderError] = useState<string | null>(null);
@@ -126,92 +109,38 @@ const ReaderScreen: React.FC = () => {
     );
   }, [lang, showToast]);
 
-  // -------------------------------------------------
-  // Session bootstrap (authoritative)
-  // -------------------------------------------------
   useEffect(() => {
-    if (!bookId) return;
+    if (!readerSession) return;
+    const resumePage =
+      typeof readerSession.resumePage === 'number' &&
+      Number.isFinite(readerSession.resumePage) &&
+      readerSession.resumePage > 0
+        ? Math.trunc(readerSession.resumePage)
+        : 1;
+    setCurrentPage(resumePage);
+    setTotalPages(1);
+    setRenderError(null);
+  }, [readerSession]);
 
-    let isMounted = true;
+  useEffect(() => {
+    if (!sessionError) return;
+    console.error('[READER][SESSION_INIT_FAILED]', sessionError);
+    showToast(
+      lang === 'en'
+        ? 'Unable to open book. Please try again later.'
+        : 'تعذّر فتح الكتاب. يرجى المحاولة لاحقًا.'
+    );
 
-    async function initSession() {
-      try {
-        const fn = httpsCallable(
-          getFunctions(),
-          'getOrCreateReadingSession'
-        );
+    if (currentView.params?.from) navigate(currentView.params.from);
+    else navigate({ type: 'tab', id: 'read' });
+  }, [sessionError, showToast, lang, currentView.params, navigate]);
 
-        const res = await fn({ bookId });
-
-        if (!isMounted) return;
-
-        const payload = res.data as any;
-        if (payload?.success === false) {
-          const errorCode =
-            typeof payload?.error?.code === 'string' ? payload.error.code : 'UNKNOWN';
-          const errorMessage =
-            typeof payload?.error?.message === 'string'
-              ? payload.error.message
-              : 'Reader session request failed.';
-          throw new Error(`[${errorCode}] ${errorMessage}`);
-        }
-
-        const data =
-          payload?.success === true && payload.data
-            ? payload.data
-            : payload;
-
-        if (
-          !data ||
-          typeof data.signedUrl !== 'string' ||
-          data.signedUrl.trim().length === 0
-        ) {
-          console.error('[READER][SESSION_INVALID_PAYLOAD]', payload);
-          throw new Error('Invalid reader session payload.');
-        }
-
-        const resumePage =
-          typeof data.resumePage === 'number' &&
-          Number.isFinite(data.resumePage) &&
-          data.resumePage > 0
-            ? Math.trunc(data.resumePage)
-            : 1;
-
-        const format =
-          data.format === 'pdf' || data.format === 'epub' || data.format === 'unknown'
-            ? (data.format as ReaderFormat)
-            : inferFormatFromUrl(data.signedUrl);
-
-        setCurrentPage(resumePage);
-        setTotalPages(1);
-        setRenderError(null);
-
-        setReaderSession({
-          signedUrl: data.signedUrl,
-          resumePage,
-          format,
-        });
-      } catch (err) {
-        console.error('[READER][SESSION_INIT_FAILED]', err);
-        showToast(
-          lang === 'en'
-            ? 'Unable to open book. Please try again later.'
-            : 'تعذّر فتح الكتاب. يرجى المحاولة لاحقًا.'
-        );
-
-        if (currentView.params?.from) navigate(currentView.params.from);
-        else navigate({ type: 'tab', id: 'read' });
-      } finally {
-        if (isMounted) setLoadingSession(false);
-      }
-    }
-
-    initSession();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [bookId, lang, navigate, showToast]);
+  const effectiveFormat = useMemo<ReaderFormat>(() => {
+    if (!readerSession) return 'unknown';
+    if (readerSession.format !== 'unknown') return readerSession.format;
+    if (readerManifest?.format && readerManifest.format !== 'unknown') return readerManifest.format;
+    return inferFormatFromUrl(readerSession.signedUrl);
+  }, [readerManifest, readerSession]);
 
   // -------------------------------------------------
   // Progress persistence (authoritative)
@@ -292,10 +221,7 @@ const ReaderScreen: React.FC = () => {
   useEffect(() => {
     if (!bookId || !readerSession || loadingSession || renderError) return;
 
-    const format =
-      readerSession.format === 'unknown'
-        ? inferFormatFromUrl(readerSession.signedUrl)
-        : readerSession.format;
+    const format = effectiveFormat;
     const safeTotal = Math.max(1, Math.trunc(totalPages || 1));
     const safePage = Math.min(Math.max(1, Math.trunc(currentPage || 1)), safeTotal);
     const percentage = Math.min(1, Math.max(0, safePage / safeTotal));
@@ -334,6 +260,7 @@ const ReaderScreen: React.FC = () => {
     persistProgress,
     readerSession,
     readingMode,
+    effectiveFormat,
     renderError,
     totalPages,
   ]);
@@ -388,11 +315,26 @@ const ReaderScreen: React.FC = () => {
     );
   }
 
-  const inferredFormat = inferFormatFromUrl(readerSession.signedUrl);
-  const sessionFormat =
-    readerSession.format === 'unknown' ? inferredFormat : readerSession.format;
+  const runtimeSelection = resolveReaderEngine({
+    platform: 'web',
+    format: effectiveFormat,
+  });
   const progressPercent =
     totalPages > 0 ? Math.min(100, Math.max(0, (currentPage / totalPages) * 100)) : 0;
+  const renderOpenFileFallback = (message: string) => (
+    <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
+      <p className="text-sm text-white/70 max-w-md">{message}</p>
+      <a
+        href={readerSession.signedUrl}
+        target="_blank"
+        rel="noreferrer"
+        className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {lang === 'en' ? 'Open File' : 'فتح الملف'}
+      </a>
+    </div>
+  );
 
   return (
     <div
@@ -418,56 +360,27 @@ const ReaderScreen: React.FC = () => {
         onClick={() => setIsChromeVisible((v) => !v)}
       >
         {renderError ? (
-          <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
-            <p className="text-sm text-white/70 max-w-md">{renderError}</p>
-            <a
-              href={readerSession.signedUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {lang === 'en' ? 'Open File' : 'فتح الملف'}
-            </a>
-          </div>
-        ) : sessionFormat === 'epub' ? (
-          <EpubViewer
-            url={readerSession.signedUrl}
+          renderOpenFileFallback(renderError)
+        ) : (
+          <ReaderSurface
+            selection={runtimeSelection}
+            signedUrl={readerSession.signedUrl}
             initialPage={readerSession.resumePage}
             theme={theme}
             readingMode={readingMode}
             fontSize={fontSize}
             fontStyle={fontStyle}
             onPageChange={handleReaderPageChange}
-            onLoadError={handleEpubLoadError}
+            onPdfLoadError={handlePdfLoadError}
+            onEpubLoadError={handleEpubLoadError}
+            renderUnsupported={() =>
+              renderOpenFileFallback(
+                lang === 'en'
+                  ? 'This ebook format is not recognized by the in-app reader yet.'
+                  : 'صيغة هذا الكتاب الإلكتروني غير معروفة للقارئ داخل التطبيق حالياً.'
+              )
+            }
           />
-        ) : sessionFormat === 'pdf' ? (
-          <PdfViewer
-            url={readerSession.signedUrl}
-            initialPage={readerSession.resumePage}
-            theme={theme}
-            readingMode={readingMode}
-            fontSize={fontSize}
-            onPageChange={handleReaderPageChange}
-            onLoadError={handlePdfLoadError}
-          />
-        ) : (
-          <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
-            <p className="text-sm text-white/70 max-w-md">
-              {lang === 'en'
-                ? 'This ebook format is not recognized by the in-app reader yet.'
-                : 'صيغة هذا الكتاب الإلكتروني غير معروفة للقارئ داخل التطبيق حالياً.'}
-            </p>
-            <a
-              href={readerSession.signedUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {lang === 'en' ? 'Open File' : 'فتح الملف'}
-            </a>
-          </div>
         )}
       </div>
 
