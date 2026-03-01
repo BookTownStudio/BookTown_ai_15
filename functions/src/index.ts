@@ -587,6 +587,12 @@ export {
 } from "./control/systemEventsAdmin";
 export { purgeDeletedUsers } from "./control/purgeDeletedUsers";
 export { exportDailyAnalyticsSnapshot } from "./analytics/dailyExport";
+export {
+  onIntelligenceSignalQueued,
+  scheduledIntelligenceProfileBuilder,
+  scheduledIntelligenceQueueCleanup,
+} from "./intelligence/profileBuilder";
+export { scheduledIntelligenceProfileReconciliation } from "./intelligence/reconciliation";
 
 // SSR
 export const sitemap = sitemapRaw;

@@ -5,6 +5,7 @@ import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
 import { admin } from "./firebaseAdmin";
 import { getSignedUrl } from "./attachments/storageSignedUrl";
+import { buildAgentContextSnapshot } from "./intelligence/agentContextBuilder";
 
 type SearchBookResponse = {
   id: string;
@@ -61,6 +62,10 @@ type SearchClickTelemetryPayload = {
   wasCanonical: boolean;
   timestamp: string;
 };
+
+type AuthResolution =
+  | { ok: true; uid: string }
+  | { ok: false; status: 401; code: "missing_auth" | "invalid_auth" };
 
 function normalizeSearchText(value?: string | null): string {
   if (!value) return "";
@@ -175,6 +180,35 @@ async function writeSearchClickTelemetry(payload: SearchClickTelemetryPayload): 
     timestamp: payload.timestamp,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+}
+
+function readBearerToken(req: any): string | null {
+  const authHeader = req?.headers?.authorization;
+  if (typeof authHeader !== "string") return null;
+  const trimmed = authHeader.trim();
+  if (!trimmed.toLowerCase().startsWith("bearer ")) return null;
+  const token = trimmed.slice(7).trim();
+  return token.length > 0 ? token : null;
+}
+
+async function resolveAuthenticatedUid(req: any): Promise<AuthResolution> {
+  const token = readBearerToken(req);
+  if (!token) {
+    return { ok: false, status: 401, code: "missing_auth" };
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid =
+      typeof decoded?.uid === "string" ? decoded.uid.trim().slice(0, 128) : "";
+    if (!uid) {
+      return { ok: false, status: 401, code: "invalid_auth" };
+    }
+    return { ok: true, uid };
+  } catch (error) {
+    logger.warn("[AI][CHAT][AUTH_VERIFY_FAILED]", { error: String(error) });
+    return { ok: false, status: 401, code: "invalid_auth" };
+  }
 }
 
 function toSearchBookResponse(raw: any): SearchBookResponse | null {
@@ -569,12 +603,41 @@ apiRouter.post("/search/click", async (req: any, res: any) => {
 
 /**
  * POST /api/ai/chat
- * Deterministic stub (safe)
+ * Deterministic stub with server-side intelligence context binding.
  */
-// FIX: Cast req and res to any.
-apiRouter.post("/ai/chat", async (_req: any, res: any) => {
+apiRouter.post("/ai/chat", async (req: any, res: any) => {
+  const auth = await resolveAuthenticatedUid(req);
+  if (!auth.ok) {
+    return res.status(auth.status).json({
+      error: auth.code,
+      message: "Authentication is required.",
+    });
+  }
+
+  let agentContext = null;
+  try {
+    agentContext = await buildAgentContextSnapshot(auth.uid);
+  } catch (error) {
+    logger.warn("[AI][CHAT][CONTEXT_LOAD_FAILED]", {
+      uid: auth.uid,
+      error: String(error),
+    });
+    agentContext = null;
+  }
+  const dominantGenre = agentContext?.genres?.dominantGenre || "";
+
+  logger.info("[AI][CHAT][CONTEXT_BOUND]", {
+    uid: auth.uid,
+    hasContext: Boolean(agentContext),
+    profileVersion: agentContext?.profileVersion ?? null,
+    schemaVersion: agentContext?.schemaVersion ?? null,
+    dominantGenre: dominantGenre || null,
+  });
+
   return res.status(200).json({
-    text: "The librarian is getting ready. Book recommendations will appear here soon.",
+    text: dominantGenre
+      ? `The librarian is getting ready. Your current exploration anchor is ${dominantGenre}. Recommendations will appear here soon.`
+      : "The librarian is getting ready. Book recommendations will appear here soon.",
   });
 });
 

@@ -347,6 +347,24 @@ service cloud.firestore {
     }
 
     /* =========================
+       USER INTELLIGENCE PROFILES (SERVER AUTHORITY ONLY)
+       ========================= */
+    match /user_intelligence_profiles/{uid} {
+      allow read, create, update, delete: if false;
+
+      match /{subcollection}/{documentId} {
+        allow read, create, update, delete: if false;
+      }
+    }
+
+    /* =========================
+       INTELLIGENCE SIGNAL QUEUE (SERVER AUTHORITY ONLY)
+       ========================= */
+    match /intelligence_signal_queue/{signalId} {
+      allow read, create, update, delete: if false;
+    }
+
+    /* =========================
        SYSTEM METRICS (SERVER-ONLY PROJECTIONS)
        ========================= */
     match /system_metrics/{metricId} {

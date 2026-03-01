@@ -1,18 +1,44 @@
 
 import { AgentService, AgentMessage, BookRecommendation, ShelfVibe } from './agents.types';
+import { getFirebaseAuth, isFirebaseInitialized } from '../lib/firebase.ts';
 
 export class RealAgentService implements AgentService {
+    private async buildRequestHeaders(): Promise<Record<string, string>> {
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        try {
+            if (isFirebaseInitialized()) {
+                const auth = getFirebaseAuth();
+                const user = auth.currentUser;
+                if (user) {
+                    const token = await user.getIdToken();
+                    if (typeof token === 'string' && token.trim().length > 0) {
+                        headers['Authorization'] = `Bearer ${token.trim()}`;
+                    }
+                }
+            }
+        } catch {
+            // Intentionally ignore: request will fail server-side if auth is required.
+        }
+        return headers;
+    }
+
     private async callEndpoint(endpoint: string, body: any): Promise<any> {
         try {
             const response = await fetch(endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: await this.buildRequestHeaders(),
                 body: JSON.stringify(body)
             });
 
             if (!response.ok) {
                 const errorData = await response.json().catch(() => ({}));
-                throw new Error(errorData.error || `Request failed with status ${response.status}`);
+                const errorMessage =
+                    typeof errorData?.error === 'string'
+                        ? errorData.error
+                        : typeof errorData?.error?.message === 'string'
+                        ? errorData.error.message
+                        : `Request failed with status ${response.status}`;
+                throw new Error(errorMessage);
             }
 
             const payload = await response.json();

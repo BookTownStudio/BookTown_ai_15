@@ -7,11 +7,13 @@ import {
   onDocumentWritten,
 } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
-import { recomputeUserStats } from "../userStats/recomputeUserStats";
 import { ensureSystemMetricsInitialized } from "../analytics/initMetrics";
 import { incrementGlobalMetricInTransaction } from "../analytics/metricsUtils";
 import { logSystemEvent } from "../analytics/eventLogger";
 import { processMetricEventIdempotently } from "../analytics/metricIdempotency";
+import {
+  emitIntelligenceSignalSafe,
+} from "../intelligence/profileBuilder";
 
 const db = admin.firestore();
 const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
@@ -50,25 +52,17 @@ async function updateStatCounter(
 
 /**
  * ---------------------------------------------------------
- * LIBRARY COUNTERS (Authoritative)
+ * LIBRARY CANONICAL SET (Authoritative)
  * ---------------------------------------------------------
  * Goal:
- * - Move library header counts to user_stats (O(1) read)
- * - Avoid runtime computation across shelves/progress
+ * - Maintain canonical per-user book membership in user_library_books
+ * - Emit signals for downstream intelligence/profile workers
  *
  * Approach (Tier-1 stable):
  * - Maintain a per-user canonical set: user_library_books/{uid}_{bookId}
  * - Sources:
  *   - Shelf membership (entries map)
  *   - Reading progress existence (reading_progress)
- *
- * Counters:
- * - user_stats/{uid}.counters.totalBooks  (unique, deduped)
- * - user_stats/{uid}.counters.totalShelves (physical shelves docs)
- *
- * NOTE:
- * - We DO NOT rely on "shelf count == book count"
- * - We DO NOT rely on virtual shelves for counting
  */
 
 /** Internal helper: canonical library book doc id */
@@ -91,7 +85,6 @@ async function applyLibraryBookDelta(params: {
   const libRef = db
     .collection("user_library_books")
     .doc(libraryBookDocId(uid, bookId));
-  const statsRef = db.collection("user_stats").doc(uid);
 
   await db.runTransaction(async (tx) => {
     const snap = await tx.get(libRef);
@@ -114,30 +107,7 @@ async function applyLibraryBookDelta(params: {
 
     const isEmpty = nextShelfIds.size === 0 && nextHasProgress === false;
 
-    if (!existed && !isEmpty) {
-      tx.set(
-        statsRef,
-        {
-          "counters.totalBooks":
-            admin.firestore.FieldValue.increment(1),
-          lastUpdatedAt:
-            admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
-
     if (existed && isEmpty) {
-      tx.set(
-        statsRef,
-        {
-          "counters.totalBooks":
-            admin.firestore.FieldValue.increment(-1),
-          lastUpdatedAt:
-            admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
       tx.delete(libRef);
       return;
     }
@@ -172,6 +142,17 @@ export const onPostLikeCreated = onDocumentCreated(
       "likes",
       1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_liked",
+      signalFamily: "engagement",
+      payload: {
+        postId: event.params.postId,
+        delta: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/likes/${event.params.postId}`,
+    });
   }
 );
 
@@ -184,6 +165,17 @@ export const onPostLikeDeleted = onDocumentDeleted(
       "likes",
       -1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_unliked",
+      signalFamily: "engagement",
+      payload: {
+        postId: event.params.postId,
+        delta: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/likes/${event.params.postId}`,
+    });
   }
 );
 
@@ -196,6 +188,17 @@ export const onPostRepostCreated = onDocumentCreated(
       "reposts",
       1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_reposted",
+      signalFamily: "engagement",
+      payload: {
+        postId: event.params.postId,
+        delta: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/reposts/${event.params.postId}`,
+    });
   }
 );
 
@@ -208,6 +211,17 @@ export const onPostRepostDeleted = onDocumentDeleted(
       "reposts",
       -1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_unreposted",
+      signalFamily: "engagement",
+      payload: {
+        postId: event.params.postId,
+        delta: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/reposts/${event.params.postId}`,
+    });
   }
 );
 
@@ -220,6 +234,27 @@ export const onPostCommentCreated = onDocumentCreated(
       "comments",
       1
     );
+    const commentData = event.data?.data() as Record<string, unknown> | undefined;
+    const uid =
+      typeof commentData?.userId === "string" && commentData.userId.trim().length > 0
+        ? commentData.userId.trim()
+        : typeof commentData?.authorId === "string" && commentData.authorId.trim().length > 0
+        ? commentData.authorId.trim()
+        : "";
+    if (uid) {
+      await emitIntelligenceSignalSafe({
+        uid,
+        signalType: "post_commented",
+        signalFamily: "engagement",
+        payload: {
+          postId: event.params.postId,
+          commentId: event.params.commentId,
+          delta: 1,
+        },
+        sourceEventId: event.id,
+        sourcePath: `posts/${event.params.postId}/comments/${event.params.commentId}`,
+      });
+    }
   }
 );
 
@@ -232,6 +267,27 @@ export const onPostCommentDeleted = onDocumentDeleted(
       "comments",
       -1
     );
+    const commentData = event.data?.data() as Record<string, unknown> | undefined;
+    const uid =
+      typeof commentData?.userId === "string" && commentData.userId.trim().length > 0
+        ? commentData.userId.trim()
+        : typeof commentData?.authorId === "string" && commentData.authorId.trim().length > 0
+        ? commentData.authorId.trim()
+        : "";
+    if (uid) {
+      await emitIntelligenceSignalSafe({
+        uid,
+        signalType: "post_comment_deleted",
+        signalFamily: "engagement",
+        payload: {
+          postId: event.params.postId,
+          commentId: event.params.commentId,
+          delta: -1,
+        },
+        sourceEventId: event.id,
+        sourcePath: `posts/${event.params.postId}/comments/${event.params.commentId}`,
+      });
+    }
   }
 );
 
@@ -244,6 +300,17 @@ export const onPostBookmarkCreated = onDocumentCreated(
       "bookmarks",
       1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_bookmarked",
+      signalFamily: "engagement",
+      payload: {
+        entityId: event.params.entityId,
+        delta: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/post_bookmarks/${event.params.entityId}`,
+    });
   }
 );
 
@@ -256,6 +323,17 @@ export const onPostBookmarkDeleted = onDocumentDeleted(
       "bookmarks",
       -1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "post_unbookmarked",
+      signalFamily: "engagement",
+      payload: {
+        entityId: event.params.entityId,
+        delta: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/post_bookmarks/${event.params.entityId}`,
+    });
   }
 );
 
@@ -266,19 +344,6 @@ export const onPostBookmarkDeleted = onDocumentDeleted(
 export const onUserFollowCreated = onDocumentCreated(
   "users/{userId}/followers/{followerId}",
   async (event) => {
-    await updateStatCounter(
-      "user_stats",
-      event.params.userId,
-      "followers",
-      1
-    );
-    await updateStatCounter(
-      "user_stats",
-      event.params.followerId,
-      "following",
-      1
-    );
-
     await db.collection("public_profiles").doc(event.params.userId).set(
       {
         followerCount: admin.firestore.FieldValue.increment(1),
@@ -293,6 +358,29 @@ export const onUserFollowCreated = onDocumentCreated(
       },
       { merge: true }
     );
+
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "follow_received",
+      signalFamily: "engagement",
+      payload: {
+        followerUid: event.params.followerId,
+        deltaFollowers: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/followers/${event.params.followerId}`,
+    });
+    await emitIntelligenceSignalSafe({
+      uid: event.params.followerId,
+      signalType: "follow_initiated",
+      signalFamily: "engagement",
+      payload: {
+        targetUid: event.params.userId,
+        deltaFollowing: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/followers/${event.params.followerId}`,
+    });
 
     await ensureSystemMetricsInitialized();
     await processMetricEventIdempotently(event.id, async (tx) => {
@@ -315,19 +403,6 @@ export const onUserFollowCreated = onDocumentCreated(
 export const onUserFollowDeleted = onDocumentDeleted(
   "users/{userId}/followers/{followerId}",
   async (event) => {
-    await updateStatCounter(
-      "user_stats",
-      event.params.userId,
-      "followers",
-      -1
-    );
-    await updateStatCounter(
-      "user_stats",
-      event.params.followerId,
-      "following",
-      -1
-    );
-
     await db.collection("public_profiles").doc(event.params.userId).set(
       {
         followerCount: admin.firestore.FieldValue.increment(-1),
@@ -342,6 +417,29 @@ export const onUserFollowDeleted = onDocumentDeleted(
       },
       { merge: true }
     );
+
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "follow_removed",
+      signalFamily: "engagement",
+      payload: {
+        followerUid: event.params.followerId,
+        deltaFollowers: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/followers/${event.params.followerId}`,
+    });
+    await emitIntelligenceSignalSafe({
+      uid: event.params.followerId,
+      signalType: "unfollow_initiated",
+      signalFamily: "engagement",
+      payload: {
+        targetUid: event.params.userId,
+        deltaFollowing: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/followers/${event.params.followerId}`,
+    });
   }
 );
 
@@ -351,13 +449,16 @@ export const onUserFollowDeleted = onDocumentDeleted(
 export const onShelfCreated = onDocumentCreated(
   "users/{userId}/shelves/{shelfId}",
   async (event) => {
-    await updateStatCounter(
-      "user_stats",
-      event.params.userId,
-      "shelvesCreated",
-      1
-    );
-    await recomputeUserStats(event.params.userId);
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "legacy_shelf_created",
+      signalFamily: "behavior",
+      payload: {
+        shelfId: event.params.shelfId,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.userId}/shelves/${event.params.shelfId}`,
+    });
   }
 );
 
@@ -590,7 +691,26 @@ export const onBookReviewWritten = onDocumentWritten(
 
     const changedUid = afterUserId || beforeUserId;
     if (changedUid) {
-      await recomputeUserStats(changedUid);
+      await emitIntelligenceSignalSafe({
+        uid: changedUid,
+        signalType:
+          !beforeExists && afterExists
+            ? "review_created"
+            : beforeExists && !afterExists
+            ? "review_deleted"
+            : "review_updated",
+        signalFamily: "engagement",
+        payload: {
+          bookId,
+          reviewId,
+          beforeExists,
+          afterExists,
+          beforeRating,
+          afterRating,
+        },
+        sourceEventId: event.id,
+        sourcePath: `books/${bookId}/reviews/${reviewId}`,
+      });
     }
 
     if (!beforeExists && afterExists) {
@@ -619,6 +739,17 @@ export const onBookReviewWritten = onDocumentWritten(
 export const onSystemUserCreated = onDocumentCreated(
   "users/{uid}",
   async (event) => {
+    await emitIntelligenceSignalSafe({
+      uid: event.params.uid,
+      signalType: "user_created",
+      signalFamily: "behavior",
+      payload: {
+        uid: event.params.uid,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.uid}`,
+    });
+
     await ensureSystemMetricsInitialized();
     await processMetricEventIdempotently(event.id, async (tx) => {
       incrementGlobalMetricInTransaction(tx, "totalUsers", 1);
@@ -640,6 +771,17 @@ export const onSystemUserCreated = onDocumentCreated(
 export const onUserQuoteCreated = onDocumentCreated(
   "users/{uid}/quotes/{quoteId}",
   async (event) => {
+    await emitIntelligenceSignalSafe({
+      uid: event.params.uid,
+      signalType: "quote_created",
+      signalFamily: "engagement",
+      payload: {
+        quoteId: event.params.quoteId,
+      },
+      sourceEventId: event.id,
+      sourcePath: `users/${event.params.uid}/quotes/${event.params.quoteId}`,
+    });
+
     await ensureSystemMetricsInitialized();
     await processMetricEventIdempotently(event.id, async (tx) => {
       incrementGlobalMetricInTransaction(tx, "totalQuotes", 1);
@@ -733,6 +875,16 @@ export const onEventRsvpCreated = onDocumentCreated(
       "rsvps",
       1
     );
+    await emitIntelligenceSignalSafe({
+      uid: event.params.userId,
+      signalType: "event_rsvp_created",
+      signalFamily: "engagement",
+      payload: {
+        eventId: event.params.eventId,
+      },
+      sourceEventId: event.id,
+      sourcePath: `events/${event.params.eventId}/rsvps/${event.params.userId}`,
+    });
   }
 );
 
@@ -749,13 +901,18 @@ export const onTopLevelShelfCreated = onDocumentCreated(
     const isVirtual = Boolean(data?.isVirtual);
     if (!ownerId || isVirtual) return;
 
-    await updateStatCounter(
-      "user_stats",
-      ownerId,
-      "totalShelves",
-      1
-    );
-    await recomputeUserStats(ownerId);
+    await emitIntelligenceSignalSafe({
+      uid: ownerId,
+      signalType: "shelf_created",
+      signalFamily: "behavior",
+      payload: {
+        shelfId: data?.id || event.params.shelfDocId,
+        isVirtual,
+        deltaShelves: 1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `shelves/${event.params.shelfDocId}`,
+    });
   }
 );
 
@@ -767,13 +924,18 @@ export const onTopLevelShelfDeleted = onDocumentDeleted(
     const isVirtual = Boolean(data?.isVirtual);
     if (!ownerId || isVirtual) return;
 
-    await updateStatCounter(
-      "user_stats",
-      ownerId,
-      "totalShelves",
-      -1
-    );
-    await recomputeUserStats(ownerId);
+    await emitIntelligenceSignalSafe({
+      uid: ownerId,
+      signalType: "shelf_deleted",
+      signalFamily: "behavior",
+      payload: {
+        shelfId: data?.id || event.params.shelfDocId,
+        isVirtual,
+        deltaShelves: -1,
+      },
+      sourceEventId: event.id,
+      sourcePath: `shelves/${event.params.shelfDocId}`,
+    });
   }
 );
 
@@ -818,6 +980,21 @@ export const onShelfEntriesWritten = onDocumentWritten(
         removeShelfId: shelfId,
       });
     }
+
+    await emitIntelligenceSignalSafe({
+      uid: ownerId,
+      signalType: "shelf_entries_changed",
+      signalFamily: "reading",
+      payload: {
+        shelfId,
+        addedCount: added.length,
+        removedCount: removed.length,
+        addedBookIds: added.slice(0, 80),
+        removedBookIds: removed.slice(0, 80),
+      },
+      sourceEventId: event.id,
+      sourcePath: `shelves/${event.params.shelfDocId}`,
+    });
   }
 );
 
@@ -840,6 +1017,18 @@ export const onReadingProgressWritten = onDocumentWritten(
       bookId,
       setHasProgress: true,
     });
-    await recomputeUserStats(uid);
+    await emitIntelligenceSignalSafe({
+      uid,
+      signalType: "reading_progress_written",
+      signalFamily: "reading",
+      payload: {
+        progressId: event.params.progressId,
+        bookId,
+        progress: typeof after?.progress === "number" ? after.progress : null,
+        statusState: typeof after?.status_state === "string" ? after.status_state : null,
+      },
+      sourceEventId: event.id,
+      sourcePath: `reading_progress/${event.params.progressId}`,
+    });
   }
 );
