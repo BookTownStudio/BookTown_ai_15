@@ -496,38 +496,47 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
     const ingestedBookId = asNonEmptyString(existingIngestion?.bookId);
     const ingestedState = asNonEmptyString(existingIngestion?.state);
 
+    let completeIngestedBookSnap: FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData> | null = null;
+
     if (ingestedBookId && ingestedState === "COMPLETE") {
-      tx.set(
-        ingestionRef,
-        {
-          updatedAt: FieldValue.serverTimestamp(),
-          lastSeenAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      const ingestedBookRef = db.collection("books").doc(ingestedBookId);
+      completeIngestedBookSnap = await tx.get(ingestedBookRef);
 
-      logger.info("BOOK_INGEST_V2_TRACE", {
-        phase: "already_complete",
+      if (completeIngestedBookSnap.exists) {
+        logger.info("BOOK_INGEST_V2_TRACE", {
+          phase: "already_complete",
+          ingestionKey,
+          bookId: ingestedBookId,
+          editionId: `${source}:${externalId}`,
+          outcome: "ALREADY_COMPLETE",
+        });
+
+        return {
+          canonicalBookId: ingestedBookId,
+          bookId: ingestedBookId,
+          editionId: `${source}:${externalId}`,
+          status: "ALREADY_COMPLETE",
+        };
+      }
+
+      logger.warn("[INGEST_V2][CORRUPTED_INGESTION_STATE]", {
         ingestionKey,
-        bookId: ingestedBookId,
-        editionId: `${source}:${externalId}`,
-        outcome: "ALREADY_COMPLETE",
+        ingestedBookId,
       });
-
-      return {
-        canonicalBookId: ingestedBookId,
-        bookId: ingestedBookId,
-        editionId: `${source}:${externalId}`,
-        status: "ALREADY_COMPLETE",
-      };
     }
 
     let resolvedBookId = ingestedBookId || "";
     let resolvedByKey = ingestedBookId ? `ingestion:${ingestionKey}` : "";
     const conflictingBookIds = new Set<string>();
+    const identitySnapshotsByKey = new Map<
+      string,
+      FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>
+    >();
 
     for (const candidate of identityCandidates) {
-      const identitySnap = await tx.get(db.collection("book_identity").doc(candidate.key));
+      const identityRef = db.collection("book_identity").doc(candidate.key);
+      const identitySnap = await tx.get(identityRef);
+      identitySnapshotsByKey.set(candidate.key, identitySnap);
       const identityData = asRecord(identitySnap.data() || null);
       const mappedBookId = asNonEmptyString(identityData?.bookId);
       if (!mappedBookId) continue;
@@ -541,8 +550,19 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
 
     const bookId = resolvedBookId || uuidv4();
     const bookRef = db.collection("books").doc(bookId);
-    const bookSnap = await tx.get(bookRef);
+    const bookSnap =
+      completeIngestedBookSnap &&
+      ingestedBookId &&
+      ingestedBookId === bookId
+        ? completeIngestedBookSnap
+        : await tx.get(bookRef);
     const existingBook = asRecord(bookSnap.data() || null);
+    const coverJobRef = db.collection("cover_jobs").doc(bookId);
+    const coverJobSnap = await tx.get(coverJobRef);
+    const existingCoverJob = asRecord(coverJobSnap.data() || null);
+    const existingCandidateUrls = Array.isArray(existingCoverJob?.candidateUrls)
+      ? existingCoverJob?.candidateUrls.filter((entry): entry is string => typeof entry === "string")
+      : [];
 
     if (conflictingBookIds.size > 1) {
       logger.warn("[INGEST_V2][IDENTITY_CONFLICT_COLLAPSED]", {
@@ -661,8 +681,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
 
     for (const candidate of identityCandidates) {
       const ref = db.collection("book_identity").doc(candidate.key);
-      const snap = await tx.get(ref);
-      const existing = asRecord(snap.data() || null);
+      const existing = asRecord(identitySnapshotsByKey.get(candidate.key)?.data() || null);
 
       const identityRecord: IdentityRecord = {
         identityKey: candidate.key,
@@ -698,13 +717,6 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
       },
       { merge: true }
     );
-
-    const coverJobRef = db.collection("cover_jobs").doc(bookId);
-    const coverJobSnap = await tx.get(coverJobRef);
-    const existingCoverJob = asRecord(coverJobSnap.data() || null);
-    const existingCandidateUrls = Array.isArray(existingCoverJob?.candidateUrls)
-      ? existingCoverJob?.candidateUrls.filter((entry): entry is string => typeof entry === "string")
-      : [];
 
     const mergedCandidates = Array.from(
       new Set<string>([...existingCandidateUrls, ...coverCandidates])
