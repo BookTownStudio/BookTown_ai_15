@@ -38,6 +38,10 @@ import {
 
 import { cn } from '../lib/utils.ts';
 import { mockBooks } from '../data/mocks.ts';
+import { SearchResultDTO } from '../types/bookSearch.ts';
+import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
+import { resolveIngestionSource } from '../lib/books/searchNavigation.ts';
+import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 
@@ -57,7 +61,13 @@ const BookDetailsScreen: React.FC = () => {
   const reviewAction = typeof params?.reviewAction === 'string' ? params.reviewAction : undefined;
   const pendingAction = typeof params?.pendingAction === 'string' ? params.pendingAction : 'NONE';
   const pendingShelfId = typeof params?.pendingShelfId === 'string' ? params.pendingShelfId : '';
+  const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
+  const hasExternalPendingSearch = pendingSearchResult?.resultType === 'external';
 
+  const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
+  const [isResolvingExternal, setIsResolvingExternal] = useState(false);
+  const [externalResolveFailed, setExternalResolveFailed] = useState(false);
+  const ingestionStartedRef = useRef<string>('');
   const pendingActionRef = useRef<string>('');
 
   const randomBookId = useMemo(() => {
@@ -69,7 +79,7 @@ const BookDetailsScreen: React.FC = () => {
   const bookId =
     originalBookId === 'surprise'
       ? randomBookId
-      : originalBookId;
+      : resolvedExternalBookId || (hasExternalPendingSearch ? undefined : originalBookId);
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
@@ -79,8 +89,108 @@ const BookDetailsScreen: React.FC = () => {
   const submitReview = useSubmitReview();
 
   useEffect(() => {
+    ingestionStartedRef.current = '';
     pendingActionRef.current = '';
-  }, [originalBookId, pendingAction, pendingShelfId]);
+    setResolvedExternalBookId(null);
+    setIsResolvingExternal(false);
+    setExternalResolveFailed(false);
+  }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
+
+  useEffect(() => {
+    if (pendingSearchResult) {
+      logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+        phase: 'payload_received',
+        resultType: pendingSearchResult.resultType,
+        source: pendingSearchResult.source,
+        id: pendingSearchResult.id,
+        externalId: pendingSearchResult.externalId || null,
+      });
+      return;
+    }
+
+    if (originalBookId) {
+      logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+        phase: 'payload_received',
+        resultType: 'canonical',
+        bookId: originalBookId,
+      });
+    }
+  }, [originalBookId, pendingSearchResult]);
+
+  useEffect(() => {
+    if (!hasExternalPendingSearch || !pendingSearchResult) return;
+
+    const source = resolveIngestionSource(pendingSearchResult);
+    if (!source) {
+      setExternalResolveFailed(true);
+      showToast(lang === 'en' ? 'Invalid external source.' : 'مصدر خارجي غير صالح.');
+      return;
+    }
+
+    const effectKey = `${pendingSearchResult.id}:${source}`;
+    if (ingestionStartedRef.current === effectKey) return;
+    ingestionStartedRef.current = effectKey;
+    setIsResolvingExternal(true);
+    setExternalResolveFailed(false);
+
+    logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+      phase: 'invoke_ingest',
+      source,
+      id: pendingSearchResult.id,
+      externalId: pendingSearchResult.externalId || pendingSearchResult.id,
+    });
+
+    ensureCanonicalBook({
+      providerExternalId: pendingSearchResult.externalId || pendingSearchResult.id,
+      source,
+      rawBook: pendingSearchResult.rawBook || {
+        id: pendingSearchResult.externalId || pendingSearchResult.id,
+        externalId: pendingSearchResult.externalId || pendingSearchResult.id,
+        source,
+        title: pendingSearchResult.title,
+        titleEn: pendingSearchResult.titleEn,
+        titleAr: pendingSearchResult.titleAr,
+        authors: pendingSearchResult.authors,
+        authorEn: pendingSearchResult.authorEn,
+        authorAr: pendingSearchResult.authorAr,
+        description: pendingSearchResult.description,
+        descriptionEn: pendingSearchResult.descriptionEn,
+        descriptionAr: pendingSearchResult.descriptionAr,
+      },
+    })
+      .then((result) => {
+        const canonicalBookId = result?.canonicalBookId;
+        if (!canonicalBookId) {
+          throw new Error('INGESTION_NO_CANONICAL_BOOK_ID');
+        }
+        setResolvedExternalBookId(canonicalBookId);
+        logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+          phase: 'ingest_resolved',
+          status: result?.status || 'UNKNOWN',
+          canonicalBookId,
+          canonicalEditionId: result?.editionId || null,
+        });
+      })
+      .catch((error) => {
+        console.error('[BOOK_DETAILS][INGEST_ON_LOAD_FAILED]', error);
+        setExternalResolveFailed(true);
+        logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+          phase: 'ingest_failed',
+          error: String(error),
+          id: pendingSearchResult.id,
+          source,
+        });
+        showToast(lang === 'en' ? 'Failed to load this book.' : 'تعذر تحميل هذا الكتاب.');
+      })
+      .finally(() => {
+        setIsResolvingExternal(false);
+      });
+  }, [
+    hasExternalPendingSearch,
+    lang,
+    pendingSearchResult,
+    showToast,
+  ]);
 
   useEffect(() => {
     if (!book || !bookId) return;
@@ -215,6 +325,33 @@ const BookDetailsScreen: React.FC = () => {
     }
   };
 
+  if (isResolvingExternal && !resolvedExternalBookId) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
+        <LoadingSpinner />
+        <BilingualText className="text-white/40 !text-sm">
+          {lang === 'en' ? 'Preparing book…' : 'جاري تجهيز الكتاب…'}
+        </BilingualText>
+      </div>
+    );
+  }
+
+  if (externalResolveFailed) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+        <ErrorState
+          title={lang === 'en' ? 'Book not found' : 'الكتاب غير موجود'}
+          message={
+            lang === 'en'
+              ? 'This book could not be resolved into the canonical catalog.'
+              : 'تعذر تحويل هذا الكتاب إلى الكتالوج الأساسي.'
+          }
+          onRetry={handleBack}
+        />
+      </div>
+    );
+  }
+
   if (isBookLoading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
@@ -226,7 +363,7 @@ const BookDetailsScreen: React.FC = () => {
     );
   }
 
-  if (isError || !bookId) {
+  if (isError || (!bookId && !hasExternalPendingSearch)) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
         <ErrorState
@@ -238,6 +375,17 @@ const BookDetailsScreen: React.FC = () => {
           }
           onRetry={handleBack}
         />
+      </div>
+    );
+  }
+
+  if (!bookId && hasExternalPendingSearch) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
+        <LoadingSpinner />
+        <BilingualText className="text-white/40 !text-sm">
+          {lang === 'en' ? 'Preparing book…' : 'جاري تجهيز الكتاب…'}
+        </BilingualText>
       </div>
     );
   }

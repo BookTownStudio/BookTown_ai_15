@@ -1,6 +1,6 @@
 // app/tabs/home.tsx
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -26,14 +26,10 @@ import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
 import { cn } from '../../lib/utils.ts';
 import { useCurrentlyReading } from '../../lib/hooks/useCurrentlyReading.ts';
-import {
-  buildBookDetailsParams,
-  resolveIngestionSource,
-} from '../../lib/books/searchNavigation.ts';
+import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
-import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 
 /* -------------------------------
    Constants
@@ -110,58 +106,9 @@ const HomeScreen: React.FC = () => {
 
   const { isLoading: isAnalyzingImage } = useIdentifyBook();
   const searchResults = searchResponse?.results || [];
-  const searchResultsForUi = useMemo<SearchResultDTO[]>(
-    () =>
-      searchResults.map((result) => {
-        const hasCanonicalBookId =
-          typeof result.bookId === 'string' && result.bookId.trim().length > 0;
-        const canRenderCanonicalCover =
-          result.resultType === 'canonical' &&
-          hasCanonicalBookId &&
-          typeof result.coverUrl === 'string' &&
-          result.coverUrl.trim().length > 0;
-        if (canRenderCanonicalCover) return result;
-        return { ...result, coverUrl: '' };
-      }),
-    [searchResults]
-  );
   const clickedRankFor = (id: string): number => {
     const index = searchResults.findIndex((entry) => entry.id === id);
     return index >= 0 ? index + 1 : 1;
-  };
-
-  const resolveCanonicalBookId = async (
-    result: SearchResultDTO
-  ): Promise<string | null> => {
-    if (typeof result.bookId === 'string' && result.bookId.trim().length > 0) {
-      return result.bookId.trim();
-    }
-
-    const source = resolveIngestionSource(result);
-    if (!source) {
-      return null;
-    }
-
-    const resolved = await ensureCanonicalBook({
-      providerExternalId: result.externalId || result.id,
-      source,
-      rawBook: result.rawBook || {
-        id: result.externalId || result.id,
-        externalId: result.externalId || result.id,
-        source,
-        title: result.title,
-        titleEn: result.titleEn,
-        titleAr: result.titleAr,
-        authors: result.authors,
-        authorEn: result.authorEn,
-        authorAr: result.authorAr,
-        description: result.description,
-        descriptionEn: result.descriptionEn,
-        descriptionAr: result.descriptionAr,
-      },
-    });
-
-    return resolved?.canonicalBookId || null;
   };
 
   useEffect(() => {
@@ -190,27 +137,13 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
-      const canonicalBookId = await resolveCanonicalBookId(result);
-      if (!canonicalBookId) {
-        showToast(
-          lang === 'en'
-            ? 'This book is unavailable right now.'
-            : 'هذا الكتاب غير متاح حالياً.'
-        );
-        return;
-      }
 
       setIsSearching(false);
-      const canonicalNavResult: SearchResultDTO = {
-        ...result,
-        resultType: 'canonical',
-        bookId: canonicalBookId,
-      };
 
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(canonicalNavResult, currentView, {
+        params: buildBookDetailsParams(result, currentView, {
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),
           clickTracked: true,
@@ -237,24 +170,10 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
-      const canonicalBookId = await resolveCanonicalBookId(result);
-      if (!canonicalBookId) {
-        showToast(
-          lang === 'en'
-            ? 'This book is unavailable right now.'
-            : 'هذا الكتاب غير متاح حالياً.'
-        );
-        return;
-      }
-      const canonicalNavResult: SearchResultDTO = {
-        ...result,
-        resultType: 'canonical',
-        bookId: canonicalBookId,
-      };
       navigate({
         type: 'immersive',
         id: 'bookDetails',
-        params: buildBookDetailsParams(canonicalNavResult, currentView, {
+        params: buildBookDetailsParams(result, currentView, {
           pendingAction: 'NONE',
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),
@@ -273,6 +192,8 @@ const HomeScreen: React.FC = () => {
      Render Search Results
   -------------------------------- */
   const renderSearchResults = () => {
+    const validResults: SearchResultDTO[] = searchResults;
+
     return (
       <div className="pt-4 min-h-[40vh]">
         {(isSearchingBooks || isAnalyzingImage) && (
@@ -286,9 +207,9 @@ const HomeScreen: React.FC = () => {
           </div>
         )}
 
-        {!isSearchingBooks && searchResultsForUi.length > 0 && (
+        {!isSearchingBooks && validResults.length > 0 && (
           <div className="space-y-3">
-            {searchResultsForUi.map(result => (
+            {validResults.map(result => (
               <SearchResultCard
                 key={result.id}
                 result={result}
