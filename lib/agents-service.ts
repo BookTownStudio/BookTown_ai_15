@@ -42,6 +42,31 @@ const librarianResponseSchema = {
 
 export const callAgent = async (agentId: string, contextMessages: { role: string; text: string }[]) => {
     try {
+        if (agentId === 'librarian') {
+            const latestUserMessage =
+                [...contextMessages]
+                    .reverse()
+                    .find((msg) => msg.role === 'user' && typeof msg.text === 'string' && msg.text.trim().length > 0)
+                    ?.text || '';
+
+            const cards = await agentService.librarianRecommend(latestUserMessage);
+            const formatted = {
+                reason: cards[0]?.short_reason || "I found the closest profile-aligned recommendation from your current reading pattern.",
+                recommendations: cards.map((card) => ({
+                    bookId: card.bookId,
+                    title: card.title,
+                    author: card.author,
+                    short_reason: card.short_reason,
+                    mode: card.mode,
+                    relevanceScore: card.relevanceScore,
+                })),
+            };
+
+            return {
+                responseText: JSON.stringify(formatted),
+            };
+        }
+
         const persona = AGENT_PERSONAS[agentId] || "You are a helpful literary assistant.";
         const systemInstruction = `${persona}\n${BASE_INSTRUCTION}`;
         

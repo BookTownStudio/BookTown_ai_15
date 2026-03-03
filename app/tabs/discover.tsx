@@ -41,7 +41,16 @@ const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
                 <div className="space-y-3">
                     <p>{data.reason}</p>
                     <div className="flex flex-wrap gap-2">
-                        {data.recommendations.map((rec: { title: string, author: string }, idx: number) => {
+                        {data.recommendations.map((rec: { title: string, author: string, bookId?: string }, idx: number) => {
+                            if (typeof rec.bookId === 'string' && rec.bookId.trim().length > 0) {
+                                const canonicalBookId = rec.bookId.trim();
+                                return (
+                                    <div key={canonicalBookId} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: canonicalBookId, from: currentView } })}>
+                                        <BookCard bookId={canonicalBookId} layout="list" className="w-28 mr-2" />
+                                    </div>
+                                );
+                            }
+
                             // Try to find the book in our mock catalog to get an ID and Cover
                             // In a real app, the agent would ideally return IDs or we use a search service.
                             const bookEntry = Object.values(mockBooks).find(b => b.titleEn.toLowerCase() === rec.title.toLowerCase() || b.titleAr === rec.title);

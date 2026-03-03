@@ -2112,6 +2112,47 @@ export const apiContracts = {
       }
     ),
 
+    aiLibrarian: defineContract(
+      z
+        .object({
+          normalizedQuery: z.string().min(1).max(280),
+          intent: z
+            .enum([
+              "Reinforcement",
+              "AdjacentExpansion",
+              "StructuredContrast",
+              "HighConfidencePrecision",
+              "ReReadingReflection",
+            ])
+            .optional(),
+        })
+        .strict(),
+      z.array(
+        z
+          .object({
+            bookId: z.string(),
+            title: z.string().min(1),
+            author: z.string().min(1),
+            short_reason: z.string().min(1).max(360),
+            mode: z.enum([
+              "Reinforcement",
+              "AdjacentExpansion",
+              "StructuredContrast",
+              "HighConfidencePrecision",
+              "ReReadingReflection",
+            ]),
+            relevanceScore: z.number().min(0).max(1),
+          })
+          .strict()
+      ),
+      "rest",
+      {
+        method: "POST",
+        route: "/api/ai/librarian",
+        callSites: ["services/realAgentService.ts"],
+      }
+    ),
+
     aiSummarize: defineContract(
       z
         .object({

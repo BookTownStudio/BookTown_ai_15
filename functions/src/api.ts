@@ -1,11 +1,16 @@
 import express from "express";
 import { onRequest } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
+import { z } from "zod";
 import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
 import { admin } from "./firebaseAdmin";
 import { getSignedUrl } from "./attachments/storageSignedUrl";
-import { buildAgentContextSnapshot } from "./intelligence/agentContextBuilder";
+import {
+  buildAgentContextSnapshot,
+  getOrCreateAgentContextSnapshot,
+} from "./intelligence/agentContextBuilder";
+import { runLibrarianRecommendation } from "./ai/librarian";
 
 type SearchBookResponse = {
   id: string;
@@ -38,6 +43,20 @@ const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
 const ENABLE_SEARCH_TELEMETRY = process.env.ENABLE_SEARCH_TELEMETRY === "true";
 const QUERY_INTENT_VALUES = ["ISBN", "AUTHOR_INTENT", "TITLE_INTENT", "MIXED_INTENT"] as const;
 type QueryIntent = (typeof QUERY_INTENT_VALUES)[number];
+const LIBRARIAN_INTENT_VALUES = [
+  "Reinforcement",
+  "AdjacentExpansion",
+  "StructuredContrast",
+  "HighConfidencePrecision",
+  "ReReadingReflection",
+] as const;
+
+const librarianRequestSchema = z
+  .object({
+    normalizedQuery: z.string().min(1).max(280),
+    intent: z.enum(LIBRARIAN_INTENT_VALUES).optional(),
+  })
+  .strict();
 
 type SearchQueryTelemetryPayload = {
   normalizedQuery: string;
@@ -67,8 +86,22 @@ type AuthResolution =
   | { ok: true; uid: string }
   | { ok: false; status: 401; code: "missing_auth" | "invalid_auth" };
 
+type AppCheckResolution =
+  | { ok: true; appId: string }
+  | { ok: false; status: 401; code: "missing_app_check" | "invalid_app_check" };
+
 function normalizeSearchText(value?: string | null): string {
   if (!value) return "";
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeLibrarianQuery(value: string): string {
   return value
     .toLowerCase()
     .normalize("NFKD")
@@ -209,6 +242,38 @@ async function resolveAuthenticatedUid(req: any): Promise<AuthResolution> {
     logger.warn("[AI][CHAT][AUTH_VERIFY_FAILED]", { error: String(error) });
     return { ok: false, status: 401, code: "invalid_auth" };
   }
+}
+
+async function resolveAppCheck(req: any): Promise<AppCheckResolution> {
+  const headerRaw =
+    req?.headers?.["x-firebase-appcheck"] ?? req?.headers?.["X-Firebase-AppCheck"];
+  const token =
+    typeof headerRaw === "string"
+      ? headerRaw.trim()
+      : Array.isArray(headerRaw) && typeof headerRaw[0] === "string"
+      ? headerRaw[0].trim()
+      : "";
+  if (!token) {
+    return { ok: false, status: 401, code: "missing_app_check" };
+  }
+
+  try {
+    const decoded = await admin.appCheck().verifyToken(token);
+    const appId = typeof decoded?.appId === "string" ? decoded.appId.trim() : "";
+    if (!appId) {
+      return { ok: false, status: 401, code: "invalid_app_check" };
+    }
+    return { ok: true, appId };
+  } catch (error) {
+    logger.warn("[AI][APP_CHECK_VERIFY_FAILED]", { error: String(error) });
+    return { ok: false, status: 401, code: "invalid_app_check" };
+  }
+}
+
+async function ensureAiConsent(uid: string): Promise<boolean> {
+  const userSnap = await admin.firestore().collection("users").doc(uid).get();
+  if (!userSnap.exists) return false;
+  return userSnap.get("aiConsent") === true;
 }
 
 function toSearchBookResponse(raw: any): SearchBookResponse | null {
@@ -599,6 +664,119 @@ apiRouter.post("/search/click", async (req: any, res: any) => {
   });
 
   return res.status(202).json({ ok: true });
+});
+
+/**
+ * POST /api/ai/librarian
+ * Tier-1 Librarian endpoint: structured, deterministic, server-owned recommendations.
+ */
+apiRouter.post("/ai/librarian", async (req: any, res: any) => {
+  const auth = await resolveAuthenticatedUid(req);
+  if (!auth.ok) {
+    return res.status(auth.status).json({
+      error: "AUTH_REQUIRED",
+      message: "Authentication is required.",
+    });
+  }
+
+  const appCheck = await resolveAppCheck(req);
+  if (!appCheck.ok) {
+    return res.status(appCheck.status).json({
+      error: "APP_CHECK_REQUIRED",
+      message: "App Check validation is required.",
+    });
+  }
+
+  const consentGranted = await ensureAiConsent(auth.uid);
+  if (!consentGranted) {
+    return res.status(403).json({
+      error: "CONSENT_REQUIRED",
+      message: "AI consent is required before invoking Librarian.",
+    });
+  }
+
+  const payloadRaw = req?.body && typeof req.body === "object" ? req.body : {};
+  const parsed = librarianRequestSchema.safeParse(payloadRaw);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: "INVALID_REQUEST",
+      message: "Invalid request body.",
+    });
+  }
+
+  const normalizedQuery = normalizeLibrarianQuery(parsed.data.normalizedQuery);
+  if (!normalizedQuery || normalizedQuery.length > 280) {
+    return res.status(400).json({
+      error: "INVALID_REQUEST",
+      message: "normalizedQuery must be 1-280 chars after normalization.",
+    });
+  }
+  const intent = parsed.data.intent ?? "Reinforcement";
+
+  let context = null;
+  try {
+    context = await getOrCreateAgentContextSnapshot(auth.uid);
+  } catch (error) {
+    logger.error("[AI][LIBRARIAN][CONTEXT_LOAD_FAILED]", {
+      uid: auth.uid,
+      error: String(error),
+    });
+    context = null;
+  }
+
+  if (!context) {
+    return res.status(500).json({
+      error: "ENGINE_FAILURE",
+      message: "Agent context bootstrap failed.",
+    });
+  }
+
+  try {
+    const result = await runLibrarianRecommendation({
+      uid: auth.uid,
+      request: {
+        normalizedQuery,
+        intent,
+      },
+      context,
+    });
+
+    logger.info("[AI][LIBRARIAN][SUCCESS]", {
+      uid: auth.uid,
+      appId: appCheck.appId,
+      profileVersion: context.profileVersion,
+      schemaVersion: context.schemaVersion,
+      fromCache: result.fromCache,
+      recommendationCount: result.recommendations.length,
+      remainingQuota: result.remainingQuota,
+      normalizedQuery: result.normalizedQuery,
+    });
+
+    return res.status(200).json(result.recommendations);
+  } catch (error) {
+    const message = String(error);
+    if (message.includes("QUOTA_EXCEEDED")) {
+      return res.status(429).json({
+        error: "QUOTA_EXCEEDED",
+        message: "Daily Librarian quota exceeded.",
+      });
+    }
+    if (message.includes("INVALID_REQUEST")) {
+      return res.status(400).json({
+        error: "INVALID_REQUEST",
+        message,
+      });
+    }
+    logger.error("[AI][LIBRARIAN][FAILED]", {
+      uid: auth.uid,
+      appId: appCheck.appId,
+      error: message,
+    });
+    return res.status(500).json({
+      error: "ENGINE_FAILURE",
+      message: "Librarian engine failed.",
+    });
+  }
 });
 
 /**

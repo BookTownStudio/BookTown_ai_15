@@ -4,6 +4,12 @@
 
 import { initializeApp } from "firebase/app";
 import type { FirebaseApp } from "firebase/app";
+import {
+  getToken as getAppCheckToken,
+  initializeAppCheck,
+  ReCaptchaV3Provider,
+  type AppCheck,
+} from "firebase/app-check";
 
 import { getAuth, type Auth } from "firebase/auth";
 import { getFirestore, type Firestore } from "firebase/firestore";
@@ -19,6 +25,8 @@ let authInstance: Auth | null = null;
 let firestoreInstance: Firestore | null = null;
 let storageInstance: FirebaseStorage | null = null;
 let functionsInstance: Functions | null = null;
+let appCheckInstance: AppCheck | null = null;
+let appCheckDisabled = false;
 
 /* ------------------------------------------------------------------ */
 /* Bootstrap                                                          */
@@ -51,6 +59,9 @@ export function initializeFirebase(): FirebaseApp {
     appId: env.VITE_FIREBASE_APP_ID,
     measurementId: env.VITE_FIREBASE_MEASUREMENT_ID,
   });
+
+  // Initialize App Check once at bootstrap to avoid first-request token races.
+  getOrInitAppCheck();
 
   return appInstance;
 }
@@ -99,6 +110,59 @@ export function getFirebaseFunctions(): Functions {
     functionsInstance = getFunctions(requireApp());
   }
   return functionsInstance;
+}
+
+function getOrInitAppCheck(): AppCheck | null {
+  if (appCheckDisabled) return null;
+  if (appCheckInstance) return appCheckInstance;
+
+  const env = (import.meta as ImportMeta).env;
+  const isProd = env.PROD === true;
+  const isDev = env.DEV === true;
+  const siteKey = typeof env?.VITE_RECAPTCHA_SITE_KEY === "string"
+    ? env.VITE_RECAPTCHA_SITE_KEY.trim()
+    : "";
+  if (!siteKey) {
+    const message =
+      "[Firebase][AppCheck] Missing VITE_RECAPTCHA_SITE_KEY.";
+    if (isProd) {
+      throw new Error(`${message} App Check is required in production.`);
+    }
+    console.warn(`${message} App Check disabled for local development.`);
+    appCheckDisabled = true;
+    return null;
+  }
+
+  const debugToken =
+    typeof env?.VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN === "string"
+      ? env.VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN.trim()
+      : "";
+  if (debugToken && isDev && !isProd && typeof globalThis !== "undefined") {
+    (globalThis as Record<string, unknown>).FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
+  } else if (debugToken && isProd) {
+    console.warn(
+      "[Firebase][AppCheck] Ignoring debug token in production build."
+    );
+  }
+
+  appCheckInstance = initializeAppCheck(requireApp(), {
+    provider: new ReCaptchaV3Provider(siteKey),
+    isTokenAutoRefreshEnabled: true,
+  });
+  return appCheckInstance;
+}
+
+export async function getFirebaseAppCheckToken(): Promise<string | null> {
+  const appCheck = getOrInitAppCheck();
+  if (!appCheck) return null;
+  try {
+    const result = await getAppCheckToken(appCheck, false);
+    return typeof result?.token === "string" && result.token.trim().length > 0
+      ? result.token.trim()
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */

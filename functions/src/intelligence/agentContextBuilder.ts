@@ -1,6 +1,10 @@
 import { admin } from "../firebaseAdmin";
 import type { AgentContextSnapshot } from "./types";
-import { INTELLIGENCE_PRIVACY_TIER } from "./types";
+import {
+  INTELLIGENCE_EMBEDDING_VERSION,
+  INTELLIGENCE_PRIVACY_TIER,
+  INTELLIGENCE_SCHEMA_VERSION,
+} from "./types";
 import { timestampToIso } from "./profileBuilder";
 
 const db = admin.firestore();
@@ -34,6 +38,166 @@ function topGenres(distributionRaw: unknown, limit: number): Array<{ name: strin
     .slice(0, Math.max(0, limit));
 
   return rows;
+}
+
+function profileRoot(uid: string) {
+  return db.collection("user_intelligence_profiles").doc(uid);
+}
+
+function subdocRef(uid: string, subcollection: string) {
+  return profileRoot(uid).collection(subcollection).doc("current");
+}
+
+async function bootstrapMinimalAgentContext(uid: string): Promise<void> {
+  const rootRef = profileRoot(uid);
+  const metadataRef = subdocRef(uid, "metadata");
+
+  await db.runTransaction(async (tx) => {
+    const metadataSnap = await tx.get(metadataRef);
+    if (metadataSnap.exists) {
+      return;
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+
+    tx.set(
+      rootRef,
+      {
+        uid,
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        privacyTier: INTELLIGENCE_PRIVACY_TIER,
+        readingTasteVector: null,
+        preferredGenres: [],
+        behavioralSignals: {},
+        intelligenceScore: 0,
+        createdAt: now,
+        computedAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      metadataRef,
+      {
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        privacyTier: INTELLIGENCE_PRIVACY_TIER,
+        sourceHash: "bootstrap_v1",
+        computedAt: now,
+        rateLimiter: {
+          minuteKey: 0,
+          count: 0,
+        },
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "reading"),
+      {
+        totalBooksRead: 0,
+        completionRate: 0,
+        readingVelocity: 0,
+        recentGenres: {},
+        recentAuthors: {},
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "genres"),
+      {
+        distribution: {},
+        dominantGenre: "",
+        entropyScore: 0,
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "authors"),
+      {
+        affinityScores: {},
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "behavior"),
+      {
+        noveltyTolerance: 0,
+        deviationTolerance: 0,
+        depthPreference: 0,
+        abandonmentRate: 0,
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "engagement"),
+      {
+        socialEngagementIndex: 0,
+        quoteDensity: 0,
+        reviewFrequency: 0,
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "indices"),
+      {
+        explorationIndex: 0,
+        completionConsistency: 0,
+        culturalDepthIndex: 0,
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "history"),
+      {
+        tasteShifts: [],
+        recentTrend: {},
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+
+    tx.set(
+      subdocRef(uid, "embeddings"),
+      {
+        embeddingVersion: INTELLIGENCE_EMBEDDING_VERSION,
+        vectorRef: null,
+        sourceHash: "bootstrap_v1",
+        schemaVersion: INTELLIGENCE_SCHEMA_VERSION,
+        profileVersion: 1,
+        computedAt: now,
+      },
+      { merge: true }
+    );
+  });
 }
 
 export async function buildAgentContextSnapshot(uid: string | null): Promise<AgentContextSnapshot | null> {
@@ -97,4 +261,21 @@ export async function buildAgentContextSnapshot(uid: string | null): Promise<Age
       reviewFrequency: readNumber(engagementSnap.get("reviewFrequency")),
     },
   };
+}
+
+export async function getOrCreateAgentContextSnapshot(
+  uid: string | null
+): Promise<AgentContextSnapshot | null> {
+  const normalizedUid = normalizeUid(uid);
+  if (!normalizedUid) {
+    return null;
+  }
+
+  const existing = await buildAgentContextSnapshot(normalizedUid);
+  if (existing) {
+    return existing;
+  }
+
+  await bootstrapMinimalAgentContext(normalizedUid);
+  return buildAgentContextSnapshot(normalizedUid);
 }

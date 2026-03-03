@@ -3,6 +3,8 @@
 // /// <reference types="vite/client" />
 
 interface ImportMetaEnv {
+  readonly DEV: boolean;
+  readonly PROD: boolean;
   readonly VITE_RUNTIME: string;
   // VITE_GEMINI_API_KEY removed: Secrets must not be exposed to the frontend.
   readonly VITE_FIREBASE_API_KEY: string;
@@ -12,6 +14,8 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_MESSAGING_SENDER_ID: string;
   readonly VITE_FIREBASE_APP_ID: string;
   readonly VITE_FIREBASE_MEASUREMENT_ID: string;
+  readonly VITE_RECAPTCHA_SITE_KEY?: string;
+  readonly VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN?: string;
   // FIX: Added VITE_APP_VERSION to ensure it is recognized when accessed via import.meta.env
   readonly VITE_APP_VERSION: string;
 }

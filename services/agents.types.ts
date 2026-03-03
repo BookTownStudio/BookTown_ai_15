@@ -20,6 +20,15 @@ export interface ShelfVibe {
     suggestions: string[];
 }
 
+export interface LibrarianBookCard {
+    bookId: string;
+    title: string;
+    author: string;
+    short_reason: string;
+    mode: 'Reinforcement' | 'AdjacentExpansion' | 'StructuredContrast' | 'HighConfidencePrecision' | 'ReReadingReflection';
+    relevanceScore: number;
+}
+
 export interface AgentService {
     /**
      * General purpose chat with an AI agent.
@@ -35,6 +44,11 @@ export interface AgentService {
      * Get book recommendations based on a query.
      */
     recommendBooks(query: string): Promise<BookRecommendation[]>;
+
+    /**
+     * Structured Librarian recommendations (Tier-1 contract).
+     */
+    librarianRecommend(query: string, intent?: string): Promise<LibrarianBookCard[]>;
 
     /**
      * Identify a book from a base64 image string.

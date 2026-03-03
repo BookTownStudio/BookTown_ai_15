@@ -20,7 +20,8 @@ export type IntelligenceSignalFamily =
   | "behavior"
   | "engagement"
   | "indices"
-  | "history";
+  | "history"
+  | "agent";
 
 export type IntelligenceSignalEnvelope = {
   uid: string;

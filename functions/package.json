@@ -11,6 +11,7 @@
     "build": "npm run contract:sync && tsc",
     "review:release-gate": "node scripts/reviewStackReleaseGate.cjs",
     "backfill:user-reviews-projection": "node scripts/backfillUserReviewsProjection.cjs",
+    "seed:intelligence-personas": "node scripts/seedIntelligencePersonas.cjs",
     "populate:account": "node scripts/populateAccount.cjs",
     "backfill:reading-progress:dry": "node scripts/backfillReadingProgressCanonical.cjs --dry-run=true",
     "backfill:reading-progress:write": "node scripts/backfillReadingProgressCanonical.cjs --dry-run=false",
