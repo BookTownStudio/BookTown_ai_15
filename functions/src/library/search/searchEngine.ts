@@ -82,6 +82,7 @@ const DEFAULT_RETURN_COUNT = 15;
 const MAX_RETURN_COUNT = 30;
 const EXTERNAL_FALLBACK_TRIGGER = 5;
 const CONFIDENCE_THRESHOLD = 0.72;
+const EXTERNAL_PROVIDER_TIMEOUT_MS = 3000;
 const EXCLUDED_TYPE_PATTERN =
   /\b(academic journal|research paper|conference proceedings?|technical manual|whitepaper|government report|report|reports|thesis|magazine issue|in re|\bvs\b|hearing|hearings)\b/i;
 
@@ -351,6 +352,41 @@ function isLikelyBook(title: string, typeHint: string): boolean {
   if (EXCLUDED_TYPE_PATTERN.test(typeNorm)) return false;
 
   return true;
+}
+
+function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const withName = error as { name?: unknown };
+  return withName.name === "AbortError";
+}
+
+async function fetchJsonWithTimeout(params: {
+  url: string;
+  provider: "googleBooks" | "openLibrary";
+}): Promise<Record<string, unknown> | null> {
+  const controller = new AbortController();
+  const timeoutHandle = setTimeout(() => controller.abort(), EXTERNAL_PROVIDER_TIMEOUT_MS);
+  try {
+    const response = await fetch(params.url, { signal: controller.signal });
+    if (!response.ok) return null;
+    const payload = (await response.json()) as Record<string, unknown>;
+    return payload;
+  } catch (error) {
+    if (isAbortError(error)) {
+      logger.warn("[AI][LIBRARIAN][PROVIDER_TIMEOUT]", {
+        provider: params.provider,
+        timeoutMs: EXTERNAL_PROVIDER_TIMEOUT_MS,
+      });
+      return null;
+    }
+    logger.warn("BOOK_SEARCH_V2_PROVIDER_FAILED", {
+      provider: params.provider,
+      error: String(error),
+    });
+    return null;
+  } finally {
+    clearTimeout(timeoutHandle);
+  }
 }
 
 function computeRank(
@@ -664,12 +700,11 @@ async function fetchGoogleExternal(
     baseUrl.searchParams.set("key", apiKey);
   }
 
-  const response = await fetch(baseUrl.toString());
-  if (!response.ok) return [];
-
-  const payload = (await response.json()) as {
-    items?: Array<Record<string, unknown>>;
-  };
+  const payload = (await fetchJsonWithTimeout({
+    url: baseUrl.toString(),
+    provider: "googleBooks",
+  })) as { items?: Array<Record<string, unknown>> } | null;
+  if (!payload) return [];
 
   const items = Array.isArray(payload.items) ? payload.items : [];
   const mapped: RankedResult[] = [];
@@ -789,12 +824,11 @@ async function fetchOpenLibraryExternal(
   baseUrl.searchParams.set("q", query);
   baseUrl.searchParams.set("limit", "20");
 
-  const response = await fetch(baseUrl.toString());
-  if (!response.ok) return [];
-
-  const payload = (await response.json()) as {
-    docs?: Array<Record<string, unknown>>;
-  };
+  const payload = (await fetchJsonWithTimeout({
+    url: baseUrl.toString(),
+    provider: "openLibrary",
+  })) as { docs?: Array<Record<string, unknown>> } | null;
+  if (!payload) return [];
 
   const docs = Array.isArray(payload.docs) ? payload.docs : [];
   const mapped: RankedResult[] = [];
@@ -1138,8 +1172,8 @@ export async function unifiedSearch(
   if (externalFallbackEnabled && rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER) {
     phaseOrder.push("external_fallback");
     const [google, openLibrary] = await Promise.all([
-      fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent).catch(() => []),
-      fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent).catch(() => []),
+      fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent),
+      fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent),
     ]);
 
     externalCandidates = filterAndDedupExternal(

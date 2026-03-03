@@ -833,6 +833,8 @@ export const api = onRequest(
   {
     region: "us-central1",
     memory: "256MiB",
+    maxInstances: 20,
+    concurrency: 20,
     timeoutSeconds: 60,
   },
   app

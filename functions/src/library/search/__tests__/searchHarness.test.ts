@@ -345,4 +345,33 @@ describe("Search Harness — Canonical Local Engine", () => {
       )
     ).toBe(false);
   });
+
+  it("provider timeout does not hang request", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.useFakeTimers();
+    try {
+      const hangingFetch = vi.fn((_: string | URL, init?: { signal?: AbortSignal }) => {
+        return new Promise((_, reject) => {
+          const signal = init?.signal;
+          if (signal) {
+            signal.addEventListener("abort", () => {
+              const err = new Error("aborted");
+              (err as Error & { name: string }).name = "AbortError";
+              reject(err);
+            });
+          }
+        });
+      });
+      vi.stubGlobal("fetch", hangingFetch as any);
+
+      const pending = unifiedSearch("rare fallback term", {});
+      await vi.advanceTimersByTimeAsync(3100);
+      const response = await pending;
+
+      expect(response.externalCount).toBe(0);
+      expect(hangingFetch).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });
