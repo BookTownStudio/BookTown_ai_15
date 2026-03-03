@@ -752,7 +752,7 @@ apiRouter.post("/ai/librarian", async (req: any, res: any) => {
       normalizedQuery: result.normalizedQuery,
     });
 
-    return res.status(200).json(result.recommendations);
+    return res.status(200).json(result);
   } catch (error) {
     const message = String(error);
     if (message.includes("QUOTA_EXCEEDED")) {

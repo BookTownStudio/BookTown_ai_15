@@ -18,6 +18,7 @@
 import { dataService } from '../../services/dataService.ts';
 import { bookIngestionService } from '../../services/bookIngestionService.ts';
 import { Book, Shelf } from '../../types/entities.ts';
+import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 
 /**
  * Guards
@@ -55,8 +56,9 @@ export async function addBookToShelf(params: {
   uid: string;
   shelfId: string;
   book: Book;
+  recommendationContext?: LibrarianRecommendationContext;
 }): Promise<void> {
-  const { uid, shelfId, book } = params;
+  const { uid, shelfId, book, recommendationContext } = params;
   requireAuth(uid);
 
   await ensureBookMaterialized(book);
@@ -65,7 +67,8 @@ export async function addBookToShelf(params: {
     uid,
     shelfId,
     book.id,
-    book
+    book,
+    recommendationContext
   );
 }
 

@@ -7,6 +7,7 @@ import { ShelfEntry, Book, Shelf } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useUserShelves } from './useUserShelves.ts';
+import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 
 import {
   addBookToShelf,
@@ -40,11 +41,13 @@ export const useToggleBookOnShelf = () => {
     mutationFn: async ({
       shelfId,
       bookId,
-      book
+      book,
+      recommendationContext
     }: {
       shelfId: string;
       bookId: string;
       book?: Book;
+      recommendationContext?: LibrarianRecommendationContext;
     }) => {
       if (!uid) throw new Error('User not authenticated');
       if (!book) throw new Error('BOOK_REQUIRED');
@@ -53,13 +56,15 @@ export const useToggleBookOnShelf = () => {
       await addBookToShelf({
         uid,
         shelfId,
-        book
+        book,
+        recommendationContext
       });
 
       return {
         shelfId,
         bookId,
-        book
+        book,
+        recommendationContext
       };
     },
 

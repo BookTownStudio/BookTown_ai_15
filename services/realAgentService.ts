@@ -1,5 +1,5 @@
 
-import { AgentService, AgentMessage, BookRecommendation, LibrarianBookCard, ShelfVibe } from './agents.types';
+import { AgentService, AgentMessage, BookRecommendation, LibrarianBookCard, LibrarianResponseEnvelope, ShelfVibe } from './agents.types';
 import { getFirebaseAppCheckToken, getFirebaseAuth, isFirebaseInitialized } from '../lib/firebase.ts';
 
 export class RealAgentService implements AgentService {
@@ -127,7 +127,7 @@ export class RealAgentService implements AgentService {
         return response.text;
     }
 
-    async librarianRecommend(query: string, intent?: string): Promise<LibrarianBookCard[]> {
+    async librarianRecommend(query: string, intent?: string): Promise<LibrarianResponseEnvelope> {
         const normalizedQuery = this.normalizeQuery(query);
         if (!normalizedQuery) {
             throw new Error('INVALID_REQUEST');
@@ -138,25 +138,78 @@ export class RealAgentService implements AgentService {
             intent: intent && intent.trim().length > 0 ? intent.trim() : this.inferLibrarianIntent(normalizedQuery)
         }, { requireAppCheck: true });
 
-        if (!Array.isArray(response)) return [];
-        return response
-            .filter((row): row is LibrarianBookCard => {
-                return Boolean(
-                    row &&
-                    typeof row === 'object' &&
-                    typeof (row as any).bookId === 'string' &&
-                    typeof (row as any).title === 'string' &&
-                    typeof (row as any).author === 'string' &&
-                    typeof (row as any).short_reason === 'string' &&
-                    typeof (row as any).mode === 'string' &&
-                    typeof (row as any).relevanceScore === 'number'
-                );
-            })
-            .slice(0, 3);
+        const normalizeCards = (rows: unknown): LibrarianBookCard[] => {
+            if (!Array.isArray(rows)) return [];
+            return rows
+                .filter((row): row is LibrarianBookCard => {
+                    return Boolean(
+                        row &&
+                        typeof row === 'object' &&
+                        typeof (row as any).bookId === 'string' &&
+                        typeof (row as any).title === 'string' &&
+                        typeof (row as any).author === 'string' &&
+                        typeof (row as any).short_reason === 'string'
+                    );
+                })
+                .slice(0, 3)
+                .map((row) => {
+                    const suggestionSessionId =
+                        typeof (row as any).suggestionSessionId === 'string' &&
+                        (row as any).suggestionSessionId.trim().length > 0
+                            ? (row as any).suggestionSessionId.trim()
+                            : undefined;
+                    const suggestionId =
+                        typeof (row as any).suggestionId === 'string' &&
+                        (row as any).suggestionId.trim().length > 0
+                            ? (row as any).suggestionId.trim()
+                            : undefined;
+                    const rankPositionRaw = Number((row as any).rankPosition);
+                    const rankPosition =
+                        Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+                            ? Math.trunc(rankPositionRaw)
+                            : undefined;
+                    const source = (row as any).source === 'librarian' ? 'librarian' : undefined;
+                    const mode =
+                        typeof (row as any).mode === 'string' && (row as any).mode.trim().length > 0
+                            ? (row as any).mode.trim()
+                            : undefined;
+
+                    return {
+                        bookId: row.bookId,
+                        title: row.title,
+                        author: row.author,
+                        short_reason: row.short_reason,
+                        ...(source ? { source } : {}),
+                        ...(suggestionSessionId ? { suggestionSessionId } : {}),
+                        ...(suggestionId ? { suggestionId } : {}),
+                        ...(typeof rankPosition === 'number' ? { rankPosition } : {}),
+                        ...(mode ? { mode: mode as LibrarianBookCard['mode'] } : {}),
+                    };
+                });
+        };
+
+        if (response && typeof response === 'object' && Array.isArray((response as any).recommendations)) {
+            const envelope = response as Partial<LibrarianResponseEnvelope>;
+            return {
+                recommendations: normalizeCards(envelope.recommendations),
+                fromCache: Boolean(envelope.fromCache),
+                remainingQuota: typeof envelope.remainingQuota === 'number' ? envelope.remainingQuota : 0,
+                normalizedQuery: typeof envelope.normalizedQuery === 'string' ? envelope.normalizedQuery : normalizedQuery
+            };
+        }
+
+        // Backward compatibility with legacy array response.
+        return {
+            recommendations: normalizeCards(response),
+            fromCache: false,
+            remainingQuota: 0,
+            normalizedQuery
+        };
     }
 
     async recommendBooks(query: string): Promise<BookRecommendation[]> {
-        const cards = await this.librarianRecommend(query, 'HighConfidencePrecision');
+        const envelope = await this.librarianRecommend(query, 'HighConfidencePrecision');
+        const cards = envelope.recommendations;
         return cards.map((card) => ({
             titleEn: card.title,
             titleAr: '',
@@ -165,7 +218,7 @@ export class RealAgentService implements AgentService {
             descriptionEn: card.short_reason,
             descriptionAr: '',
             genresEn: [],
-            rating: Number(card.relevanceScore.toFixed(2)),
+            rating: 0,
         }));
     }
 

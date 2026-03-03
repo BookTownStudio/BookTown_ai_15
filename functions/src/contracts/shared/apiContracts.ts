@@ -33,6 +33,22 @@ const postVisibilitySchema = z.enum([
 
 const reviewVisibilitySchema = z.enum(["public", "private"]);
 const reviewDomainSchema = z.literal("book");
+const recommendationOriginSchema = z
+  .object({
+    source: z.literal("librarian"),
+    suggestionSessionId: z.string().min(1).max(96),
+    suggestionId: z.string().min(1).max(96),
+    rankPosition: z.number().int().min(1).max(3),
+    mode: z
+      .enum([
+        "Reinforcement",
+        "AdjacentExpansion",
+        "StructuredContrast",
+        "HighConfidencePrecision",
+        "ReReadingReflection",
+      ]),
+  })
+  .strict();
 
 const renderSurfaceSchema = z.enum([
   "home",
@@ -531,6 +547,51 @@ export const apiContracts = {
       }
     ),
 
+    addBookToShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+          bookId: z.string().min(1),
+          snapshot: z
+            .object({
+              titleEn: z.string().nullable().optional(),
+              titleAr: z.string().nullable().optional(),
+              coverUrl: z.string().nullable().optional(),
+            })
+            .strict()
+            .optional(),
+          recommendationContext: recommendationOriginSchema.optional(),
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    removeBookFromShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
     createDirectConversation: defineContract(
       z
         .object({
@@ -852,6 +913,7 @@ export const apiContracts = {
           rating: z.number().int().min(1).max(5),
           text: z.string().min(1).max(2000),
           visibility: reviewVisibilitySchema.optional(),
+          recommendationContext: recommendationOriginSchema.optional(),
         })
         .strict(),
       z
@@ -1901,6 +1963,8 @@ export const apiContracts = {
           totalPages: z.number().int().positive(),
           percentage: z.number().min(0).max(1),
           lastPosition: z.unknown().optional(),
+          status_state: z.enum(["reading", "paused", "completed"]).optional(),
+          recommendationContext: recommendationOriginSchema.optional(),
         })
         .strict(),
       z
@@ -2127,24 +2191,38 @@ export const apiContracts = {
             .optional(),
         })
         .strict(),
-      z.array(
-        z
-          .object({
-            bookId: z.string(),
-            title: z.string().min(1),
-            author: z.string().min(1),
-            short_reason: z.string().min(1).max(360),
-            mode: z.enum([
-              "Reinforcement",
-              "AdjacentExpansion",
-              "StructuredContrast",
-              "HighConfidencePrecision",
-              "ReReadingReflection",
-            ]),
-            relevanceScore: z.number().min(0).max(1),
-          })
-          .strict()
-      ),
+      z
+        .object({
+          recommendations: z
+            .array(
+              z
+                .object({
+                  bookId: z.string(),
+                  title: z.string().min(1),
+                  author: z.string().min(1),
+                  short_reason: z.string().min(1).max(240),
+                  source: z.literal("librarian").optional(),
+                  suggestionSessionId: z.string().min(1).max(96).optional(),
+                  suggestionId: z.string().min(1).max(96).optional(),
+                  rankPosition: z.number().int().min(1).max(3).optional(),
+                  mode: z
+                    .enum([
+                      "Reinforcement",
+                      "AdjacentExpansion",
+                      "StructuredContrast",
+                      "HighConfidencePrecision",
+                      "ReReadingReflection",
+                    ])
+                    .optional(),
+                })
+                .strict()
+            )
+            .max(3),
+          fromCache: z.boolean(),
+          remainingQuota: z.number(),
+          normalizedQuery: z.string().min(1).max(280),
+        })
+        .strict(),
       "rest",
       {
         method: "POST",

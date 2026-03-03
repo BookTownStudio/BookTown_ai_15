@@ -1,4 +1,6 @@
 
+import type { LibrarianMode } from '../types/librarian.ts';
+
 export interface AgentMessage {
     role: 'user' | 'model';
     content: string;
@@ -25,8 +27,18 @@ export interface LibrarianBookCard {
     title: string;
     author: string;
     short_reason: string;
-    mode: 'Reinforcement' | 'AdjacentExpansion' | 'StructuredContrast' | 'HighConfidencePrecision' | 'ReReadingReflection';
-    relevanceScore: number;
+    source?: 'librarian';
+    suggestionSessionId?: string;
+    suggestionId?: string;
+    rankPosition?: number;
+    mode?: LibrarianMode;
+}
+
+export interface LibrarianResponseEnvelope {
+    recommendations: LibrarianBookCard[];
+    fromCache: boolean;
+    remainingQuota: number;
+    normalizedQuery: string;
 }
 
 export interface AgentService {
@@ -48,7 +60,7 @@ export interface AgentService {
     /**
      * Structured Librarian recommendations (Tier-1 contract).
      */
-    librarianRecommend(query: string, intent?: string): Promise<LibrarianBookCard[]>;
+    librarianRecommend(query: string, intent?: string): Promise<LibrarianResponseEnvelope>;
 
     /**
      * Identify a book from a base64 image string.

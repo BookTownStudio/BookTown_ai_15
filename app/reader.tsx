@@ -20,12 +20,45 @@ import { resolveReaderEngine } from '../lib/reader/runtime/engineSelection.ts';
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
 import type { ReaderFormat } from '../lib/reader/runtime/contracts.ts';
+import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 
 function inferFormatFromUrl(url: string): ReaderFormat {
   const lower = url.toLowerCase();
   if (lower.includes('.pdf')) return 'pdf';
   if (lower.includes('.epub') || lower.includes('.kepub')) return 'epub';
   return 'unknown';
+}
+
+function parseRecommendationContext(
+  value: unknown
+): LibrarianRecommendationContext | undefined {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  if (!raw) return undefined;
+
+  const suggestionSessionId =
+    typeof raw.suggestionSessionId === 'string' && raw.suggestionSessionId.trim().length > 0
+      ? raw.suggestionSessionId.trim()
+      : '';
+  const suggestionId =
+    typeof raw.suggestionId === 'string' && raw.suggestionId.trim().length > 0
+      ? raw.suggestionId.trim()
+      : '';
+  const rankPositionRaw = Number(raw.rankPosition);
+  const rankPosition =
+    Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+      ? Math.trunc(rankPositionRaw)
+      : 0;
+  const modeRaw = typeof raw.mode === 'string' ? raw.mode.trim() : '';
+  if (!suggestionSessionId || !suggestionId || !rankPosition || !modeRaw) {
+    return undefined;
+  }
+  return {
+    source: 'librarian',
+    suggestionSessionId,
+    suggestionId,
+    rankPosition,
+    mode: modeRaw as LibrarianRecommendationContext['mode'],
+  };
 }
 
 const ReaderScreen: React.FC = () => {
@@ -38,6 +71,7 @@ const ReaderScreen: React.FC = () => {
     currentView.type === 'immersive' && currentView.params?.bookId
       ? currentView.params.bookId
       : undefined;
+  const recommendationContext = parseRecommendationContext(currentView.params?.recommendationContext);
 
   const { data: book, isLoading: isBookLoading } = useBookCatalog(bookId);
 
@@ -167,6 +201,7 @@ const ReaderScreen: React.FC = () => {
             format: payload.format,
             mode: payload.readingMode,
           },
+          ...(recommendationContext ? { recommendationContext } : {}),
         });
 
         const envelope = res.data as any;
@@ -186,6 +221,7 @@ const ReaderScreen: React.FC = () => {
           currentPage: payload.currentPage,
           totalPages: payload.totalPages,
           percentage: payload.percentage,
+          ...(recommendationContext ? { recommendationContext } : {}),
           lastPosition: {
             page: payload.currentPage,
             totalPages: payload.totalPages,
@@ -195,7 +231,7 @@ const ReaderScreen: React.FC = () => {
         });
       }
     },
-    []
+    [recommendationContext]
   );
 
   useEffect(() => {

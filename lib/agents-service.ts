@@ -49,17 +49,22 @@ export const callAgent = async (agentId: string, contextMessages: { role: string
                     .find((msg) => msg.role === 'user' && typeof msg.text === 'string' && msg.text.trim().length > 0)
                     ?.text || '';
 
-            const cards = await agentService.librarianRecommend(latestUserMessage);
+            const envelope = await agentService.librarianRecommend(latestUserMessage);
             const formatted = {
-                reason: cards[0]?.short_reason || "I found the closest profile-aligned recommendation from your current reading pattern.",
-                recommendations: cards.map((card) => ({
+                recommendations: envelope.recommendations.map((card) => ({
                     bookId: card.bookId,
                     title: card.title,
                     author: card.author,
                     short_reason: card.short_reason,
+                    source: card.source,
+                    suggestionSessionId: card.suggestionSessionId,
+                    suggestionId: card.suggestionId,
+                    rankPosition: card.rankPosition,
                     mode: card.mode,
-                    relevanceScore: card.relevanceScore,
                 })),
+                fromCache: envelope.fromCache,
+                remainingQuota: envelope.remainingQuota,
+                normalizedQuery: envelope.normalizedQuery,
             };
 
             return {

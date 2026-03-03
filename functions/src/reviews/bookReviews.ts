@@ -1,6 +1,10 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
+import {
+  resolveAuthoritativeRecommendationOrigin,
+  sanitizeRecommendationOrigin,
+} from "../attribution/recommendationOrigin";
 
 const db = admin.firestore();
 
@@ -260,6 +264,9 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
   const rating = sanitizeRating(request.data?.rating);
   const text = sanitizeText(request.data?.text);
   const visibility = sanitizeVisibility(request.data?.visibility);
+  const recommendationOriginInput = sanitizeRecommendationOrigin(
+    request.data?.recommendationContext
+  );
   const nowIso = new Date().toISOString();
 
   const { authorName, authorHandle, authorAvatar } = await resolveAuthorIdentity(uid);
@@ -269,6 +276,20 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
 
   const created = await db.runTransaction(async (tx) => {
     const existingSnap = await tx.get(reviewRef);
+    const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
+    const existingRecommendationOrigin = sanitizeRecommendationOrigin(
+      existingData.recommendationOrigin
+    );
+    const recommendationOrigin =
+      existingRecommendationOrigin ||
+      (recommendationOriginInput
+        ? await resolveAuthoritativeRecommendationOrigin({
+          uid,
+          bookId,
+          input: recommendationOriginInput,
+          tx,
+        })
+        : null);
     const createdAt = existingSnap.exists
       ? existingSnap.data()?.createdAt ?? existingSnap.data()?.createdAtIso ?? nowIso
       : nowIso;
@@ -295,6 +316,7 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
         updatedAt: nowIso,
         createdAtIso: toIso(createdAt),
         createdAt,
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
       },
       { merge: true }
     );
@@ -322,6 +344,7 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
         createdAtIso: toIso(createdAt),
         createdAt,
         sourcePath: reviewRef.path,
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
       },
       { merge: true }
     );

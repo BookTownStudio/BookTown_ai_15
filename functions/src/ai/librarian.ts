@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   FieldValue,
   Timestamp,
@@ -20,7 +20,7 @@ const db = admin.firestore();
 
 export const LIBRARIAN_LIMITS = {
   MAX_BOOKS: 3,
-  DEFAULT_BOOKS: 1,
+  DEFAULT_BOOKS: 2,
   TOKEN_LIMIT_INPUT: 2200,
   TOKEN_LIMIT_OUTPUT: 500,
   DAILY_QUOTA: 30,
@@ -45,13 +45,41 @@ export type LibrarianBookCard = {
   title: string;
   author: string;
   short_reason: string;
-  mode: LibrarianMode;
-  relevanceScore: number;
+  source?: "librarian";
+  suggestionSessionId?: string;
+  suggestionId?: string;
+  rankPosition?: number;
+  mode?: LibrarianMode;
 };
 
 type LibrarianRequest = {
   normalizedQuery: string;
   intent: string;
+};
+
+type RankedLibrarianBookCard = LibrarianBookCard & {
+  mode: LibrarianMode;
+  relevanceScore: number;
+};
+
+type SuggestionAttributedCard = LibrarianBookCard & {
+  source: "librarian";
+  suggestionSessionId: string;
+  suggestionId: string;
+  rankPosition: number;
+  mode: LibrarianMode;
+};
+
+type LibrarianScopeIntent =
+  | "BOOK_RECOMMENDATION"
+  | "AUTHOR_ORDER"
+  | "BOOK_KNOWLEDGE"
+  | "OUT_OF_SCOPE";
+
+type IntentClassification = {
+  intent: LibrarianScopeIntent;
+  topic: string;
+  authorName: string;
 };
 
 type ProposedBook = {
@@ -160,6 +188,195 @@ function round(value: number, digits = 4): number {
 
 function approximateTokens(value: string): number {
   return Math.ceil(value.length / 4);
+}
+
+const BOOK_CONTEXT_TERMS = new Set([
+  "book",
+  "books",
+  "read",
+  "reading",
+  "novel",
+  "novels",
+  "author",
+  "authors",
+  "fiction",
+  "nonfiction",
+  "biography",
+  "memoir",
+  "poetry",
+  "literature",
+  "recommend",
+  "recommendation",
+  "bibliography",
+]);
+
+const NON_BOOK_TERMS = new Set([
+  "weather",
+  "forecast",
+  "stock",
+  "stocks",
+  "nasdaq",
+  "dow",
+  "bitcoin",
+  "crypto",
+  "election",
+  "politics",
+  "president",
+  "football",
+  "soccer",
+  "basketball",
+  "nba",
+  "recipe",
+  "recipes",
+  "flight",
+  "flights",
+  "hotel",
+  "hotels",
+  "tax",
+  "visa",
+  "programming",
+  "javascript",
+  "react",
+  "typescript",
+]);
+
+function hasTermFromSet(query: string, terms: Set<string>): boolean {
+  if (!query) return false;
+  for (const token of tokenize(query)) {
+    if (terms.has(token)) return true;
+  }
+  return false;
+}
+
+function extractAuthorFromOrderQuery(query: string): string {
+  const patterns = [
+    /(?:in what|in which|what)\s+order\s+(?:should i|do i|to)?\s*read\s+(.+)/i,
+    /read\s+(.+)\s+in order/i,
+    /(?:where|how)\s+(?:should i|do i)\s+start\s+with\s+(.+)/i,
+    /(?:best order to read)\s+(.+)/i,
+  ];
+  for (const pattern of patterns) {
+    const match = query.match(pattern);
+    const candidate = match?.[1] ? normalizeText(match[1]) : "";
+    if (candidate) return candidate;
+  }
+  return "";
+}
+
+const TOPIC_EXCLUDE_TERMS = new Set([
+  "what",
+  "whats",
+  "is",
+  "the",
+  "a",
+  "an",
+  "are",
+  "do",
+  "does",
+  "can",
+  "you",
+  "please",
+  "tell",
+  "me",
+  "show",
+  "latest",
+  "news",
+  "today",
+  "tonight",
+  "now",
+  "currently",
+  "right",
+  "this",
+  "week",
+  "month",
+  "year",
+  "in",
+  "on",
+  "at",
+  "for",
+  "about",
+  "of",
+  "to",
+  "from",
+  "how",
+  "why",
+  "should",
+  "would",
+  "could",
+  "my",
+  "your",
+  "with",
+  "without",
+  "books",
+  "book",
+  "read",
+  "reading",
+  "recommend",
+  "recommendation",
+  "recommendations",
+]);
+
+function extractTopicFromQuery(normalizedQuery: string): string {
+  const query = normalizeText(normalizedQuery);
+  if (!query) return "";
+
+  const matchedSubjectPattern =
+    query.match(/\b(?:books|book)\s+(?:about|on)\s+(.+)$/i)?.[1] ||
+    query.match(
+      /\b(?:what is|what s|tell me about|show me|explain|learn about|help me understand)\s+(.+)$/i
+    )?.[1] ||
+    query.match(/\b(?:latest|news)\s+(?:on|about)\s+(.+)$/i)?.[1] ||
+    "";
+
+  const candidateBase = matchedSubjectPattern || query;
+  const withoutTemporal = candidateBase
+    .replace(/\b(today|tonight|now|currently|right now|this week|this month|this year)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+
+  const tokens = tokenize(withoutTemporal);
+  const contentTokens = tokens.filter((token) => !TOPIC_EXCLUDE_TERMS.has(token));
+  const phrase = contentTokens.slice(0, 4).join(" ").trim();
+  return phrase || withoutTemporal || query;
+}
+
+function classifyLibrarianIntent(normalizedQuery: string): IntentClassification {
+  const query = normalizeText(normalizedQuery);
+  const authorName = extractAuthorFromOrderQuery(query);
+  if (authorName) {
+    return {
+      intent: "AUTHOR_ORDER",
+      topic: "",
+      authorName,
+    };
+  }
+
+  const hasBookContext = hasTermFromSet(query, BOOK_CONTEXT_TERMS);
+  const hasNonBookContext = hasTermFromSet(query, NON_BOOK_TERMS);
+  if (hasNonBookContext && !hasBookContext) {
+    return {
+      intent: "OUT_OF_SCOPE",
+      topic: extractTopicFromQuery(query),
+      authorName: "",
+    };
+  }
+
+  if (
+    /\b(books|book)\s+(about|on)\b/.test(query) ||
+    /\b(introduction to|history of|guide to|learn)\b/.test(query)
+  ) {
+    return {
+      intent: "BOOK_KNOWLEDGE",
+      topic: extractTopicFromQuery(query),
+      authorName: "",
+    };
+  }
+
+  return {
+    intent: "BOOK_RECOMMENDATION",
+    topic: extractTopicFromQuery(query),
+    authorName: "",
+  };
 }
 
 function truncatePromptToTokenLimit(prompt: string): string {
@@ -801,6 +1018,302 @@ function dedupeVerifiedBooks(rows: VerifiedBook[]): VerifiedBook[] {
   return out;
 }
 
+function toPublicCard(row: RankedLibrarianBookCard): LibrarianBookCard {
+  return {
+    bookId: row.bookId,
+    title: row.title,
+    author: row.author,
+    short_reason: row.short_reason,
+  };
+}
+
+function toBoundaryReason(topic: string): string {
+  const safeTopic = topic.trim().slice(0, 60);
+  if (safeTopic) {
+    return `I focus on books, so these are strong starting points on ${safeTopic}.`;
+  }
+  return "I focus on books, so these are strong starting points to begin with.";
+}
+
+function toKnowledgeReason(topic: string): string {
+  const safeTopic = topic.trim().slice(0, 60);
+  if (safeTopic) {
+    return `These are clear starting books for understanding ${safeTopic}.`;
+  }
+  return "These are clear starting books to build a solid foundation.";
+}
+
+function sanitizeShortReason(value: string, fallback: string): string {
+  const normalized = value
+    .replace(/\bverification\b/gi, "")
+    .replace(/\bcandidate\b/gi, "")
+    .replace(/\bprofile lane\b/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  const base = normalized || fallback;
+  const sentences = base
+    .split(/[.!?]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0)
+    .slice(0, 2);
+  if (sentences.length === 0) {
+    return `${fallback.trim().replace(/[.!?]+$/g, "")}.`;
+  }
+  return `${sentences.join(". ")}.`;
+}
+
+function dedupeCards(rows: LibrarianBookCard[]): LibrarianBookCard[] {
+  const out: LibrarianBookCard[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    const key = proposalKey(row.title, row.author) || row.bookId.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(row);
+  }
+  return out;
+}
+
+function buildSuggestionSessionId(): string {
+  return `ls_${randomUUID().replace(/-/g, "")}`;
+}
+
+function attachSuggestionAttribution(params: {
+  recommendations: LibrarianBookCard[];
+  mode: LibrarianMode;
+  suggestionSessionId: string;
+}): SuggestionAttributedCard[] {
+  return params.recommendations.map((row, index) => ({
+    ...row,
+    source: "librarian",
+    suggestionSessionId: params.suggestionSessionId,
+    suggestionId: randomUUID(),
+    rankPosition: index + 1,
+    mode: params.mode,
+  }));
+}
+
+function buildTopicSeedCards(params: {
+  topic: string;
+  maxBooks?: number;
+  reason: "out_of_scope" | "book_knowledge";
+}): LibrarianBookCard[] {
+  const normalizedTopic = normalizeText(params.topic);
+  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 3, LIBRARIAN_LIMITS.MAX_BOOKS));
+  const reasonText =
+    params.reason === "out_of_scope"
+      ? toBoundaryReason(params.topic)
+      : toKnowledgeReason(params.topic);
+  const finance = [
+    { title: "A Random Walk Down Wall Street", author: "Burton G. Malkiel" },
+    { title: "The Intelligent Investor", author: "Benjamin Graham" },
+    { title: "The Little Book of Common Sense Investing", author: "John C. Bogle" },
+  ];
+  const weather = [
+    { title: "The Weather Machine", author: "Andrew Blum" },
+    { title: "The Signal and the Noise", author: "Nate Silver" },
+    { title: "Weather: A Very Short Introduction", author: "Storm Dunlop" },
+  ];
+  const technology = [
+    { title: "Clean Code", author: "Robert C. Martin" },
+    { title: "Designing Data-Intensive Applications", author: "Martin Kleppmann" },
+    { title: "The Pragmatic Programmer", author: "Andrew Hunt and David Thomas" },
+  ];
+  const politics = [
+    { title: "Prisoners of Geography", author: "Tim Marshall" },
+    { title: "The Origins of Political Order", author: "Francis Fukuyama" },
+    { title: "On Tyranny", author: "Timothy Snyder" },
+  ];
+
+  let shelf = politics;
+  if (
+    normalizedTopic.includes("stock") ||
+    normalizedTopic.includes("finance") ||
+    normalizedTopic.includes("market") ||
+    normalizedTopic.includes("nasdaq") ||
+    normalizedTopic.includes("dow") ||
+    normalizedTopic.includes("bitcoin") ||
+    normalizedTopic.includes("crypto")
+  ) {
+    shelf = finance;
+  } else if (
+    normalizedTopic.includes("weather") ||
+    normalizedTopic.includes("forecast") ||
+    normalizedTopic.includes("climate")
+  ) {
+    shelf = weather;
+  } else if (
+    normalizedTopic.includes("programming") ||
+    normalizedTopic.includes("javascript") ||
+    normalizedTopic.includes("react") ||
+    normalizedTopic.includes("typescript")
+  ) {
+    shelf = technology;
+  }
+
+  return shelf.slice(0, maxBooks).map((row, index) => ({
+    bookId: `topic_seed_${normalizeText(row.title).replace(/\s+/g, "_")}_${index + 1}`,
+    title: row.title,
+    author: row.author,
+    short_reason: reasonText,
+  }));
+}
+
+async function resolveTopicBooks(params: {
+  topic: string;
+  budget: UnifiedSearchBudget;
+  reason: string;
+  maxBooks?: number;
+}): Promise<LibrarianBookCard[]> {
+  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 3, LIBRARIAN_LIMITS.MAX_BOOKS));
+  const query = `books about ${params.topic}`.trim();
+  const searchResponse = await unifiedSearchWithBudget({
+    budget: params.budget,
+    query,
+    limit: 12,
+    reason: params.reason,
+  });
+
+  const cards: LibrarianBookCard[] = [];
+  const seen = new Set<string>();
+  for (const row of searchResponse?.results || []) {
+    const bookId = String(row.bookId || "").trim();
+    const title = String(row.title || row.titleEn || "").trim();
+    const author = String(row.authorEn || (Array.isArray(row.authors) ? row.authors[0] : "") || "").trim();
+    if (!bookId || !title || !author) continue;
+    const dedupeKey = `${bookId}|${title}|${author}`;
+    if (seen.has(dedupeKey)) continue;
+    seen.add(dedupeKey);
+    cards.push({
+      bookId,
+      title,
+      author,
+      short_reason: params.reason === "out_of_scope"
+        ? toBoundaryReason(params.topic)
+        : toKnowledgeReason(params.topic),
+    });
+    if (cards.length >= maxBooks) break;
+  }
+  return cards;
+}
+
+async function resolveCatalogFallbackCards(): Promise<LibrarianBookCard[]> {
+  const snap = await db.collection("books").orderBy("normalizedTitle").limit(3).get();
+  const rows = snap.docs
+    .map((docSnap) => normalizeCandidate(docSnap))
+    .filter((row): row is CandidateBook => row !== null)
+    .slice(0, 2)
+    .map((row) => ({
+      bookId: row.id,
+      title: row.title,
+      author: row.author,
+      short_reason: "Start here and I can refine from your next request.",
+    }));
+  return rows;
+}
+
+type AuthorOrderedCandidate = {
+  id: string;
+  title: string;
+  author: string;
+  publicationYear: number;
+};
+
+async function resolveAuthorOrderCards(params: {
+  authorName: string;
+  budget: UnifiedSearchBudget;
+}): Promise<LibrarianBookCard[]> {
+  const authorName = params.authorName;
+  const authorNorm = normalizeText(authorName);
+  if (!authorNorm) return [];
+
+  const [byNormalizedName, byTokens] = await Promise.all([
+    db.collection("books")
+      .where("authorNamesNormalized", "array-contains", authorNorm)
+      .limit(30)
+      .get(),
+    db.collection("books")
+      .where("search.tokens", "array-contains-any", tokenize(authorNorm).slice(0, 10))
+      .limit(30)
+      .get(),
+  ]);
+
+  const merged = new Map<string, QueryDocumentSnapshot<DocumentData>>();
+  for (const docSnap of byNormalizedName.docs) {
+    merged.set(docSnap.id, docSnap);
+  }
+  for (const docSnap of byTokens.docs) {
+    if (!merged.has(docSnap.id)) {
+      merged.set(docSnap.id, docSnap);
+    }
+  }
+
+  const canonical = Array.from(merged.values())
+    .map((docSnap) => {
+      const candidate = normalizeCandidate(docSnap);
+      if (!candidate) return null;
+      const authorScore = authorMatchScore(candidate.author, authorName);
+      if (authorScore < 0.78) return null;
+      const data = docSnap.data() || {};
+      const publicationYear = Number(data.publicationYear || 0);
+      return {
+        id: candidate.id,
+        title: candidate.title,
+        author: candidate.author,
+        publicationYear: Number.isFinite(publicationYear) ? Math.trunc(publicationYear) : 0,
+      } satisfies AuthorOrderedCandidate;
+    })
+    .filter((row): row is AuthorOrderedCandidate => row !== null)
+    .sort((a, b) => {
+      if (a.publicationYear !== b.publicationYear) {
+        if (a.publicationYear === 0) return 1;
+        if (b.publicationYear === 0) return -1;
+        return a.publicationYear - b.publicationYear;
+      }
+      if (a.title !== b.title) return a.title.localeCompare(b.title);
+      return a.id.localeCompare(b.id);
+    });
+
+  const canonicalCards = canonical.map((row, index) => ({
+    bookId: row.id,
+    title: row.title,
+    author: row.author,
+    short_reason:
+      index === 0
+        ? "Start here for a clean entry point into this author’s work."
+        : "Follow this next to continue in a clear reading order.",
+  }));
+
+  if (canonicalCards.length >= LIBRARIAN_LIMITS.DEFAULT_BOOKS) {
+    return dedupeCards(canonicalCards).slice(0, LIBRARIAN_LIMITS.MAX_BOOKS);
+  }
+
+  const query = `books by ${authorName} in order`;
+  const searchResponse = await unifiedSearchWithBudget({
+    budget: params.budget,
+    query,
+    limit: 12,
+    reason: "author_order_external",
+  });
+  const externalCards = (searchResponse?.results || [])
+    .map((row) => {
+      const bookId = String(row.bookId || "").trim();
+      const title = String(row.title || row.titleEn || "").trim();
+      const author = String(row.authorEn || (Array.isArray(row.authors) ? row.authors[0] : "") || "").trim();
+      if (!bookId || !title || !author) return null;
+      return {
+        bookId,
+        title,
+        author,
+        short_reason: "A strong starting point while I build a fuller reading order.",
+      } satisfies LibrarianBookCard;
+    })
+    .filter((row): row is LibrarianBookCard => row !== null)
+    .sort((a, b) => a.title.localeCompare(b.title));
+
+  return dedupeCards([...canonicalCards, ...externalCards]).slice(0, LIBRARIAN_LIMITS.MAX_BOOKS);
+}
+
 async function fetchGenreCandidates(genres: string[], perGenreLimit: number): Promise<CandidateBook[]> {
   const tasks = genres
     .filter((genre) => genre.trim().length > 0)
@@ -906,8 +1419,8 @@ function buildShortReason(params: {
     sentenceOne = "This is a strong precision match for what you asked.";
   } else if (mode === "Reinforcement") {
     sentenceOne = dominantGenre
-      ? `This deepens your ${dominantGenre} reading lane with high profile alignment.`
-      : "This reinforces your current reading lane with high profile alignment.";
+      ? `This deepens your ${dominantGenre} reading direction with strong alignment.`
+      : "This reinforces your current reading direction with strong alignment.";
   } else if (mode === "AdjacentExpansion") {
     sentenceOne = "This sits near your usual genres while extending your boundary safely.";
   } else if (mode === "StructuredContrast") {
@@ -919,10 +1432,10 @@ function buildShortReason(params: {
 
   const sentenceTwo =
     lowRated
-      ? "Its rating is lower than average, but thematic alignment is unusually strong for your profile."
+      ? "Its rating is lower than average, but the thematic fit is unusually strong."
       : thematicOverlap >= LIBRARIAN_LIMITS.HIGH_THEMATIC_OVERLAP
-      ? "The thematic overlap with your profile is high."
-      : "The match is the closest high-confidence fit from your current profile snapshot.";
+      ? "The thematic overlap is high."
+      : "This is the closest high-confidence fit for your current request.";
 
   const merged = `${sentenceOne}${queryMention} ${sentenceTwo}`
     .replace(/\s+/g, " ")
@@ -1077,8 +1590,6 @@ async function getCachedRecommendations(params: {
         title: typeof record.title === "string" ? record.title : "",
         author: typeof record.author === "string" ? record.author : "",
         short_reason: typeof record.short_reason === "string" ? record.short_reason : "",
-        mode: typeof record.mode === "string" ? (record.mode as LibrarianMode) : "Reinforcement",
-        relevanceScore: Number(record.relevanceScore || 0),
       };
     })
     .filter(
@@ -1088,8 +1599,7 @@ async function getCachedRecommendations(params: {
         row.author.length > 0 &&
         row.short_reason.length > 0
     )
-    .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS)
-    .map((row) => ({ ...row, relevanceScore: round(clamp(row.relevanceScore)) }));
+    .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS);
 
   return parsed.length > 0 ? parsed : null;
 }
@@ -1125,11 +1635,42 @@ async function storeCachedRecommendations(params: {
   );
 }
 
+async function persistSuggestionSession(params: {
+  uid: string;
+  suggestionSessionId: string;
+  normalizedQuery: string;
+  intent: string;
+  mode: LibrarianMode;
+  books: SuggestionAttributedCard[];
+  fromCache: boolean;
+}): Promise<void> {
+  const ref = db.collection("librarian_suggestions").doc(params.suggestionSessionId);
+  await ref.create({
+    uid: params.uid,
+    normalizedQuery: params.normalizedQuery,
+    intent: params.intent,
+    mode: params.mode,
+    books: params.books.map((row) => ({
+      suggestionId: row.suggestionId,
+      rankPosition: row.rankPosition,
+      mode: row.mode,
+      bookId: row.bookId,
+      title: row.title,
+      author: row.author,
+      short_reason: row.short_reason,
+    })),
+    createdAt: FieldValue.serverTimestamp(),
+    fromCache: params.fromCache,
+  });
+}
+
 async function emitHomeFeedSignal(params: {
   uid: string;
   profileVersion: number;
   normalizedQuery: string;
   recommendationCount: number;
+  suggestionSessionId: string;
+  suggestionIds: string[];
 }): Promise<void> {
   const dedupeKey = createHash("sha256")
     .update(`${params.uid}${params.profileVersion}${params.normalizedQuery}`)
@@ -1143,6 +1684,8 @@ async function emitHomeFeedSignal(params: {
       profileVersion: params.profileVersion,
       normalizedQuery: params.normalizedQuery,
       recommendationCount: params.recommendationCount,
+      suggestionSessionId: params.suggestionSessionId,
+      suggestionIds: params.suggestionIds.slice(0, LIBRARIAN_LIMITS.MAX_BOOKS),
     },
     sourcePath: "api/ai/librarian",
   });
@@ -1176,7 +1719,7 @@ function validateRequest(input: LibrarianRequest): {
   return { ok: true, normalizedQuery };
 }
 
-function deterministicSort(a: LibrarianBookCard, b: LibrarianBookCard): number {
+function deterministicSort(a: RankedLibrarianBookCard, b: RankedLibrarianBookCard): number {
   if (b.relevanceScore !== a.relevanceScore) {
     return b.relevanceScore - a.relevanceScore;
   }
@@ -1186,25 +1729,15 @@ function deterministicSort(a: LibrarianBookCard, b: LibrarianBookCard): number {
 
 function buildFallbackCard(params: {
   context: AgentContextSnapshot;
-  mode: LibrarianMode;
   effectiveDominant?: string;
 }): LibrarianBookCard {
-  const dominant =
-    params.effectiveDominant ||
-    params.context.genres.dominantGenre ||
-    "Literary Fiction";
+  const dominant = params.effectiveDominant || params.context.genres.dominantGenre || "literature";
 
   return {
-    bookId: "",
-    title: "No verified recommendations",
-    author: "BookTown Catalog",
-    mode: params.mode,
-    relevanceScore: round(
-      clamp(params.context.indices.explorationIndex * 0.6 + 0.3)
-    ),
-    short_reason: dominant
-      ? `Verification failed for all candidates. Try one concrete ${dominant} title or author.`
-      : "Verification failed for all candidates. Try one concrete title or author.",
+    bookId: "fallback_librarian_prompt",
+    title: "Start with a concrete title",
+    author: "BookTown Librarian",
+    short_reason: `Share one ${dominant} title you liked and I will refine your next picks.`,
   };
 }
 
@@ -1240,6 +1773,8 @@ export async function runLibrarianRecommendation(params: {
     params.context,
     validation.normalizedQuery
   );
+  const intentClassification = classifyLibrarianIntent(validation.normalizedQuery);
+  const cacheIntent = `${intentClassification.intent}:${params.request.intent.trim()}`;
   const anchorGenres = (anchor?.genres || [])
     .filter((genre) => genre.trim().length > 0)
     .slice(0, 3);
@@ -1253,25 +1788,195 @@ export async function runLibrarianRecommendation(params: {
     limit: LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS,
   };
 
+  const finalizeAndReturn = async (
+    inputRecommendations: LibrarianBookCard[],
+    options: {
+      fromCache: boolean;
+      remainingQuota: number;
+      allowCatalogFallback?: boolean;
+      suggestionMode?: LibrarianMode;
+    }
+  ) => {
+    let recommendations = dedupeCards(inputRecommendations)
+      .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS)
+      .map((row) => {
+        const defaultReason = "A strong next step based on your request.";
+        return {
+          ...row,
+          short_reason: sanitizeShortReason(row.short_reason, defaultReason),
+        };
+      });
+
+    if (recommendations.length === 0 && options?.allowCatalogFallback !== false) {
+      recommendations = await resolveCatalogFallbackCards();
+    }
+    if (recommendations.length === 0) {
+      recommendations = [
+        buildFallbackCard({
+          context: params.context,
+          effectiveDominant: dominantGenre,
+        }),
+      ];
+    }
+
+    const outputTokens = approximateTokens(JSON.stringify(recommendations));
+    if (outputTokens > LIBRARIAN_LIMITS.TOKEN_LIMIT_OUTPUT) {
+      recommendations = recommendations.slice(0, 1);
+    }
+
+    const suggestionSessionId = buildSuggestionSessionId();
+    const attributedRecommendations = attachSuggestionAttribution({
+      recommendations,
+      mode: options.suggestionMode ?? mode,
+      suggestionSessionId,
+    });
+
+    if (!options.fromCache) {
+      await storeCachedRecommendations({
+        uid: normalizedUid,
+        profileVersion: params.context.profileVersion,
+        intent: cacheIntent,
+        normalizedQuery: validation.normalizedQuery,
+        recommendations,
+      });
+
+      await emitHomeFeedSignal({
+        uid: normalizedUid,
+        profileVersion: params.context.profileVersion,
+        normalizedQuery: validation.normalizedQuery,
+        recommendationCount: recommendations.length,
+        suggestionSessionId,
+        suggestionIds: attributedRecommendations.map((row) => row.suggestionId),
+      });
+    }
+
+    try {
+      await persistSuggestionSession({
+        uid: normalizedUid,
+        suggestionSessionId,
+        normalizedQuery: validation.normalizedQuery,
+        intent: params.request.intent.trim(),
+        mode: options.suggestionMode ?? mode,
+        books: attributedRecommendations,
+        fromCache: options.fromCache,
+      });
+    } catch (error) {
+      logger.error("[AI][LIBRARIAN][SUGGESTION_SESSION_WRITE_FAILED]", {
+        uid: normalizedUid,
+        suggestionSessionId,
+        error: String(error),
+      });
+      throw new Error("ENGINE_FAILURE:suggestion_session_write_failed");
+    }
+
+    return {
+      recommendations: attributedRecommendations,
+      fromCache: options.fromCache,
+      remainingQuota: options.remainingQuota,
+      normalizedQuery: validation.normalizedQuery,
+    };
+  };
+
   const cache = await getCachedRecommendations({
     uid: normalizedUid,
     profileVersion: params.context.profileVersion,
-    intent: params.request.intent,
+    intent: cacheIntent,
     normalizedQuery: validation.normalizedQuery,
   });
   if (cache) {
+  if (intentClassification.intent !== "BOOK_RECOMMENDATION") {
+      logger.info("[AI][LIBRARIAN][INTENT_GATE]", {
+        routeIntent: intentClassification.intent,
+        hasTopic: Boolean(intentClassification.topic),
+        hasAuthorName: Boolean(intentClassification.authorName),
+        source: "cache_hit",
+      });
+    }
     const remainingFromCache = await getDailyQuotaRemaining(normalizedUid);
-    return {
-      recommendations: cache,
+    return finalizeAndReturn(cache, {
       fromCache: true,
       remainingQuota: remainingFromCache,
-      normalizedQuery: validation.normalizedQuery,
-    };
+      allowCatalogFallback: intentClassification.intent !== "OUT_OF_SCOPE",
+      suggestionMode: mode,
+    });
   }
 
   const quota = await consumeDailyQuota(normalizedUid);
   if (!quota.ok) {
     throw new Error("QUOTA_EXCEEDED");
+  }
+
+    if (intentClassification.intent !== "BOOK_RECOMMENDATION") {
+    logger.info("[AI][LIBRARIAN][INTENT_GATE]", {
+      routeIntent: intentClassification.intent,
+      hasTopic: Boolean(intentClassification.topic),
+      hasAuthorName: Boolean(intentClassification.authorName),
+    });
+
+    let routed: LibrarianBookCard[] = [];
+    if (intentClassification.intent === "AUTHOR_ORDER") {
+      routed = await resolveAuthorOrderCards({
+        authorName: intentClassification.authorName,
+        budget: unifiedSearchBudget,
+      });
+      if (routed.length < 2) {
+        const topicCards = await resolveTopicBooks({
+          topic: intentClassification.authorName,
+          budget: unifiedSearchBudget,
+          reason: "book_knowledge",
+          maxBooks: 3,
+        });
+        routed.push(...topicCards);
+      }
+    } else if (intentClassification.intent === "BOOK_KNOWLEDGE") {
+      routed = await resolveTopicBooks({
+        topic: intentClassification.topic,
+        budget: unifiedSearchBudget,
+        reason: "book_knowledge",
+        maxBooks: 3,
+      });
+    } else if (intentClassification.intent === "OUT_OF_SCOPE") {
+      routed = await resolveTopicBooks({
+        topic: intentClassification.topic,
+        budget: unifiedSearchBudget,
+        reason: "out_of_scope",
+        maxBooks: 3,
+      });
+      if (routed.length < 2) {
+        routed.push(
+          ...buildTopicSeedCards({
+            topic: intentClassification.topic,
+            reason: "out_of_scope",
+            maxBooks: 3,
+          })
+        );
+      }
+      return finalizeAndReturn(routed, {
+        fromCache: false,
+        remainingQuota: quota.remaining,
+        allowCatalogFallback: false,
+        suggestionMode: mode,
+      });
+    }
+
+    if (routed.length < 2) {
+      const filler = await resolveCatalogFallbackCards();
+      const needed = Math.max(0, 2 - routed.length);
+      routed.push(
+        ...filler.slice(0, needed).map((row) => ({
+          ...row,
+          short_reason:
+            intentClassification.intent === "OUT_OF_SCOPE"
+              ? toBoundaryReason(intentClassification.topic)
+              : toKnowledgeReason(intentClassification.topic || intentClassification.authorName),
+        }))
+      );
+    }
+    return finalizeAndReturn(routed, {
+      fromCache: false,
+      remainingQuota: quota.remaining,
+      suggestionMode: mode,
+    });
   }
 
   const excludedProposalKeys = new Set<string>();
@@ -1353,7 +2058,7 @@ export async function runLibrarianRecommendation(params: {
               thematicOverlap,
               lowRated,
             })
-          : `Verified from ${candidate.source} and aligned with your request. This remains a recommendation-only lightweight record.`;
+          : "A strong thematic fit for your request with a clear reading path.";
       return {
         bookId: candidate.id,
         title: candidate.title,
@@ -1361,7 +2066,7 @@ export async function runLibrarianRecommendation(params: {
         short_reason,
         mode,
         relevanceScore: round(relevance),
-      } satisfies LibrarianBookCard;
+      } satisfies RankedLibrarianBookCard;
     })
     .sort(deterministicSort);
 
@@ -1370,20 +2075,11 @@ export async function runLibrarianRecommendation(params: {
       ? LIBRARIAN_LIMITS.MAX_BOOKS
       : LIBRARIAN_DEFAULT_SELECTION_COUNT;
 
-  const limited = scored.slice(
+  const limitedRanked = scored.slice(
     0,
     Math.max(1, Math.min(requestedCount, LIBRARIAN_LIMITS.MAX_BOOKS))
   );
-  const recommendations =
-    limited.length > 0
-      ? limited
-      : [
-          buildFallbackCard({
-            context: params.context,
-            mode,
-            effectiveDominant: dominantGenre,
-          }),
-        ];
+  const recommendations = limitedRanked.map((row) => toPublicCard(row));
 
   logger.info("[AI][LIBRARIAN][ORCHESTRATOR]", {
     proposalCount: excludedProposalKeys.size,
@@ -1394,30 +2090,9 @@ export async function runLibrarianRecommendation(params: {
     anchorResolved: Boolean(anchor),
   });
 
-  const outputTokens = approximateTokens(JSON.stringify(recommendations));
-  if (outputTokens > LIBRARIAN_LIMITS.TOKEN_LIMIT_OUTPUT) {
-    recommendations.splice(1);
-  }
-
-  await storeCachedRecommendations({
-    uid: normalizedUid,
-    profileVersion: params.context.profileVersion,
-    intent: params.request.intent,
-    normalizedQuery: validation.normalizedQuery,
-    recommendations,
-  });
-
-  await emitHomeFeedSignal({
-    uid: normalizedUid,
-    profileVersion: params.context.profileVersion,
-    normalizedQuery: validation.normalizedQuery,
-    recommendationCount: recommendations.length,
-  });
-
-  return {
-    recommendations,
+  return finalizeAndReturn(recommendations, {
     fromCache: false,
     remainingQuota: quota.remaining,
-    normalizedQuery: validation.normalizedQuery,
-  };
+    suggestionMode: mode,
+  });
 }

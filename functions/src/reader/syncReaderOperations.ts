@@ -6,6 +6,10 @@ import {
   computeReadingProgressMutation,
   ReadingState,
 } from "./readingProgressStateMachine";
+import {
+  resolveAuthoritativeRecommendationOrigin,
+  sanitizeRecommendationOrigin,
+} from "../attribution/recommendationOrigin";
 
 const db = admin.firestore();
 
@@ -138,12 +142,26 @@ async function applyProgressOperationInTx(params: {
       ? payload.lastPosition
       : null;
   const requestedState = resolveProgressState(payload);
+  const recommendationOrigin = sanitizeRecommendationOrigin(payload.recommendationContext);
 
   const progressId = `${uid}_${op.bookId}`;
   const progressRef = db.collection("reading_progress").doc(progressId);
   const eventsRef = db.collection("reader_events");
   const progressSnap = await tx.get(progressRef);
   const previousData = progressSnap.exists ? progressSnap.data() || {} : {};
+  const existingRecommendationOrigin = sanitizeRecommendationOrigin(
+    previousData.recommendationOrigin
+  );
+  const authoritativeRecommendationOrigin =
+    existingRecommendationOrigin ||
+    (recommendationOrigin
+      ? await resolveAuthoritativeRecommendationOrigin({
+        uid,
+        bookId: op.bookId,
+        input: recommendationOrigin,
+        tx,
+      })
+      : null);
 
   const mutation = computeReadingProgressMutation({
     uid,
@@ -160,6 +178,9 @@ async function applyProgressOperationInTx(params: {
     {
       ...mutation.payload,
       updatedAt: FieldValue.serverTimestamp(),
+      ...(authoritativeRecommendationOrigin
+        ? { recommendationOrigin: authoritativeRecommendationOrigin }
+        : {}),
     },
     { merge: true }
   );
@@ -173,6 +194,9 @@ async function applyProgressOperationInTx(params: {
       toState: mutation.nextState,
       progress: percentage,
       occurredAt: now,
+      ...(authoritativeRecommendationOrigin
+        ? { recommendationOrigin: authoritativeRecommendationOrigin }
+        : {}),
     });
   }
 }

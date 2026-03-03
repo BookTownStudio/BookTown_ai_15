@@ -70,6 +70,48 @@ function libraryBookDocId(uid: string, bookId: string) {
   return `${uid}_${bookId}`;
 }
 
+type RecommendationOrigin = {
+  source: "librarian";
+  suggestionSessionId: string;
+  suggestionId: string;
+  rankPosition: number;
+  mode: string;
+};
+
+function sanitizeRecommendationOrigin(value: unknown): RecommendationOrigin | null {
+  const raw =
+    value && typeof value === "object" && !Array.isArray(value)
+      ? (value as Record<string, unknown>)
+      : null;
+  if (!raw) return null;
+  const source = raw.source === "librarian" ? "librarian" : null;
+  const suggestionSessionId =
+    typeof raw.suggestionSessionId === "string"
+      ? raw.suggestionSessionId.trim().slice(0, 96)
+      : "";
+  const suggestionId =
+    typeof raw.suggestionId === "string"
+      ? raw.suggestionId.trim().slice(0, 96)
+      : "";
+  const rankPositionRaw = Number(raw.rankPosition);
+  const rankPosition =
+    Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+      ? Math.trunc(rankPositionRaw)
+      : 0;
+  const mode =
+    typeof raw.mode === "string" ? raw.mode.trim().slice(0, 40) : "";
+  if (!source || !suggestionSessionId || !suggestionId || !rankPosition || !mode) {
+    return null;
+  }
+  return {
+    source,
+    suggestionSessionId,
+    suggestionId,
+    rankPosition,
+    mode,
+  };
+}
+
 /**
  * Internal helper: apply library-book source changes transactionally.
  */
@@ -79,8 +121,9 @@ async function applyLibraryBookDelta(params: {
   addShelfId?: string;
   removeShelfId?: string;
   setHasProgress?: boolean;
+  recommendationOrigin?: RecommendationOrigin | null;
 }) {
-  const { uid, bookId, addShelfId, removeShelfId, setHasProgress } = params;
+  const { uid, bookId, addShelfId, removeShelfId, setHasProgress, recommendationOrigin } = params;
 
   const libRef = db
     .collection("user_library_books")
@@ -95,6 +138,9 @@ async function applyLibraryBookDelta(params: {
       ? before.shelfIds
       : [];
     const beforeHasProgress = Boolean(before?.hasProgress);
+    const beforeRecommendationOrigin = sanitizeRecommendationOrigin(
+      before?.recommendationOrigin
+    );
 
     const nextShelfIds = new Set(beforeShelfIds);
     if (addShelfId) nextShelfIds.add(addShelfId);
@@ -104,6 +150,8 @@ async function applyLibraryBookDelta(params: {
       typeof setHasProgress === "boolean"
         ? setHasProgress
         : beforeHasProgress;
+    const nextRecommendationOrigin =
+      addShelfId && recommendationOrigin ? recommendationOrigin : beforeRecommendationOrigin;
 
     const isEmpty = nextShelfIds.size === 0 && nextHasProgress === false;
 
@@ -120,6 +168,9 @@ async function applyLibraryBookDelta(params: {
           bookId,
           shelfIds: Array.from(nextShelfIds),
           hasProgress: nextHasProgress,
+          ...(nextRecommendationOrigin
+            ? { recommendationOrigin: nextRecommendationOrigin }
+            : {}),
           updatedAt:
             admin.firestore.FieldValue.serverTimestamp(),
         },
@@ -643,6 +694,7 @@ export const onBookReviewWritten = onDocumentWritten(
         bookId,
         (after || {}) as Record<string, unknown>
       );
+      const afterRecommendationOrigin = sanitizeRecommendationOrigin(after?.recommendationOrigin);
       const projectionRef = db
         .collection("user_reviews")
         .doc(`${afterUserId}_${bookId}`);
@@ -680,6 +732,9 @@ export const onBookReviewWritten = onDocumentWritten(
           createdAt: after?.createdAt ?? after?.updatedAt ?? toIso(new Date()),
           createdAtIso: toIso(after?.createdAtIso ?? after?.createdAt),
           sourcePath: `books/${bookId}/reviews/${reviewId}`,
+          ...(afterRecommendationOrigin
+            ? { recommendationOrigin: afterRecommendationOrigin }
+            : {}),
         },
         { merge: true }
       );
@@ -691,6 +746,9 @@ export const onBookReviewWritten = onDocumentWritten(
 
     const changedUid = afterUserId || beforeUserId;
     if (changedUid) {
+      const recommendationOrigin =
+        sanitizeRecommendationOrigin(after?.recommendationOrigin) ??
+        sanitizeRecommendationOrigin(before?.recommendationOrigin);
       await emitIntelligenceSignalSafe({
         uid: changedUid,
         signalType:
@@ -707,6 +765,7 @@ export const onBookReviewWritten = onDocumentWritten(
           afterExists,
           beforeRating,
           afterRating,
+          ...(recommendationOrigin ? { recommendationOrigin } : {}),
         },
         sourceEventId: event.id,
         sourcePath: `books/${bookId}/reviews/${reviewId}`,
@@ -966,10 +1025,17 @@ export const onShelfEntriesWritten = onDocumentWritten(
     if (!added.length && !removed.length) return;
 
     for (const bookId of added) {
+      const entry = afterEntries?.[bookId];
+      const recommendationOrigin = sanitizeRecommendationOrigin(
+        entry && typeof entry === "object"
+          ? (entry as Record<string, unknown>).recommendationOrigin
+          : null
+      );
       await applyLibraryBookDelta({
         uid: ownerId,
         bookId,
         addShelfId: shelfId,
+        recommendationOrigin,
       });
     }
 
@@ -981,6 +1047,23 @@ export const onShelfEntriesWritten = onDocumentWritten(
       });
     }
 
+    const addedRecommendationOrigins = added
+      .map((bookId) => {
+        const entry = afterEntries?.[bookId];
+        const recommendationOrigin = sanitizeRecommendationOrigin(
+          entry && typeof entry === "object"
+            ? (entry as Record<string, unknown>).recommendationOrigin
+            : null
+        );
+        if (!recommendationOrigin) return null;
+        return {
+          bookId,
+          recommendationOrigin,
+        };
+      })
+      .filter((row): row is { bookId: string; recommendationOrigin: RecommendationOrigin } => row !== null)
+      .slice(0, 80);
+
     await emitIntelligenceSignalSafe({
       uid: ownerId,
       signalType: "shelf_entries_changed",
@@ -991,6 +1074,9 @@ export const onShelfEntriesWritten = onDocumentWritten(
         removedCount: removed.length,
         addedBookIds: added.slice(0, 80),
         removedBookIds: removed.slice(0, 80),
+        ...(addedRecommendationOrigins.length > 0
+          ? { addedRecommendationOrigins }
+          : {}),
       },
       sourceEventId: event.id,
       sourcePath: `shelves/${event.params.shelfDocId}`,
@@ -1017,6 +1103,7 @@ export const onReadingProgressWritten = onDocumentWritten(
       bookId,
       setHasProgress: true,
     });
+    const recommendationOrigin = sanitizeRecommendationOrigin(after?.recommendationOrigin);
     await emitIntelligenceSignalSafe({
       uid,
       signalType: "reading_progress_written",
@@ -1026,6 +1113,7 @@ export const onReadingProgressWritten = onDocumentWritten(
         bookId,
         progress: typeof after?.progress === "number" ? after.progress : null,
         statusState: typeof after?.status_state === "string" ? after.status_state : null,
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
       },
       sourceEventId: event.id,
       sourcePath: `reading_progress/${event.params.progressId}`,

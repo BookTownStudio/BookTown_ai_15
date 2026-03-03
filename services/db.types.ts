@@ -31,6 +31,7 @@ import {
   Ebook,
   ExternalSource
 } from '../types/entities.ts';
+import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 
 /* =========================
    UPLOADS
@@ -301,7 +302,13 @@ export interface ShelfDataService {
     options?: { resolveBooks?: boolean; limit?: number }
   ): Promise<(ShelfEntry & { book?: Book })[]>;
 
-  addBookToShelf(uid: string, shelfId: string, bookId: string, book?: Book): Promise<void>;
+  addBookToShelf(
+    uid: string,
+    shelfId: string,
+    bookId: string,
+    book?: Book,
+    recommendationContext?: LibrarianRecommendationContext
+  ): Promise<void>;
   removeBookFromShelf(uid: string, shelfId: string, bookId: string): Promise<void>;
 
   followShelf(uid: string, shelfId: string): Promise<void>;
@@ -357,6 +364,7 @@ export interface CatalogDataService {
       rating: number;
       text: string;
       visibility?: 'public' | 'private';
+      recommendationContext?: LibrarianRecommendationContext;
     }
   ): Promise<void>;
 

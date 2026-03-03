@@ -97,6 +97,8 @@ import { api as apiRaw } from "./api";
 import { sitemap as sitemapRaw } from "./ssr/sitemap";
 import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
 import { duplicateShelf as duplicateShelfRaw } from "./shelves/duplicateShelf";
+import { addBookToShelf as addBookToShelfRaw } from "./shelves/addBookToShelf";
+import { removeBookFromShelf as removeBookFromShelfRaw } from "./shelves/removeBookFromShelf";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { canonicalizeRoleClaim } from "./shared/auth";
 
@@ -473,6 +475,14 @@ export const incrementPostView = wrapCallableV2(
 export const duplicateShelf = wrapCallableV2(
   "duplicateShelf",
   duplicateShelfRaw
+);
+export const addBookToShelf = wrapCallableV2(
+  "addBookToShelf",
+  addBookToShelfRaw
+);
+export const removeBookFromShelf = wrapCallableV2(
+  "removeBookFromShelf",
+  removeBookFromShelfRaw
 );
 
 // Quotes

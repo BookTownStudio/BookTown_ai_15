@@ -3,12 +3,14 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
+import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 
 type ReviewVariables = {
   bookId: string;
   rating: number;
   text: string;
   visibility?: 'public' | 'private';
+  recommendationContext?: LibrarianRecommendationContext;
 };
 
 export const useSubmitReview = () => {
@@ -16,7 +18,7 @@ export const useSubmitReview = () => {
   const { user } = useAuth();
 
   const mutation = useMutation({
-    mutationFn: async ({ bookId, rating, text, visibility }: ReviewVariables) => {
+    mutationFn: async ({ bookId, rating, text, visibility, recommendationContext }: ReviewVariables) => {
       if (!user?.uid) throw new Error('NOT_AUTHENTICATED');
 
       /**
@@ -28,6 +30,7 @@ export const useSubmitReview = () => {
         rating,
         text,
         ...(visibility ? { visibility } : {}),
+        ...(recommendationContext ? { recommendationContext } : {}),
       });
     },
 

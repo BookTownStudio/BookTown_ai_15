@@ -8,6 +8,10 @@ import {
   computeReadingProgressMutation,
   ReadingState,
 } from "./readingProgressStateMachine";
+import {
+  resolveAuthoritativeRecommendationOrigin,
+  sanitizeRecommendationOrigin,
+} from "../attribution/recommendationOrigin";
 
 const db = admin.firestore();
 
@@ -25,7 +29,11 @@ export const recordReadingProgressHandler = async (request: any) => {
     totalPages,
     lastPosition,
     status_state: requestedStateRaw,
+    recommendationContext,
   } = request.data || {};
+  const recommendationOriginInput = sanitizeRecommendationOrigin(
+    recommendationContext
+  );
 
   if (!bookId || typeof bookId !== "string") {
     throw new HttpsError("invalid-argument", "Missing or invalid bookId.");
@@ -79,6 +87,7 @@ export const recordReadingProgressHandler = async (request: any) => {
     bookId,
     progress: normalizedProgress,
     requestedState: requestedStateRaw ?? "auto",
+    hasRecommendationOrigin: Boolean(recommendationOriginInput),
   });
 
   let observedPreviousState: ReadingState | null = null;
@@ -91,6 +100,9 @@ export const recordReadingProgressHandler = async (request: any) => {
       const now = Timestamp.now();
 
       const data = snap.exists ? snap.data()! : {};
+      const existingRecommendationOrigin = sanitizeRecommendationOrigin(
+        data.recommendationOrigin
+      );
       const mutation = computeReadingProgressMutation({
         uid,
         bookId,
@@ -100,10 +112,21 @@ export const recordReadingProgressHandler = async (request: any) => {
         now,
         previousData: data,
       });
+      const recommendationOrigin =
+        existingRecommendationOrigin ||
+        (recommendationOriginInput
+          ? await resolveAuthoritativeRecommendationOrigin({
+            uid,
+            bookId,
+            input: recommendationOriginInput,
+            tx,
+          })
+          : null);
 
       const payload: Record<string, any> = {
         ...mutation.payload,
         updatedAt: FieldValue.serverTimestamp(),
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
       };
 
       tx.set(progressRef, payload, { merge: true });
@@ -124,6 +147,7 @@ export const recordReadingProgressHandler = async (request: any) => {
           toState: mutation.nextState,
           progress: normalizedProgress,
           occurredAt: now,
+          ...(recommendationOrigin ? { recommendationOrigin } : {}),
         });
 
         observedEvent = event;

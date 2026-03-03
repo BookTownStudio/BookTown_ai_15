@@ -50,6 +50,18 @@ service cloud.firestore {
         && request.auth.uid == request.resource.data.ownerId;
     }
 
+    function isShelfMetadataPatch() {
+      return request.resource.data.diff(resource.data).changedKeys().hasOnly([
+        "titleEn",
+        "titleAr",
+        "descriptionEn",
+        "descriptionAr",
+        "visibility",
+        "userCoverUrl",
+        "updatedAt"
+      ]);
+    }
+
     function isBoundedString(value, maxLen) {
       return value is string
         && value.size() > 0
@@ -424,9 +436,20 @@ service cloud.firestore {
 
       allow read: if isSignedIn();
 
-      allow create: if isCreateShelfOwner();
+      allow create: if isCreateShelfOwner()
+        && request.resource.data.keys().hasOnly([
+          "ownerId",
+          "titleEn",
+          "titleAr",
+          "entries",
+          "createdAt",
+          "updatedAt",
+          "isSystem"
+        ])
+        && (!("entries" in request.resource.data) || request.resource.data.entries.size() == 0);
 
       allow update: if isShelfOwner()
+        && isShelfMetadataPatch()
         && (
           !isSystemShelfId(resource.data.id)
           ||
@@ -501,18 +524,18 @@ service cloud.firestore {
       allow get, list: if isSignedIn()
         && resource.data.userId == request.auth.uid;
 
-      allow create: if isSignedIn()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.userId == request.auth.uid
-        && request.resource.data.status_state == 'reading'
-        && request.resource.data.progress == 0;
-
-      allow update: if isSignedIn()
-        && resource.data.userId == request.auth.uid
-        && request.resource.data.userId == resource.data.userId
-        && !('status_state' in request.resource.data);
+      allow create, update: if false;
 
       allow delete: if false;
+    }
+
+    /* =========================
+       LIBRARIAN SUGGESTION SESSIONS
+       ========================= */
+    match /librarian_suggestions/{sessionId} {
+      allow get, list: if isSignedIn()
+        && resource.data.uid == request.auth.uid;
+      allow create, update, delete: if false;
     }
 
     /* =========================

@@ -16,7 +16,6 @@ import {
   QueryDocumentSnapshot,
   DocumentData,
   serverTimestamp,
-  deleteField,
 } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
@@ -54,6 +53,7 @@ import {
   Conversation,
   DirectMessage,
 } from "../types/entities.ts";
+import type { LibrarianRecommendationContext } from "../types/librarian.ts";
 
 import { normalizeNotification, normalizePost } from "../lib/data-validation.ts";
 import { FirebaseUploadService } from "./firebaseUploadService.ts";
@@ -84,6 +84,39 @@ const FEED_HYDRATION_MAX_POSTS = 20;
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const missingInternalBookCoverPathCache = new Set<string>();
 const loggedMissingInternalBookCoverPathCache = new Set<string>();
+
+function normalizeRecommendationContext(
+  context?: LibrarianRecommendationContext
+): LibrarianRecommendationContext | null {
+  if (!context || context.source !== "librarian") return null;
+  const suggestionSessionId =
+    typeof context.suggestionSessionId === "string"
+      ? context.suggestionSessionId.trim().slice(0, 96)
+      : "";
+  const suggestionId =
+    typeof context.suggestionId === "string"
+      ? context.suggestionId.trim().slice(0, 96)
+      : "";
+  const rankPositionRaw = Number(context.rankPosition);
+  const rankPosition =
+    Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+      ? Math.trunc(rankPositionRaw)
+      : 0;
+  const mode =
+    typeof context.mode === "string" ? context.mode.trim().slice(0, 40) : "";
+
+  if (!suggestionSessionId || !suggestionId || !rankPosition || !mode) {
+    return null;
+  }
+
+  return {
+    source: "librarian",
+    suggestionSessionId,
+    suggestionId,
+    rankPosition,
+    mode: mode as LibrarianRecommendationContext["mode"],
+  };
+}
 
 type FollowingFeedCursor = {
   v: 1;
@@ -1527,35 +1560,49 @@ class FirebaseShelfService {
     return hydrated;
   }
 
-  async addBookToShelf(uid: string, shelfId: string, bookId: string, book?: Book): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-
-    const shelfRef = doc(db, "shelves", shelfId);
-
+  async addBookToShelf(
+    uid: string,
+    shelfId: string,
+    bookId: string,
+    book?: Book,
+    recommendationContext?: LibrarianRecommendationContext
+  ): Promise<void> {
     const snapshot = book ? {
       titleEn: book.titleEn || null,
       titleAr: book.titleAr || null,
       coverUrl: book.coverUrl || null,
     } : null;
 
-    await updateDoc(shelfRef, {
-      [`entries.${bookId}`]: {
-        bookId,
-        addedAt: new Date().toISOString(),
-        snapshot,
+    const recommendationOrigin = normalizeRecommendationContext(recommendationContext);
+    await callEndpoint<
+      {
+        shelfId: string;
+        bookId: string;
+        snapshot: {
+          titleEn: string | null;
+          titleAr: string | null;
+          coverUrl: string | null;
+        } | null;
+        recommendationContext?: LibrarianRecommendationContext;
       },
-      updatedAt: serverTimestamp()
+      { ok: boolean }
+    >("addBookToShelf", {
+      shelfId,
+      bookId,
+      snapshot,
+      ...(recommendationOrigin
+        ? { recommendationContext: recommendationOrigin }
+        : {}),
     });
   }
 
   async removeBookFromShelf(uid: string, shelfId: string, bookId: string): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    const shelfRef = doc(db, "shelves", shelfId);
-    await updateDoc(shelfRef, {
-      [`entries.${bookId}`]: deleteField(),
-      updatedAt: serverTimestamp()
+    await callEndpoint<
+      { shelfId: string; bookId: string },
+      { ok: boolean }
+    >("removeBookFromShelf", {
+      shelfId,
+      bookId,
     });
   }
 

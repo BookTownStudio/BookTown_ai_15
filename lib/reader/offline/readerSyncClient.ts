@@ -1,6 +1,7 @@
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { readerSyncQueue } from "./readerSyncQueue.ts";
 import { ReaderSyncOperation, ReaderSyncResult } from "./types.ts";
+import type { LibrarianRecommendationContext } from "../../../types/librarian.ts";
 
 function generateOpId(): string {
   const random = Math.random().toString(36).slice(2, 10);
@@ -28,6 +29,7 @@ export function enqueueProgressSyncOperation(params: {
   totalPages: number;
   percentage: number;
   lastPosition?: Record<string, unknown> | null;
+  recommendationContext?: LibrarianRecommendationContext;
 }): ReaderSyncOperation {
   const op: ReaderSyncOperation = {
     opId: generateOpId(),
@@ -41,6 +43,9 @@ export function enqueueProgressSyncOperation(params: {
       percentage: params.percentage,
       lastPosition: params.lastPosition || null,
       status_state: params.percentage >= 1 ? "completed" : "reading",
+      ...(params.recommendationContext
+        ? { recommendationContext: params.recommendationContext }
+        : {}),
     },
   };
 

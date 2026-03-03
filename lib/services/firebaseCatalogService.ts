@@ -25,6 +25,7 @@ import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts
 import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
 import type { BookStats } from "../../services/db.types.ts";
+import type { LibrarianRecommendationContext } from "../../types/librarian.ts";
 
 const AUTHOR_SEARCH_LIMIT = 24;
 const AUTHOR_BOOKS_LIMIT = 60;
@@ -48,6 +49,39 @@ type FailureEnvelope = {
     details?: unknown;
   };
 };
+
+function normalizeRecommendationContext(
+  context?: LibrarianRecommendationContext
+): LibrarianRecommendationContext | null {
+  if (!context || context.source !== "librarian") return null;
+  const suggestionSessionId =
+    typeof context.suggestionSessionId === "string"
+      ? context.suggestionSessionId.trim().slice(0, 96)
+      : "";
+  const suggestionId =
+    typeof context.suggestionId === "string"
+      ? context.suggestionId.trim().slice(0, 96)
+      : "";
+  const rankPositionRaw = Number(context.rankPosition);
+  const rankPosition =
+    Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+      ? Math.trunc(rankPositionRaw)
+      : 0;
+  const mode =
+    typeof context.mode === "string" ? context.mode.trim().slice(0, 40) : "";
+
+  if (!suggestionSessionId || !suggestionId || !rankPosition || !mode) {
+    return null;
+  }
+
+  return {
+    source: "librarian",
+    suggestionSessionId,
+    suggestionId,
+    rankPosition,
+    mode: mode as LibrarianRecommendationContext["mode"],
+  };
+}
 
 function resolveDeterministicErrorCode(
   transportCode: string,
@@ -701,9 +735,10 @@ export const firebaseCatalogService = {
       rating: number;
       text: string;
       visibility?: "public" | "private";
+      recommendationContext?: LibrarianRecommendationContext;
     }
   ): Promise<void> {
-    const { bookId, rating, text, visibility } = review;
+    const { bookId, rating, text, visibility, recommendationContext } = review;
     if (!uid || !bookId) {
       throw new Error("INVALID_REVIEW_IDENTITY");
     }
@@ -711,12 +746,15 @@ export const firebaseCatalogService = {
       throw new Error("INVALID_REVIEW_RATING");
     }
 
+    const normalizedRecommendationContext = normalizeRecommendationContext(recommendationContext);
+
     await callEndpoint<
       {
         bookId: string;
         rating: number;
         text: string;
         visibility?: "public" | "private";
+        recommendationContext?: LibrarianRecommendationContext;
       },
       {
         reviewId: string;
@@ -732,6 +770,9 @@ export const firebaseCatalogService = {
       rating,
       text,
       ...(visibility ? { visibility } : {}),
+      ...(normalizedRecommendationContext
+        ? { recommendationContext: normalizedRecommendationContext }
+        : {}),
     });
   },
 

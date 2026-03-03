@@ -60,16 +60,23 @@ class MockQuery {
   constructor(
     protected readonly collectionName: string,
     protected readonly filters: WhereFilter[] = [],
-    protected readonly cap: number | null = null
+    protected readonly cap: number | null = null,
+    protected readonly orderByField: string | null = null
   ) {}
 
   where(field: string, op: string, value: unknown): MockQuery {
-    if (op !== "==") throw new Error(`Unsupported op in test mock: ${op}`);
-    return new MockQuery(this.collectionName, [...this.filters, { field, value }], this.cap);
+    if (op !== "==" && op !== "array-contains" && op !== "array-contains-any") {
+      throw new Error(`Unsupported op in test mock: ${op}`);
+    }
+    return new MockQuery(this.collectionName, [...this.filters, { field, value: { op, value } }], this.cap, this.orderByField);
   }
 
   limit(value: number): MockQuery {
-    return new MockQuery(this.collectionName, this.filters, value);
+    return new MockQuery(this.collectionName, this.filters, value, this.orderByField);
+  }
+
+  orderBy(field: string): MockQuery {
+    return new MockQuery(this.collectionName, this.filters, this.cap, field);
   }
 
   async get(): Promise<{ docs: MockDocSnapshot[]; empty: boolean }> {
@@ -79,9 +86,34 @@ class MockQuery {
       .map(([path, data]) => ({ path, data }))
       .filter(({ data }) =>
         this.filters.every((filter) => {
-          return data[filter.field] === filter.value;
+          const encoded = filter.value as { op: string; value: unknown } | undefined;
+          const op = encoded?.op || "==";
+          const target = encoded?.value;
+          const rowValue = data[filter.field];
+          if (op === "==") {
+            return rowValue === target;
+          }
+          if (op === "array-contains") {
+            return Array.isArray(rowValue) && rowValue.includes(target);
+          }
+          if (op === "array-contains-any") {
+            return (
+              Array.isArray(rowValue) &&
+              Array.isArray(target) &&
+              target.some((entry) => rowValue.includes(entry))
+            );
+          }
+          return false;
         })
       )
+      .sort((a, b) => {
+        if (!this.orderByField) return 0;
+        const av = a.data[this.orderByField];
+        const bv = b.data[this.orderByField];
+        const as = typeof av === "string" ? av : "";
+        const bs = typeof bv === "string" ? bv : "";
+        return as.localeCompare(bs);
+      })
       .slice(0, this.cap ?? Number.MAX_SAFE_INTEGER)
       .map(({ path }) => new MockDocSnapshot(path));
     return { docs: rows, empty: rows.length === 0 };
@@ -101,6 +133,12 @@ class MockDocRef {
   }
   async set(data: Record<string, unknown>, options?: { merge?: boolean }): Promise<void> {
     setDoc(this.path, data, Boolean(options?.merge));
+  }
+  async create(data: Record<string, unknown>): Promise<void> {
+    if (store.has(this.path)) {
+      throw new Error("already-exists");
+    }
+    setDoc(this.path, data, false);
   }
 }
 
@@ -181,6 +219,28 @@ function buildSearchResponse(results: Array<Record<string, unknown>>) {
     canonicalCount: 0,
     externalCount: results.length,
   };
+}
+
+function buildCacheDocId(params: {
+  uid: string;
+  profileVersion: number;
+  scopeIntent: "BOOK_RECOMMENDATION" | "AUTHOR_ORDER" | "BOOK_KNOWLEDGE" | "OUT_OF_SCOPE";
+  requestIntent: string;
+  normalizedQuery: string;
+}): string {
+  const hash = createHash("sha256")
+    .update(
+      `${params.uid}|${params.profileVersion}|${params.scopeIntent}:${params.requestIntent}|${params.normalizedQuery}`
+    )
+    .digest("hex");
+  return `librarian_${hash}`;
+}
+
+function sentenceCount(value: string): number {
+  return value
+    .split(/[.!?]+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0).length;
 }
 
 const baseContext: AgentContextSnapshot = {
@@ -388,8 +448,8 @@ describe("librarian orchestrator refactor", () => {
       query: "totally unknown query",
     });
 
-    expect(result.recommendations.length).toBe(1);
-    expect(result.recommendations[0].title).toBe("No verified recommendations");
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
+    expect(result.recommendations[0].short_reason.toLowerCase()).not.toContain("verification");
   });
 
   it(
@@ -435,13 +495,17 @@ describe("librarian orchestrator refactor", () => {
     const normalizedQuery = "space opera classics";
     const intent = "Reinforcement";
     const profileVersion = 1;
-    const cacheDocId = `librarian_${createHash("sha256")
-      .update(`${uid}|${profileVersion}|${intent}|${normalizedQuery}`)
-      .digest("hex")}`;
+    const cacheDocId = buildCacheDocId({
+      uid,
+      profileVersion,
+      scopeIntent: "BOOK_RECOMMENDATION",
+      requestIntent: intent,
+      normalizedQuery,
+    });
     store.set(`ai_librarian_cache/${cacheDocId}`, {
       uid,
       profileVersion,
-      intent,
+      intent: `BOOK_RECOMMENDATION:${intent}`,
       normalizedQuery,
       recommendations: [
         {
@@ -449,8 +513,6 @@ describe("librarian orchestrator refactor", () => {
           title: "Cached Title",
           author: "Cached Author",
           short_reason: "Cached reason",
-          mode: "Reinforcement",
-          relevanceScore: 0.9,
         },
       ],
       expiresAt: {
@@ -463,7 +525,107 @@ describe("librarian orchestrator refactor", () => {
     const quotaPath = `_ai_librarian_quota/librarian_${uid}_${dateKey}`;
 
     expect(result.fromCache).toBe(true);
+    expect(result.normalizedQuery).toBe(normalizedQuery);
+    expect(typeof result.remainingQuota).toBe("number");
     expect(store.has(quotaPath)).toBe(false);
+  });
+
+  it("cache hit does not bypass intent gate", async () => {
+    const uid = "user_test_001";
+    const normalizedQuery = "how is the stock market doing";
+    const cacheDocId = buildCacheDocId({
+      uid,
+      profileVersion: 1,
+      scopeIntent: "OUT_OF_SCOPE",
+      requestIntent: "Reinforcement",
+      normalizedQuery,
+    });
+    store.set(`ai_librarian_cache/${cacheDocId}`, {
+      uid,
+      profileVersion: 1,
+      intent: "OUT_OF_SCOPE:Reinforcement",
+      normalizedQuery,
+      recommendations: [
+        {
+          bookId: "cached_fin_1",
+          title: "The Intelligent Investor",
+          author: "Benjamin Graham",
+          short_reason: "Clear finance foundation. Useful for disciplined long-term thinking. Extra sentence.",
+        },
+        {
+          bookId: "cached_fin_2",
+          title: "The Intelligent Investor",
+          author: "Benjamin Graham",
+          short_reason: "",
+        },
+      ],
+      expiresAt: {
+        toMillis: () => Date.now() + 60_000,
+      },
+    });
+
+    const result = await runLibrarian({
+      uid,
+      query: "How is the stock market doing?",
+      intent: "Reinforcement",
+    });
+
+    expect(result.fromCache).toBe(true);
+    expect(result.recommendations.length).toBe(1);
+    expect(result.recommendations[0].title).toBe("The Intelligent Investor");
+    expect(sentenceCount(result.recommendations[0].short_reason)).toBeLessThanOrEqual(2);
+    expect(loggerInfoMock).toHaveBeenCalledWith(
+      "[AI][LIBRARIAN][INTENT_GATE]",
+      expect.objectContaining({
+        routeIntent: "OUT_OF_SCOPE",
+        source: "cache_hit",
+      })
+    );
+  });
+
+  it("no duplicate titles when cache is hit", async () => {
+    const uid = "user_test_001";
+    const normalizedQuery = "space opera classics";
+    const cacheDocId = buildCacheDocId({
+      uid,
+      profileVersion: 1,
+      scopeIntent: "BOOK_RECOMMENDATION",
+      requestIntent: "Reinforcement",
+      normalizedQuery,
+    });
+    store.set(`ai_librarian_cache/${cacheDocId}`, {
+      uid,
+      profileVersion: 1,
+      intent: "BOOK_RECOMMENDATION:Reinforcement",
+      normalizedQuery,
+      recommendations: [
+        {
+          bookId: "cached_1",
+          title: "Dune",
+          author: "Frank Herbert",
+          short_reason: "Good fit.",
+        },
+        {
+          bookId: "cached_2",
+          title: "Dune",
+          author: "Frank Herbert",
+          short_reason: "Duplicate row.",
+        },
+      ],
+      expiresAt: {
+        toMillis: () => Date.now() + 60_000,
+      },
+    });
+
+    const result = await runLibrarian({
+      uid,
+      query: normalizedQuery,
+      intent: "Reinforcement",
+    });
+    const keys = result.recommendations.map((row) => `${row.title}|${row.author}`);
+
+    expect(result.fromCache).toBe(true);
+    expect(new Set(keys).size).toBe(keys.length);
   });
 
   it("external call cap is enforced", async () => {
@@ -498,10 +660,272 @@ describe("librarian orchestrator refactor", () => {
 
     expect(unifiedSearchMock).toHaveBeenCalledTimes(8);
     expect(result.recommendations.length).toBe(1);
-    expect(result.recommendations[0].title).toBe("No verified recommendations");
+    expect(result.recommendations[0].title).toBe("Start with a concrete title");
     expect(loggerWarnMock).toHaveBeenCalledWith(
       "[AI][LIBRARIAN][CALL_CAP]",
       expect.any(Object)
     );
+  });
+
+  it("OUT_OF_SCOPE('stock market') returns finance-related books with short_reason", async () => {
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      if (query.includes("books about stock market")) {
+        return buildSearchResponse([
+          {
+            title: "The Intelligent Investor",
+            titleEn: "The Intelligent Investor",
+            authorEn: "Benjamin Graham",
+            authors: ["Benjamin Graham"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-FIN-1",
+            bookId: "gb-fin-1",
+          },
+          {
+            title: "A Random Walk Down Wall Street",
+            titleEn: "A Random Walk Down Wall Street",
+            authorEn: "Burton G. Malkiel",
+            authors: ["Burton G. Malkiel"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-FIN-2",
+            bookId: "ol-fin-2",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "what is the stock market today",
+    });
+
+    expect(unifiedSearchMock).toHaveBeenCalledWith(
+      expect.stringContaining("books about stock market"),
+      expect.any(Object)
+    );
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(2);
+    expect(result.recommendations.length).toBeLessThanOrEqual(3);
+    for (const row of result.recommendations) {
+      expect(row.short_reason.trim().length).toBeGreaterThan(0);
+      expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
+    }
+    expect(llmGenerateContentMock).not.toHaveBeenCalled();
+  });
+
+  it("AUTHOR_ORDER('Amin Maalouf') returns sorted unique titles with short_reason", async () => {
+    unifiedSearchMock.mockResolvedValue(
+      buildSearchResponse([
+        {
+          title: "Samarkand",
+          titleEn: "Samarkand",
+          authorEn: "Amin Maalouf",
+          authors: ["Amin Maalouf"],
+          source: "openLibrary",
+          resultType: "external",
+          externalId: "OL-AMIN-2",
+          bookId: "ol-amin-2",
+        },
+        {
+          title: "Leo Africanus",
+          titleEn: "Leo Africanus",
+          authorEn: "Amin Maalouf",
+          authors: ["Amin Maalouf"],
+          source: "googleBooks",
+          resultType: "external",
+          externalId: "GB-AMIN-1",
+          bookId: "gb-amin-1",
+        },
+        {
+          title: "Leo Africanus",
+          titleEn: "Leo Africanus",
+          authorEn: "Amin Maalouf",
+          authors: ["Amin Maalouf"],
+          source: "openLibrary",
+          resultType: "external",
+          externalId: "OL-AMIN-1",
+          bookId: "ol-amin-1",
+        },
+      ])
+    );
+
+    const result = await runLibrarian({
+      query: "in which order should i read amin maalouf",
+    });
+
+    const titles = result.recommendations.map((row) => row.title);
+    expect(titles).toEqual(["Leo Africanus", "Samarkand"]);
+    for (const row of result.recommendations) {
+      expect(row.short_reason.trim().length).toBeGreaterThan(0);
+      expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
+    }
+    expect(llmGenerateContentMock).not.toHaveBeenCalled();
+  });
+
+  it("AUTHOR_ORDER cached response does not leak into OUT_OF_SCOPE", async () => {
+    const uid = "user_test_001";
+    const normalizedQuery = "stock market";
+    const authorOrderCacheDocId = buildCacheDocId({
+      uid,
+      profileVersion: 1,
+      scopeIntent: "AUTHOR_ORDER",
+      requestIntent: "Reinforcement",
+      normalizedQuery,
+    });
+    store.set(`ai_librarian_cache/${authorOrderCacheDocId}`, {
+      uid,
+      profileVersion: 1,
+      intent: "AUTHOR_ORDER:Reinforcement",
+      normalizedQuery,
+      recommendations: [
+        {
+          bookId: "cached_author_1",
+          title: "Disordered World",
+          author: "Some Author",
+          short_reason: "Wrong branch cache payload.",
+        },
+      ],
+      expiresAt: {
+        toMillis: () => Date.now() + 60_000,
+      },
+    });
+    unifiedSearchMock.mockResolvedValue(
+      buildSearchResponse([
+        {
+          title: "The Intelligent Investor",
+          titleEn: "The Intelligent Investor",
+          authorEn: "Benjamin Graham",
+          authors: ["Benjamin Graham"],
+          source: "googleBooks",
+          resultType: "external",
+          externalId: "GB-CROSS-BRANCH-1",
+          bookId: "gb-cross-branch-1",
+        },
+        {
+          title: "A Random Walk Down Wall Street",
+          titleEn: "A Random Walk Down Wall Street",
+          authorEn: "Burton G. Malkiel",
+          authors: ["Burton G. Malkiel"],
+          source: "openLibrary",
+          resultType: "external",
+          externalId: "OL-CROSS-BRANCH-2",
+          bookId: "ol-cross-branch-2",
+        },
+      ])
+    );
+
+    const result = await runLibrarian({
+      uid,
+      query: "stock market",
+      intent: "Reinforcement",
+    });
+
+    expect(result.fromCache).toBe(false);
+    expect(result.recommendations.some((row) => row.title === "Disordered World")).toBe(false);
+  });
+
+  it("no duplicate titles are returned in BOOK_RECOMMENDATION branch", async () => {
+    llmTextResponse = JSON.stringify([
+      { title: "Dune", author: "Frank Herbert" },
+      { title: "Dune", author: "Frank Herbert" },
+      { title: "Kindred", author: "Octavia Butler" },
+    ]);
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      if (query.includes("Dune")) {
+        return buildSearchResponse([
+          {
+            title: "Dune",
+            titleEn: "Dune",
+            authorEn: "Frank Herbert",
+            authors: ["Frank Herbert"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-DUNE-DEDUPE",
+            bookId: "ol-dune-dedupe",
+          },
+        ]);
+      }
+      if (query.includes("Kindred")) {
+        return buildSearchResponse([
+          {
+            title: "Kindred",
+            titleEn: "Kindred",
+            authorEn: "Octavia Butler",
+            authors: ["Octavia Butler"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-KINDRED-DEDUPE",
+            bookId: "gb-kindred-dedupe",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "recommend books like dune",
+      intent: "HighConfidencePrecision",
+    });
+    const keys = result.recommendations.map((row) => `${row.title}|${row.author}`);
+    expect(new Set(keys).size).toBe(keys.length);
+  });
+
+  it("every card has non-empty short_reason and explanation length <= 2 sentences", async () => {
+    unifiedSearchMock.mockResolvedValue(
+      buildSearchResponse([
+        {
+          title: "The Intelligent Investor",
+          titleEn: "The Intelligent Investor",
+          authorEn: "Benjamin Graham",
+          authors: ["Benjamin Graham"],
+          source: "googleBooks",
+          resultType: "external",
+          externalId: "GB-REASON-1",
+          bookId: "gb-reason-1",
+        },
+        {
+          title: "A Random Walk Down Wall Street",
+          titleEn: "A Random Walk Down Wall Street",
+          authorEn: "Burton G. Malkiel",
+          authors: ["Burton G. Malkiel"],
+          source: "openLibrary",
+          resultType: "external",
+          externalId: "OL-REASON-2",
+          bookId: "ol-reason-2",
+        },
+      ])
+    );
+
+    const result = await runLibrarian({
+      query: "stock market trends this week",
+    });
+    expect(result.recommendations.length).toBeGreaterThan(0);
+    for (const row of result.recommendations) {
+      expect(row.short_reason.trim().length).toBeGreaterThan(0);
+      expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it("cache key differs between BOOK_RECOMMENDATION and AUTHOR_ORDER for same query", () => {
+    const uid = "user_test_001";
+    const normalizedQuery = "dune";
+    const profileVersion = 1;
+
+    const recommendationKey = buildCacheDocId({
+      uid,
+      profileVersion,
+      scopeIntent: "BOOK_RECOMMENDATION",
+      requestIntent: "Reinforcement",
+      normalizedQuery,
+    });
+    const authorOrderKey = buildCacheDocId({
+      uid,
+      profileVersion,
+      scopeIntent: "AUTHOR_ORDER",
+      requestIntent: "Reinforcement",
+      normalizedQuery,
+    });
+
+    expect(recommendationKey).not.toBe(authorOrderKey);
   });
 });

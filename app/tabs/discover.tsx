@@ -18,6 +18,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
 import { PinIcon } from '../../components/icons/PinIcon.tsx'; // You might need to create this or reuse an icon
 import PageShell from '../../components/layout/PageShell.tsx';
+import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 
 // --- Icons ---
 // If PinIcon doesn't exist, create a simple inline one or import if available.
@@ -34,18 +35,51 @@ const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
 
+    const toRecommendationContext = (rec: Record<string, unknown>): LibrarianRecommendationContext | undefined => {
+        const suggestionId =
+            typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0
+                ? rec.suggestionId.trim()
+                : '';
+        const suggestionSessionId =
+            typeof rec.suggestionSessionId === 'string' && rec.suggestionSessionId.trim().length > 0
+                ? rec.suggestionSessionId.trim()
+                : '';
+        const rankPositionRaw = Number(rec.rankPosition);
+        const rankPosition =
+            Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+                ? Math.trunc(rankPositionRaw)
+                : 0;
+        const modeRaw = typeof rec.mode === 'string' ? rec.mode.trim() : '';
+        if (!suggestionId || !suggestionSessionId || !rankPosition || !modeRaw) {
+            return undefined;
+        }
+        return {
+            source: 'librarian',
+            suggestionId,
+            suggestionSessionId,
+            rankPosition,
+            mode: modeRaw as LibrarianRecommendationContext['mode'],
+        };
+    };
+
     try {
         const data = JSON.parse(text);
-        if (data.reason && Array.isArray(data.recommendations)) {
+        const recommendations = Array.isArray(data?.recommendations)
+            ? data.recommendations
+            : Array.isArray(data)
+            ? data
+            : [];
+
+        if (recommendations.length > 0) {
             return (
                 <div className="space-y-3">
-                    <p>{data.reason}</p>
                     <div className="flex flex-wrap gap-2">
-                        {data.recommendations.map((rec: { title: string, author: string, bookId?: string }, idx: number) => {
+                        {recommendations.map((rec: { title: string, author: string, bookId?: string, suggestionId?: string, suggestionSessionId?: string, rankPosition?: number, mode?: string }, idx: number) => {
+                            const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
                             if (typeof rec.bookId === 'string' && rec.bookId.trim().length > 0) {
                                 const canonicalBookId = rec.bookId.trim();
                                 return (
-                                    <div key={canonicalBookId} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: canonicalBookId, from: currentView } })}>
+                                    <div key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : canonicalBookId} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: canonicalBookId, from: currentView, recommendationContext } })}>
                                         <BookCard bookId={canonicalBookId} layout="list" className="w-28 mr-2" />
                                     </div>
                                 );
@@ -66,7 +100,7 @@ const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
                             }
 
                             return (
-                                <div key={bookEntry.id} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: bookEntry.id, from: currentView } })}>
+                                <div key={`${bookEntry.id}_${idx}`} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: bookEntry.id, from: currentView, recommendationContext } })}>
                                     <BookCard bookId={bookEntry.id} layout="list" className="w-28 mr-2" />
                                 </div>
                             );
@@ -76,9 +110,18 @@ const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
             );
         }
     } catch (e) {
-        // Not JSON, fallback to text
+        // Non-JSON payloads are rendered as a structured fallback card.
     }
-    return <p>{text}</p>;
+    return (
+        <div className="bg-white/10 p-3 rounded-lg border border-white/10 w-44">
+            <p className="font-bold text-sm truncate">{lang === 'en' ? 'Book request needed' : 'مطلوب طلب كتاب'}</p>
+            <p className="text-xs opacity-80 mt-1">
+                {lang === 'en'
+                    ? 'Share a title, author, or topic and I will return book cards.'
+                    : 'شارك عنوانًا أو مؤلفًا أو موضوعًا وسأعرض بطاقات كتب.'}
+            </p>
+        </div>
+    );
 };
 
 
@@ -320,10 +363,40 @@ const HistoryView: React.FC<{ onClose: () => void, onSelectSession: (sessionId: 
 
 const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { agent: Agent, sessionId: string, onBack: () => void, onSelectAgent: (id: Agent['id']) => void }) => {
     const { lang } = useI18n();
+    const headerRef = useRef<HTMLElement>(null);
+    const tabsRef = useRef<HTMLDivElement>(null);
+    const [chromeHeight, setChromeHeight] = useState({ header: 80, tabs: 72 });
+
+    useEffect(() => {
+        const updateHeights = () => {
+            const header = headerRef.current?.offsetHeight || 0;
+            const tabs = tabsRef.current?.offsetHeight || 0;
+            setChromeHeight({ header, tabs });
+        };
+
+        updateHeights();
+
+        if (typeof ResizeObserver === 'undefined') {
+            window.addEventListener('resize', updateHeights);
+            return () => window.removeEventListener('resize', updateHeights);
+        }
+
+        const observer = new ResizeObserver(() => updateHeights());
+        if (headerRef.current) observer.observe(headerRef.current);
+        if (tabsRef.current) observer.observe(tabsRef.current);
+        window.addEventListener('resize', updateHeights);
+
+        return () => {
+            observer.disconnect();
+            window.removeEventListener('resize', updateHeights);
+        };
+    }, []);
+
+    const chatTopOffset = chromeHeight.header + chromeHeight.tabs;
 
     return (
         <PageShell scrollable={false}>
-            <header className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
+            <header ref={headerRef} className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
                 <div className="container mx-auto flex h-20 items-center justify-between px-4">
                     <Button variant="ghost" onClick={onBack} aria-label={lang === 'en' ? 'Back to Agents' : 'العودة للمساعدين'}>
                         <ChevronLeftIcon className="h-6 w-6" />
@@ -335,7 +408,11 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
                 </div>
             </header>
 
-            <div className="sticky top-20 z-10 bg-gray-50 dark:bg-slate-900 border-b border-black/10 dark:border-white/10">
+            <div
+                ref={tabsRef}
+                className="fixed left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-b border-black/10 dark:border-white/10"
+                style={{ top: `${chromeHeight.header}px` }}
+            >
                 <div className="container mx-auto p-2">
                     <div className="grid grid-cols-4 gap-2">
                         {mockAgents.map(a => {
@@ -364,9 +441,9 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
                 </div>
             </div>
 
-            <main className="flex-grow overflow-hidden pt-40 md:pt-48 relative">
+            <main className="flex-grow overflow-hidden relative">
                 {/* We use absolute positioning inside AgentChatUI to handle scrolling properly */}
-                 <div className="absolute inset-0 pt-2">
+                 <div className="absolute inset-x-0 bottom-0 pt-2" style={{ top: `${chatTopOffset}px` }}>
                     <AgentChatUI key={sessionId} agent={agent} sessionId={sessionId} />
                  </div>
             </main>

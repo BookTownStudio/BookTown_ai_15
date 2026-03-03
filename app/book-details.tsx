@@ -42,8 +42,43 @@ import { SearchResultDTO } from '../types/bookSearch.ts';
 import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
 import { resolveIngestionSource } from '../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
+import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 
 const MAX_REVIEW_LENGTH = 750;
+
+function parseRecommendationContext(
+  value: unknown
+): LibrarianRecommendationContext | undefined {
+  const raw = value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
+  if (!raw) return undefined;
+
+  const suggestionSessionId =
+    typeof raw.suggestionSessionId === 'string' && raw.suggestionSessionId.trim().length > 0
+      ? raw.suggestionSessionId.trim()
+      : '';
+  const suggestionId =
+    typeof raw.suggestionId === 'string' && raw.suggestionId.trim().length > 0
+      ? raw.suggestionId.trim()
+      : '';
+  const rankPositionRaw = Number(raw.rankPosition);
+  const rankPosition =
+    Number.isFinite(rankPositionRaw) && rankPositionRaw > 0
+      ? Math.trunc(rankPositionRaw)
+      : 0;
+  const modeRaw = typeof raw.mode === 'string' ? raw.mode.trim() : '';
+
+  if (!suggestionSessionId || !suggestionId || !rankPosition || !modeRaw) {
+    return undefined;
+  }
+
+  return {
+    source: 'librarian',
+    suggestionSessionId,
+    suggestionId,
+    rankPosition,
+    mode: modeRaw as LibrarianRecommendationContext['mode'],
+  };
+}
 
 const BookDetailsScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
@@ -62,6 +97,7 @@ const BookDetailsScreen: React.FC = () => {
   const pendingAction = typeof params?.pendingAction === 'string' ? params.pendingAction : 'NONE';
   const pendingShelfId = typeof params?.pendingShelfId === 'string' ? params.pendingShelfId : '';
   const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
+  const recommendationContext = parseRecommendationContext(params?.recommendationContext);
   const hasExternalPendingSearch = pendingSearchResult?.resultType === 'external';
 
   const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
@@ -208,6 +244,7 @@ const BookDetailsScreen: React.FC = () => {
           shelfId: pendingShelfId,
           bookId,
           book,
+          recommendationContext,
         },
         {
           onSuccess: () => {
@@ -261,6 +298,7 @@ const BookDetailsScreen: React.FC = () => {
     params,
     pendingAction,
     pendingShelfId,
+    recommendationContext,
     showToast,
     toggleBook,
   ]);
@@ -316,7 +354,12 @@ const BookDetailsScreen: React.FC = () => {
     }
 
     try {
-      await submitReview.submitReviewAsync({ bookId, rating: userRating, text: reviewText.trim() });
+      await submitReview.submitReviewAsync({
+        bookId,
+        rating: userRating,
+        text: reviewText.trim(),
+        recommendationContext,
+      });
       setIsAddingReview(false);
       setIsEditingReview(false);
       showToast(lang === 'en' ? 'Published.' : 'تم النشر.');
@@ -440,7 +483,7 @@ const BookDetailsScreen: React.FC = () => {
           <button onClick={() => setIsShelfModalOpen(true)} className={cn('flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10', isSaved && 'text-accent bg-accent/10')}><ShelvesIcon className="h-6 w-6" /></button>
           <button className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><QuoteIcon className="h-6 w-6" /></button>
           <button onClick={handleShare} className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><ShareIcon className="h-6 w-6" /></button>
-          <button onClick={() => hasReadableEbook && navigate({ type: 'immersive', id: 'reader', params: { bookId, from: currentView } })} disabled={!hasReadableEbook} className={cn('flex items-center justify-center aspect-square rounded-2xl border bg-white/5 border-white/10', !hasReadableEbook && 'opacity-20')}><EyeIcon className="h-6 w-6" /></button>
+              <button onClick={() => hasReadableEbook && navigate({ type: 'immersive', id: 'reader', params: { bookId, from: currentView, recommendationContext } })} disabled={!hasReadableEbook} className={cn('flex items-center justify-center aspect-square rounded-2xl border bg-white/5 border-white/10', !hasReadableEbook && 'opacity-20')}><EyeIcon className="h-6 w-6" /></button>
         </section>
 
         {/* Summary */}
@@ -482,7 +525,7 @@ const BookDetailsScreen: React.FC = () => {
         </section>
       </main>
 
-      <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId!} book={book} />
+      <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId!} book={book} recommendationContext={recommendationContext} />
     </PageTransition>
   );
 };

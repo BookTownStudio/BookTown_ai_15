@@ -9,12 +9,14 @@ import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { BookIcon } from '../icons/BookIcon.tsx';
 import { CheckIcon } from '../icons/CheckIcon.tsx';
 import { Book } from '../../types/entities.ts';
+import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 
 interface SelectShelfModalProps {
   isOpen: boolean;
   onClose: () => void;
   bookId: string;
   book?: Book;
+  recommendationContext?: LibrarianRecommendationContext;
 }
 
 /**
@@ -32,6 +34,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
   onClose,
   bookId,
   book,
+  recommendationContext,
 }) => {
   const { lang } = useI18n();
   const { data: shelves, isLoading } = useUserShelves();
@@ -49,7 +52,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
     if (!bookId || isToggling) return;
 
     toggleBook(
-      { shelfId, bookId, book },
+      { shelfId, bookId, book, recommendationContext },
       {
         onSuccess: () => {
           onClose();
