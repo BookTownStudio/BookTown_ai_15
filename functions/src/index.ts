@@ -604,6 +604,8 @@ export {
 } from "./intelligence/profileBuilder";
 export { scheduledIntelligenceProfileReconciliation } from "./intelligence/reconciliation";
 export { scheduledLibrarianAggregationWorker } from "./intelligence/aggregationWorker";
+export { scheduledIntelligenceAuditWorker } from "./intelligence/auditWorker";
+export { scheduledIntelligenceDriftMonitor } from "./intelligence/driftMonitor";
 
 // SSR
 export const sitemap = sitemapRaw;
