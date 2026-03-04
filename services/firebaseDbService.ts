@@ -1,3 +1,4 @@
+import { devInfo } from '../lib/logging/devLog';
 import {
   doc,
   getDoc,
@@ -2544,7 +2545,7 @@ class FirebaseSocialService {
         typeof performance !== "undefined" && typeof performance.now === "function"
           ? performance.now()
           : Date.now();
-      console.info("[SOCIAL][FEED_HYDRATION_MS]", {
+      devInfo("[SOCIAL][FEED_HYDRATION_MS]", {
         ms: Math.max(0, Math.round(hydrationEndedAt - hydrationStartedAt)),
         posts: boundedContexts.length,
         uniqueBooks: 0,
@@ -2676,7 +2677,7 @@ class FirebaseSocialService {
       typeof performance !== "undefined" && typeof performance.now === "function"
         ? performance.now()
         : Date.now();
-    console.info("[SOCIAL][FEED_HYDRATION_MS]", {
+    devInfo("[SOCIAL][FEED_HYDRATION_MS]", {
       ms: Math.max(0, Math.round(hydrationEndedAt - hydrationStartedAt)),
       posts: boundedContexts.length,
       uniqueBooks: idsByType.book.size,

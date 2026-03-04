@@ -1,6 +1,7 @@
 
 import { AgentService, AgentMessage, BookRecommendation, LibrarianBookCard, LibrarianResponseEnvelope, ShelfVibe } from './agents.types';
-import { getFirebaseAppCheckToken, getFirebaseAuth, isFirebaseInitialized } from '../lib/firebase.ts';
+import { httpsCallable } from 'firebase/functions';
+import { getFirebaseAppCheckToken, getFirebaseAuth, getFirebaseFunctions, isFirebaseInitialized } from '../lib/firebase.ts';
 
 export class RealAgentService implements AgentService {
     private normalizeQuery(value: string): string {
@@ -22,6 +23,44 @@ export class RealAgentService implements AgentService {
         if (normalized.includes('reread') || normalized.includes('re read') || normalized.includes('nostalgia')) return 'ReReadingReflection';
         if (normalized.split(' ').length >= 3) return 'HighConfidencePrecision';
         return 'Reinforcement';
+    }
+
+    private normalizeLibrarianCallableError(error: unknown): Error {
+        const code =
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            typeof (error as { code?: unknown }).code === 'string'
+                ? String((error as { code: string }).code).trim()
+                : '';
+        const message =
+            error &&
+            typeof error === 'object' &&
+            'message' in error &&
+            typeof (error as { message?: unknown }).message === 'string'
+                ? String((error as { message: string }).message).trim()
+                : '';
+        const normalized = `${code} ${message}`.toUpperCase();
+
+        if (normalized.includes('APP_CHECK_REQUIRED') || code === 'functions/failed-precondition') {
+            return new Error('APP_CHECK_REQUIRED');
+        }
+        if (normalized.includes('AUTH_REQUIRED') || code === 'functions/unauthenticated') {
+            return new Error('AUTH_REQUIRED');
+        }
+        if (normalized.includes('CONSENT_REQUIRED') || code === 'functions/permission-denied') {
+            return new Error('CONSENT_REQUIRED');
+        }
+        if (normalized.includes('INVALID_REQUEST') || code === 'functions/invalid-argument') {
+            return new Error('INVALID_REQUEST');
+        }
+        if (normalized.includes('QUOTA_EXCEEDED') || code === 'functions/resource-exhausted') {
+            return new Error('QUOTA_EXCEEDED');
+        }
+        if (normalized.includes('ENGINE_FAILURE') || code === 'functions/internal') {
+            return new Error('ENGINE_FAILURE');
+        }
+        return new Error(message || code || 'ENGINE_FAILURE');
     }
 
     private async buildRequestHeaders(options?: { requireAppCheck?: boolean }): Promise<Record<string, string>> {
@@ -133,10 +172,26 @@ export class RealAgentService implements AgentService {
             throw new Error('INVALID_REQUEST');
         }
 
-        const response = await this.callEndpoint('/api/ai/librarian', {
-            normalizedQuery,
-            intent: intent && intent.trim().length > 0 ? intent.trim() : this.inferLibrarianIntent(normalizedQuery)
-        }, { requireAppCheck: true });
+        const resolvedIntent =
+            intent && intent.trim().length > 0
+                ? intent.trim()
+                : this.inferLibrarianIntent(normalizedQuery);
+
+        let response: unknown;
+        try {
+            const fn = httpsCallable<
+                { normalizedQuery: string; intent?: string },
+                LibrarianResponseEnvelope
+            >(getFirebaseFunctions(), 'aiLibrarian');
+            const result = await fn({
+                normalizedQuery,
+                intent: resolvedIntent,
+            });
+            response = result.data;
+        } catch (error) {
+            console.error('[RealAgentService] Callable aiLibrarian failed:', error);
+            throw this.normalizeLibrarianCallableError(error);
+        }
 
         const normalizeCards = (rows: unknown): LibrarianBookCard[] => {
             if (!Array.isArray(rows)) return [];

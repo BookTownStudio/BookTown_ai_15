@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 /**
  * MEDIA_PERMISSION_GUARD_V1
  * Authority: frontend_with_platform_enforcement
@@ -70,5 +71,5 @@ export const initMediaGuard = () => {
     (window as any).webkitSpeechRecognition = GuardedSpeechRecognition;
   }
 
-  console.log("[MediaGuard] Platform enforcement active. Startup requests blocked.");
+  devLog("[MediaGuard] Platform enforcement active. Startup requests blocked.");
 };

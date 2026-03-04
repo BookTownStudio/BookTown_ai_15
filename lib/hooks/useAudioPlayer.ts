@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { generateSpeech } from '../../services/geminiService.ts';
 import { pcmToWav } from '../utils.ts';
@@ -50,7 +51,7 @@ export const useAudioPlayer = (bookId: string | undefined, initialSrc?: string) 
     const getAudioInstance = useCallback(() => {
         if (audioRef.current) return audioRef.current;
 
-        console.log("[AUDIO][LAZY_INIT] Direct user action detected. Initializing Audio context.");
+        devLog("[AUDIO][LAZY_INIT] Direct user action detected. Initializing Audio context.");
         
         // Authority: Bypass guard for user action
         allowNextMediaRequest();

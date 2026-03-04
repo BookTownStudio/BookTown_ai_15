@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 import { useState, useEffect } from 'react';
 
 interface BeforeInstallPromptEvent extends Event {
@@ -59,7 +60,7 @@ export const useInstallPrompt = () => {
         if (deferredPrompt) {
             await deferredPrompt.prompt();
             const { outcome } = await deferredPrompt.userChoice;
-            console.log(`User response to the install prompt: ${outcome}`);
+            devLog(`User response to the install prompt: ${outcome}`);
             setDeferredPrompt(null);
         }
     };

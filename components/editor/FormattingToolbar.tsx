@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
@@ -113,10 +114,10 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                     </button>
                     {activeMenu === 'align' && (
                         <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
-                            <button onClick={() => { console.log('Align Left'); setActiveMenu(null); }} className={DropdownItemClass}><AlignLeftIcon className="h-4 w-4"/> Left</button>
-                            <button onClick={() => { console.log('Align Center'); setActiveMenu(null); }} className={DropdownItemClass}><AlignCenterIcon className="h-4 w-4"/> Center</button>
-                            <button onClick={() => { console.log('Align Right'); setActiveMenu(null); }} className={DropdownItemClass}><AlignRightIcon className="h-4 w-4"/> Right</button>
-                            <button onClick={() => { console.log('Align Justify'); setActiveMenu(null); }} className={DropdownItemClass}><AlignJustifyIcon className="h-4 w-4"/> Justify</button>
+                            <button onClick={() => { devLog('Align Left'); setActiveMenu(null); }} className={DropdownItemClass}><AlignLeftIcon className="h-4 w-4"/> Left</button>
+                            <button onClick={() => { devLog('Align Center'); setActiveMenu(null); }} className={DropdownItemClass}><AlignCenterIcon className="h-4 w-4"/> Center</button>
+                            <button onClick={() => { devLog('Align Right'); setActiveMenu(null); }} className={DropdownItemClass}><AlignRightIcon className="h-4 w-4"/> Right</button>
+                            <button onClick={() => { devLog('Align Justify'); setActiveMenu(null); }} className={DropdownItemClass}><AlignJustifyIcon className="h-4 w-4"/> Justify</button>
                         </div>
                     )}
                 </div>

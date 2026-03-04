@@ -1,3 +1,4 @@
+import { devDebug } from '../logging/devLog';
 /**
  * ATTACHMENT_ANALYTICS_V1
  * Authority: passive_observability_client
@@ -58,7 +59,7 @@ const flush = async () => {
         await logFn({ events: eventsToFlush });
     } catch (e) {
         // Passive failure: Analytics should never interrupt UI
-        console.debug("[ANALYTICS] Flush failed (silent)", e);
+        devDebug("[ANALYTICS] Flush failed (silent)", e);
     }
 };
 

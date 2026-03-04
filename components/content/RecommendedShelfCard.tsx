@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 
 import React from 'react';
 import GlassCard from '../ui/GlassCard.tsx';
@@ -31,7 +32,7 @@ const RecommendedShelfCard: React.FC<RecommendedShelfCardProps> = ({ shelf }) =>
 
     const handleCardClick = () => {
         // Placeholder for navigation
-        console.log(`Navigating to shelf: ${shelf.id}`);
+        devLog(`Navigating to shelf: ${shelf.id}`);
     };
 
     // Rule: STATE_INITIALIZATION_SAFETY

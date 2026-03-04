@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
@@ -18,8 +19,8 @@ export const useCreateShelf = () => {
         mutationFn: async ({ titleEn, titleAr }: CreateShelfVariables) => {
             if (!uid) throw new Error("Not authenticated");
 
-            console.log("[CREATE_SHELF] mutation start", { uid, titleEn, titleAr });
-            console.log("[CREATE_SHELF] about to write");
+            devLog("[CREATE_SHELF] mutation start", { uid, titleEn, titleAr });
+            devLog("[CREATE_SHELF] about to write");
 
             try {
                 const result = await dataService.shelves.createShelf(
@@ -27,7 +28,7 @@ export const useCreateShelf = () => {
                     { titleEn, titleAr, entries: {} }
                 );
 
-                console.log("[CREATE_SHELF] write success", result);
+                devLog("[CREATE_SHELF] write success", result);
                 return result;
             } catch (e) {
                 console.error("[CREATE_SHELF] write failed", e);
@@ -77,7 +78,7 @@ export const useCreateShelf = () => {
 
         onSettled: () => {
             if (uid) {
-                console.log("[CREATE_SHELF] mutation settled → invalidating shelves");
+                devLog("[CREATE_SHELF] mutation settled → invalidating shelves");
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.shelves(uid) as unknown as any[]);
             }

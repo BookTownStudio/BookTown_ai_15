@@ -1,3 +1,4 @@
+import { devInfo } from '../logging/devLog';
 import { useQuery } from '../react-query.ts';
 import { getFirebaseDb } from '../firebase.ts';
 import { doc, getDoc, Timestamp } from 'firebase/firestore';
@@ -129,7 +130,7 @@ export function useIntelligenceAggregates(enabled: boolean = true) {
         ? Math.max(0, loadedAt.getTime() - checkpoint.lastProcessedAt.getTime())
         : null;
 
-      console.info('[ADMIN][INTELLIGENCE_DASHBOARD][LOAD]', {
+      devInfo('[ADMIN][INTELLIGENCE_DASHBOARD][LOAD]', {
         hasAggregate: aggregate !== null,
         hasCheckpoint: checkpoint !== null,
         loadedAt: loadedAt.toISOString(),

@@ -93,6 +93,7 @@ import {
   sendDirectMessage as sendDirectMessageRaw,
   markDirectConversationRead as markDirectConversationReadRaw,
 } from "./messaging/directMessages";
+import { aiLibrarianCallable as aiLibrarianCallableRaw } from "./ai/librarianCallable";
 import { api as apiRaw } from "./api";
 import { sitemap as sitemapRaw } from "./ssr/sitemap";
 import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
@@ -620,3 +621,4 @@ export { processUserUploadCoverJobs };
 
 // REST API (CRITICAL WIRING)
 export const api = wrapRestExport(apiRaw);
+export const aiLibrarian = aiLibrarianCallableRaw;

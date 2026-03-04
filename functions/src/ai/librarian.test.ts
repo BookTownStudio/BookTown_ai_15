@@ -228,9 +228,10 @@ function buildCacheDocId(params: {
   requestIntent: string;
   normalizedQuery: string;
 }): string {
+  const cacheVersion = "v2";
   const hash = createHash("sha256")
     .update(
-      `${params.uid}|${params.profileVersion}|${params.scopeIntent}:${params.requestIntent}|${params.normalizedQuery}`
+      `${cacheVersion}|${params.uid}|${params.profileVersion}|${params.scopeIntent}:${params.requestIntent}|${params.normalizedQuery}`
     )
     .digest("hex");
   return `librarian_${hash}`;
@@ -380,7 +381,7 @@ describe("librarian orchestrator refactor", () => {
 
     expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
     expect(result.recommendations[0].title).toBe("The Windup Girl");
-    expect(result.recommendations[0].bookId.startsWith("lw_")).toBe(true);
+    expect(result.recommendations[0].bookId.startsWith("ext_")).toBe(true);
   });
 
   it("dominantGenre does not block recommendation existence", async () => {
@@ -904,6 +905,212 @@ describe("librarian orchestrator refactor", () => {
       expect(row.short_reason.trim().length).toBeGreaterThan(0);
       expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
     }
+  });
+
+  it("rumi_author_query returns verified Rumi titles, not catalog fallback", async () => {
+    llmTextResponse = JSON.stringify([
+      { title: "The Essential Rumi", author: "Rumi" },
+      { title: "Rumi: The Book of Love", author: "Rumi" },
+      { title: "The Masnavi", author: "Rumi" },
+    ]);
+
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      const normalized = query.toLowerCase();
+      if (normalized.includes("essential rumi")) {
+        return buildSearchResponse([
+          {
+            title: "The Essential Rumi",
+            titleEn: "The Essential Rumi",
+            authorEn: "Rumi",
+            authors: ["Rumi"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-RUMI-1",
+            bookId: "gb-rumi-1",
+          },
+        ]);
+      }
+      if (normalized.includes("book of love")) {
+        return buildSearchResponse([
+          {
+            title: "Rumi: The Book of Love",
+            titleEn: "Rumi: The Book of Love",
+            authorEn: "Rumi",
+            authors: ["Rumi"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-RUMI-2",
+            bookId: "ol-rumi-2",
+          },
+        ]);
+      }
+      if (normalized.includes("masnavi")) {
+        return buildSearchResponse([
+          {
+            title: "The Masnavi",
+            titleEn: "The Masnavi",
+            authorEn: "Rumi",
+            authors: ["Rumi"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-RUMI-3",
+            bookId: "gb-rumi-3",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "a book by rumi",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
+    expect(result.recommendations.some((row) => row.author.toLowerCase().includes("rumi"))).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "Start with a concrete title")).toBe(false);
+  });
+
+  it("eco_author_query returns verified Umberto Eco titles", async () => {
+    llmTextResponse = JSON.stringify([
+      { title: "The Name of the Rose", author: "Umberto Eco" },
+      { title: "Foucault's Pendulum", author: "Umberto Eco" },
+      { title: "The Prague Cemetery", author: "Umberto Eco" },
+    ]);
+
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      const normalized = query.toLowerCase();
+      if (normalized.includes("name of the rose")) {
+        return buildSearchResponse([
+          {
+            title: "The Name of the Rose",
+            titleEn: "The Name of the Rose",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-ECO-1",
+            bookId: "ol-eco-1",
+          },
+        ]);
+      }
+      if (normalized.includes("foucault")) {
+        return buildSearchResponse([
+          {
+            title: "Foucault's Pendulum",
+            titleEn: "Foucault's Pendulum",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-ECO-2",
+            bookId: "gb-eco-2",
+          },
+        ]);
+      }
+      if (normalized.includes("prague cemetery")) {
+        return buildSearchResponse([
+          {
+            title: "The Prague Cemetery",
+            titleEn: "The Prague Cemetery",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-ECO-3",
+            bookId: "ol-eco-3",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "a book by umberto eco",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
+    expect(
+      result.recommendations.some(
+        (row) =>
+          row.title === "The Name of the Rose" ||
+          row.title === "Foucault's Pendulum" ||
+          row.title === "The Prague Cemetery"
+      )
+    ).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "Start with a concrete title")).toBe(false);
+  });
+
+  it("similarity_query returns verified sci-fi titles for loved dune", async () => {
+    llmTextResponse = JSON.stringify([
+      { title: "Hyperion", author: "Dan Simmons" },
+      { title: "Foundation", author: "Isaac Asimov" },
+      { title: "The Left Hand of Darkness", author: "Ursula K. Le Guin" },
+    ]);
+
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      const normalized = query.toLowerCase();
+      if (normalized.includes("hyperion")) {
+        return buildSearchResponse([
+          {
+            title: "Hyperion",
+            titleEn: "Hyperion",
+            authorEn: "Dan Simmons",
+            authors: ["Dan Simmons"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-SF-1",
+            bookId: "gb-sf-1",
+          },
+        ]);
+      }
+      if (normalized.includes("foundation")) {
+        return buildSearchResponse([
+          {
+            title: "Foundation",
+            titleEn: "Foundation",
+            authorEn: "Isaac Asimov",
+            authors: ["Isaac Asimov"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-SF-2",
+            bookId: "ol-sf-2",
+          },
+        ]);
+      }
+      if (normalized.includes("left hand of darkness")) {
+        return buildSearchResponse([
+          {
+            title: "The Left Hand of Darkness",
+            titleEn: "The Left Hand of Darkness",
+            authorEn: "Ursula K. Le Guin",
+            authors: ["Ursula K. Le Guin"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-SF-3",
+            bookId: "gb-sf-3",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "what should i read if i loved dune",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(1);
+    expect(
+      result.recommendations.some(
+        (row) =>
+          row.title === "Hyperion" ||
+          row.title === "Foundation" ||
+          row.title === "The Left Hand of Darkness"
+      )
+    ).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "Start with a concrete title")).toBe(false);
   });
 
   it("cache key differs between BOOK_RECOMMENDATION and AUTHOR_ORDER for same query", () => {

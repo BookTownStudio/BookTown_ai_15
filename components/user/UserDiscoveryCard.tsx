@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React, { useState } from 'react';
 import { UserDiscoveryAttachment } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
@@ -68,7 +69,7 @@ const UserDiscoveryCard: React.FC<UserDiscoveryCardProps> = ({ user, onOpen }) =
 
     const handleMenuAction = (e: React.MouseEvent, action: string) => {
         e.stopPropagation();
-        console.log(`[Mock] Action '${action}' for user ${user.userId}`);
+        devLog(`[Mock] Action '${action}' for user ${user.userId}`);
         setIsMenuOpen(false);
         if (action === 'Not Interested') {
             // In a real app, this would hide the card from the feed.

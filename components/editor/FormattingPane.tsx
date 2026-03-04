@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React, { useState } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import Button from '../ui/Button.tsx';
@@ -57,7 +58,7 @@ const FormattingPane: React.FC<FormattingPaneProps> = ({
     const setAlign = (align: 'left' | 'center' | 'right' | 'justify') => {
         // Tiptap alignment requires the TextAlign extension which isn't in StarterKit
         // For now, we'll just close the menu as a placeholder or you'd add the extension
-        console.log("Alignment set to", align); 
+        devLog("Alignment set to", align); 
         setOpenMenu(null);
     };
 

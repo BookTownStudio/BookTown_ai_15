@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React, { useEffect, useReducer, useState, useRef, useCallback } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -205,7 +206,7 @@ const EditorScreen: React.FC = () => {
         if (!needsMaterialization) return;
 
         setSyncStatus('materializing');
-        console.log('[WRITE][PHASE_2] MATERIALIZATION_STARTED: Establishing backend authority...');
+        devLog('[WRITE][PHASE_2] MATERIALIZATION_STARTED: Establishing backend authority...');
 
         const initialSnapshot: EditorSnapshot = { ...present };
 
@@ -219,7 +220,7 @@ const EditorScreen: React.FC = () => {
             },
             {
                 onSuccess: (newProject) => {
-                    console.log(`[WRITE][PHASE_3] MATERIALIZATION_SUCCESS: Canonical ID verified: ${newProject.id}`);
+                    devLog(`[WRITE][PHASE_3] MATERIALIZATION_SUCCESS: Canonical ID verified: ${newProject.id}`);
                     lastSavedSnapshot.current = initialSnapshot;
                     setSyncStatus('persistent');
 

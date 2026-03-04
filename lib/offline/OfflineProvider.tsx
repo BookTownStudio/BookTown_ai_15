@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { offlineQueue, QueueItem } from './offlineQueue.ts';
@@ -56,7 +57,7 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
         showToast("Back online. Syncing changes...");
 
         await offlineQueue.process(async (item: QueueItem) => {
-            console.log(`[Sync] Processing ${item.type} for ${item.entity}`, item.payload);
+            devLog(`[Sync] Processing ${item.type} for ${item.entity}`, item.payload);
             await new Promise(resolve => setTimeout(resolve, 500)); // Simulate sync
         });
 

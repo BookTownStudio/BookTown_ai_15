@@ -100,15 +100,23 @@ type VerifiedBook = CandidateBook & {
   source: "booktown" | "googleBooks" | "openLibrary";
   externalId: string | null;
   canonicalBookId: string | null;
+  coverUrl?: string;
+  description?: string;
+  externalIds?: {
+    providerId: string | null;
+    canonicalBookId: string | null;
+  };
+  verificationSource?: "canonical" | "external_verified";
 };
 
 const LIBRARIAN_PROPOSAL_MODEL = "gemini-2.0-flash";
-const LIBRARIAN_MAX_LLM_CANDIDATES = 6;
+const LIBRARIAN_MAX_LLM_CANDIDATES = 12;
 const LIBRARIAN_DEFAULT_SELECTION_COUNT = 2;
 const LIBRARIAN_MAX_REGENERATION_ATTEMPTS = 1;
 const LIBRARIAN_LLM_TIMEOUT_MS = 5000;
 const LIBRARIAN_PROMPT_TOKEN_LIMIT = 2000;
 const LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS = 8;
+const LIBRARIAN_CACHE_SCHEMA_VERSION = "v2";
 
 type UnifiedSearchBudget = {
   used: number;
@@ -595,6 +603,36 @@ function normalizeProposalTitle(value: unknown): string {
   return value.trim().slice(0, 300);
 }
 
+function sanitizeBookIdPart(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9_-]+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 96);
+}
+
+function buildExternalSyntheticBookId(params: {
+  provider: "booktown" | "googleBooks" | "openLibrary";
+  externalId?: string | null;
+  fallbackSeed?: string;
+}): string {
+  const providerKey = sanitizeBookIdPart(params.provider) || "external";
+  const externalKey = sanitizeBookIdPart(String(params.externalId || ""));
+  if (externalKey) {
+    return `ext_${providerKey}_${externalKey}`;
+  }
+  const fallbackKey =
+    sanitizeBookIdPart(String(params.fallbackSeed || "")) ||
+    createHash("sha256")
+      .update(`${params.provider}|${params.externalId || ""}|${params.fallbackSeed || ""}`)
+      .digest("hex")
+      .slice(0, 24);
+  return `ext_${providerKey}_${fallbackKey}`;
+}
+
 function parseProposalPayload(payload: unknown): ProposedBook[] {
   if (!Array.isArray(payload)) return [];
   const out: ProposedBook[] = [];
@@ -660,21 +698,32 @@ function buildProposalPrompt(params: {
   const contextSummary = summarizeContextForProposal(params.context);
   const exclusions =
     params.excludedKeys.length > 0
-      ? `Do not repeat these title|author keys: ${params.excludedKeys.join(", ")}.`
+      ? `Do not repeat these title|author keys: ${params.excludedKeys.join(", ")}`
       : "No exclusions.";
 
   return [
     "You are a neighborhood librarian recommending books only.",
+    "",
     "Return JSON only. Format: [{\"title\":\"...\",\"author\":\"...\"}].",
-    `Return between 3 and ${LIBRARIAN_MAX_LLM_CANDIDATES} candidates.`,
-    "Do not include essays, papers, podcasts, lectures, or non-book media.",
-    "Do not include explanations or markdown.",
-    `Mode: ${params.mode}.`,
+    "",
+    `Return between 10 and ${LIBRARIAN_MAX_LLM_CANDIDATES} candidate books.`,
+    "",
+    "Requirements:",
+    "- Only real published books.",
+    "- Prefer well-known canonical works.",
+    "- Prefer books widely recognized by readers.",
+    "- Avoid academic papers, essays, lectures, or non-book media.",
+    "- Do not invent titles.",
+    "- Do not repeat titles listed in exclusions.",
+    "",
+    `Mode: ${params.mode}`,
     `User query: ${params.normalizedQuery}`,
-    params.anchorTitle ? `Anchor title (if relevant): ${params.anchorTitle}` : "No anchor title resolved.",
-    params.anchorAuthor ? `Anchor author (if relevant): ${params.anchorAuthor}` : "No anchor author resolved.",
+    `Anchor title (if relevant): ${params.anchorTitle || "No anchor title resolved."}`,
+    `Anchor author (if relevant): ${params.anchorAuthor || "No anchor author resolved."}`,
     `Structured context: ${JSON.stringify(contextSummary)}`,
     exclusions,
+    "",
+    "Return JSON array only.",
   ].join("\n");
 }
 
@@ -941,6 +990,7 @@ async function verifyProposedBook(params: {
       source: "booktown",
       externalId: null,
       canonicalBookId: canonical.id,
+      verificationSource: "canonical",
     };
     await storeLightweightVerifiedBook({
       verified,
@@ -984,20 +1034,31 @@ async function verifyProposedBook(params: {
 
   const externalAuthor = normalizedAuthorFromSearchResult(best) || params.proposal.author;
   const externalTitle = normalizeProposalTitle(best.title || best.titleEn) || params.proposal.title;
-  const lightweightId = `lw_${createHash("sha256")
-    .update(`${best.source}|${best.externalId || best.bookId}|${externalTitle}|${externalAuthor}`)
-    .digest("hex")
-    .slice(0, 28)}`;
+  const externalDescription = String(best.description || best.descriptionEn || "").trim();
+  const externalCoverUrl = String(best.coverUrl || "").trim();
+  const externalProviderId = best.externalId || best.bookId || null;
+  const syntheticBookId = buildExternalSyntheticBookId({
+    provider: best.source,
+    externalId: externalProviderId,
+    fallbackSeed: `${externalTitle}|${externalAuthor}`,
+  });
   const verified: VerifiedBook = {
-    id: lightweightId,
+    id: syntheticBookId,
     title: externalTitle,
     author: externalAuthor,
     genres: extractSearchGenres(best),
     rating: extractSearchRating(best),
     sourceType: "lightweight",
     source: best.source,
-    externalId: best.externalId || best.bookId || null,
+    externalId: externalProviderId,
     canonicalBookId: best.resultType === "canonical" ? best.bookId : null,
+    coverUrl: externalCoverUrl || undefined,
+    description: externalDescription || undefined,
+    externalIds: {
+      providerId: externalProviderId,
+      canonicalBookId: best.resultType === "canonical" ? best.bookId : null,
+    },
+    verificationSource: "external_verified",
   };
   await storeLightweightVerifiedBook({
     verified,
@@ -1197,18 +1258,64 @@ async function resolveTopicBooks(params: {
   return cards;
 }
 
-async function resolveCatalogFallbackCards(): Promise<LibrarianBookCard[]> {
-  const snap = await db.collection("books").orderBy("normalizedTitle").limit(3).get();
-  const rows = snap.docs
-    .map((docSnap) => normalizeCandidate(docSnap))
-    .filter((row): row is CandidateBook => row !== null)
-    .slice(0, 2)
-    .map((row) => ({
-      bookId: row.id,
-      title: row.title,
-      author: row.author,
-      short_reason: "Start here and I can refine from your next request.",
-    }));
+function externalFallbackBookId(row: UnifiedSearchResult): string {
+  if (row.resultType === "canonical") {
+    const direct = String(row.bookId || "").trim();
+    if (direct) return direct;
+  }
+  return buildExternalSyntheticBookId({
+    provider: row.source,
+    externalId: row.externalId || row.bookId || null,
+    fallbackSeed: `${row.title || row.titleEn || ""}|${row.authorEn || ""}`,
+  });
+}
+
+async function resolveExternalFallbackCards(params: {
+  query: string;
+  budget: UnifiedSearchBudget;
+  reason: string;
+  maxBooks?: number;
+  excludeKeys?: Iterable<string>;
+  shortReason: string;
+}): Promise<LibrarianBookCard[]> {
+  const requestedCount = Math.max(
+    1,
+    Math.min(params.maxBooks ?? LIBRARIAN_DEFAULT_SELECTION_COUNT, LIBRARIAN_LIMITS.MAX_BOOKS)
+  );
+  const searchResponse = await unifiedSearchWithBudget({
+    budget: params.budget,
+    query: params.query,
+    limit: 20,
+    reason: params.reason,
+  });
+  if (!searchResponse) return [];
+
+  const excluded = new Set<string>();
+  for (const key of params.excludeKeys || []) {
+    if (typeof key !== "string") continue;
+    const normalized = key.trim();
+    if (normalized) excluded.add(normalized);
+  }
+
+  const rows: LibrarianBookCard[] = [];
+  for (const row of searchResponse.results) {
+    const title = String(row.title || row.titleEn || "").trim();
+    const author = String(
+      row.authorEn || (Array.isArray(row.authors) && row.authors.length > 0 ? row.authors[0] : "")
+    ).trim();
+    if (!title || !author) continue;
+    const key = proposalKey(title, author);
+    if (key && excluded.has(key)) continue;
+    if (key) excluded.add(key);
+    rows.push({
+      bookId: externalFallbackBookId(row),
+      title,
+      author,
+      short_reason: params.shortReason,
+    });
+    if (rows.length >= requestedCount) break;
+  }
+
   return rows;
 }
 
@@ -1510,7 +1617,9 @@ async function findRereadCandidate(uid: string): Promise<CandidateBook | null> {
 
 function cacheDocId(uid: string, profileVersion: number, intent: string, normalizedQuery: string): string {
   const hash = createHash("sha256")
-    .update(`${uid}|${profileVersion}|${intent}|${normalizedQuery}`)
+    .update(
+      `${LIBRARIAN_CACHE_SCHEMA_VERSION}|${uid}|${profileVersion}|${intent}|${normalizedQuery}`
+    )
     .digest("hex");
   return `librarian_${hash}`;
 }
@@ -1623,6 +1732,7 @@ async function storeCachedRecommendations(params: {
   );
   await ref.set(
     {
+      cacheVersion: LIBRARIAN_CACHE_SCHEMA_VERSION,
       uid: params.uid,
       profileVersion: params.profileVersion,
       intent: params.intent,
@@ -1787,29 +1897,64 @@ export async function runLibrarianRecommendation(params: {
     used: 0,
     limit: LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS,
   };
+  const excludedProposalKeys = new Set<string>();
 
   const finalizeAndReturn = async (
     inputRecommendations: LibrarianBookCard[],
     options: {
       fromCache: boolean;
       remainingQuota: number;
-      allowCatalogFallback?: boolean;
       suggestionMode?: LibrarianMode;
+      excludedKeys?: Iterable<string>;
+      minRecommendations?: number;
+      fallbackQuery?: string;
+      fallbackReason?: string;
+      fallbackShortReason?: string;
     }
   ) => {
-    let recommendations = dedupeCards(inputRecommendations)
-      .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS)
-      .map((row) => {
-        const defaultReason = "A strong next step based on your request.";
-        return {
-          ...row,
-          short_reason: sanitizeShortReason(row.short_reason, defaultReason),
-        };
+    const normalizeCards = (rows: LibrarianBookCard[]): LibrarianBookCard[] =>
+      dedupeCards(rows)
+        .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS)
+        .map((row) => {
+          const defaultReason = "A strong next step based on your request.";
+          return {
+            ...row,
+            short_reason: sanitizeShortReason(row.short_reason, defaultReason),
+          };
+        });
+
+    let recommendations = normalizeCards(inputRecommendations);
+    const minRecommendations = Math.max(
+      1,
+      Math.min(options.minRecommendations ?? LIBRARIAN_DEFAULT_SELECTION_COUNT, LIBRARIAN_LIMITS.MAX_BOOKS)
+    );
+
+    if (!options.fromCache && recommendations.length < minRecommendations) {
+      const excludeKeys = new Set<string>();
+      for (const row of recommendations) {
+        const key = proposalKey(row.title, row.author);
+        if (key) excludeKeys.add(key);
+      }
+      for (const key of options.excludedKeys || []) {
+        if (typeof key !== "string") continue;
+        const normalized = key.trim();
+        if (normalized) excludeKeys.add(normalized);
+      }
+
+      const fallbackCards = await resolveExternalFallbackCards({
+        query: options.fallbackQuery || validation.normalizedQuery,
+        budget: unifiedSearchBudget,
+        reason: options.fallbackReason || "verified_recommendation_topup",
+        maxBooks: minRecommendations,
+        excludeKeys,
+        shortReason:
+          options.fallbackShortReason ||
+          "A verified match for your request and a strong next reading step.",
       });
 
-    if (recommendations.length === 0 && options?.allowCatalogFallback !== false) {
-      recommendations = await resolveCatalogFallbackCards();
+      recommendations = normalizeCards([...recommendations, ...fallbackCards]);
     }
+
     if (recommendations.length === 0) {
       recommendations = [
         buildFallbackCard({
@@ -1817,6 +1962,13 @@ export async function runLibrarianRecommendation(params: {
           effectiveDominant: dominantGenre,
         }),
       ];
+      recommendations = normalizeCards(recommendations).slice(0, 1).map((row) => {
+        const defaultReason = "A strong next step based on your request.";
+        return {
+          ...row,
+          short_reason: sanitizeShortReason(row.short_reason, defaultReason),
+        };
+      });
     }
 
     const outputTokens = approximateTokens(JSON.stringify(recommendations));
@@ -1896,7 +2048,6 @@ export async function runLibrarianRecommendation(params: {
     return finalizeAndReturn(cache, {
       fromCache: true,
       remainingQuota: remainingFromCache,
-      allowCatalogFallback: intentClassification.intent !== "OUT_OF_SCOPE",
       suggestionMode: mode,
     });
   }
@@ -1954,21 +2105,28 @@ export async function runLibrarianRecommendation(params: {
       return finalizeAndReturn(routed, {
         fromCache: false,
         remainingQuota: quota.remaining,
-        allowCatalogFallback: false,
         suggestionMode: mode,
+        minRecommendations: LIBRARIAN_DEFAULT_SELECTION_COUNT,
+        fallbackQuery: `books about ${intentClassification.topic}`.trim(),
+        fallbackReason: "out_of_scope_route_topup",
+        fallbackShortReason: toBoundaryReason(intentClassification.topic),
       });
     }
 
     if (routed.length < 2) {
-      const filler = await resolveCatalogFallbackCards();
+      const filler = await resolveExternalFallbackCards({
+        query: validation.normalizedQuery,
+        budget: unifiedSearchBudget,
+        reason: "structured_route_topup",
+        maxBooks: 2,
+        excludeKeys: excludedProposalKeys,
+        shortReason: toKnowledgeReason(intentClassification.topic || intentClassification.authorName),
+      });
       const needed = Math.max(0, 2 - routed.length);
       routed.push(
         ...filler.slice(0, needed).map((row) => ({
           ...row,
-          short_reason:
-            intentClassification.intent === "OUT_OF_SCOPE"
-              ? toBoundaryReason(intentClassification.topic)
-              : toKnowledgeReason(intentClassification.topic || intentClassification.authorName),
+          short_reason: toKnowledgeReason(intentClassification.topic || intentClassification.authorName),
         }))
       );
     }
@@ -1976,10 +2134,13 @@ export async function runLibrarianRecommendation(params: {
       fromCache: false,
       remainingQuota: quota.remaining,
       suggestionMode: mode,
+      minRecommendations: LIBRARIAN_DEFAULT_SELECTION_COUNT,
+      fallbackQuery: validation.normalizedQuery,
+      fallbackReason: "structured_route_finalize",
+      fallbackShortReason: toKnowledgeReason(intentClassification.topic || intentClassification.authorName),
     });
   }
 
-  const excludedProposalKeys = new Set<string>();
   const verifiedPool: VerifiedBook[] = [];
   let regenerationCount = 0;
 
@@ -2049,7 +2210,7 @@ export async function runLibrarianRecommendation(params: {
         : 0;
       const relevance = clamp(baseScore + sourceBoost + modeAdjustment);
       const lowRated = candidate.rating !== null && candidate.rating < 3.5;
-      const short_reason =
+      const resolvedShortReason =
         candidate.sourceType === "canonical"
           ? buildShortReason({
               mode,
@@ -2059,6 +2220,10 @@ export async function runLibrarianRecommendation(params: {
               lowRated,
             })
           : "A strong thematic fit for your request with a clear reading path.";
+      const short_reason =
+        resolvedShortReason.trim().length > 0
+          ? resolvedShortReason
+          : "Verified book recommendation.";
       return {
         bookId: candidate.id,
         title: candidate.title,
@@ -2094,5 +2259,10 @@ export async function runLibrarianRecommendation(params: {
     fromCache: false,
     remainingQuota: quota.remaining,
     suggestionMode: mode,
+    excludedKeys: excludedProposalKeys,
+    minRecommendations: LIBRARIAN_LIMITS.MAX_BOOKS,
+    fallbackQuery: validation.normalizedQuery,
+    fallbackReason: "book_recommendation_finalize",
+    fallbackShortReason: "A verified match for your request and a strong next reading step.",
   });
 }

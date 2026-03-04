@@ -1,3 +1,4 @@
+import { devLog } from './lib/logging/devLog';
 // index.tsx
 
 import React from 'react';
@@ -34,7 +35,7 @@ if (!isReaderBenchmarkMode) {
 
 // 3️⃣ Safe build/version log
 // FIX: Safely access import.meta.env to prevent runtime errors
-console.log(
+devLog(
   'BOOKTOWN 12 BUILD',
   (import.meta as any).env?.VITE_APP_VERSION || '1.0.0-dev'
 );

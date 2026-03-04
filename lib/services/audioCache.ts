@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 
 export const CACHE_NAME = 'booktown-audio-cache-v1';
 
@@ -20,7 +21,7 @@ export const audioCacheService = {
                 headers: { 'Content-Type': 'audio/wav' }
             });
             await cache.put(key, response);
-            console.log(`[AudioCache] Saved segment ${segmentIndex} for book ${bookId}`);
+            devLog(`[AudioCache] Saved segment ${segmentIndex} for book ${bookId}`);
         } catch (e) {
             console.error('[AudioCache] Failed to save audio:', e);
         }
@@ -37,7 +38,7 @@ export const audioCacheService = {
             
             if (response) {
                 const blob = await response.blob();
-                console.log(`[AudioCache] Hit segment ${segmentIndex} for book ${bookId}`);
+                devLog(`[AudioCache] Hit segment ${segmentIndex} for book ${bookId}`);
                 return URL.createObjectURL(blob);
             }
         } catch (e) {

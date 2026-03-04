@@ -1,3 +1,4 @@
+import { devLog } from './logging/devLog';
 // lib/react-query.ts
 
 import { 
@@ -40,7 +41,7 @@ export class QueryClient extends TanStackQueryClient {
    * Clears all queries to prevent cross-user data leakage.
    */
   setUid(uid: string | null) {
-    console.log(`[QUERY_CLIENT] Identity switch detected for UID: ${uid}. Purging cache.`);
+    devLog(`[QUERY_CLIENT] Identity switch detected for UID: ${uid}. Purging cache.`);
     // Using super to explicitly call the base class clear() method
     super.clear();
   }

@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 
 import React, { useState } from 'react';
 import Modal from '../ui/Modal.tsx';
@@ -16,7 +17,7 @@ const PostComposerModal: React.FC<PostComposerModalProps> = ({ isOpen, onClose }
 
     const handlePost = () => {
         // Placeholder action
-        console.log('Posting from modal:', text);
+        devLog('Posting from modal:', text);
         onClose();
     };
 

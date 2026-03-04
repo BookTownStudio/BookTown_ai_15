@@ -1,3 +1,4 @@
+import { devLog, devInfo } from '../../lib/logging/devLog';
 import React, { useState, useRef, useEffect } from 'react';
 import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
@@ -95,7 +96,7 @@ const ImageView: React.FC<{
     maxHeight: number | string;
     surface: RenderSurface;
 }> = ({ attachment, url, payload, maxHeight, surface }) => {
-    console.log("IMAGE_VIEW_ACTIVE");
+    devLog("IMAGE_VIEW_ACTIVE");
 
     const safePayload =
         payload && typeof payload === 'object'
@@ -125,7 +126,7 @@ const ImageView: React.FC<{
                     : { maxHeight }
             }
         >
-            // {console.log("IMAGE_VIEW_RENDERING", url)}
+            // {devLog("IMAGE_VIEW_RENDERING", url)}
             <img
                 src={url}
                 alt={resolvedAlt}
@@ -675,7 +676,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         if (mediaFeedDiagnosticsLogged.has(key)) return;
         mediaFeedDiagnosticsLogged.add(key);
 
-        console.info('[SOCIAL][MEDIA_FEED_DIAGNOSTIC]', {
+        devInfo('[SOCIAL][MEDIA_FEED_DIAGNOSTIC]', {
             key,
             isV1,
             type: isV1 ? v1Type : legacyType,

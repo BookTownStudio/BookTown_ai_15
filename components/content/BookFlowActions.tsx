@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 
 import React from 'react';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
@@ -65,7 +66,7 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId,
                 followAuthor(entityId);
                 break;
             default:
-                console.log(`[Mock] Polymorphic 'Save' action for ${entityType} ${entityId}`);
+                devLog(`[Mock] Polymorphic 'Save' action for ${entityType} ${entityId}`);
                 break;
         }
     };
@@ -122,7 +123,7 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId,
                 params: { from: currentView, attachment: attachmentForComposer }
             });
         } else {
-            console.log(`[Mock] Sharing ${entityType} ${entityId}`);
+            devLog(`[Mock] Sharing ${entityType} ${entityId}`);
             if (navigator.share) {
                 navigator.share({
                     title: `Check this out on BookTown!`,

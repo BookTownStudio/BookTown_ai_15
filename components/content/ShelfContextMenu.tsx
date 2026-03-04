@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import GlassCard from '../ui/GlassCard.tsx';
@@ -37,7 +38,7 @@ const ShelfContextMenu: React.FC<ShelfContextMenuProps> = ({
         { labelEn: 'Add Book', labelAr: 'إضافة كتاب', icon: BookPlusIcon, action: onAddBook, isDestructive: false },
         { labelEn: 'Toggle Layout', labelAr: 'تبديل التخطيط', icon: ViewListIcon, action: onToggleLayout, isDestructive: false },
         { labelEn: 'Share', labelAr: 'مشاركة', icon: ShareIcon, action: onShare, isDestructive: false },
-        { labelEn: 'Duplicate', labelAr: 'تكرار', icon: DuplicateIcon, action: () => console.log('Duplicate Shelf'), isDestructive: false },
+        { labelEn: 'Duplicate', labelAr: 'تكرار', icon: DuplicateIcon, action: () => devLog('Duplicate Shelf'), isDestructive: false },
     ];
 
     if (isDeletable) {

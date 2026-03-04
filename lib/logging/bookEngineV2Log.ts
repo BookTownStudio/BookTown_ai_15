@@ -1,3 +1,4 @@
+import { devInfo } from './devLog';
 const LOCAL_STORAGE_DEBUG_KEY = 'booktown.debug.bookEngineV2';
 
 function isDebugEnabled(): boolean {
@@ -24,5 +25,5 @@ export function logBookEngineV2(
     return;
   }
 
-  console.info(event, payload);
+  devInfo(event, payload);
 }

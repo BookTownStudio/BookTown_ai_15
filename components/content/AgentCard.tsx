@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 
 
 import React from 'react';
@@ -24,7 +25,7 @@ const AgentCard: React.FC<AgentCardProps> = ({ agent }) => {
             navigate({ type: 'immersive', id: 'agentChat', params: { agentId: agent.id } });
         } else {
             // In a real app, open an upgrade modal
-            console.log('Premium agent clicked, would show upgrade modal.');
+            devLog('Premium agent clicked, would show upgrade modal.');
         }
     };
 

@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 
 export type QueueItem = {
     id: string;
@@ -45,7 +46,7 @@ export const offlineQueue = {
         const queue = offlineQueue.getAll();
         if (queue.length === 0) return;
 
-        console.log(`[OfflineQueue] Processing ${queue.length} items...`);
+        devLog(`[OfflineQueue] Processing ${queue.length} items...`);
         
         for (const item of queue) {
             try {

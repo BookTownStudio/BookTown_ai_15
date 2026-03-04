@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
@@ -16,12 +17,12 @@ export const useCreateProject = () => {
             
             // RULE: PROJECT_CREATION_SINGLE_AUTHORITY
             // All write-project creation MUST go through the authoritative data service.
-            console.log("[WRITE][MATERIALIZATION] Requesting server-issued ID...");
+            devLog("[WRITE][MATERIALIZATION] Requesting server-issued ID...");
             return dataService.projects.createProject(uid, newProject);
         },
         onSuccess: (data) => {
             if (uid && data.id) {
-                console.log(`[WRITE][PERSISTENT] Materialization confirmed. Canonical ID: ${data.id}`);
+                devLog(`[WRITE][PERSISTENT] Materialization confirmed. Canonical ID: ${data.id}`);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.

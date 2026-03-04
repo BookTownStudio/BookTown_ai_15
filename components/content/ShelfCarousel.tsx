@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React, { useRef, useMemo, useCallback } from 'react';
 import BookCard from './BookCard.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -120,7 +121,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
       const [dragged] = reordered.splice(draggedIndex, 1);
       reordered.splice(dropIndex, 0, dragged);
 
-      console.log(
+      devLog(
         `[Mock Save] New order for '${shelf.id}':`,
         reordered.map(e => e.bookId)
       );

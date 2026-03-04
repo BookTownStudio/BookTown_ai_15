@@ -1,3 +1,4 @@
+import { devDebug } from '../logging/devLog';
 // lib/hooks/useDuplicateShelf.ts
 
 import { useMutation, useQueryClient } from '../react-query.ts';
@@ -61,7 +62,7 @@ export const useDuplicateShelf = () => {
 
     onSuccess: (duplicatedShelf, variables) => {
       if (uid) {
-        console.debug('[SOCIAL][SHELF_DUPLICATED]', {
+        devDebug('[SOCIAL][SHELF_DUPLICATED]', {
           sourceShelfId: variables.sourceShelf.id,
           sourceOwnerId: variables.sourceShelf.ownerId,
           newShelfId: duplicatedShelf.id,

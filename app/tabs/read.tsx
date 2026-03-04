@@ -1,3 +1,4 @@
+import { devLog } from '../../lib/logging/devLog';
 import React, {
   useRef,
   useEffect,
@@ -121,7 +122,7 @@ const ReadScreen: React.FC = () => {
         return;
       }
 
-      console.log('[DUPLICATE][OPEN_MODAL]', shelf.id);
+      devLog('[DUPLICATE][OPEN_MODAL]', shelf.id);
 
       setShelfToDuplicate(shelf);
       setCreateShelfModalOpen(true);

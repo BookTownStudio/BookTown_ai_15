@@ -1,3 +1,4 @@
+import { devLog } from '../lib/logging/devLog';
 import { LibrarySearchDataService } from './db.types.ts';
 import {
     BookEdition,
@@ -170,7 +171,7 @@ export class LibrarySearchService implements LibrarySearchDataService {
         source: 'google_books' | 'open_library',
         externalId: string
     ): Promise<BookEdition> {
-        console.log(
+        devLog(
             `[LIBRARY_SEARCH][INGEST] Materializing ${source} ID: ${externalId}`
         );
         throw new Error(

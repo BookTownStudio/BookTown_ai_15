@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
@@ -13,7 +14,7 @@ export const useFollowShelf = () => {
             return dataService.shelves.followShelf(uid, shelfId);
         },
         onSuccess: (data, shelfId) => {
-            console.log(`Successfully followed shelf ${shelfId}`);
+            devLog(`Successfully followed shelf ${shelfId}`);
         },
     });
 };

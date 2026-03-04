@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { mockAgents, mockBooks } from '../../data/mocks.ts';
+import { mockAgents } from '../../data/mocks.ts';
 import { Agent, AgentSession } from '../../types/entities.ts';
 import AgentGridCard from '../../components/content/AgentGridCard.tsx';
 import Button from '../../components/ui/Button.tsx';
@@ -15,7 +15,6 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { useAgentChat, useAgentSessions, useTogglePinSession } from '../../lib/hooks/useAgentChat.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
-import BookCard from '../../components/content/BookCard.tsx';
 import { PinIcon } from '../../components/icons/PinIcon.tsx'; // You might need to create this or reuse an icon
 import PageShell from '../../components/layout/PageShell.tsx';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
@@ -31,9 +30,16 @@ const PinIconSvg = (props: React.SVGProps<SVGSVGElement>) => (
 );
 
 
-const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
+const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ text, sourceQuery = '' }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
+    const TOPIC_STOPWORDS = new Set([
+        'what', 'whats', 'is', 'the', 'a', 'an', 'are', 'do', 'does', 'can', 'you', 'please',
+        'tell', 'me', 'show', 'latest', 'news', 'today', 'tonight', 'now', 'currently', 'right',
+        'this', 'week', 'month', 'year', 'in', 'on', 'at', 'for', 'about', 'of', 'to', 'from',
+        'how', 'why', 'should', 'would', 'could', 'my', 'your', 'with', 'without',
+        'book', 'books', 'read', 'reading', 'recommend', 'recommendation', 'recommendations'
+    ]);
 
     const toRecommendationContext = (rec: Record<string, unknown>): LibrarianRecommendationContext | undefined => {
         const suggestionId =
@@ -62,63 +68,95 @@ const LibrarianResponse: React.FC<{ text: string }> = ({ text }) => {
         };
     };
 
+    const normalizeQueryText = (value: string): string => {
+        return String(value || '')
+            .toLowerCase()
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    };
+
+    const extractTopicKeywords = (query: string): string => {
+        const normalized = normalizeQueryText(query);
+        if (!normalized) return '';
+        const tokens = normalized.split(' ').filter(token => token.length > 1 && !TOPIC_STOPWORDS.has(token));
+        return tokens.slice(0, 4).join(' ').trim();
+    };
+
+    let parseFailed = false;
+    let parsedPayload: unknown = null;
     try {
-        const data = JSON.parse(text);
-        const recommendations = Array.isArray(data?.recommendations)
-            ? data.recommendations
-            : Array.isArray(data)
-            ? data
-            : [];
-
-        if (recommendations.length > 0) {
-            return (
-                <div className="space-y-3">
-                    <div className="flex flex-wrap gap-2">
-                        {recommendations.map((rec: { title: string, author: string, bookId?: string, suggestionId?: string, suggestionSessionId?: string, rankPosition?: number, mode?: string }, idx: number) => {
-                            const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
-                            if (typeof rec.bookId === 'string' && rec.bookId.trim().length > 0) {
-                                const canonicalBookId = rec.bookId.trim();
-                                return (
-                                    <div key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : canonicalBookId} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: canonicalBookId, from: currentView, recommendationContext } })}>
-                                        <BookCard bookId={canonicalBookId} layout="list" className="w-28 mr-2" />
-                                    </div>
-                                );
-                            }
-
-                            // Try to find the book in our mock catalog to get an ID and Cover
-                            // In a real app, the agent would ideally return IDs or we use a search service.
-                            const bookEntry = Object.values(mockBooks).find(b => b.titleEn.toLowerCase() === rec.title.toLowerCase() || b.titleAr === rec.title);
-                            
-                            // Fallback visualization if book not in catalog
-                            if (!bookEntry) {
-                                return (
-                                    <div key={idx} className="bg-white/10 p-2 rounded-lg border border-white/10 w-40 flex-shrink-0">
-                                        <p className="font-bold text-sm truncate">{rec.title}</p>
-                                        <p className="text-xs opacity-70 truncate">{rec.author}</p>
-                                    </div>
-                                )
-                            }
-
-                            return (
-                                <div key={`${bookEntry.id}_${idx}`} onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: bookEntry.id, from: currentView, recommendationContext } })}>
-                                    <BookCard bookId={bookEntry.id} layout="list" className="w-28 mr-2" />
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            );
-        }
-    } catch (e) {
-        // Non-JSON payloads are rendered as a structured fallback card.
+        parsedPayload = JSON.parse(text);
+    } catch {
+        parseFailed = true;
     }
+
+    const rawRecommendations = Array.isArray((parsedPayload as { recommendations?: unknown[] } | null)?.recommendations)
+        ? (parsedPayload as { recommendations: unknown[] }).recommendations
+        : Array.isArray(parsedPayload)
+        ? parsedPayload
+        : [];
+    let recommendations = rawRecommendations as Array<{ title: string, author: string, bookId?: string, short_reason?: string, suggestionId?: string, suggestionSessionId?: string, rankPosition?: number, mode?: string }>;
+
+    if (recommendations.length === 0) {
+        const topic = extractTopicKeywords(sourceQuery);
+        if (topic) {
+            recommendations = [
+                {
+                    title: lang === 'en' ? `Books about ${topic}` : `كتب عن ${topic}`,
+                    author: lang === 'en' ? 'BookTown Librarian' : 'أمين مكتبة بوكتاون',
+                },
+            ];
+        }
+    }
+
+    if (recommendations.length > 0) {
+        return (
+            <div className="space-y-3">
+                <div className="flex flex-wrap gap-2">
+                    {recommendations.map((rec, idx: number) => {
+                        const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
+                        const resolvedBookId =
+                            typeof rec.bookId === 'string' ? rec.bookId.trim() : '';
+                        const isExternalLikeId = /^(ext_|lw_|gb_|ol_)/i.test(resolvedBookId);
+                        const isNavigable = resolvedBookId.length > 0 && !isExternalLikeId;
+                        const cardReason =
+                            typeof rec.short_reason === 'string' && rec.short_reason.trim().length > 0
+                                ? rec.short_reason.trim()
+                                : (lang === 'en'
+                                    ? 'Verified book recommendation.'
+                                    : 'اقتراح كتاب موثوق.');
+
+                        return (
+                            <div
+                                key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : `${resolvedBookId || rec.title}_${idx}`}
+                                onClick={isNavigable ? () => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } }) : undefined}
+                                className={`bg-white/10 p-2 rounded-lg border border-white/10 w-52 flex-shrink-0 ${isNavigable ? 'cursor-pointer hover:bg-white/15 transition-colors' : ''}`}
+                            >
+                                <p className="font-bold text-sm line-clamp-2">{rec.title}</p>
+                                <p className="text-xs opacity-70 truncate">{rec.author}</p>
+                                <p className="text-[11px] opacity-70 mt-1 line-clamp-2">{cardReason}</p>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div className="bg-white/10 p-3 rounded-lg border border-white/10 w-44">
             <p className="font-bold text-sm truncate">{lang === 'en' ? 'Book request needed' : 'مطلوب طلب كتاب'}</p>
             <p className="text-xs opacity-80 mt-1">
-                {lang === 'en'
-                    ? 'Share a title, author, or topic and I will return book cards.'
-                    : 'شارك عنوانًا أو مؤلفًا أو موضوعًا وسأعرض بطاقات كتب.'}
+                {parseFailed
+                    ? (lang === 'en'
+                        ? "I couldn't parse the librarian response. Let's try again with another suggestion."
+                        : 'تعذر تحليل رد أمين المكتبة. لنحاول مرة أخرى باقتراح مختلف.')
+                    : (lang === 'en'
+                        ? 'Share a title, author, or topic and I will return book cards.'
+                        : 'شارك عنوانًا أو مؤلفًا أو موضوعًا وسأعرض بطاقات كتب.')}
             </p>
         </div>
     );
@@ -133,6 +171,19 @@ const AgentChatUI: React.FC<{ agent: Agent, sessionId: string }> = ({ agent, ses
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     const { messages, isLoading, sendMessage, isSending } = useAgentChat(agent.id, sessionId);
+    const modelSourceQueries = useMemo(() => {
+        const lookup = new Map<string, string>();
+        let lastUserQuery = '';
+        for (const row of messages || []) {
+            if (row.role === 'user' && typeof row.text === 'string' && row.text.trim().length > 0) {
+                lastUserQuery = row.text;
+            }
+            if (row.role === 'model' && typeof row.id === 'string') {
+                lookup.set(row.id, lastUserQuery);
+            }
+        }
+        return lookup;
+    }, [messages]);
 
     const examplePrompts = lang === 'en' ? agent.examplePromptsEn : agent.examplePromptsAr;
     const placeholderText = lang === 'en' ? agent.placeholderEn : agent.placeholderAr;
@@ -191,7 +242,7 @@ const AgentChatUI: React.FC<{ agent: Agent, sessionId: string }> = ({ agent, ses
                                 : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white/90 rounded-bl-lg'
                         }`}>
                             {msg.role === 'model' && agent.id === 'librarian' ? (
-                                <LibrarianResponse text={msg.text} />
+                                <LibrarianResponse text={msg.text} sourceQuery={modelSourceQueries.get(msg.id) || ''} />
                             ) : (
                                 <p className={`whitespace-pre-wrap ${isRTL ? 'text-right' : 'text-left'}`}>{msg.text}</p>
                             )}

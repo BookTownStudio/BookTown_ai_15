@@ -1,3 +1,4 @@
+import { devLog } from '../lib/logging/devLog';
 import { DataService } from './db.types.ts';
 import { firebaseDbService } from './firebaseDbService.ts';
 import { librarySearchService } from './librarySearchService.ts';
@@ -55,6 +56,6 @@ const guardedDataService = new Proxy(rawService, {
   }
 });
 
-console.log('[DataService] Initializing. Mode: FIREBASE (Production Runtime)');
+devLog('[DataService] Initializing. Mode: FIREBASE (Production Runtime)');
 
 export const dataService: DataService = guardedDataService;

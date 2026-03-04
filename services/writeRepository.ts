@@ -1,3 +1,4 @@
+import { devLog } from '../lib/logging/devLog';
 
 import { Project } from '../types/entities.ts';
 import { dataService } from './dataService.ts';
@@ -15,7 +16,7 @@ export const WriteRepository = {
      * Performs a sync-audit to remove local "ghosts" from query caches.
      */
     async loadProjects(uid: string, isGuest: boolean): Promise<Project[]> {
-        console.log(`[WriteRepo] Loading projects for UID: ${uid} (Guest: ${isGuest})`);
+        devLog(`[WriteRepo] Loading projects for UID: ${uid} (Guest: ${isGuest})`);
         
         // 1. Authoritative Fetch
         const projects = await dataService.projects.getProjects(uid);
@@ -33,7 +34,7 @@ export const WriteRepository = {
      * Structural Rule: No local ID generation permitted for persistent projects.
      */
     async createProject(uid: string, project: Omit<Project, 'id' | 'updatedAt' | 'createdAt'>): Promise<Project> {
-        console.log(`[WriteRepo] Requesting materialization for new project...`);
+        devLog(`[WriteRepo] Requesting materialization for new project...`);
         const result = await dataService.projects.createProject(uid, project);
         
         if (!result.id) {
@@ -104,9 +105,9 @@ export const WriteRepository = {
 
                 if (removedCount > 0) {
                     localStorage.setItem(cacheKey, JSON.stringify(cache));
-                    console.log(`[WriteRepo][AUDIT_COMPLETE] Successfully purged ${removedCount} ghost projects.`);
+                    devLog(`[WriteRepo][AUDIT_COMPLETE] Successfully purged ${removedCount} ghost projects.`);
                 } else {
-                    console.log(`[WriteRepo][AUDIT_COMPLETE] No ghost projects found in local cache.`);
+                    devLog(`[WriteRepo][AUDIT_COMPLETE] No ghost projects found in local cache.`);
                 }
             }
         } catch (e) {

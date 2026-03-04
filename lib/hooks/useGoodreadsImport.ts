@@ -1,3 +1,4 @@
+import { devLog } from '../logging/devLog';
 
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
@@ -17,7 +18,7 @@ export const useGoodreadsImport = () => {
         onSuccess: () => {
             // FIX: Use invalidateQueries instead of invalidate.
             queryClient.invalidateQueries(['userShelves', uid]);
-            console.log("[GoodreadsImport] Import successful, queries invalidated.");
+            devLog("[GoodreadsImport] Import successful, queries invalidated.");
         }
     });
 };
