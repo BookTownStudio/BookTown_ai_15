@@ -31,7 +31,10 @@ service cloud.firestore {
 
     function isSuperAdminUser() {
       return isSignedIn()
-        && request.auth.token.role == 'superadmin';
+        && (
+          request.auth.token.superadmin == true
+          || request.auth.token.role == 'superadmin'
+        );
     }
 
     function isSystemShelfId(shelfId) {
@@ -374,6 +377,19 @@ service cloud.firestore {
        ========================= */
     match /intelligence_signal_queue/{signalId} {
       allow read, create, update, delete: if false;
+    }
+
+    /* =========================
+       INTELLIGENCE AGGREGATES (SUPERADMIN READ-ONLY)
+       ========================= */
+    match /intelligence_aggregates_global/{docId} {
+      allow read: if isSuperAdminUser();
+      allow create, update, delete: if false;
+    }
+
+    match /intelligence_aggregation_checkpoint/{docId} {
+      allow read: if isSuperAdminUser();
+      allow create, update, delete: if false;
     }
 
     /* =========================

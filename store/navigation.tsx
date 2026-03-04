@@ -45,6 +45,19 @@ function resolveViewFromPath(pathname: string): View {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
     const segments = normalizedPath.split('/').filter(Boolean);
 
+    if (segments.length >= 1 && segments[0] === 'admin') {
+        if (segments.length >= 2 && segments[1] === 'intelligence') {
+            return {
+                type: 'immersive',
+                id: 'adminIntelligence',
+            };
+        }
+        return {
+            type: 'immersive',
+            id: 'adminDashboard',
+        };
+    }
+
     if (segments.length >= 2 && segments[0] === 'shelf') {
         const shelfId = decodePathSegment(segments[1]);
         if (shelfId.length > 0) {
@@ -71,6 +84,14 @@ function resolveViewFromPath(pathname: string): View {
 }
 
 function resolvePathFromView(view: View): string | null {
+    if (view.type === 'immersive' && view.id === 'adminDashboard') {
+        return '/admin';
+    }
+
+    if (view.type === 'immersive' && view.id === 'adminIntelligence') {
+        return '/admin/intelligence';
+    }
+
     if (view.type === 'immersive' && view.id === 'shelfDetails') {
         const shelfId =
             typeof view.params?.shelfId === 'string' ? view.params.shelfId.trim() : '';
@@ -88,7 +109,10 @@ function resolvePathFromView(view: View): string | null {
 
 function isRouteBackedPath(pathname: string): boolean {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
-    return normalizedPath.startsWith('/post/') || normalizedPath.startsWith('/shelf/');
+    return normalizedPath.startsWith('/post/')
+        || normalizedPath.startsWith('/shelf/')
+        || normalizedPath === '/admin'
+        || normalizedPath.startsWith('/admin/');
 }
 
 function sanitizeViewForHistory(view: View): View {

@@ -603,6 +603,7 @@ export {
   scheduledIntelligenceQueueCleanup,
 } from "./intelligence/profileBuilder";
 export { scheduledIntelligenceProfileReconciliation } from "./intelligence/reconciliation";
+export { scheduledLibrarianAggregationWorker } from "./intelligence/aggregationWorker";
 
 // SSR
 export const sitemap = sitemapRaw;

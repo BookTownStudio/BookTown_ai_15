@@ -14,7 +14,7 @@ export type DrawerScreenName =
     'adminDashboard' |
     'books';
     
-export type ImmersiveScreenName = 'bookDetails' | 'editor' | 'agentChat' | 'reader' | 'liveSearch' | 'postComposer' | 'profile' | 'authorDetails' | 'quoteDetails' | 'venueDetails' | 'discoveryFlow' | 'messengerList' | 'messengerChat' | 'notificationsFeed' | 'postDetails' | 'postDiscussion' | 'peopleFlow' | 'shelfDetails' | 'goodreadsImport' | 'drafts' | 'projectEdit' | 'projectPublish' | 'projectPreview' | 'projectPublished' | 'postTextOverlay' | 'bookmarks' | 'quotes' | 'authors' | 'venues' | 'settings' | 'feedback' | 'adminDashboard' | 'books' | 'email';
+export type ImmersiveScreenName = 'bookDetails' | 'editor' | 'agentChat' | 'reader' | 'liveSearch' | 'postComposer' | 'profile' | 'authorDetails' | 'quoteDetails' | 'venueDetails' | 'discoveryFlow' | 'messengerList' | 'messengerChat' | 'notificationsFeed' | 'postDetails' | 'postDiscussion' | 'peopleFlow' | 'shelfDetails' | 'goodreadsImport' | 'drafts' | 'projectEdit' | 'projectPublish' | 'projectPreview' | 'projectPublished' | 'postTextOverlay' | 'bookmarks' | 'quotes' | 'authors' | 'venues' | 'settings' | 'feedback' | 'adminDashboard' | 'adminIntelligence' | 'books' | 'email';
 
 // A flexible params type for navigation
 export interface NavigationParams {

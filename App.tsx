@@ -60,6 +60,7 @@ const ProjectPublishScreen = lazy(() => import('./app/project/publish.tsx'));
 const ProjectPreviewScreen = lazy(() => import('./app/project/preview.tsx'));
 const ProjectPublishedScreen = lazy(() => import('./app/project/published.tsx'));
 const EmailScreen = lazy(() => import('./app/drawer/email.tsx'));
+const AdminIntelligenceScreen = lazy(() => import('./app/admin/intelligence/page.tsx'));
 
 // Eager load critical navigation components
 import BottomNavBar from './components/navigation/BottomNavBar.tsx';
@@ -133,6 +134,7 @@ const ImmersiveScreens: React.FC = () => {
         case 'projectPreview': return <ProjectPreviewScreen />;
         case 'projectPublished': return <ProjectPublishedScreen />;
         case 'email': return <EmailScreen />;
+        case 'adminIntelligence': return isAdmin ? <AdminIntelligenceScreen /> : <PageLoader />;
         default: return <PageLoader />;
     }
 };
@@ -169,7 +171,7 @@ const AppContent: React.FC = () => {
         if (
             !isAuthLoading &&
             currentView.type === 'immersive' &&
-            currentView.id === 'adminDashboard' &&
+            (currentView.id === 'adminDashboard' || currentView.id === 'adminIntelligence') &&
             !isGuest &&
             user &&
             !isAdmin
