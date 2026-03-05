@@ -243,13 +243,93 @@ export class RealAgentService implements AgentService {
                 });
         };
 
+        const normalizeAuthorRecommendations = (rows: unknown) => {
+            if (!Array.isArray(rows)) return [];
+            return rows
+                .filter((row) => row && typeof row === 'object')
+                .map((row) => {
+                    const record = row as Record<string, unknown>;
+                    const id = typeof record.id === 'string' ? record.id.trim() : '';
+                    const name = typeof record.name === 'string' ? record.name.trim() : '';
+                    if (!id || !name) return null;
+                    const notableRaw = Array.isArray(record.notable_books) ? record.notable_books : [];
+                    const notable_books = notableRaw
+                        .filter((entry): entry is string => typeof entry === 'string')
+                        .map((entry) => entry.trim())
+                        .filter((entry) => entry.length > 0)
+                        .slice(0, 5);
+                    const sourceRaw =
+                        record.verification &&
+                        typeof record.verification === 'object' &&
+                        typeof (record.verification as { source?: unknown }).source === 'string'
+                            ? String((record.verification as { source: string }).source).trim()
+                            : 'internal';
+                    const verificationSource =
+                        sourceRaw === 'openlibrary' || sourceRaw === 'wikidata' ? sourceRaw : 'internal';
+                    const deathYearRaw = Number(record.death_year);
+                    return {
+                        id,
+                        type: 'author' as const,
+                        name,
+                        photo_url: typeof record.photo_url === 'string' ? record.photo_url : '',
+                        birth_year: Number.isFinite(Number(record.birth_year)) ? Math.trunc(Number(record.birth_year)) : 0,
+                        death_year: Number.isFinite(deathYearRaw) ? Math.trunc(deathYearRaw) : null,
+                        nationality: typeof record.nationality === 'string' ? record.nationality : '',
+                        short_bio: typeof record.short_bio === 'string' ? record.short_bio : '',
+                        notable_books,
+                        why_recommended: typeof record.why_recommended === 'string' ? record.why_recommended : 'Suggested based on your query.',
+                        verification: { source: verificationSource as 'openlibrary' | 'wikidata' | 'internal' },
+                    };
+                })
+                .filter((row): row is NonNullable<typeof row> => row !== null);
+        };
+
         if (response && typeof response === 'object' && Array.isArray((response as any).recommendations)) {
             const envelope = response as Partial<LibrarianResponseEnvelope>;
             return {
                 recommendations: normalizeCards(envelope.recommendations),
                 fromCache: Boolean(envelope.fromCache),
                 remainingQuota: typeof envelope.remainingQuota === 'number' ? envelope.remainingQuota : 0,
-                normalizedQuery: typeof envelope.normalizedQuery === 'string' ? envelope.normalizedQuery : normalizedQuery
+                normalizedQuery: typeof envelope.normalizedQuery === 'string' ? envelope.normalizedQuery : normalizedQuery,
+                ...(typeof envelope.intent === 'string' ? { intent: envelope.intent as LibrarianResponseEnvelope['intent'] } : {}),
+                ...(envelope.conversation &&
+                typeof envelope.conversation === 'object' &&
+                typeof (envelope.conversation as { explanation?: unknown }).explanation === 'string'
+                    ? {
+                        conversation: {
+                            explanation: String((envelope.conversation as { explanation: string }).explanation).trim(),
+                            tone:
+                                (envelope.conversation as { tone?: unknown }).tone === 'warm' ||
+                                (envelope.conversation as { tone?: unknown }).tone === 'neutral'
+                                    ? ((envelope.conversation as { tone: 'warm' | 'neutral' }).tone)
+                                    : 'intellectual',
+                            follow_up_question:
+                                typeof (envelope.conversation as { follow_up_question?: unknown }).follow_up_question === 'string'
+                                    ? String((envelope.conversation as { follow_up_question: string }).follow_up_question).trim()
+                                    : null,
+                            needs_clarification: Boolean(
+                                (envelope.conversation as { needs_clarification?: unknown }).needs_clarification
+                            ),
+                        },
+                    }
+                    : {}),
+                ...(Array.isArray((envelope as { authorRecommendations?: unknown }).authorRecommendations)
+                    ? { authorRecommendations: normalizeAuthorRecommendations((envelope as { authorRecommendations?: unknown }).authorRecommendations) }
+                    : {}),
+                ...(envelope.metadata &&
+                typeof envelope.metadata === 'object' &&
+                typeof (envelope.metadata as { suggestionSessionId?: unknown }).suggestionSessionId === 'string'
+                    ? {
+                        metadata: {
+                            suggestionSessionId: String((envelope.metadata as { suggestionSessionId: string }).suggestionSessionId).trim(),
+                            verified: Boolean((envelope.metadata as { verified?: unknown }).verified),
+                            source: 'vertex_llm + external_verification' as const,
+                            confidence: Number.isFinite(Number((envelope.metadata as { confidence?: unknown }).confidence))
+                                ? Number((envelope.metadata as { confidence: number }).confidence)
+                                : 0,
+                        },
+                    }
+                    : {}),
             };
         }
 

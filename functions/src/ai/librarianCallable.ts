@@ -20,6 +20,82 @@ const librarianCallableRequestSchema = z
   })
   .strict();
 
+const librarianCallableResponseSchema = z
+  .object({
+    recommendations: z
+      .array(
+        z
+          .object({
+            bookId: z.string().min(1),
+            title: z.string().min(1),
+            author: z.string().min(1),
+            short_reason: z.string().min(1),
+            source: z.literal("librarian").optional(),
+            suggestionSessionId: z.string().min(1).max(96).optional(),
+            suggestionId: z.string().min(1).max(96).optional(),
+            rankPosition: z.number().int().min(1).max(3).optional(),
+            mode: z.enum(LIBRARIAN_INTENT_VALUES).optional(),
+          })
+          .strict()
+      )
+      .max(3),
+    fromCache: z.boolean(),
+    remainingQuota: z.number().int().nonnegative(),
+    normalizedQuery: z.string().min(1).max(280),
+    intent: z
+      .enum([
+        "book_recommendation",
+        "author_request",
+        "theme_request",
+        "clarification",
+        "out_of_scope",
+      ])
+      .optional(),
+    conversation: z
+      .object({
+        explanation: z.string().min(1),
+        tone: z.enum(["warm", "intellectual", "neutral"]),
+        follow_up_question: z.string().min(1).nullable(),
+        needs_clarification: z.boolean(),
+      })
+      .strict()
+      .optional(),
+    authorRecommendations: z
+      .array(
+        z
+          .object({
+            id: z.string().min(1),
+            type: z.literal("author"),
+            name: z.string().min(1),
+            photo_url: z.string(),
+            birth_year: z.number().int(),
+            death_year: z.number().int().nullable(),
+            nationality: z.string(),
+            short_bio: z.string(),
+            notable_books: z.array(z.string()).max(5),
+            why_recommended: z.string().min(1),
+            verification: z
+              .object({
+                source: z.enum(["openlibrary", "wikidata", "internal"]),
+              })
+              .strict(),
+          })
+          .strict()
+      )
+      .max(3)
+      .optional(),
+    metadata: z
+      .object({
+        suggestionSessionId: z.string().min(1).max(96),
+        verified: z.boolean(),
+        source: z.literal("vertex_llm + external_verification"),
+        confidence: z.number().min(0).max(1),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
 function normalizeLibrarianQuery(value: string): string {
   return value
     .toLowerCase()
@@ -96,18 +172,27 @@ export const aiLibrarianCallable = onCall(
         context,
       });
 
+      const validatedResult = librarianCallableResponseSchema.safeParse(result);
+      if (!validatedResult.success) {
+        logger.error("[AI][LIBRARIAN][CALLABLE_RESPONSE_INVALID]", {
+          uid,
+          issues: validatedResult.error.issues.map((issue) => issue.path.join(".")).slice(0, 12),
+        });
+        throw new HttpsError("internal", "ENGINE_FAILURE");
+      }
+
       logger.info("[AI][LIBRARIAN][CALLABLE_SUCCESS]", {
         uid,
         appId: request.app.appId,
         profileVersion: context.profileVersion,
         schemaVersion: context.schemaVersion,
-        fromCache: result.fromCache,
-        recommendationCount: result.recommendations.length,
-        remainingQuota: result.remainingQuota,
-        normalizedQuery: result.normalizedQuery,
+        fromCache: validatedResult.data.fromCache,
+        recommendationCount: validatedResult.data.recommendations.length,
+        remainingQuota: validatedResult.data.remainingQuota,
+        normalizedQuery: validatedResult.data.normalizedQuery,
       });
 
-      return result;
+      return validatedResult.data;
     } catch (error) {
       const message = String(error);
       if (message.includes("QUOTA_EXCEEDED")) {

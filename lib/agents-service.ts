@@ -65,6 +65,10 @@ export const callAgent = async (agentId: string, contextMessages: { role: string
                 fromCache: envelope.fromCache,
                 remainingQuota: envelope.remainingQuota,
                 normalizedQuery: envelope.normalizedQuery,
+                ...(typeof envelope.intent === 'string' ? { intent: envelope.intent } : {}),
+                ...(envelope.conversation ? { conversation: envelope.conversation } : {}),
+                ...(Array.isArray(envelope.authorRecommendations) ? { authorRecommendations: envelope.authorRecommendations } : {}),
+                ...(envelope.metadata ? { metadata: envelope.metadata } : {}),
             };
 
             return {

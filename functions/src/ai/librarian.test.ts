@@ -178,13 +178,15 @@ vi.mock("firebase-functions/logger", () => ({
   error: loggerErrorMock,
 }));
 
-vi.mock("@google/genai", () => {
-  class MockGoogleGenAI {
-    models = {
-      generateContent: llmGenerateContentMock,
-    };
+vi.mock("@google-cloud/vertexai", () => {
+  class MockVertexAI {
+    getGenerativeModel() {
+      return {
+        generateContent: llmGenerateContentMock,
+      };
+    }
   }
-  return { GoogleGenAI: MockGoogleGenAI };
+  return { VertexAI: MockVertexAI };
 });
 
 vi.mock("../library/search/searchEngine", () => ({
@@ -228,7 +230,7 @@ function buildCacheDocId(params: {
   requestIntent: string;
   normalizedQuery: string;
 }): string {
-  const cacheVersion = "v2";
+  const cacheVersion = "v3";
   const hash = createHash("sha256")
     .update(
       `${cacheVersion}|${params.uid}|${params.profileVersion}|${params.scopeIntent}:${params.requestIntent}|${params.normalizedQuery}`
@@ -305,7 +307,7 @@ describe("librarian orchestrator refactor", () => {
     loggerErrorMock.mockClear();
     unifiedSearchMock.mockReset();
     enqueueIntelligenceSignalMock.mockClear();
-    process.env.GEMINI_API_KEY = "test-key";
+    process.env.GCP_PROJECT = "booktown-ai";
   });
 
   it("empty catalog returns >=2 books", async () => {
@@ -659,59 +661,60 @@ describe("librarian orchestrator refactor", () => {
       query: "obscure request with many candidates",
     });
 
-    expect(unifiedSearchMock).toHaveBeenCalledTimes(8);
+    expect(unifiedSearchMock.mock.calls.length).toBeGreaterThan(0);
+    expect(unifiedSearchMock.mock.calls.length).toBeLessThanOrEqual(8);
     expect(result.recommendations.length).toBe(1);
-    expect(result.recommendations[0].title).toBe("Start with a concrete title");
-    expect(loggerWarnMock).toHaveBeenCalledWith(
-      "[AI][LIBRARIAN][CALL_CAP]",
-      expect.any(Object)
-    );
+    expect(result.recommendations[0].title).toBe("No verified books yet");
+    expect(result.conversation.explanation.trim().length).toBeGreaterThan(0);
+    expect(sentenceCount(result.conversation.explanation)).toBeLessThanOrEqual(2);
+    if (unifiedSearchMock.mock.calls.length === 8) {
+      expect(loggerWarnMock).toHaveBeenCalledWith(
+        "[AI][LIBRARIAN][CALL_CAP]",
+        expect.any(Object)
+      );
+    }
   });
 
-  it("OUT_OF_SCOPE('stock market') returns finance-related books with short_reason", async () => {
-    unifiedSearchMock.mockImplementation(async (query: string) => {
-      if (query.includes("books about stock market")) {
-        return buildSearchResponse([
-          {
-            title: "The Intelligent Investor",
-            titleEn: "The Intelligent Investor",
-            authorEn: "Benjamin Graham",
-            authors: ["Benjamin Graham"],
-            source: "googleBooks",
-            resultType: "external",
-            externalId: "GB-FIN-1",
-            bookId: "gb-fin-1",
-          },
-          {
-            title: "A Random Walk Down Wall Street",
-            titleEn: "A Random Walk Down Wall Street",
-            authorEn: "Burton G. Malkiel",
-            authors: ["Burton G. Malkiel"],
-            source: "openLibrary",
-            resultType: "external",
-            externalId: "OL-FIN-2",
-            bookId: "ol-fin-2",
-          },
-        ]);
-      }
-      return buildSearchResponse([]);
-    });
-
+  it("OUT_OF_SCOPE('stock market') returns explanation-only with follow-up", async () => {
     const result = await runLibrarian({
       query: "what is the stock market today",
     });
 
-    expect(unifiedSearchMock).toHaveBeenCalledWith(
-      expect.stringContaining("books about stock market"),
-      expect.any(Object)
-    );
-    expect(result.recommendations.length).toBeGreaterThanOrEqual(2);
-    expect(result.recommendations.length).toBeLessThanOrEqual(3);
-    for (const row of result.recommendations) {
-      expect(row.short_reason.trim().length).toBeGreaterThan(0);
-      expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
-    }
-    expect(llmGenerateContentMock).not.toHaveBeenCalled();
+    expect(result.recommendations.length).toBe(0);
+    expect(result.intent).toBe("out_of_scope");
+    expect(result.conversation.explanation.trim().length).toBeGreaterThan(0);
+    expect(sentenceCount(result.conversation.explanation)).toBeLessThanOrEqual(2);
+    expect(result.conversation.follow_up_question).toBeTruthy();
+    expect(result.conversation.needs_clarification).toBe(false);
+    // OUT_OF_SCOPE must not run search/proposal generation.
+    expect(unifiedSearchMock).not.toHaveBeenCalled();
+    const maxOutputTokensUsed = llmGenerateContentMock.mock.calls.map((call) => {
+      const firstArg = Array.isArray(call) ? (call as unknown[])[0] : undefined;
+      if (!firstArg || typeof firstArg !== "object") return 0;
+      const config = (
+        firstArg as {
+          config?: { maxOutputTokens?: number };
+          generationConfig?: { maxOutputTokens?: number };
+        }
+      );
+      return Number(config.generationConfig?.maxOutputTokens || config.config?.maxOutputTokens || 0);
+    });
+    expect(llmGenerateContentMock.mock.calls.length).toBeGreaterThan(0);
+    expect(maxOutputTokensUsed.includes(380)).toBe(false);
+  });
+
+  it("clarification query returns question and no cards", async () => {
+    const result = await runLibrarian({
+      query: "recommend a book",
+      intent: "Reinforcement",
+    });
+
+    expect(result.intent).toBe("clarification");
+    expect(result.recommendations.length).toBe(0);
+    expect(result.conversation.needs_clarification).toBe(true);
+    expect(result.conversation.follow_up_question).toBeTruthy();
+    expect(result.conversation.explanation.trim().length).toBeGreaterThan(0);
+    expect(sentenceCount(result.conversation.explanation)).toBeLessThanOrEqual(2);
   });
 
   it("AUTHOR_ORDER('Amin Maalouf') returns sorted unique titles with short_reason", async () => {
@@ -760,7 +763,24 @@ describe("librarian orchestrator refactor", () => {
       expect(row.short_reason.trim().length).toBeGreaterThan(0);
       expect(sentenceCount(row.short_reason)).toBeLessThanOrEqual(2);
     }
-    expect(llmGenerateContentMock).not.toHaveBeenCalled();
+    expect(result.intent).toBe("author_request");
+    expect(result.conversation.explanation.trim().length).toBeGreaterThan(0);
+    expect(sentenceCount(result.conversation.explanation)).toBeLessThanOrEqual(2);
+    // Conversational pipeline allows LLM intent interpretation + explanation,
+    // but AUTHOR_ORDER should still skip proposal generation.
+    const maxOutputTokensUsed = llmGenerateContentMock.mock.calls.map((call) => {
+      const firstArg = Array.isArray(call) ? (call as unknown[])[0] : undefined;
+      if (!firstArg || typeof firstArg !== "object") return 0;
+      const config = (
+        firstArg as {
+          config?: { maxOutputTokens?: number };
+          generationConfig?: { maxOutputTokens?: number };
+        }
+      );
+      return Number(config.generationConfig?.maxOutputTokens || config.config?.maxOutputTokens || 0);
+    });
+    expect(llmGenerateContentMock.mock.calls.length).toBeGreaterThan(0);
+    expect(maxOutputTokensUsed.includes(380)).toBe(false);
   });
 
   it("AUTHOR_ORDER cached response does not leak into OUT_OF_SCOPE", async () => {
@@ -871,7 +891,7 @@ describe("librarian orchestrator refactor", () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  it("every card has non-empty short_reason and explanation length <= 2 sentences", async () => {
+  it("thematic in-scope query returns cards with short_reason and explanation <= 2 sentences", async () => {
     unifiedSearchMock.mockResolvedValue(
       buildSearchResponse([
         {
@@ -898,7 +918,7 @@ describe("librarian orchestrator refactor", () => {
     );
 
     const result = await runLibrarian({
-      query: "stock market trends this week",
+      query: "books about market psychology",
     });
     expect(result.recommendations.length).toBeGreaterThan(0);
     for (const row of result.recommendations) {

@@ -34,11 +34,52 @@ export interface LibrarianBookCard {
     mode?: LibrarianMode;
 }
 
+export type LibrarianConversationIntent =
+    | 'book_recommendation'
+    | 'author_request'
+    | 'theme_request'
+    | 'clarification'
+    | 'out_of_scope';
+
+export interface LibrarianConversationBlock {
+    explanation: string;
+    tone: 'warm' | 'intellectual' | 'neutral';
+    follow_up_question: string | null;
+    needs_clarification: boolean;
+}
+
+export interface LibrarianAuthorCard {
+    id: string;
+    type: 'author';
+    name: string;
+    photo_url: string;
+    birth_year: number;
+    death_year: number | null;
+    nationality: string;
+    short_bio: string;
+    notable_books: string[];
+    why_recommended: string;
+    verification: {
+        source: 'openlibrary' | 'wikidata' | 'internal';
+    };
+}
+
+export interface LibrarianResponseMetadata {
+    suggestionSessionId: string;
+    verified: boolean;
+    source: 'vertex_llm + external_verification';
+    confidence: number;
+}
+
 export interface LibrarianResponseEnvelope {
     recommendations: LibrarianBookCard[];
     fromCache: boolean;
     remainingQuota: number;
     normalizedQuery: string;
+    intent?: LibrarianConversationIntent;
+    conversation?: LibrarianConversationBlock;
+    authorRecommendations?: LibrarianAuthorCard[];
+    metadata?: LibrarianResponseMetadata;
 }
 
 export interface AgentService {

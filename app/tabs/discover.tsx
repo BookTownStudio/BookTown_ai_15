@@ -93,12 +93,44 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         parseFailed = true;
     }
 
-    const rawRecommendations = Array.isArray((parsedPayload as { recommendations?: unknown[] } | null)?.recommendations)
-        ? (parsedPayload as { recommendations: unknown[] }).recommendations
+    const payloadObject =
+        parsedPayload && typeof parsedPayload === 'object' && !Array.isArray(parsedPayload)
+            ? (parsedPayload as Record<string, unknown>)
+            : null;
+
+    const rawRecommendations = Array.isArray(payloadObject?.recommendations)
+        ? (payloadObject.recommendations as unknown[])
+        : Array.isArray(
+              payloadObject?.recommendations &&
+                  typeof payloadObject.recommendations === 'object' &&
+                  (payloadObject.recommendations as Record<string, unknown>).books
+          )
+        ? ((payloadObject.recommendations as Record<string, unknown>).books as unknown[])
         : Array.isArray(parsedPayload)
         ? parsedPayload
         : [];
     let recommendations = rawRecommendations as Array<{ title: string, author: string, bookId?: string, short_reason?: string, suggestionId?: string, suggestionSessionId?: string, rankPosition?: number, mode?: string }>;
+    const authorRecommendations = Array.isArray(payloadObject?.authorRecommendations)
+        ? (payloadObject.authorRecommendations as Array<{
+              id: string;
+              name: string;
+              short_bio?: string;
+              why_recommended?: string;
+              notable_books?: string[];
+          }>)
+        : [];
+    const explanation =
+        payloadObject?.conversation &&
+        typeof payloadObject.conversation === 'object' &&
+        typeof (payloadObject.conversation as { explanation?: unknown }).explanation === 'string'
+            ? String((payloadObject.conversation as { explanation: string }).explanation).trim()
+            : '';
+    const followUpQuestion =
+        payloadObject?.conversation &&
+        typeof payloadObject.conversation === 'object' &&
+        typeof (payloadObject.conversation as { follow_up_question?: unknown }).follow_up_question === 'string'
+            ? String((payloadObject.conversation as { follow_up_question: string }).follow_up_question).trim()
+            : '';
 
     if (recommendations.length === 0) {
         const topic = extractTopicKeywords(sourceQuery);
@@ -112,36 +144,66 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         }
     }
 
-    if (recommendations.length > 0) {
+    if (recommendations.length > 0 || authorRecommendations.length > 0 || explanation || followUpQuestion) {
         return (
             <div className="space-y-3">
-                <div className="flex flex-wrap gap-2">
-                    {recommendations.map((rec, idx: number) => {
-                        const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
-                        const resolvedBookId =
-                            typeof rec.bookId === 'string' ? rec.bookId.trim() : '';
-                        const isExternalLikeId = /^(ext_|lw_|gb_|ol_)/i.test(resolvedBookId);
-                        const isNavigable = resolvedBookId.length > 0 && !isExternalLikeId;
-                        const cardReason =
-                            typeof rec.short_reason === 'string' && rec.short_reason.trim().length > 0
-                                ? rec.short_reason.trim()
-                                : (lang === 'en'
-                                    ? 'Verified book recommendation.'
-                                    : 'اقتراح كتاب موثوق.');
+                {explanation && (
+                    <p className="text-sm opacity-90 leading-relaxed">{explanation}</p>
+                )}
+                {recommendations.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                        {recommendations.map((rec, idx: number) => {
+                            const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
+                            const resolvedBookId =
+                                typeof rec.bookId === 'string' ? rec.bookId.trim() : '';
+                            const isExternalLikeId = /^(ext_|lw_|gb_|ol_)/i.test(resolvedBookId);
+                            const isNavigable = resolvedBookId.length > 0 && !isExternalLikeId;
+                            const cardReason =
+                                typeof rec.short_reason === 'string' && rec.short_reason.trim().length > 0
+                                    ? rec.short_reason.trim()
+                                    : (lang === 'en'
+                                        ? 'Verified book recommendation.'
+                                        : 'اقتراح كتاب موثوق.');
 
-                        return (
+                            return (
+                                <div
+                                    key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : `${resolvedBookId || rec.title}_${idx}`}
+                                    onClick={isNavigable ? () => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } }) : undefined}
+                                    className={`bg-white/10 p-2 rounded-lg border border-white/10 w-52 flex-shrink-0 ${isNavigable ? 'cursor-pointer hover:bg-white/15 transition-colors' : ''}`}
+                                >
+                                    <p className="font-bold text-sm line-clamp-2">{rec.title}</p>
+                                    <p className="text-xs opacity-70 truncate">{rec.author}</p>
+                                    <p className="text-[11px] opacity-70 mt-1 line-clamp-2">{cardReason}</p>
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+                {authorRecommendations.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                        {authorRecommendations.slice(0, 3).map((author, idx) => (
                             <div
-                                key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : `${resolvedBookId || rec.title}_${idx}`}
-                                onClick={isNavigable ? () => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } }) : undefined}
-                                className={`bg-white/10 p-2 rounded-lg border border-white/10 w-52 flex-shrink-0 ${isNavigable ? 'cursor-pointer hover:bg-white/15 transition-colors' : ''}`}
+                                key={author.id || `${author.name}_${idx}`}
+                                className="bg-white/10 p-2 rounded-lg border border-white/10 w-52 flex-shrink-0"
                             >
-                                <p className="font-bold text-sm line-clamp-2">{rec.title}</p>
-                                <p className="text-xs opacity-70 truncate">{rec.author}</p>
-                                <p className="text-[11px] opacity-70 mt-1 line-clamp-2">{cardReason}</p>
+                                <p className="font-bold text-sm line-clamp-2">{author.name}</p>
+                                <p className="text-xs opacity-70 line-clamp-2">
+                                    {typeof author.short_bio === 'string' && author.short_bio.trim().length > 0
+                                        ? author.short_bio
+                                        : (lang === 'en' ? 'Verified author recommendation.' : 'اقتراح مؤلف موثوق.')}
+                                </p>
+                                <p className="text-[11px] opacity-70 mt-1 line-clamp-2">
+                                    {typeof author.why_recommended === 'string' && author.why_recommended.trim().length > 0
+                                        ? author.why_recommended
+                                        : (lang === 'en' ? 'Relevant to your reading request.' : 'مرتبط بطلبك القرائي.')}
+                                </p>
                             </div>
-                        );
-                    })}
-                </div>
+                        ))}
+                    </div>
+                )}
+                {followUpQuestion && (
+                    <p className="text-xs opacity-80 italic">{followUpQuestion}</p>
+                )}
             </div>
         );
     }
