@@ -193,7 +193,7 @@ type ProposalClient = {
   };
 };
 
-let proposalClientSingleton: ProposalClient | null | undefined;
+let proposalClientSingleton: ProposalClient | undefined;
 
 const KNOWN_GENRES = [
   "Literary Fiction",
@@ -1037,21 +1037,28 @@ function buildProposalClient(): ProposalClient | null {
     return {
       models: {
         generateContent: async (params: ProposalClientRequest) => {
-          const result = await model.generateContent({
-            contents: [
-              {
-                role: "user",
-                parts: [{ text: params.contents }],
+          console.log("[AI][LIBRARIAN][VERTEX_CALL_START]");
+          try {
+            const result = await model.generateContent({
+              contents: [
+                {
+                  role: "user",
+                  parts: [{ text: params.contents }],
+                },
+              ],
+              generationConfig: {
+                temperature: params.config?.temperature,
+                topP: params.config?.topP,
+                maxOutputTokens: params.config?.maxOutputTokens,
+                responseMimeType: params.config?.responseMimeType,
               },
-            ],
-            generationConfig: {
-              temperature: params.config?.temperature,
-              topP: params.config?.topP,
-              maxOutputTokens: params.config?.maxOutputTokens,
-              responseMimeType: params.config?.responseMimeType,
-            },
-          });
-          return { text: extractVertexResponseText(result) };
+            });
+            console.log("[AI][LIBRARIAN][VERTEX_CALL_SUCCESS]");
+            return { text: extractVertexResponseText(result) };
+          } catch (error) {
+            console.error("[AI][LIBRARIAN][VERTEX_CALL_FAILED]", error);
+            throw error;
+          }
         },
       },
     };
@@ -1066,10 +1073,14 @@ function buildProposalClient(): ProposalClient | null {
 }
 
 function createProposalClient(): ProposalClient | null {
-  if (proposalClientSingleton !== undefined) {
+  if (proposalClientSingleton) {
     return proposalClientSingleton;
   }
-  proposalClientSingleton = buildProposalClient();
+  const client = buildProposalClient();
+  if (!client) {
+    return null;
+  }
+  proposalClientSingleton = client;
   return proposalClientSingleton;
 }
 
