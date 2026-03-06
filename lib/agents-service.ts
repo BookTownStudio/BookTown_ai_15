@@ -62,6 +62,9 @@ export const callAgent = async (agentId: string, contextMessages: { role: string
                     bookId: card.bookId,
                     title: card.title,
                     author: card.author,
+                    ...(typeof card.coverUrl === 'string' && card.coverUrl.trim().length > 0
+                        ? { coverUrl: card.coverUrl.trim() }
+                        : {}),
                     short_reason: card.short_reason,
                     source: card.source,
                     suggestionSessionId: card.suggestionSessionId,

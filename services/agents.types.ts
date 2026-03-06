@@ -26,6 +26,7 @@ export interface LibrarianBookCard {
     bookId: string;
     title: string;
     author: string;
+    coverUrl?: string;
     short_reason: string;
     source?: 'librarian';
     suggestionSessionId?: string;

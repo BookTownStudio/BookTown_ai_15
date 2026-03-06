@@ -251,6 +251,9 @@ export class RealAgentService implements AgentService {
                         bookId: row.bookId,
                         title: row.title,
                         author: row.author,
+                        ...(typeof (row as any).coverUrl === 'string' && (row as any).coverUrl.trim().length > 0
+                            ? { coverUrl: (row as any).coverUrl.trim() }
+                            : {}),
                         short_reason: row.short_reason,
                         ...(source ? { source } : {}),
                         ...(suggestionSessionId ? { suggestionSessionId } : {}),

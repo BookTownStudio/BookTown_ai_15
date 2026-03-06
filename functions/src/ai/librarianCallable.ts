@@ -37,6 +37,7 @@ const librarianCallableResponseSchema = z
             bookId: z.string().min(1),
             title: z.string().min(1),
             author: z.string().min(1),
+            coverUrl: z.string().max(2048).optional(),
             short_reason: z.string().min(1),
             source: z.literal("librarian").optional(),
             suggestionSessionId: z.string().min(1).max(96).optional(),

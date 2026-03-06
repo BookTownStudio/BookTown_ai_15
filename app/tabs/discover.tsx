@@ -33,13 +33,6 @@ const PinIconSvg = (props: React.SVGProps<SVGSVGElement>) => (
 const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ text, sourceQuery = '' }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
-    const TOPIC_STOPWORDS = new Set([
-        'what', 'whats', 'is', 'the', 'a', 'an', 'are', 'do', 'does', 'can', 'you', 'please',
-        'tell', 'me', 'show', 'latest', 'news', 'today', 'tonight', 'now', 'currently', 'right',
-        'this', 'week', 'month', 'year', 'in', 'on', 'at', 'for', 'about', 'of', 'to', 'from',
-        'how', 'why', 'should', 'would', 'could', 'my', 'your', 'with', 'without',
-        'book', 'books', 'read', 'reading', 'recommend', 'recommendation', 'recommendations'
-    ]);
 
     const toRecommendationContext = (rec: Record<string, unknown>): LibrarianRecommendationContext | undefined => {
         const suggestionId =
@@ -68,23 +61,6 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         };
     };
 
-    const normalizeQueryText = (value: string): string => {
-        return String(value || '')
-            .toLowerCase()
-            .normalize('NFKD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-    };
-
-    const extractTopicKeywords = (query: string): string => {
-        const normalized = normalizeQueryText(query);
-        if (!normalized) return '';
-        const tokens = normalized.split(' ').filter(token => token.length > 1 && !TOPIC_STOPWORDS.has(token));
-        return tokens.slice(0, 4).join(' ').trim();
-    };
-
     let parseFailed = false;
     let parsedPayload: unknown = null;
     try {
@@ -109,7 +85,17 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         : Array.isArray(parsedPayload)
         ? parsedPayload
         : [];
-    let recommendations = rawRecommendations as Array<{ title: string, author: string, bookId?: string, short_reason?: string, suggestionId?: string, suggestionSessionId?: string, rankPosition?: number, mode?: string }>;
+    const recommendations = rawRecommendations as Array<{
+        title?: string;
+        author?: string;
+        bookId?: string;
+        coverUrl?: string;
+        short_reason?: string;
+        suggestionId?: string;
+        suggestionSessionId?: string;
+        rankPosition?: number;
+        mode?: string;
+    }>;
     const authorRecommendations = Array.isArray(payloadObject?.authorRecommendations)
         ? (payloadObject.authorRecommendations as Array<{
               id: string;
@@ -131,50 +117,72 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         typeof (payloadObject.conversation as { follow_up_question?: unknown }).follow_up_question === 'string'
             ? String((payloadObject.conversation as { follow_up_question: string }).follow_up_question).trim()
             : '';
+    const normalizedRecommendations = recommendations
+        .filter((row) => row && typeof row === 'object')
+        .map((row) => ({
+            title: typeof row.title === 'string' ? row.title.trim() : '',
+            author: typeof row.author === 'string' ? row.author.trim() : '',
+            bookId: typeof row.bookId === 'string' ? row.bookId.trim() : '',
+            coverUrl: typeof row.coverUrl === 'string' ? row.coverUrl.trim() : '',
+            short_reason: typeof row.short_reason === 'string' ? row.short_reason.trim() : '',
+            suggestionId: typeof row.suggestionId === 'string' ? row.suggestionId.trim() : '',
+            suggestionSessionId: typeof row.suggestionSessionId === 'string' ? row.suggestionSessionId.trim() : '',
+            rankPosition: Number.isFinite(Number(row.rankPosition)) ? Number(row.rankPosition) : undefined,
+            mode: typeof row.mode === 'string' ? row.mode.trim() : '',
+        }))
+        .filter((row) => row.title.length > 0 && row.author.length > 0);
 
-    if (recommendations.length === 0) {
-        const topic = extractTopicKeywords(sourceQuery);
-        if (topic) {
-            recommendations = [
-                {
-                    title: lang === 'en' ? `Books about ${topic}` : `كتب عن ${topic}`,
-                    author: lang === 'en' ? 'BookTown Librarian' : 'أمين مكتبة بوكتاون',
-                },
-            ];
-        }
-    }
+    const isFallbackId = (bookId: string): boolean => /^(fallback_|topic_seed_)/i.test(bookId);
+    const isSyntheticExternalId = (bookId: string): boolean => /^(ext_|lw_|gb_|ol_)/i.test(bookId);
 
-    if (recommendations.length > 0 || authorRecommendations.length > 0 || explanation || followUpQuestion) {
+    const fallbackTextOnly = normalizedRecommendations
+        .filter((row) => isFallbackId(row.bookId))
+        .map((row) => row.short_reason)
+        .find((row) => row.length > 0) || '';
+
+    const bookRecommendations = normalizedRecommendations
+        .filter((row) => row.bookId.length > 0 && !isFallbackId(row.bookId) && !isSyntheticExternalId(row.bookId))
+        .slice(0, 6);
+
+    if (bookRecommendations.length > 0 || authorRecommendations.length > 0 || explanation || followUpQuestion || fallbackTextOnly) {
         return (
             <div className="space-y-3">
                 {explanation && (
                     <p className="text-sm opacity-90 leading-relaxed">{explanation}</p>
                 )}
-                {recommendations.length > 0 && (
-                    <div className="flex flex-wrap gap-2">
-                        {recommendations.map((rec, idx: number) => {
+                {fallbackTextOnly && (
+                    <p className="text-sm opacity-85 leading-relaxed">{fallbackTextOnly}</p>
+                )}
+                {bookRecommendations.length > 0 && (
+                    <div className="flex gap-3 overflow-x-auto pb-1">
+                        {bookRecommendations.map((rec, idx: number) => {
                             const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
-                            const resolvedBookId =
-                                typeof rec.bookId === 'string' ? rec.bookId.trim() : '';
-                            const isExternalLikeId = /^(ext_|lw_|gb_|ol_)/i.test(resolvedBookId);
-                            const isNavigable = resolvedBookId.length > 0 && !isExternalLikeId;
-                            const cardReason =
-                                typeof rec.short_reason === 'string' && rec.short_reason.trim().length > 0
-                                    ? rec.short_reason.trim()
-                                    : (lang === 'en'
-                                        ? 'Verified book recommendation.'
-                                        : 'اقتراح كتاب موثوق.');
+                            const resolvedBookId = rec.bookId;
 
                             return (
-                                <div
-                                    key={typeof rec.suggestionId === 'string' && rec.suggestionId.trim().length > 0 ? rec.suggestionId.trim() : `${resolvedBookId || rec.title}_${idx}`}
-                                    onClick={isNavigable ? () => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } }) : undefined}
-                                    className={`bg-white/10 p-2 rounded-lg border border-white/10 w-52 flex-shrink-0 ${isNavigable ? 'cursor-pointer hover:bg-white/15 transition-colors' : ''}`}
+                                <button
+                                    type="button"
+                                    key={rec.suggestionId || `${resolvedBookId}_${idx}`}
+                                    onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } })}
+                                    className="w-[176px] shrink-0 rounded-[0.7rem] bg-white/5 border border-white/10 backdrop-blur-md p-2 text-left transition-all duration-300 ease-in-out hover:bg-white/10"
                                 >
-                                    <p className="font-bold text-sm line-clamp-2">{rec.title}</p>
-                                    <p className="text-xs opacity-70 truncate">{rec.author}</p>
-                                    <p className="text-[11px] opacity-70 mt-1 line-clamp-2">{cardReason}</p>
-                                </div>
+                                    <div className="w-[72px] h-[108px] rounded-[0.5rem] border border-white/10 bg-white/5 overflow-hidden mb-2">
+                                        {rec.coverUrl ? (
+                                            <img
+                                                src={rec.coverUrl}
+                                                alt={rec.title}
+                                                className="w-full h-full object-cover"
+                                                loading="lazy"
+                                            />
+                                        ) : (
+                                            <div className="w-full h-full flex items-center justify-center px-1 text-center text-[10px] opacity-70">
+                                                {lang === 'en' ? 'No cover' : 'لا غلاف'}
+                                            </div>
+                                        )}
+                                    </div>
+                                    <p className="text-sm font-semibold line-clamp-2 leading-snug">{rec.title}</p>
+                                    <p className="text-xs opacity-70 truncate mt-1">{rec.author}</p>
+                                </button>
                             );
                         })}
                     </div>

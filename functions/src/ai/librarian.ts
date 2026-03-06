@@ -44,6 +44,7 @@ export type LibrarianBookCard = {
   bookId: string;
   title: string;
   author: string;
+  coverUrl?: string;
   short_reason: string;
   source?: "librarian";
   suggestionSessionId?: string;
@@ -67,6 +68,8 @@ type LibrarianMemoryMessage = {
 type RankedLibrarianBookCard = LibrarianBookCard & {
   mode: LibrarianMode;
   relevanceScore: number;
+  diversityGenres?: string[];
+  diversityThemes?: string[];
 };
 
 type SuggestionAttributedCard = LibrarianBookCard & {
@@ -148,6 +151,7 @@ type CandidateBook = {
   author: string;
   genres: string[];
   rating: number | null;
+  coverUrl?: string;
 };
 
 type VerifiedBook = CandidateBook & {
@@ -156,6 +160,7 @@ type VerifiedBook = CandidateBook & {
   externalId: string | null;
   canonicalBookId: string | null;
   proposedExplanation?: string;
+  proposedThemes?: string[];
   coverUrl?: string;
   description?: string;
   externalIds?: {
@@ -172,6 +177,14 @@ type RecentSignalAffinity = {
   themeWeights: Record<string, number>;
 };
 
+type ReaderIntent =
+  | "DISCOVERY"
+  | "AUTHOR_EXPLORATION"
+  | "GENRE_EXPLORATION"
+  | "CANONICAL_WORKS"
+  | "MOOD_READING"
+  | "COMPARISON";
+
 const LIBRARIAN_PROPOSAL_MODEL = "gemini-2.0-flash";
 const LIBRARIAN_VERTEX_REGION = "us-central1";
 const LIBRARIAN_MIN_LLM_CANDIDATES = 20;
@@ -184,6 +197,12 @@ const LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS = 8;
 const LIBRARIAN_CACHE_SCHEMA_VERSION = "v3";
 const LIBRARIAN_INTENT_TIMEOUT_MS = 1500;
 const LIBRARIAN_EXPLANATION_TIMEOUT_MS = 1500;
+const LIBRARIAN_MMR_LAMBDA = 0.7;
+const LIBRARIAN_MMR_POOL_SIZE = 10;
+const LIBRARIAN_MMR_SELECTION_SIZE = 5;
+const CANONICAL_AUTHOR_BOOST = 0.08;
+const CANONICAL_TITLE_BOOST = 0.1;
+const CANONICAL_MOVEMENT_BOOST = 0.05;
 // Debug mode: bypass cache in all non-test runtimes so every request exercises full pipeline.
 const LIBRARIAN_CACHE_DISABLED = process.env.NODE_ENV !== "test";
 
@@ -227,6 +246,77 @@ const KNOWN_GENRES = [
   "Business",
   "Travel",
 ];
+
+const CANONICAL_AUTHORS = [
+  "dostoevsky",
+  "tolstoy",
+  "kafka",
+  "camus",
+  "borges",
+  "virginia woolf",
+  "marcel proust",
+  "james joyce",
+  "gabriel garcia marquez",
+  "milan kundera",
+] as const;
+
+const CANONICAL_BOOKS = [
+  "the trial",
+  "the castle",
+  "crime and punishment",
+  "war and peace",
+  "anna karenina",
+  "the stranger",
+  "ficciones",
+  "in search of lost time",
+  "ulysses",
+  "one hundred years of solitude",
+] as const;
+
+const CANONICAL_MOVEMENTS = [
+  "modernism",
+  "existentialism",
+  "magical realism",
+  "latin american boom",
+] as const;
+
+const READER_INTENT_PATTERNS: Record<ReaderIntent, RegExp[]> = {
+  AUTHOR_EXPLORATION: [
+    /\bbooks by\b/,
+    /\bworks by\b/,
+    /\bwhat should i read from\b/,
+    /\bnovels by\b/,
+  ],
+  DISCOVERY: [
+    /\bbooks like\b/,
+    /\bsimilar to\b/,
+    /\brecommend books\b/,
+  ],
+  GENRE_EXPLORATION: [
+    /\bbest\b/,
+    /\btop\b/,
+    /\bgreat\b/,
+    /\bclassic\b/,
+  ],
+  CANONICAL_WORKS: [
+    /\bcanonical\b/,
+    /\bcanon\b/,
+    /\bmasterpiece\b/,
+    /\bmasterpieces\b/,
+    /\bgreat works\b/,
+  ],
+  MOOD_READING: [
+    /\bsomething sad\b/,
+    /\bsomething deep\b/,
+    /\bmelancholic\b/,
+    /\bdark\b/,
+  ],
+  COMPARISON: [
+    /\bsimilar to\b/,
+    /\blike kafka\b/,
+    /\blike borges\b/,
+  ],
+};
 
 const GENRE_ADJACENCY: Record<string, string[]> = {
   "Literary Fiction": ["History", "Philosophy", "Mystery"],
@@ -292,6 +382,16 @@ function normalizeText(value: unknown): string {
     .trim()
     .slice(0, 280);
 }
+
+const CANONICAL_AUTHOR_LOOKUP = new Set(
+  CANONICAL_AUTHORS.map((value) => normalizeText(value)).filter((value) => value.length > 0)
+);
+const CANONICAL_BOOK_LOOKUP = new Set(
+  CANONICAL_BOOKS.map((value) => normalizeText(value)).filter((value) => value.length > 0)
+);
+const CANONICAL_MOVEMENT_LOOKUP = CANONICAL_MOVEMENTS.map((value) => normalizeText(value)).filter(
+  (value) => value.length > 0
+);
 
 function tokenize(value: string): string[] {
   if (!value) return [];
@@ -1300,6 +1400,50 @@ function extractTopicFromQuery(normalizedQuery: string): string {
   return phrase || withoutTemporal || query;
 }
 
+function classifyReaderIntent(normalizedQuery: string): ReaderIntent {
+  const query = normalizeText(normalizedQuery);
+  if (!query) return "DISCOVERY";
+
+  if (READER_INTENT_PATTERNS.COMPARISON.some((pattern) => pattern.test(query))) {
+    return "COMPARISON";
+  }
+  if (READER_INTENT_PATTERNS.AUTHOR_EXPLORATION.some((pattern) => pattern.test(query))) {
+    return "AUTHOR_EXPLORATION";
+  }
+  if (READER_INTENT_PATTERNS.MOOD_READING.some((pattern) => pattern.test(query))) {
+    return "MOOD_READING";
+  }
+  if (READER_INTENT_PATTERNS.CANONICAL_WORKS.some((pattern) => pattern.test(query))) {
+    return "CANONICAL_WORKS";
+  }
+  if (READER_INTENT_PATTERNS.GENRE_EXPLORATION.some((pattern) => pattern.test(query))) {
+    return "GENRE_EXPLORATION";
+  }
+  if (READER_INTENT_PATTERNS.DISCOVERY.some((pattern) => pattern.test(query))) {
+    return "DISCOVERY";
+  }
+  return "DISCOVERY";
+}
+
+function readerIntentPromptGuidance(intent: ReaderIntent): string {
+  if (intent === "AUTHOR_EXPLORATION") {
+    return "Prioritize strong works by the requested or closely related author.";
+  }
+  if (intent === "GENRE_EXPLORATION") {
+    return "Prioritize foundational and high-signal works within the inferred genre.";
+  }
+  if (intent === "CANONICAL_WORKS") {
+    return "Prioritize canon-defining literary works with long-term significance.";
+  }
+  if (intent === "MOOD_READING") {
+    return "Prioritize emotionally aligned books that match the requested mood.";
+  }
+  if (intent === "COMPARISON") {
+    return "Prioritize books with stylistic or thematic proximity to the referenced author/work.";
+  }
+  return "Prioritize broad but high-quality discovery recommendations.";
+}
+
 function classifyLibrarianIntent(normalizedQuery: string): IntentClassification {
   const query = normalizeText(normalizedQuery);
   const authorName = extractAuthorFromOrderQuery(query);
@@ -1636,6 +1780,7 @@ function normalizeCandidate(docSnap: QueryDocumentSnapshot<DocumentData>): Candi
     data.averageRating ?? data.rating ?? data.ratingsAverage ?? Number.NaN
   );
   const rating = Number.isFinite(ratingRaw) ? clamp(ratingRaw / 5, 0, 1) * 5 : null;
+  const cover = String(data.coverUrl || "").trim();
 
   return {
     id: docSnap.id,
@@ -1643,6 +1788,7 @@ function normalizeCandidate(docSnap: QueryDocumentSnapshot<DocumentData>): Candi
     author,
     genres,
     rating,
+    coverUrl: cover || undefined,
   };
 }
 
@@ -1848,6 +1994,7 @@ function summarizeContextForProposal(context: AgentContextSnapshot): Record<stri
 function buildProposalPrompt(params: {
   normalizedQuery: string;
   mode: LibrarianMode;
+  readerIntent: ReaderIntent;
   context: AgentContextSnapshot;
   memoryMessages: LibrarianMemoryMessage[];
   anchorTitle: string;
@@ -1858,6 +2005,7 @@ function buildProposalPrompt(params: {
 }): string {
   const contextSummary = summarizeContextForProposal(params.context);
   const memorySummary = formatConversationMemory(params.memoryMessages);
+  const intentGuidance = readerIntentPromptGuidance(params.readerIntent);
   const exclusions =
     params.excludedKeys.length > 0
       ? `Do not repeat these title|author keys: ${params.excludedKeys.join(", ")}`
@@ -1888,6 +2036,8 @@ function buildProposalPrompt(params: {
     "- themes must contain 1 to 3 short topic strings.",
     "",
     `Mode: ${params.mode}`,
+    `Reader intent: ${params.readerIntent}`,
+    `Intent guidance: ${intentGuidance}`,
     `User query: ${params.normalizedQuery}`,
     `Recent conversation memory (last up to 6 messages): ${memorySummary}`,
     `Anchor title (if relevant): ${params.anchorTitle || "No anchor title resolved."}`,
@@ -2031,6 +2181,7 @@ async function searchBackedProposals(params: {
 async function generateCandidateBooks(params: {
   normalizedQuery: string;
   mode: LibrarianMode;
+  readerIntent: ReaderIntent;
   context: AgentContextSnapshot;
   memoryMessages: LibrarianMemoryMessage[];
   anchor: CandidateBook | null;
@@ -2043,6 +2194,7 @@ async function generateCandidateBooks(params: {
     buildProposalPrompt({
       normalizedQuery: params.normalizedQuery,
       mode: params.mode,
+      readerIntent: params.readerIntent,
       context: params.context,
       memoryMessages: params.memoryMessages,
       anchorTitle: params.anchor?.title || "",
@@ -2521,11 +2673,141 @@ function computeSignalRankingBias(params: {
   return clamp(boost, 0, 0.2);
 }
 
+function computeCanonicalAnchorBoost(params: {
+  candidate: VerifiedBook;
+  readerIntent: ReaderIntent;
+}): number {
+  const authorKey = normalizeText(params.candidate.author);
+  const titleKey = normalizeText(params.candidate.title);
+  const movementText = normalizeText(
+    [...params.candidate.genres, ...(params.candidate.proposedThemes || [])].join(" ")
+  );
+
+  let boost = 0;
+  if (authorKey && CANONICAL_AUTHOR_LOOKUP.has(authorKey)) {
+    boost += CANONICAL_AUTHOR_BOOST;
+  }
+  if (titleKey && CANONICAL_BOOK_LOOKUP.has(titleKey)) {
+    boost += CANONICAL_TITLE_BOOST;
+  }
+  if (CANONICAL_MOVEMENT_LOOKUP.some((movement) => movementText.includes(movement))) {
+    boost += CANONICAL_MOVEMENT_BOOST;
+  }
+
+  // Keep canonical boost supplemental and non-dominant.
+  const capped = Math.min(boost, 0.099);
+  if (params.readerIntent === "CANONICAL_WORKS" || params.readerIntent === "AUTHOR_EXPLORATION") {
+    return capped;
+  }
+  return capped * 0.85;
+}
+
+function jaccardSimilarity(left: string[], right: string[]): number {
+  if (left.length === 0 || right.length === 0) return 0;
+  const leftSet = new Set(left);
+  const rightSet = new Set(right);
+  let intersection = 0;
+  for (const value of leftSet) {
+    if (rightSet.has(value)) intersection += 1;
+  }
+  if (intersection === 0) return 0;
+  const union = leftSet.size + rightSet.size - intersection;
+  if (union <= 0) return 0;
+  return clamp(intersection / union, 0, 1);
+}
+
+function normalizeThemeList(values: string[] | undefined): string[] {
+  if (!Array.isArray(values)) return [];
+  return values
+    .map((value) => normalizeText(value))
+    .filter((value) => value.length > 0)
+    .slice(0, 6);
+}
+
+function computeDiversitySimilarity(
+  candidate: RankedLibrarianBookCard,
+  selected: RankedLibrarianBookCard
+): number {
+  const candidateAuthor = normalizeText(candidate.author);
+  const selectedAuthor = normalizeText(selected.author);
+  const authorSimilarity = candidateAuthor && selectedAuthor && candidateAuthor === selectedAuthor ? 1 : 0;
+
+  const candidateGenres = (candidate.diversityGenres || [])
+    .map((value) => normalizeText(value))
+    .filter((value) => value.length > 0);
+  const selectedGenres = (selected.diversityGenres || [])
+    .map((value) => normalizeText(value))
+    .filter((value) => value.length > 0);
+  const genreSimilarity = jaccardSimilarity(candidateGenres, selectedGenres);
+
+  const candidateThemes = normalizeThemeList(candidate.diversityThemes);
+  const selectedThemes = normalizeThemeList(selected.diversityThemes);
+  const themeSimilarity = jaccardSimilarity(candidateThemes, selectedThemes);
+
+  // Author overlap is strongest penalty; genre/theme add medium penalties.
+  return clamp(Math.max(authorSimilarity, genreSimilarity * 0.6 + themeSimilarity * 0.5), 0, 1);
+}
+
+function applyDiversityRerank(
+  rankedCandidates: RankedLibrarianBookCard[],
+  finalSelectionSize: number
+): RankedLibrarianBookCard[] {
+  const safeFinalSize = Math.max(1, Math.min(finalSelectionSize, LIBRARIAN_MMR_SELECTION_SIZE));
+  if (rankedCandidates.length <= safeFinalSize) {
+    return rankedCandidates.slice(0, safeFinalSize);
+  }
+
+  const pool = rankedCandidates.slice(0, Math.min(LIBRARIAN_MMR_POOL_SIZE, rankedCandidates.length));
+  if (pool.length < safeFinalSize) {
+    return pool;
+  }
+
+  const selected: RankedLibrarianBookCard[] = [pool[0]];
+  const remaining = pool.slice(1);
+
+  while (selected.length < safeFinalSize && remaining.length > 0) {
+    let bestIndex = 0;
+    let bestScore = Number.NEGATIVE_INFINITY;
+
+    for (let i = 0; i < remaining.length; i += 1) {
+      const candidate = remaining[i];
+      let maxSimilarity = 0;
+      for (const picked of selected) {
+        maxSimilarity = Math.max(maxSimilarity, computeDiversitySimilarity(candidate, picked));
+      }
+      const mmrScore =
+        LIBRARIAN_MMR_LAMBDA * candidate.relevanceScore -
+        (1 - LIBRARIAN_MMR_LAMBDA) * maxSimilarity;
+
+      if (mmrScore > bestScore) {
+        bestScore = mmrScore;
+        bestIndex = i;
+        continue;
+      }
+
+      if (Math.abs(mmrScore - bestScore) <= 1e-9) {
+        const currentBest = remaining[bestIndex];
+        if (deterministicSort(candidate, currentBest) < 0) {
+          bestIndex = i;
+        }
+      }
+    }
+
+    selected.push(remaining[bestIndex]);
+    remaining.splice(bestIndex, 1);
+  }
+
+  return selected;
+}
+
 function toPublicCard(row: RankedLibrarianBookCard): LibrarianBookCard {
   return {
     bookId: row.bookId,
     title: row.title,
     author: row.author,
+    ...(typeof row.coverUrl === "string" && row.coverUrl.trim().length > 0
+      ? { coverUrl: row.coverUrl.trim() }
+      : {}),
     short_reason: row.short_reason,
   };
 }
@@ -3404,6 +3686,7 @@ async function getCachedRecommendations(params: {
         bookId: typeof record.bookId === "string" ? record.bookId : "",
         title: typeof record.title === "string" ? record.title : "",
         author: typeof record.author === "string" ? record.author : "",
+        coverUrl: typeof record.coverUrl === "string" ? record.coverUrl : "",
         short_reason: typeof record.short_reason === "string" ? record.short_reason : "",
       };
     })
@@ -3414,6 +3697,10 @@ async function getCachedRecommendations(params: {
         row.author.length > 0 &&
         row.short_reason.length > 0
     )
+    .map((row) => ({
+      ...row,
+      ...(row.coverUrl.trim().length > 0 ? { coverUrl: row.coverUrl.trim() } : {}),
+    }))
     .slice(0, LIBRARIAN_LIMITS.MAX_BOOKS);
 
   return parsed.length > 0 ? parsed : null;
@@ -3584,6 +3871,7 @@ export async function runLibrarianRecommendation(params: {
   }
 
   const deterministicIntent = classifyLibrarianIntent(validation.normalizedQuery);
+  const readerIntent = classifyReaderIntent(validation.normalizedQuery);
   const intentClassification: IntentClassification = {
     intent: deterministicIntent.intent,
     topic: deterministicIntent.topic,
@@ -3626,6 +3914,9 @@ export async function runLibrarianRecommendation(params: {
     limit: LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS,
   };
   const excludedProposalKeys = new Set<string>();
+  logger.info("[AI][LIBRARIAN][READER_INTENT]", {
+    readerIntent,
+  });
 
   const finalizeAndReturn = async (
     inputRecommendations: LibrarianBookCard[],
@@ -4085,6 +4376,7 @@ export async function runLibrarianRecommendation(params: {
     const proposals = await generateCandidateBooks({
       normalizedQuery: validation.normalizedQuery,
       mode,
+      readerIntent,
       context: params.context,
       memoryMessages: validation.memoryMessages,
       anchor,
@@ -4117,6 +4409,7 @@ export async function runLibrarianRecommendation(params: {
             const enriched: VerifiedBook = {
               ...verified,
               proposedExplanation: proposal.explanation,
+              proposedThemes: proposal.themes,
             };
             return enriched;
           }
@@ -4173,7 +4466,13 @@ export async function runLibrarianRecommendation(params: {
         candidate,
         affinity: recentSignalAffinity,
       });
-      const relevance = clamp(baseScore + sourceBoost + modeAdjustment + signalBias);
+      const canonicalAnchorBoost = computeCanonicalAnchorBoost({
+        candidate,
+        readerIntent,
+      });
+      const relevance = clamp(
+        baseScore + sourceBoost + modeAdjustment + signalBias + canonicalAnchorBoost
+      );
       const lowRated = candidate.rating !== null && candidate.rating < 3.5;
       const resolvedShortReason =
         sanitizeShortReason(
@@ -4196,23 +4495,31 @@ export async function runLibrarianRecommendation(params: {
         bookId: candidate.id,
         title: candidate.title,
         author: candidate.author,
+        ...(typeof candidate.coverUrl === "string" && candidate.coverUrl.trim().length > 0
+          ? { coverUrl: candidate.coverUrl.trim() }
+          : {}),
         short_reason,
         mode,
         relevanceScore: round(relevance),
+        diversityGenres: candidate.genres.slice(0, 6),
+        diversityThemes: (candidate.proposedThemes || []).slice(0, 6),
       } satisfies RankedLibrarianBookCard;
     })
     .sort(deterministicSort);
 
-  const selectedCount = Math.max(1, Math.min(5, scored.length));
-  const limitedRanked = scored.slice(0, selectedCount);
+  const selectedCount = Math.max(1, Math.min(LIBRARIAN_MMR_SELECTION_SIZE, scored.length));
+  const limitedRanked = applyDiversityRerank(scored, selectedCount);
   const recommendations = limitedRanked.map((row) => toPublicCard(row));
 
   logger.info("[AI][LIBRARIAN][ORCHESTRATOR]", {
     proposalCount: excludedProposalKeys.size,
     verifiedCount: verified.length,
     selectedCount: recommendations.length,
+    diversityPoolSize: Math.min(scored.length, LIBRARIAN_MMR_POOL_SIZE),
+    diversityLambda: LIBRARIAN_MMR_LAMBDA,
     regenerationCount,
     mode,
+    readerIntent,
     anchorResolved: Boolean(anchor),
   });
 
