@@ -19,8 +19,8 @@ import {
 const db = admin.firestore();
 
 export const LIBRARIAN_LIMITS = {
-  MAX_BOOKS: 3,
-  DEFAULT_BOOKS: 2,
+  MAX_BOOKS: 5,
+  DEFAULT_BOOKS: 4,
   TOKEN_LIMIT_INPUT: 2200,
   TOKEN_LIMIT_OUTPUT: 500,
   DAILY_QUOTA: 30,
@@ -90,6 +90,7 @@ type IntentClassification = {
   intent: LibrarianScopeIntent;
   topic: string;
   authorName: string;
+  bestBookIntent: boolean;
 };
 
 type LibrarianConversationIntent =
@@ -197,8 +198,8 @@ const LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS = 8;
 const LIBRARIAN_CACHE_SCHEMA_VERSION = "v3";
 const LIBRARIAN_INTENT_TIMEOUT_MS = 1500;
 const LIBRARIAN_EXPLANATION_TIMEOUT_MS = 1500;
-const LIBRARIAN_MMR_LAMBDA = 0.7;
-const LIBRARIAN_MMR_POOL_SIZE = 10;
+const LIBRARIAN_MMR_LAMBDA = 0.65;
+const LIBRARIAN_MMR_POOL_SIZE = 20;
 const LIBRARIAN_MMR_SELECTION_SIZE = 5;
 const CANONICAL_AUTHOR_BOOST = 0.08;
 const CANONICAL_TITLE_BOOST = 0.1;
@@ -1444,14 +1445,24 @@ function readerIntentPromptGuidance(intent: ReaderIntent): string {
   return "Prioritize broad but high-quality discovery recommendations.";
 }
 
+function isBestBookIntentQuery(normalizedQuery: string): boolean {
+  const query = normalizeText(normalizedQuery);
+  if (!query) return false;
+  const hasBestSignal = /\b(best|better|strongest|greatest|top)\b/.test(query);
+  const hasReadingSignal = /\b(book|books|novel|novels|read|start|starting point|first)\b/.test(query);
+  return hasBestSignal && hasReadingSignal;
+}
+
 function classifyLibrarianIntent(normalizedQuery: string): IntentClassification {
   const query = normalizeText(normalizedQuery);
+  const bestBookIntent = isBestBookIntentQuery(query);
   const authorName = extractAuthorFromOrderQuery(query);
   if (authorName) {
     return {
       intent: "AUTHOR_ORDER",
       topic: "",
       authorName,
+      bestBookIntent,
     };
   }
   const authorByName = extractAuthorFromByQuery(query);
@@ -1460,6 +1471,7 @@ function classifyLibrarianIntent(normalizedQuery: string): IntentClassification 
       intent: "BOOK_RECOMMENDATION",
       topic: "",
       authorName: authorByName,
+      bestBookIntent,
     };
   }
 
@@ -1470,6 +1482,7 @@ function classifyLibrarianIntent(normalizedQuery: string): IntentClassification 
       intent: "OUT_OF_SCOPE",
       topic: extractTopicFromQuery(query),
       authorName: "",
+      bestBookIntent,
     };
   }
 
@@ -1481,6 +1494,7 @@ function classifyLibrarianIntent(normalizedQuery: string): IntentClassification 
       intent: "BOOK_KNOWLEDGE",
       topic: extractTopicFromQuery(query),
       authorName: "",
+      bestBookIntent,
     };
   }
 
@@ -1488,6 +1502,7 @@ function classifyLibrarianIntent(normalizedQuery: string): IntentClassification 
     intent: "BOOK_RECOMMENDATION",
     topic: extractTopicFromQuery(query),
     authorName: "",
+    bestBookIntent,
   };
 }
 
@@ -2884,7 +2899,7 @@ function buildTopicSeedCards(params: {
   reason: "out_of_scope" | "book_knowledge";
 }): LibrarianBookCard[] {
   const normalizedTopic = normalizeText(params.topic);
-  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 3, LIBRARIAN_LIMITS.MAX_BOOKS));
+  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 5, LIBRARIAN_LIMITS.MAX_BOOKS));
   const reasonText =
     params.reason === "out_of_scope"
       ? toBoundaryReason(params.topic)
@@ -2950,7 +2965,7 @@ async function resolveTopicBooks(params: {
   reason: string;
   maxBooks?: number;
 }): Promise<LibrarianBookCard[]> {
-  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 3, LIBRARIAN_LIMITS.MAX_BOOKS));
+  const maxBooks = Math.max(2, Math.min(params.maxBooks ?? 5, LIBRARIAN_LIMITS.MAX_BOOKS));
   const query = `books about ${params.topic}`.trim();
   const searchResponse = await unifiedSearchWithBudget({
     budget: params.budget,
@@ -3379,6 +3394,13 @@ async function generateConversationalExplanation(params: {
   intent: LibrarianConversationIntent;
   books: LibrarianBookCard[];
   authorCards: LibrarianAuthorCard[];
+  context: AgentContextSnapshot;
+  recentSignalAffinity?: RecentSignalAffinity | null;
+  disagreement?: {
+    requestedTitle: string;
+    strongerTitle: string;
+    strongerAuthor: string;
+  } | null;
 }): Promise<string> {
   const fallbackByIntent =
     params.intent === "out_of_scope"
@@ -3391,12 +3413,62 @@ async function generateConversationalExplanation(params: {
     return sanitizeConversationExplanation(fallbackByIntent, fallbackByIntent);
   }
 
+  if (params.disagreement) {
+    const requestedTitle = params.disagreement.requestedTitle.trim();
+    const strongerTitle = params.disagreement.strongerTitle.trim();
+    const strongerAuthor = params.disagreement.strongerAuthor.trim();
+    const respectfulDisagreement = strongerAuthor
+      ? `While ${requestedTitle} is widely known, ${strongerTitle} by ${strongerAuthor} is usually a stronger starting point for this reading direction.`
+      : `While ${requestedTitle} is widely known, ${strongerTitle} is usually a stronger starting point for this reading direction.`;
+    return sanitizeConversationExplanation(respectfulDisagreement, fallbackByIntent);
+  }
+
+  const favoriteGenres = (params.context.genres.topGenres || [])
+    .map((row) => String(row?.name || "").trim())
+    .filter((row) => row.length > 0)
+    .slice(0, 2);
+  if (favoriteGenres.length === 0 && params.context.genres.dominantGenre.trim().length > 0) {
+    favoriteGenres.push(params.context.genres.dominantGenre.trim());
+  }
+  const favoriteAuthorsRaw = Object.entries(params.recentSignalAffinity?.authorWeights || {})
+    .filter(([, weight]) => Number.isFinite(weight) && weight > 0)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2)
+    .map(([author]) => author.trim())
+    .filter((author) => author.length > 0);
+  const favoriteAuthorDisplay = favoriteAuthorsRaw
+    .map((author) => {
+      const matched = params.books.find((row) => normalizeText(row.author) === author);
+      return matched?.author?.trim() || author;
+    })
+    .find((author) => author.length > 0) || "";
+
   const topBooks = params.books
     .slice(0, 2)
     .map((row) => row.title.trim())
     .filter((row) => row.length > 0);
   if (topBooks.length === 0) {
     return sanitizeConversationExplanation("", fallbackByIntent);
+  }
+
+  const preferredGenre = favoriteGenres[0] || "";
+  if (favoriteAuthorDisplay && preferredGenre) {
+    return sanitizeConversationExplanation(
+      `Since you often gravitate toward ${favoriteAuthorDisplay} and ${preferredGenre}, ${topBooks.join(" and ")} should resonate with your reading direction.`,
+      fallbackByIntent
+    );
+  }
+  if (favoriteAuthorDisplay) {
+    return sanitizeConversationExplanation(
+      `Since your recent reading leans toward ${favoriteAuthorDisplay}, ${topBooks.join(" and ")} should feel like a natural next step.`,
+      fallbackByIntent
+    );
+  }
+  if (preferredGenre) {
+    return sanitizeConversationExplanation(
+      `Because your profile leans toward ${preferredGenre}, ${topBooks.join(" and ")} offer a strong next reading path.`,
+      fallbackByIntent
+    );
   }
 
   const authorFocus =
@@ -3876,6 +3948,7 @@ export async function runLibrarianRecommendation(params: {
     intent: deterministicIntent.intent,
     topic: deterministicIntent.topic,
     authorName: deterministicIntent.authorName,
+    bestBookIntent: deterministicIntent.bestBookIntent,
   };
   const conversationalIntent: LibrarianConversationIntent = mapScopeIntentToConversationIntent(
     intentClassification.intent
@@ -3913,6 +3986,7 @@ export async function runLibrarianRecommendation(params: {
     used: 0,
     limit: LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS,
   };
+  let explanationSignalAffinity: RecentSignalAffinity | null = null;
   const excludedProposalKeys = new Set<string>();
   logger.info("[AI][LIBRARIAN][READER_INTENT]", {
     readerIntent,
@@ -4050,6 +4124,20 @@ export async function runLibrarianRecommendation(params: {
       intent: options.intent,
       books: attributedRecommendations,
     });
+    const requestedAnchorTitle = anchor?.title?.trim() || "";
+    const topRecommendation = attributedRecommendations[0];
+    const disagreementContext =
+      options.intent === "book_recommendation" &&
+      intentClassification.bestBookIntent &&
+      requestedAnchorTitle.length > 0 &&
+      topRecommendation &&
+      normalizeText(topRecommendation.title) !== normalizeText(requestedAnchorTitle)
+        ? {
+            requestedTitle: requestedAnchorTitle,
+            strongerTitle: topRecommendation.title,
+            strongerAuthor: topRecommendation.author,
+          }
+        : null;
     const explanation = options.explanationOverride
       ? sanitizeConversationExplanation(
           options.explanationOverride,
@@ -4060,6 +4148,9 @@ export async function runLibrarianRecommendation(params: {
           intent: options.intent,
           books: attributedRecommendations,
           authorCards: authorRecommendations,
+          context: params.context,
+          recentSignalAffinity: explanationSignalAffinity,
+          disagreement: disagreementContext,
         });
     const conversation: LibrarianConversation = {
       explanation,
@@ -4441,6 +4532,7 @@ export async function runLibrarianRecommendation(params: {
 
   const verified = dedupeVerifiedBooks(verifiedPool);
   const recentSignalAffinity = await fetchRecentSignalAffinity(normalizedUid);
+  explanationSignalAffinity = recentSignalAffinity;
   if (recentSignalAffinity.sampleCount > 0) {
     logger.info("[AI][LIBRARIAN][SIGNAL_BIAS_CONTEXT]", {
       uid: normalizedUid,

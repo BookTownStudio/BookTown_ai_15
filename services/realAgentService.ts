@@ -224,7 +224,7 @@ export class RealAgentService implements AgentService {
                         typeof (row as any).short_reason === 'string'
                     );
                 })
-                .slice(0, 3)
+                .slice(0, 5)
                 .map((row) => {
                     const suggestionSessionId =
                         typeof (row as any).suggestionSessionId === 'string' &&

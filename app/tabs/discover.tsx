@@ -18,6 +18,8 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { PinIcon } from '../../components/icons/PinIcon.tsx'; // You might need to create this or reuse an icon
 import PageShell from '../../components/layout/PageShell.tsx';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
+import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
+import MiniBookCard from '../../components/books/MiniBookCard.tsx';
 
 // --- Icons ---
 // If PinIcon doesn't exist, create a simple inline one or import if available.
@@ -33,6 +35,8 @@ const PinIconSvg = (props: React.SVGProps<SVGSVGElement>) => (
 const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ text, sourceQuery = '' }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
+    const { showToast } = useToast();
+    const [openingBookId, setOpeningBookId] = useState<string | null>(null);
 
     const toRecommendationContext = (rec: Record<string, unknown>): LibrarianRecommendationContext | undefined => {
         const suggestionId =
@@ -117,6 +121,10 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         typeof (payloadObject.conversation as { follow_up_question?: unknown }).follow_up_question === 'string'
             ? String((payloadObject.conversation as { follow_up_question: string }).follow_up_question).trim()
             : '';
+    const explanationSentences =
+        explanation.match(/[^.!?]+[.!?]?/g)?.map((part) => part.trim()).filter((part) => part.length > 0) || [];
+    const sectionTitle = explanationSentences[0] || '';
+    const sectionDescription = explanationSentences.slice(1).join(' ').trim();
     const normalizedRecommendations = recommendations
         .filter((row) => row && typeof row === 'object')
         .map((row) => ({
@@ -133,7 +141,6 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         .filter((row) => row.title.length > 0 && row.author.length > 0);
 
     const isFallbackId = (bookId: string): boolean => /^(fallback_|topic_seed_)/i.test(bookId);
-    const isSyntheticExternalId = (bookId: string): boolean => /^(ext_|lw_|gb_|ol_)/i.test(bookId);
 
     const fallbackTextOnly = normalizedRecommendations
         .filter((row) => isFallbackId(row.bookId))
@@ -141,14 +148,60 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
         .find((row) => row.length > 0) || '';
 
     const bookRecommendations = normalizedRecommendations
-        .filter((row) => row.bookId.length > 0 && !isFallbackId(row.bookId) && !isSyntheticExternalId(row.bookId))
-        .slice(0, 6);
+        .filter((row) => row.bookId.length > 0 && !isFallbackId(row.bookId))
+        .slice(0, 5);
+
+    const handleRecommendationOpen = async (
+        rec: (typeof bookRecommendations)[number],
+        recommendationContext?: LibrarianRecommendationContext
+    ) => {
+        if (!rec.bookId || openingBookId) return;
+        setOpeningBookId(rec.bookId);
+        try {
+            const resolution = await ensureCanonicalBook({
+                bookId: rec.bookId,
+                title: rec.title,
+                author: rec.author,
+                coverUrl: rec.coverUrl,
+            });
+            const canonicalBookId =
+                typeof resolution?.canonicalBookId === 'string' && resolution.canonicalBookId.trim().length > 0
+                    ? resolution.canonicalBookId.trim()
+                    : typeof resolution?.bookId === 'string' && resolution.bookId.trim().length > 0
+                    ? resolution.bookId.trim()
+                    : '';
+
+            if (!canonicalBookId) {
+                throw new Error('CANONICAL_RESOLUTION_FAILED');
+            }
+
+            navigate({
+                type: 'immersive',
+                id: 'bookDetails',
+                params: { bookId: canonicalBookId, from: currentView, recommendationContext },
+            });
+        } catch (error) {
+            console.error('[DISCOVER][LIBRARIAN_OPEN_FAILED]', error);
+            showToast(lang === 'en' ? 'Failed to open this book.' : 'فشل فتح هذا الكتاب.');
+        } finally {
+            setOpeningBookId(null);
+        }
+    };
 
     if (bookRecommendations.length > 0 || authorRecommendations.length > 0 || explanation || followUpQuestion || fallbackTextOnly) {
         return (
             <div className="space-y-3">
                 {explanation && (
-                    <p className="text-sm opacity-90 leading-relaxed">{explanation}</p>
+                    <div className="space-y-1">
+                        <BilingualText role="H3" className="!text-sm !md:text-base !font-semibold !text-white/95 leading-snug">
+                            {sectionTitle}
+                        </BilingualText>
+                        {sectionDescription && (
+                            <BilingualText role="Body" className="!text-sm !text-white/80 leading-relaxed">
+                                {sectionDescription}
+                            </BilingualText>
+                        )}
+                    </div>
                 )}
                 {fallbackTextOnly && (
                     <p className="text-sm opacity-85 leading-relaxed">{fallbackTextOnly}</p>
@@ -157,32 +210,17 @@ const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ t
                     <div className="flex gap-3 overflow-x-auto pb-1">
                         {bookRecommendations.map((rec, idx: number) => {
                             const recommendationContext = toRecommendationContext(rec as unknown as Record<string, unknown>);
-                            const resolvedBookId = rec.bookId;
 
                             return (
-                                <button
-                                    type="button"
-                                    key={rec.suggestionId || `${resolvedBookId}_${idx}`}
-                                    onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: resolvedBookId, from: currentView, recommendationContext } })}
-                                    className="w-[176px] shrink-0 rounded-[0.7rem] bg-white/5 border border-white/10 backdrop-blur-md p-2 text-left transition-all duration-300 ease-in-out hover:bg-white/10"
-                                >
-                                    <div className="w-[72px] h-[108px] rounded-[0.5rem] border border-white/10 bg-white/5 overflow-hidden mb-2">
-                                        {rec.coverUrl ? (
-                                            <img
-                                                src={rec.coverUrl}
-                                                alt={rec.title}
-                                                className="w-full h-full object-cover"
-                                                loading="lazy"
-                                            />
-                                        ) : (
-                                            <div className="w-full h-full flex items-center justify-center px-1 text-center text-[10px] opacity-70">
-                                                {lang === 'en' ? 'No cover' : 'لا غلاف'}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <p className="text-sm font-semibold line-clamp-2 leading-snug">{rec.title}</p>
-                                    <p className="text-xs opacity-70 truncate mt-1">{rec.author}</p>
-                                </button>
+                                <MiniBookCard
+                                    key={rec.suggestionId || `${rec.bookId}_${idx}`}
+                                    bookId={rec.bookId}
+                                    title={rec.title}
+                                    author={rec.author}
+                                    coverUrl={rec.coverUrl}
+                                    disabled={openingBookId !== null}
+                                    onClick={() => handleRecommendationOpen(rec, recommendationContext)}
+                                />
                             );
                         })}
                     </div>

@@ -38,7 +38,7 @@ const recommendationOriginSchema = z
     source: z.literal("librarian"),
     suggestionSessionId: z.string().min(1).max(96),
     suggestionId: z.string().min(1).max(96),
-    rankPosition: z.number().int().min(1).max(3),
+    rankPosition: z.number().int().min(1).max(5),
     mode: z
       .enum([
         "Reinforcement",
@@ -2204,7 +2204,7 @@ export const apiContracts = {
                   source: z.literal("librarian").optional(),
                   suggestionSessionId: z.string().min(1).max(96).optional(),
                   suggestionId: z.string().min(1).max(96).optional(),
-                  rankPosition: z.number().int().min(1).max(3).optional(),
+                  rankPosition: z.number().int().min(1).max(5).optional(),
                   mode: z
                     .enum([
                       "Reinforcement",
@@ -2217,7 +2217,7 @@ export const apiContracts = {
                 })
                 .strict()
             )
-            .max(3),
+            .max(5),
           fromCache: z.boolean(),
           remainingQuota: z.number(),
           normalizedQuery: z.string().min(1).max(280),

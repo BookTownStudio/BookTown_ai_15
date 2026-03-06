@@ -42,12 +42,12 @@ const librarianCallableResponseSchema = z
             source: z.literal("librarian").optional(),
             suggestionSessionId: z.string().min(1).max(96).optional(),
             suggestionId: z.string().min(1).max(96).optional(),
-            rankPosition: z.number().int().min(1).max(3).optional(),
+            rankPosition: z.number().int().min(1).max(5).optional(),
             mode: z.enum(LIBRARIAN_INTENT_VALUES).optional(),
           })
           .strict()
       )
-      .max(3),
+      .max(5),
     fromCache: z.boolean(),
     remainingQuota: z.number().int().nonnegative(),
     normalizedQuery: z.string().min(1).max(280),
