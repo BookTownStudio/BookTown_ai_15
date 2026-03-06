@@ -34,6 +34,11 @@ export interface LibrarianBookCard {
     mode?: LibrarianMode;
 }
 
+export interface LibrarianMemoryMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
 export type LibrarianConversationIntent =
     | 'book_recommendation'
     | 'author_request'
@@ -101,7 +106,7 @@ export interface AgentService {
     /**
      * Structured Librarian recommendations (Tier-1 contract).
      */
-    librarianRecommend(query: string, intent?: string): Promise<LibrarianResponseEnvelope>;
+    librarianRecommend(query: string, intent?: string, messages?: LibrarianMemoryMessage[]): Promise<LibrarianResponseEnvelope>;
 
     /**
      * Identify a book from a base64 image string.

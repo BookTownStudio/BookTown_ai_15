@@ -13,10 +13,18 @@ const LIBRARIAN_INTENT_VALUES = [
   "ReReadingReflection",
 ] as const;
 
+const librarianMemoryMessageSchema = z
+  .object({
+    role: z.enum(["user", "assistant"]),
+    content: z.string().min(1).max(280),
+  })
+  .strict();
+
 const librarianCallableRequestSchema = z
   .object({
     normalizedQuery: z.string().min(1).max(280),
     intent: z.enum(LIBRARIAN_INTENT_VALUES).optional(),
+    messages: z.array(librarianMemoryMessageSchema).max(6).optional(),
   })
   .strict();
 
@@ -168,6 +176,7 @@ export const aiLibrarianCallable = onCall(
         request: {
           normalizedQuery,
           intent: parsed.data.intent ?? "Reinforcement",
+          messages: parsed.data.messages,
         },
         context,
       });

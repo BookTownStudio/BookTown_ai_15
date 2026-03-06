@@ -1,9 +1,24 @@
 
-import { AgentService, AgentMessage, BookRecommendation, LibrarianBookCard, LibrarianResponseEnvelope, ShelfVibe } from './agents.types';
+import { AgentService, AgentMessage, BookRecommendation, LibrarianBookCard, LibrarianMemoryMessage, LibrarianResponseEnvelope, ShelfVibe } from './agents.types';
 import { httpsCallable } from 'firebase/functions';
 import { getFirebaseAppCheckToken, getFirebaseAuth, getFirebaseFunctions, isFirebaseInitialized } from '../lib/firebase.ts';
 
 export class RealAgentService implements AgentService {
+    private normalizeLibrarianMessages(messages?: LibrarianMemoryMessage[]): LibrarianMemoryMessage[] {
+        if (!Array.isArray(messages)) return [];
+        return messages
+            .filter((row) => row && typeof row === 'object')
+            .map((row) => {
+                const role = row.role === 'assistant' ? 'assistant' : row.role === 'user' ? 'user' : null;
+                if (!role) return null;
+                const content = String(row.content || '').replace(/\s+/g, ' ').trim().slice(0, 280);
+                if (!content) return null;
+                return { role, content } as LibrarianMemoryMessage;
+            })
+            .filter((row): row is LibrarianMemoryMessage => row !== null)
+            .slice(-6);
+    }
+
     private normalizeQuery(value: string): string {
         return String(value || '')
             .toLowerCase()
@@ -166,7 +181,7 @@ export class RealAgentService implements AgentService {
         return response.text;
     }
 
-    async librarianRecommend(query: string, intent?: string): Promise<LibrarianResponseEnvelope> {
+    async librarianRecommend(query: string, intent?: string, messages?: LibrarianMemoryMessage[]): Promise<LibrarianResponseEnvelope> {
         const normalizedQuery = this.normalizeQuery(query);
         if (!normalizedQuery) {
             throw new Error('INVALID_REQUEST');
@@ -177,15 +192,18 @@ export class RealAgentService implements AgentService {
                 ? intent.trim()
                 : this.inferLibrarianIntent(normalizedQuery);
 
+        const normalizedMessages = this.normalizeLibrarianMessages(messages);
+
         let response: unknown;
         try {
             const fn = httpsCallable<
-                { normalizedQuery: string; intent?: string },
+                { normalizedQuery: string; intent?: string; messages?: LibrarianMemoryMessage[] },
                 LibrarianResponseEnvelope
             >(getFirebaseFunctions(), 'aiLibrarian');
             const result = await fn({
                 normalizedQuery,
                 intent: resolvedIntent,
+                ...(normalizedMessages.length > 0 ? { messages: normalizedMessages } : {}),
             });
             response = result.data;
         } catch (error) {

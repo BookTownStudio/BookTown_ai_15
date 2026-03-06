@@ -55,6 +55,13 @@ export type LibrarianBookCard = {
 type LibrarianRequest = {
   normalizedQuery: string;
   intent: string;
+  uiLanguage?: string;
+  messages?: LibrarianMemoryMessage[];
+};
+
+type LibrarianMemoryMessage = {
+  role: "user" | "assistant";
+  content: string;
 };
 
 type RankedLibrarianBookCard = LibrarianBookCard & {
@@ -131,6 +138,8 @@ type LlmIntentInterpretation = {
 type ProposedBook = {
   title: string;
   author: string;
+  explanation: string;
+  themes: string[];
 };
 
 type CandidateBook = {
@@ -146,6 +155,7 @@ type VerifiedBook = CandidateBook & {
   source: "booktown" | "googleBooks" | "openLibrary";
   externalId: string | null;
   canonicalBookId: string | null;
+  proposedExplanation?: string;
   coverUrl?: string;
   description?: string;
   externalIds?: {
@@ -155,9 +165,17 @@ type VerifiedBook = CandidateBook & {
   verificationSource?: "canonical" | "external_verified";
 };
 
+type RecentSignalAffinity = {
+  sampleCount: number;
+  authorWeights: Record<string, number>;
+  genreWeights: Record<string, number>;
+  themeWeights: Record<string, number>;
+};
+
 const LIBRARIAN_PROPOSAL_MODEL = "gemini-2.0-flash";
 const LIBRARIAN_VERTEX_REGION = "us-central1";
-const LIBRARIAN_MAX_LLM_CANDIDATES = 12;
+const LIBRARIAN_MIN_LLM_CANDIDATES = 20;
+const LIBRARIAN_MAX_LLM_CANDIDATES = 30;
 const LIBRARIAN_DEFAULT_SELECTION_COUNT = 2;
 const LIBRARIAN_MAX_REGENERATION_ATTEMPTS = 1;
 const LIBRARIAN_LLM_TIMEOUT_MS = 3000;
@@ -231,6 +249,30 @@ const NON_LITERARY_TITLE_PATTERN =
   /\b(planning area|wilderness|district|county|municipality|zoning|ordinance|statute|regulation|code section|impact statement)\b/i;
 const NON_AUTHOR_ENTITY_PATTERN =
   /\b(publisher|publishing|press|editorial|edition|editions|ministry|department|committee|council|institute|university|association|agency|office|bureau|llc|inc|ltd|corp|corporation)\b/i;
+const SIGNAL_THEME_STOPWORDS = new Set([
+  "book",
+  "books",
+  "novel",
+  "novels",
+  "author",
+  "authors",
+  "read",
+  "reading",
+  "recommend",
+  "recommended",
+  "suggest",
+  "about",
+  "with",
+  "from",
+  "that",
+  "this",
+  "your",
+  "strong",
+  "clear",
+  "next",
+  "step",
+  "path",
+]);
 
 function normalizeUid(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -258,6 +300,33 @@ function tokenize(value: string): string[] {
     .map((token) => token.trim())
     .filter((token) => token.length > 1)
     .slice(0, 24);
+}
+
+function sanitizeMemoryMessages(messages: unknown): LibrarianMemoryMessage[] {
+  if (!Array.isArray(messages)) return [];
+  return messages
+    .filter((row) => row && typeof row === "object")
+    .map((row) => {
+      const record = row as Record<string, unknown>;
+      const roleRaw = record.role;
+      const role =
+        roleRaw === "assistant" ? "assistant" : roleRaw === "user" ? "user" : null;
+      if (!role) return null;
+      const content = String(record.content || "").replace(/\s+/g, " ").trim().slice(0, 280);
+      if (!content) return null;
+      return { role, content } satisfies LibrarianMemoryMessage;
+    })
+    .filter((row): row is LibrarianMemoryMessage => row !== null)
+    .slice(-6);
+}
+
+function formatConversationMemory(messages: LibrarianMemoryMessage[]): string {
+  if (!Array.isArray(messages) || messages.length === 0) {
+    return "No recent conversation context.";
+  }
+  return messages
+    .map((row) => `${row.role === "assistant" ? "assistant" : "user"}: ${row.content}`)
+    .join(" | ");
 }
 
 function clamp(value: number, min = 0, max = 1): number {
@@ -413,6 +482,799 @@ const TOPIC_EXCLUDE_TERMS = new Set([
   "recommendation",
   "recommendations",
 ]);
+
+type AnchorLanguage = "en" | "ar" | "fr" | "es";
+
+type AnchorSeedBuckets = {
+  genres: string[];
+  themes: string[];
+  topics: string[];
+  movements: string[];
+  readerIntents: string[];
+  periods: string[];
+  philosophy: string[];
+  psychology: string[];
+  styles: string[];
+  settings: string[];
+};
+
+const CLARITY_STRUCTURAL_PATTERNS: RegExp[] = [
+  /\bbook by\b/,
+  /\bbooks by\b/,
+  /\bnovel by\b/,
+  /\bnovels by\b/,
+  /\bwork by\b/,
+  /\bworks by\b/,
+  /\bbook like\b/,
+  /\bbooks like\b/,
+  /\bsimilar to\b/,
+  /\bnovel about\b/,
+  /\bnovels about\b/,
+  /\bbook about\b/,
+  /\bbooks about\b/,
+  /\brecommend book about\b/,
+  /\brecommend books about\b/,
+  /\bwhat should i read from\b/,
+  /\bwhat should i read if i loved\b/,
+];
+
+const CLARIFICATION_TEMPLATES: Record<AnchorLanguage, string[]> = {
+  en: [
+    "Are you looking for fiction or nonfiction?",
+    "Do you have a particular genre or author in mind?",
+    "Are you interested in novels, essays, or something else?",
+  ],
+  ar: [
+    "هل تفضّل روايات أم كتب غير روائية؟",
+    "هل لديك نوع أدبي أو كاتب معيّن في بالك؟",
+    "هل تريد روايات أم سيرًا أم شيئًا آخر؟",
+  ],
+  fr: [
+    "Vous cherchez plutôt de la fiction ou de la non-fiction ?",
+    "Avez-vous un genre ou un auteur précis en tête ?",
+    "Vous préférez des romans, des essais, ou autre chose ?",
+  ],
+  es: [
+    "¿Buscas ficción o no ficción?",
+    "¿Tienes en mente un género o autor en particular?",
+    "¿Te interesan novelas, ensayos o algo distinto?",
+  ],
+};
+
+const CLARITY_ANCHOR_SEEDS: Record<AnchorLanguage, AnchorSeedBuckets> = {
+  en: {
+    genres: [
+      "literary fiction",
+      "historical fiction",
+      "science fiction",
+      "speculative fiction",
+      "biopunk",
+      "fantasy",
+      "mystery",
+      "thriller",
+      "romance",
+      "magical realism",
+      "dystopian fiction",
+      "memoir",
+      "biography",
+      "poetry",
+    ],
+    themes: [
+      "exile",
+      "memory",
+      "identity",
+      "grief",
+      "love",
+      "migration",
+      "war",
+      "family",
+      "spirituality",
+      "justice",
+      "resistance",
+      "solitude",
+    ],
+    topics: [
+      "philosophy",
+      "psychology",
+      "politics",
+      "economics",
+      "climate",
+      "technology",
+      "colonialism",
+      "feminism",
+      "mythology",
+      "religion",
+      "ethics",
+      "trauma",
+    ],
+    movements: [
+      "modernism",
+      "postmodernism",
+      "realism",
+      "surrealism",
+      "existentialism",
+      "romanticism",
+      "symbolism",
+      "naturalism",
+      "absurdism",
+      "beat generation",
+      "harlem renaissance",
+      "latin american boom",
+    ],
+    readerIntents: [
+      "underrated",
+      "beginner friendly",
+      "short books",
+      "long novels",
+      "character driven",
+      "plot driven",
+      "thought provoking",
+      "emotionally intense",
+      "hopeful",
+      "dark",
+      "reflective",
+      "escapist",
+    ],
+    periods: [
+      "ancient world",
+      "medieval era",
+      "renaissance",
+      "enlightenment",
+      "19th century",
+      "early 20th century",
+      "postwar era",
+      "contemporary",
+      "cold war",
+      "precolonial period",
+      "industrial era",
+      "digital age",
+    ],
+    philosophy: [
+      "stoicism",
+      "nihilism",
+      "phenomenology",
+      "ethics",
+      "metaphysics",
+      "epistemology",
+      "humanism",
+      "existential thought",
+      "absurdity",
+      "moral philosophy",
+      "political philosophy",
+      "social contract",
+    ],
+    psychology: [
+      "attachment",
+      "anxiety",
+      "depression",
+      "resilience",
+      "trauma recovery",
+      "childhood",
+      "personality",
+      "cognition",
+      "behavior change",
+      "loneliness",
+      "motivation",
+      "obsession",
+    ],
+    styles: [
+      "lyrical prose",
+      "fragmented narrative",
+      "epistolary",
+      "stream of consciousness",
+      "nonlinear",
+      "minimalist prose",
+      "satirical tone",
+      "allegorical",
+      "intimate first person",
+      "omniscient narration",
+      "dialog heavy",
+      "sparse style",
+    ],
+    settings: [
+      "middle east",
+      "north africa",
+      "latin america",
+      "east asia",
+      "south asia",
+      "europe",
+      "postcolonial city",
+      "rural village",
+      "desert landscape",
+      "coastal town",
+      "war zone",
+      "borderlands",
+    ],
+  },
+  ar: {
+    genres: [
+      "رواية أدبية",
+      "رواية تاريخية",
+      "خيال علمي",
+      "فانتازيا",
+      "غموض",
+      "تشويق",
+      "رومانسية",
+      "واقعية سحرية",
+      "ديستوبيا",
+      "سيرة ذاتية",
+      "سيرة",
+      "شعر",
+    ],
+    themes: [
+      "المنفى",
+      "الذاكرة",
+      "الهوية",
+      "الفقد",
+      "الحب",
+      "الهجرة",
+      "الحرب",
+      "العائلة",
+      "الروحانية",
+      "العدالة",
+      "المقاومة",
+      "العزلة",
+    ],
+    topics: [
+      "فلسفة",
+      "علم النفس",
+      "سياسة",
+      "اقتصاد",
+      "المناخ",
+      "التكنولوجيا",
+      "الاستعمار",
+      "النسوية",
+      "الأسطورة",
+      "الدين",
+      "الأخلاق",
+      "الصدمة",
+    ],
+    movements: [
+      "الحداثة",
+      "ما بعد الحداثة",
+      "الواقعية",
+      "السريالية",
+      "الوجودية",
+      "الرومانسية",
+      "الرمزية",
+      "الطبيعية",
+      "العبثية",
+      "نهضة أدبية",
+      "تيار معاصر",
+      "أدب ما بعد الاستعمار",
+    ],
+    readerIntents: [
+      "كتب مغمورة",
+      "مناسب للمبتدئين",
+      "كتب قصيرة",
+      "روايات طويلة",
+      "تركيز على الشخصيات",
+      "تركيز على الحبكة",
+      "يفتح التفكير",
+      "مكثف عاطفيا",
+      "أمل",
+      "داكن",
+      "تأملي",
+      "هروبي",
+    ],
+    periods: [
+      "العالم القديم",
+      "العصر الوسيط",
+      "عصر النهضة",
+      "عصر التنوير",
+      "القرن التاسع عشر",
+      "بداية القرن العشرين",
+      "فترة ما بعد الحرب",
+      "معاصر",
+      "الحرب الباردة",
+      "ما قبل الاستعمار",
+      "العصر الصناعي",
+      "العصر الرقمي",
+    ],
+    philosophy: [
+      "الرواقية",
+      "العدمية",
+      "الظاهراتية",
+      "الأخلاق",
+      "الميتافيزيقا",
+      "نظرية المعرفة",
+      "الإنسانية",
+      "الفكر الوجودي",
+      "العبث",
+      "الفلسفة الأخلاقية",
+      "الفلسفة السياسية",
+      "العقد الاجتماعي",
+    ],
+    psychology: [
+      "التعلق",
+      "القلق",
+      "الاكتئاب",
+      "المرونة",
+      "التعافي من الصدمة",
+      "الطفولة",
+      "الشخصية",
+      "الإدراك",
+      "تغيير السلوك",
+      "الوحدة",
+      "الدافعية",
+      "الهوس",
+    ],
+    styles: [
+      "نثر شعري",
+      "سرد متشظ",
+      "رسائلي",
+      "تيار الوعي",
+      "سرد غير خطي",
+      "نثر مكثف",
+      "نبرة ساخرة",
+      "رمزي",
+      "ضمير المتكلم",
+      "راو عليم",
+      "حواري",
+      "أسلوب مقتضب",
+    ],
+    settings: [
+      "الشرق الأوسط",
+      "شمال أفريقيا",
+      "أميركا اللاتينية",
+      "شرق آسيا",
+      "جنوب آسيا",
+      "أوروبا",
+      "مدينة ما بعد الاستعمار",
+      "قرية ريفية",
+      "مشهد صحراوي",
+      "مدينة ساحلية",
+      "منطقة حرب",
+      "مناطق حدودية",
+    ],
+  },
+  fr: {
+    genres: [
+      "fiction littéraire",
+      "roman historique",
+      "science-fiction",
+      "fantasy",
+      "polar",
+      "thriller",
+      "romance",
+      "réalisme magique",
+      "fiction dystopique",
+      "mémoire",
+      "biographie",
+      "poésie",
+    ],
+    themes: [
+      "exil",
+      "mémoire",
+      "identité",
+      "deuil",
+      "amour",
+      "migration",
+      "guerre",
+      "famille",
+      "spiritualité",
+      "justice",
+      "résistance",
+      "solitude",
+    ],
+    topics: [
+      "philosophie",
+      "psychologie",
+      "politique",
+      "économie",
+      "climat",
+      "technologie",
+      "colonialisme",
+      "féminisme",
+      "mythologie",
+      "religion",
+      "éthique",
+      "trauma",
+    ],
+    movements: [
+      "modernisme",
+      "postmodernisme",
+      "réalisme",
+      "surréalisme",
+      "existentialisme",
+      "romantisme",
+      "symbolisme",
+      "naturalisme",
+      "absurde",
+      "beat generation",
+      "renaissance noire",
+      "boom latino-américain",
+    ],
+    readerIntents: [
+      "sous-estimé",
+      "accessible débutant",
+      "livres courts",
+      "romans longs",
+      "centré personnages",
+      "centré intrigue",
+      "stimulant intellectuel",
+      "intense émotionnel",
+      "lumineux",
+      "sombre",
+      "réflexif",
+      "évasion",
+    ],
+    periods: [
+      "antiquité",
+      "moyen âge",
+      "renaissance",
+      "siècle des lumières",
+      "xixe siècle",
+      "début xxe siècle",
+      "après-guerre",
+      "contemporain",
+      "guerre froide",
+      "précolonial",
+      "ère industrielle",
+      "ère numérique",
+    ],
+    philosophy: [
+      "stoïcisme",
+      "nihilisme",
+      "phénoménologie",
+      "éthique",
+      "métaphysique",
+      "épistémologie",
+      "humanisme",
+      "pensée existentielle",
+      "absurdité",
+      "philosophie morale",
+      "philosophie politique",
+      "contrat social",
+    ],
+    psychology: [
+      "attachement",
+      "anxiété",
+      "dépression",
+      "résilience",
+      "trauma",
+      "enfance",
+      "personnalité",
+      "cognition",
+      "changement comportemental",
+      "solitude psychique",
+      "motivation",
+      "obsession",
+    ],
+    styles: [
+      "prose lyrique",
+      "récit fragmenté",
+      "épistolaire",
+      "flux de conscience",
+      "narration non linéaire",
+      "prose minimaliste",
+      "ton satirique",
+      "allégorique",
+      "première personne intime",
+      "narrateur omniscient",
+      "dialogue soutenu",
+      "style épuré",
+    ],
+    settings: [
+      "moyen-orient",
+      "afrique du nord",
+      "amérique latine",
+      "asie de l'est",
+      "asie du sud",
+      "europe",
+      "ville postcoloniale",
+      "village rural",
+      "paysage désertique",
+      "ville côtière",
+      "zone de guerre",
+      "régions frontalières",
+    ],
+  },
+  es: {
+    genres: [
+      "ficción literaria",
+      "novela histórica",
+      "ciencia ficción",
+      "fantasía",
+      "misterio",
+      "thriller",
+      "romance",
+      "realismo mágico",
+      "ficción distópica",
+      "memorias",
+      "biografía",
+      "poesía",
+    ],
+    themes: [
+      "exilio",
+      "memoria",
+      "identidad",
+      "duelo",
+      "amor",
+      "migración",
+      "guerra",
+      "familia",
+      "espiritualidad",
+      "justicia",
+      "resistencia",
+      "soledad",
+    ],
+    topics: [
+      "filosofía",
+      "psicología",
+      "política",
+      "economía",
+      "clima",
+      "tecnología",
+      "colonialismo",
+      "feminismo",
+      "mitología",
+      "religión",
+      "ética",
+      "trauma",
+    ],
+    movements: [
+      "modernismo",
+      "posmodernismo",
+      "realismo",
+      "surrealismo",
+      "existencialismo",
+      "romanticismo",
+      "simbolismo",
+      "naturalismo",
+      "absurdismo",
+      "generación beat",
+      "renacimiento de harlem",
+      "boom latinoamericano",
+    ],
+    readerIntents: [
+      "infravalorado",
+      "apto principiantes",
+      "libros cortos",
+      "novelas largas",
+      "centrado en personajes",
+      "centrado en trama",
+      "provocador",
+      "intenso emocional",
+      "esperanzador",
+      "oscuro",
+      "reflexivo",
+      "evasión",
+    ],
+    periods: [
+      "mundo antiguo",
+      "edad media",
+      "renacimiento",
+      "ilustración",
+      "siglo xix",
+      "inicios siglo xx",
+      "posguerra",
+      "contemporáneo",
+      "guerra fría",
+      "precolonial",
+      "era industrial",
+      "era digital",
+    ],
+    philosophy: [
+      "estoicismo",
+      "nihilismo",
+      "fenomenología",
+      "ética",
+      "metafísica",
+      "epistemología",
+      "humanismo",
+      "pensamiento existencial",
+      "absurdo",
+      "filosofía moral",
+      "filosofía política",
+      "contrato social",
+    ],
+    psychology: [
+      "apego",
+      "ansiedad",
+      "depresión",
+      "resiliencia",
+      "trauma",
+      "infancia",
+      "personalidad",
+      "cognición",
+      "cambio de conducta",
+      "soledad",
+      "motivación",
+      "obsesión",
+    ],
+    styles: [
+      "prosa lírica",
+      "narrativa fragmentada",
+      "epistolar",
+      "flujo de conciencia",
+      "narración no lineal",
+      "prosa minimalista",
+      "tono satírico",
+      "alegórico",
+      "primera persona íntima",
+      "narrador omnisciente",
+      "mucho diálogo",
+      "estilo sobrio",
+    ],
+    settings: [
+      "oriente medio",
+      "norte de áfrica",
+      "américa latina",
+      "asia oriental",
+      "asia del sur",
+      "europa",
+      "ciudad poscolonial",
+      "pueblo rural",
+      "paisaje desértico",
+      "ciudad costera",
+      "zona de guerra",
+      "fronteras",
+    ],
+  },
+};
+
+function normalizeAnchorEntry(value: string): string {
+  return normalizeText(value).toLowerCase();
+}
+
+function combineAnchors(params: {
+  left: string[];
+  right: string[];
+  max: number;
+  localSet: Set<string>;
+  globalSet: Set<string>;
+}): void {
+  let count = 0;
+  for (const a of params.left) {
+    for (const b of params.right) {
+      if (count >= params.max) return;
+      const combined = normalizeAnchorEntry(`${a} ${b}`);
+      if (!combined || params.localSet.has(combined) || params.globalSet.has(combined)) continue;
+      params.localSet.add(combined);
+      params.globalSet.add(combined);
+      count += 1;
+    }
+  }
+}
+
+function buildMultilingualAnchorVocabulary(): Record<AnchorLanguage, string[]> {
+  const languages: AnchorLanguage[] = ["en", "ar", "fr", "es"];
+  const globalSeen = new Set<string>();
+  const vocabulary = {
+    en: [] as string[],
+    ar: [] as string[],
+    fr: [] as string[],
+    es: [] as string[],
+  };
+
+  for (const language of languages) {
+    const seeds = CLARITY_ANCHOR_SEEDS[language];
+    const localSeen = new Set<string>();
+    const seedGroups = [
+      seeds.genres,
+      seeds.themes,
+      seeds.topics,
+      seeds.movements,
+      seeds.readerIntents,
+      seeds.periods,
+      seeds.philosophy,
+      seeds.psychology,
+      seeds.styles,
+      seeds.settings,
+    ];
+
+    for (const group of seedGroups) {
+      for (const entry of group) {
+        const normalized = normalizeAnchorEntry(entry);
+        if (!normalized || localSeen.has(normalized) || globalSeen.has(normalized)) continue;
+        localSeen.add(normalized);
+        globalSeen.add(normalized);
+      }
+    }
+
+    combineAnchors({
+      left: seeds.genres.slice(0, 10),
+      right: seeds.themes.slice(0, 8),
+      max: 80,
+      localSet: localSeen,
+      globalSet: globalSeen,
+    });
+    combineAnchors({
+      left: seeds.periods.slice(0, 8),
+      right: seeds.topics.slice(0, 6),
+      max: 48,
+      localSet: localSeen,
+      globalSet: globalSeen,
+    });
+    combineAnchors({
+      left: seeds.styles.slice(0, 8),
+      right: seeds.settings.slice(0, 6),
+      max: 48,
+      localSet: localSeen,
+      globalSet: globalSeen,
+    });
+    combineAnchors({
+      left: seeds.readerIntents.slice(0, 8),
+      right: seeds.genres.slice(0, 8),
+      max: 64,
+      localSet: localSeen,
+      globalSet: globalSeen,
+    });
+
+    vocabulary[language] = Array.from(localSeen);
+  }
+
+  return vocabulary;
+}
+
+const CLARITY_ANCHOR_VOCABULARY = buildMultilingualAnchorVocabulary();
+
+const CLARITY_ANCHOR_LOOKUP = (() => {
+  const out: Record<AnchorLanguage, { single: Set<string>; phrases: string[] }> = {
+    en: { single: new Set<string>(), phrases: [] },
+    ar: { single: new Set<string>(), phrases: [] },
+    fr: { single: new Set<string>(), phrases: [] },
+    es: { single: new Set<string>(), phrases: [] },
+  };
+  for (const language of ["en", "ar", "fr", "es"] as AnchorLanguage[]) {
+    for (const entry of CLARITY_ANCHOR_VOCABULARY[language]) {
+      if (entry.includes(" ")) {
+        out[language].phrases.push(entry);
+      } else {
+        out[language].single.add(entry);
+      }
+    }
+  }
+  return out;
+})();
+
+function resolveAnchorLanguage(normalizedQuery: string, preferredLanguage?: string): AnchorLanguage {
+  const preferred = String(preferredLanguage || "").trim().toLowerCase();
+  if (preferred.startsWith("ar")) return "ar";
+  if (preferred.startsWith("fr")) return "fr";
+  if (preferred.startsWith("es")) return "es";
+  if (preferred.startsWith("en")) return "en";
+  if (/[\u0600-\u06FF]/.test(normalizedQuery)) return "ar";
+  return "en";
+}
+
+function hasAnchorMatch(normalizedQuery: string, language: AnchorLanguage): boolean {
+  const lookup = CLARITY_ANCHOR_LOOKUP[language] || CLARITY_ANCHOR_LOOKUP.en;
+  const tokens = normalizedQuery.split(/\s+/).filter((token) => token.length > 0);
+  for (const token of tokens) {
+    if (lookup.single.has(token)) return true;
+  }
+  for (const phrase of lookup.phrases) {
+    if (normalizedQuery.includes(phrase)) return true;
+  }
+  return false;
+}
+
+function isQueryClear(params: { normalizedQuery: string; preferredLanguage?: string }): boolean {
+  const query = normalizeText(params.normalizedQuery);
+  if (!query) return false;
+  const wordCount = query.split(/\s+/).filter((token) => token.length > 0).length;
+  if (wordCount < 3) return false;
+  for (const pattern of CLARITY_STRUCTURAL_PATTERNS) {
+    if (pattern.test(query)) return true;
+  }
+  const language = resolveAnchorLanguage(query, params.preferredLanguage);
+  if (hasAnchorMatch(query, language)) return true;
+  return false;
+}
+
+function buildClarificationFollowUpQuestion(params: {
+  normalizedQuery: string;
+  preferredLanguage?: string;
+}): string {
+  const query = normalizeText(params.normalizedQuery);
+  const language = resolveAnchorLanguage(query, params.preferredLanguage);
+  const templates = CLARIFICATION_TEMPLATES[language] || CLARIFICATION_TEMPLATES.en;
+  const digest = createHash("sha256").update(query || "clarification").digest();
+  const index = digest[0] % templates.length;
+  return templates[index];
+}
 
 function extractTopicFromQuery(normalizedQuery: string): string {
   const query = normalizeText(normalizedQuery);
@@ -864,6 +1726,31 @@ function normalizeProposalTitle(value: unknown): string {
   return value.trim().slice(0, 300);
 }
 
+function normalizeProposalExplanation(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 220);
+}
+
+function normalizeProposalThemes(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const row of value) {
+    if (typeof row !== "string") continue;
+    const theme = row.trim().slice(0, 40);
+    if (!theme) continue;
+    const key = normalizeText(theme);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(theme);
+    if (out.length >= 5) break;
+  }
+  return out;
+}
+
 function sanitizeBookIdPart(value: string): string {
   return value
     .toLowerCase()
@@ -895,19 +1782,29 @@ function buildExternalSyntheticBookId(params: {
 }
 
 function parseProposalPayload(payload: unknown): ProposedBook[] {
-  if (!Array.isArray(payload)) return [];
+  const candidateRows = Array.isArray(payload)
+    ? payload
+    : payload && typeof payload === "object" && Array.isArray((payload as { candidates?: unknown }).candidates)
+    ? (payload as { candidates: unknown[] }).candidates
+    : [];
+  if (!Array.isArray(candidateRows)) return [];
   const out: ProposedBook[] = [];
   const seen = new Set<string>();
-  for (const row of payload) {
+  for (const row of candidateRows) {
     if (!row || typeof row !== "object") continue;
     const record = row as Record<string, unknown>;
     const title = normalizeProposalTitle(record.title);
     const author = normalizeProposalAuthor(record.author);
+    const explanation = sanitizeShortReason(
+      normalizeProposalExplanation(record.explanation),
+      "A strong thematic fit for your request with a clear reading path."
+    );
+    const themes = normalizeProposalThemes(record.themes);
     if (!title || !author) continue;
     const key = proposalKey(title, author);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title, author });
+    out.push({ title, author, explanation, themes });
     if (out.length >= LIBRARIAN_MAX_LLM_CANDIDATES) {
       break;
     }
@@ -952,23 +1849,31 @@ function buildProposalPrompt(params: {
   normalizedQuery: string;
   mode: LibrarianMode;
   context: AgentContextSnapshot;
+  memoryMessages: LibrarianMemoryMessage[];
   anchorTitle: string;
   anchorAuthor: string;
   requestedAuthor: string;
   excludedKeys: string[];
+  failedCandidates: string[];
 }): string {
   const contextSummary = summarizeContextForProposal(params.context);
+  const memorySummary = formatConversationMemory(params.memoryMessages);
   const exclusions =
     params.excludedKeys.length > 0
       ? `Do not repeat these title|author keys: ${params.excludedKeys.join(", ")}`
       : "No exclusions.";
+  const failed =
+    params.failedCandidates.length > 0
+      ? `These failed verification in a prior pass, do not repeat: ${params.failedCandidates.join(" | ")}`
+      : "No failed candidates from prior pass.";
 
   return [
     "You are a neighborhood librarian recommending books only.",
     "",
-    "Return JSON only. Format: [{\"title\":\"...\",\"author\":\"...\"}].",
+    "Return JSON only with this exact shape:",
+    "{\"candidates\":[{\"title\":\"...\",\"author\":\"...\",\"explanation\":\"...\",\"themes\":[\"...\"]}]}",
     "",
-    `Return between 10 and ${LIBRARIAN_MAX_LLM_CANDIDATES} candidate books.`,
+    `Return between ${LIBRARIAN_MIN_LLM_CANDIDATES} and ${LIBRARIAN_MAX_LLM_CANDIDATES} candidate books.`,
     "",
     "Requirements:",
     "- Only real published books.",
@@ -979,16 +1884,20 @@ function buildProposalPrompt(params: {
     "- Do not return organizations, ministries, publishers, or institutions as authors.",
     "- If requested author is present, every candidate author must match that author.",
     "- Do not repeat titles listed in exclusions.",
+    "- explanation must be exactly one sentence and avoid awards, rankings, or publication-year claims.",
+    "- themes must contain 1 to 3 short topic strings.",
     "",
     `Mode: ${params.mode}`,
     `User query: ${params.normalizedQuery}`,
+    `Recent conversation memory (last up to 6 messages): ${memorySummary}`,
     `Anchor title (if relevant): ${params.anchorTitle || "No anchor title resolved."}`,
     `Anchor author (if relevant): ${params.anchorAuthor || "No anchor author resolved."}`,
     `Requested author (if provided): ${params.requestedAuthor || "None"}`,
     `Structured context: ${JSON.stringify(contextSummary)}`,
     exclusions,
+    failed,
     "",
-    "Return JSON array only.",
+    "Return JSON object only. No markdown.",
   ].join("\n");
 }
 
@@ -1108,19 +2017,26 @@ async function searchBackedProposals(params: {
     const key = proposalKey(title, author);
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ title, author });
+    out.push({
+      title,
+      author,
+      explanation: "A verified thematic match for your request with a clear reading path.",
+      themes: [],
+    });
     if (out.length >= LIBRARIAN_MAX_LLM_CANDIDATES) break;
   }
   return out;
 }
 
-async function proposeBooks(params: {
+async function generateCandidateBooks(params: {
   normalizedQuery: string;
   mode: LibrarianMode;
   context: AgentContextSnapshot;
+  memoryMessages: LibrarianMemoryMessage[];
   anchor: CandidateBook | null;
   requestedAuthor: string;
   excludedKeys: string[];
+  failedCandidates: string[];
   budget: UnifiedSearchBudget;
 }): Promise<ProposedBook[]> {
   const prompt = truncatePromptToTokenLimit(
@@ -1128,10 +2044,12 @@ async function proposeBooks(params: {
       normalizedQuery: params.normalizedQuery,
       mode: params.mode,
       context: params.context,
+      memoryMessages: params.memoryMessages,
       anchorTitle: params.anchor?.title || "",
       anchorAuthor: params.anchor?.author || "",
       requestedAuthor: params.requestedAuthor,
       excludedKeys: params.excludedKeys,
+      failedCandidates: params.failedCandidates,
     })
   );
 
@@ -1159,7 +2077,7 @@ async function proposeBooks(params: {
           config: {
             temperature: 0.2,
             topP: 0.9,
-            maxOutputTokens: 380,
+            maxOutputTokens: 1600,
             responseMimeType: "application/json",
           },
         }),
@@ -1443,6 +2361,164 @@ function dedupeVerifiedBooks(rows: VerifiedBook[]): VerifiedBook[] {
     out.push(row);
   }
   return out;
+}
+
+function updateWeight(
+  target: Record<string, number>,
+  key: string,
+  amount = 1
+): void {
+  const normalizedKey = key.trim();
+  if (!normalizedKey) return;
+  target[normalizedKey] = (target[normalizedKey] || 0) + amount;
+}
+
+function detectKnownGenres(text: string): string[] {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  const out = new Set<string>();
+  for (const genre of KNOWN_GENRES) {
+    const key = normalizeText(genre);
+    if (!key) continue;
+    if (normalized.includes(key)) {
+      out.add(key);
+    }
+  }
+  return Array.from(out);
+}
+
+function extractSignalThemeTokens(text: string): string[] {
+  const normalized = normalizeText(text);
+  if (!normalized) return [];
+  const out = new Set<string>();
+  for (const token of tokenize(normalized)) {
+    if (token.length < 3) continue;
+    if (SIGNAL_THEME_STOPWORDS.has(token)) continue;
+    out.add(token);
+    if (out.size >= 20) break;
+  }
+  return Array.from(out);
+}
+
+function normalizeWeightMap(input: Record<string, number>): Record<string, number> {
+  const values = Object.values(input).filter((value) => Number.isFinite(value) && value > 0);
+  if (values.length === 0) return {};
+  const maxValue = Math.max(...values);
+  if (!Number.isFinite(maxValue) || maxValue <= 0) return {};
+
+  const out: Record<string, number> = {};
+  for (const [key, value] of Object.entries(input)) {
+    if (!Number.isFinite(value) || value <= 0) continue;
+    out[key] = clamp(value / maxValue, 0, 1);
+  }
+  return out;
+}
+
+async function fetchRecentSignalAffinity(uid: string): Promise<RecentSignalAffinity> {
+  const empty: RecentSignalAffinity = {
+    sampleCount: 0,
+    authorWeights: {},
+    genreWeights: {},
+    themeWeights: {},
+  };
+
+  try {
+    const snap = await db
+      .collection("librarian_suggestions")
+      .where("uid", "==", uid)
+      .limit(20)
+      .get();
+    if (snap.empty) return empty;
+
+    const sessions = snap.docs
+      .map((docSnap) => {
+        const createdAtRaw = docSnap.get("createdAt");
+        const createdAt = createdAtRaw instanceof Timestamp ? createdAtRaw.toMillis() : 0;
+        const normalizedQuery = normalizeText(docSnap.get("normalizedQuery"));
+        const booksRaw = docSnap.get("books");
+        const books = Array.isArray(booksRaw) ? booksRaw.slice(0, 6) : [];
+        return { createdAt, normalizedQuery, books };
+      })
+      .sort((a, b) => b.createdAt - a.createdAt)
+      .slice(0, 20);
+
+    const authorWeightsRaw: Record<string, number> = {};
+    const genreWeightsRaw: Record<string, number> = {};
+    const themeWeightsRaw: Record<string, number> = {};
+
+    for (const session of sessions) {
+      for (const genre of detectKnownGenres(session.normalizedQuery)) {
+        updateWeight(genreWeightsRaw, genre, 1);
+      }
+      for (const token of extractSignalThemeTokens(session.normalizedQuery)) {
+        updateWeight(themeWeightsRaw, token, 1);
+      }
+
+      for (const row of session.books) {
+        if (!row || typeof row !== "object") continue;
+        const record = row as Record<string, unknown>;
+        const author = normalizeText(record.author);
+        if (author) {
+          updateWeight(authorWeightsRaw, author, 1);
+        }
+        const shortReason = typeof record.short_reason === "string" ? record.short_reason : "";
+        for (const genre of detectKnownGenres(shortReason)) {
+          updateWeight(genreWeightsRaw, genre, 0.5);
+        }
+        for (const token of extractSignalThemeTokens(shortReason)) {
+          updateWeight(themeWeightsRaw, token, 0.5);
+        }
+      }
+    }
+
+    return {
+      sampleCount: sessions.length,
+      authorWeights: normalizeWeightMap(authorWeightsRaw),
+      genreWeights: normalizeWeightMap(genreWeightsRaw),
+      themeWeights: normalizeWeightMap(themeWeightsRaw),
+    };
+  } catch (error) {
+    logger.warn("[AI][LIBRARIAN][SIGNAL_FETCH_FAILED]", {
+      uid,
+      error: String(error),
+    });
+    return empty;
+  }
+}
+
+function computeSignalRankingBias(params: {
+  candidate: VerifiedBook;
+  affinity: RecentSignalAffinity;
+}): number {
+  if (params.affinity.sampleCount === 0) return 0;
+
+  let boost = 0;
+
+  const authorKey = normalizeText(params.candidate.author);
+  const authorBoost = params.affinity.authorWeights[authorKey] || 0;
+  boost += authorBoost * 0.07;
+
+  let genreBoost = 0;
+  for (const genre of params.candidate.genres) {
+    const key = normalizeText(genre);
+    if (!key) continue;
+    genreBoost = Math.max(genreBoost, params.affinity.genreWeights[key] || 0);
+  }
+  boost += genreBoost * 0.08;
+
+  const themeText = [
+    params.candidate.title,
+    params.candidate.author,
+    params.candidate.genres.join(" "),
+    params.candidate.proposedExplanation || "",
+  ].join(" ");
+  let themeBoost = 0;
+  for (const token of extractSignalThemeTokens(themeText)) {
+    themeBoost = Math.max(themeBoost, params.affinity.themeWeights[token] || 0);
+  }
+  boost += themeBoost * 0.05;
+
+  return clamp(boost, 0, 0.2);
 }
 
 function toPublicCard(row: RankedLibrarianBookCard): LibrarianBookCard {
@@ -2022,37 +3098,33 @@ async function generateConversationalExplanation(params: {
   books: LibrarianBookCard[];
   authorCards: LibrarianAuthorCard[];
 }): Promise<string> {
-  const fallback =
+  const fallbackByIntent =
     params.intent === "out_of_scope"
       ? "I cannot answer real-time questions directly, but I can help you approach that topic through books."
       : params.intent === "clarification"
       ? "I can tailor recommendations precisely once you share one author, title, or theme."
       : "These books speak directly to your question and open a strong reading path.";
 
-  const client = createProposalClient();
-  if (!client) return sanitizeConversationExplanation("", fallback);
-  try {
-    const response = await withTimeout({
-      timeoutMs: LIBRARIAN_EXPLANATION_TIMEOUT_MS,
-      stage: "conversation_explanation",
-      work: () =>
-        client.models.generateContent({
-          model: LIBRARIAN_PROPOSAL_MODEL,
-          contents: buildExplanationPrompt(params),
-          config: {
-            temperature: 0.35,
-            topP: 0.9,
-            maxOutputTokens: 120,
-          },
-        }),
-    });
-    return sanitizeConversationExplanation(response.text || "", fallback);
-  } catch (error) {
-    logger.warn("[AI][LIBRARIAN][EXPLANATION_LLM_FAILED]", {
-      error: String(error),
-    });
-    return sanitizeConversationExplanation("", fallback);
+  if (params.intent === "out_of_scope" || params.intent === "clarification") {
+    return sanitizeConversationExplanation(fallbackByIntent, fallbackByIntent);
   }
+
+  const topBooks = params.books
+    .slice(0, 2)
+    .map((row) => row.title.trim())
+    .filter((row) => row.length > 0);
+  if (topBooks.length === 0) {
+    return sanitizeConversationExplanation("", fallbackByIntent);
+  }
+
+  const authorFocus =
+    params.authorCards[0]?.name?.trim() ||
+    params.books[0]?.author?.trim() ||
+    "";
+  const explanation = authorFocus
+    ? `If you are exploring ${authorFocus}, ${topBooks.join(" and ")} make a strong starting path for this request.`
+    : `${topBooks.join(" and ")} make a strong starting path for this request.`;
+  return sanitizeConversationExplanation(explanation, fallbackByIntent);
 }
 
 async function fetchGenreCandidates(genres: string[], perGenreLimit: number): Promise<CandidateBook[]> {
@@ -2438,6 +3510,7 @@ async function emitHomeFeedSignal(params: {
 function validateRequest(input: LibrarianRequest): {
   ok: true;
   normalizedQuery: string;
+  memoryMessages: LibrarianMemoryMessage[];
 } | {
   ok: false;
   reason: string;
@@ -2450,17 +3523,19 @@ function validateRequest(input: LibrarianRequest): {
     return { ok: false, reason: "INVALID_REQUEST:intent" };
   }
 
+  const memoryMessages = sanitizeMemoryMessages(input.messages);
   const tokenEstimate = approximateTokens(
     JSON.stringify({
       normalizedQuery,
       intent: input.intent,
+      messages: memoryMessages,
     })
   );
   if (tokenEstimate > LIBRARIAN_LIMITS.TOKEN_LIMIT_INPUT) {
     return { ok: false, reason: "INVALID_REQUEST:token_limit_input" };
   }
 
-  return { ok: true, normalizedQuery };
+  return { ok: true, normalizedQuery, memoryMessages };
 }
 
 function deterministicSort(a: RankedLibrarianBookCard, b: RankedLibrarianBookCard): number {
@@ -2509,39 +3584,20 @@ export async function runLibrarianRecommendation(params: {
   }
 
   const deterministicIntent = classifyLibrarianIntent(validation.normalizedQuery);
-  const llmIntent = await interpretConversationalIntent(validation.normalizedQuery);
-  const llmScopeIntent = llmIntent ? mapConversationIntentToScope(llmIntent.intent) : deterministicIntent.intent;
-  const llmIntentConfidence = llmIntent?.confidence ?? 0;
-  const preferDeterministicRouting =
-    deterministicIntent.intent === "OUT_OF_SCOPE" ||
-    deterministicIntent.intent === "AUTHOR_ORDER" ||
-    deterministicIntent.authorName.length > 0;
-  const resolvedScopeIntent =
-    llmIntent && llmIntentConfidence >= 0.62 && !preferDeterministicRouting
-      ? llmScopeIntent
-      : deterministicIntent.intent;
   const intentClassification: IntentClassification = {
-    intent: resolvedScopeIntent,
-    topic:
-      (llmIntentConfidence >= 0.62 && llmIntent?.topic ? llmIntent.topic : "") ||
-      deterministicIntent.topic,
-    authorName:
-      (llmIntentConfidence >= 0.62 && llmIntent?.authorName ? llmIntent.authorName : "") ||
-      deterministicIntent.authorName,
+    intent: deterministicIntent.intent,
+    topic: deterministicIntent.topic,
+    authorName: deterministicIntent.authorName,
   };
-  const conversationalIntent: LibrarianConversationIntent =
-    llmIntentConfidence >= 0.62 && llmIntent?.intent
-      ? llmIntent.intent
-      : mapScopeIntentToConversationIntent(intentClassification.intent);
-  const explicitRoutingLocked = intentClassification.intent !== "BOOK_RECOMMENDATION";
-  const needsClarification = !explicitRoutingLocked && (
-    (llmIntentConfidence >= 0.62 && Boolean(llmIntent?.needsClarification)) ||
-    isGenericClarificationQuery(validation.normalizedQuery)
+  const conversationalIntent: LibrarianConversationIntent = mapScopeIntentToConversationIntent(
+    intentClassification.intent
   );
+  const explicitRoutingLocked = intentClassification.intent !== "BOOK_RECOMMENDATION";
+  const needsClarification =
+    !explicitRoutingLocked && isGenericClarificationQuery(validation.normalizedQuery);
   const followUpQuestion =
-    llmIntent?.followUpQuestion ||
     "Share one author, one title you loved, or a specific theme and I will refine precisely.";
-  const intentConfidence = llmIntentConfidence || 0.72;
+  const intentConfidence = 0.72;
 
   const anchor = await resolveAnchorBook(validation.normalizedQuery);
   logger.info("[AI][LIBRARIAN][ANCHOR_RESOLUTION]", {
@@ -2978,17 +4034,63 @@ export async function runLibrarianRecommendation(params: {
     }
   }
 
+  const preferredLanguage =
+    typeof params.request.uiLanguage === "string" ? params.request.uiLanguage : undefined;
+  const normalizedForClarity = normalizeText(validation.normalizedQuery);
+  const shouldRunClarityDetector =
+    normalizedForClarity.split(/\s+/).filter((token) => token.length > 0).length >= 3 &&
+    hasTermFromSet(normalizedForClarity, BOOK_CONTEXT_TERMS);
+  if (
+    shouldRunClarityDetector &&
+    !isQueryClear({
+      normalizedQuery: validation.normalizedQuery,
+      preferredLanguage,
+    })
+  ) {
+    const clarityLanguage = resolveAnchorLanguage(normalizedForClarity, preferredLanguage);
+    logger.info("[AI][LIBRARIAN][CLARITY_GATE]", {
+      query: validation.normalizedQuery,
+      language: clarityLanguage,
+      reason: "no_anchor_detected",
+      timestamp: new Date().toISOString(),
+    });
+    const clarificationQuestion = buildClarificationFollowUpQuestion({
+      normalizedQuery: validation.normalizedQuery,
+      preferredLanguage,
+    });
+    return finalizeAndReturn([], {
+      fromCache: false,
+      remainingQuota: quota.remaining,
+      intent: "clarification",
+      suggestionMode: mode,
+      minRecommendations: 0,
+      allowCardFallback: false,
+      needsClarification: true,
+      followUpQuestion: clarificationQuestion,
+      explanationOverride:
+        "I can tailor this much better once you share one genre, one author, or a clear reading theme.",
+      confidence: Math.min(intentConfidence, 0.68),
+      verifiedCount: 0,
+      candidateCount: 0,
+      authorName: intentClassification.authorName,
+      fallbackReason: "clarity_detector_pre_llm",
+    });
+  }
+
   const verifiedPool: VerifiedBook[] = [];
+  const failedCandidates: string[] = [];
   let regenerationCount = 0;
 
   for (let attempt = 0; attempt <= LIBRARIAN_MAX_REGENERATION_ATTEMPTS; attempt += 1) {
-    const proposals = await proposeBooks({
+    const proposals = await generateCandidateBooks({
       normalizedQuery: validation.normalizedQuery,
       mode,
       context: params.context,
+      memoryMessages: validation.memoryMessages,
       anchor,
       requestedAuthor,
       excludedKeys: Array.from(excludedProposalKeys),
+      failedCandidates,
       budget: unifiedSearchBudget,
     });
 
@@ -3005,18 +4107,28 @@ export async function runLibrarianRecommendation(params: {
     const verifiedRows = await Promise.all(
       freshProposals.map(async (proposal) => {
         try {
-          return await verifyProposedBook({
+          const verified = await verifyProposedBook({
             proposal,
             normalizedQuery: validation.normalizedQuery,
             requiredAuthor: requestedAuthor || undefined,
             budget: unifiedSearchBudget,
           });
+          if (verified) {
+            const enriched: VerifiedBook = {
+              ...verified,
+              proposedExplanation: proposal.explanation,
+            };
+            return enriched;
+          }
+          failedCandidates.push(`${proposal.title} by ${proposal.author}`);
+          return null;
         } catch (error) {
           logger.error("[AI][LIBRARIAN][VERIFICATION_FAILED]", {
             title: proposal.title,
             author: proposal.author,
             error: String(error),
           });
+          failedCandidates.push(`${proposal.title} by ${proposal.author}`);
           return null;
         }
       })
@@ -3026,7 +4138,7 @@ export async function runLibrarianRecommendation(params: {
       ...verifiedRows.filter((row): row is VerifiedBook => row !== null)
     );
     const uniqueVerified = dedupeVerifiedBooks(verifiedPool);
-    if (uniqueVerified.length >= LIBRARIAN_DEFAULT_SELECTION_COUNT) {
+    if (uniqueVerified.length >= LIBRARIAN_LIMITS.MAX_BOOKS) {
       break;
     }
     if (attempt < LIBRARIAN_MAX_REGENERATION_ATTEMPTS) {
@@ -3035,6 +4147,16 @@ export async function runLibrarianRecommendation(params: {
   }
 
   const verified = dedupeVerifiedBooks(verifiedPool);
+  const recentSignalAffinity = await fetchRecentSignalAffinity(normalizedUid);
+  if (recentSignalAffinity.sampleCount > 0) {
+    logger.info("[AI][LIBRARIAN][SIGNAL_BIAS_CONTEXT]", {
+      uid: normalizedUid,
+      sampleCount: recentSignalAffinity.sampleCount,
+      authorSignals: Object.keys(recentSignalAffinity.authorWeights).length,
+      genreSignals: Object.keys(recentSignalAffinity.genreWeights).length,
+      themeSignals: Object.keys(recentSignalAffinity.themeWeights).length,
+    });
+  }
   const scored = verified
     .map((candidate) => {
       const queryScore = lexicalSimilarity(queryTokens, candidate);
@@ -3047,18 +4169,25 @@ export async function runLibrarianRecommendation(params: {
       const modeAdjustment = canonicalWeighted
         ? modeBonus(mode, candidate.genres, dominantGenre, queryScore)
         : 0;
-      const relevance = clamp(baseScore + sourceBoost + modeAdjustment);
+      const signalBias = computeSignalRankingBias({
+        candidate,
+        affinity: recentSignalAffinity,
+      });
+      const relevance = clamp(baseScore + sourceBoost + modeAdjustment + signalBias);
       const lowRated = candidate.rating !== null && candidate.rating < 3.5;
       const resolvedShortReason =
-        candidate.sourceType === "canonical"
-          ? buildShortReason({
-              mode,
-              dominantGenre,
-              queryTokens,
-              thematicOverlap,
-              lowRated,
-            })
-          : "A strong thematic fit for your request with a clear reading path.";
+        sanitizeShortReason(
+          candidate.proposedExplanation || "",
+          candidate.sourceType === "canonical"
+            ? buildShortReason({
+                mode,
+                dominantGenre,
+                queryTokens,
+                thematicOverlap,
+                lowRated,
+              })
+            : "A strong thematic fit for your request with a clear reading path."
+        );
       const short_reason =
         resolvedShortReason.trim().length > 0
           ? resolvedShortReason
@@ -3074,15 +4203,8 @@ export async function runLibrarianRecommendation(params: {
     })
     .sort(deterministicSort);
 
-  const requestedCount =
-    mode === "HighConfidencePrecision" && queryTokens.length >= 2
-      ? LIBRARIAN_LIMITS.MAX_BOOKS
-      : LIBRARIAN_DEFAULT_SELECTION_COUNT;
-
-  const limitedRanked = scored.slice(
-    0,
-    Math.max(1, Math.min(requestedCount, LIBRARIAN_LIMITS.MAX_BOOKS))
-  );
+  const selectedCount = Math.max(1, Math.min(5, scored.length));
+  const limitedRanked = scored.slice(0, selectedCount);
   const recommendations = limitedRanked.map((row) => toPublicCard(row));
 
   logger.info("[AI][LIBRARIAN][ORCHESTRATOR]", {

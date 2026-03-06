@@ -48,8 +48,15 @@ export const callAgent = async (agentId: string, contextMessages: { role: string
                     .reverse()
                     .find((msg) => msg.role === 'user' && typeof msg.text === 'string' && msg.text.trim().length > 0)
                     ?.text || '';
+            const memoryMessages = contextMessages
+                .slice(-6)
+                .map((msg) => ({
+                    role: msg.role === 'user' ? 'user' : 'assistant',
+                    content: String(msg.text || '').replace(/\s+/g, ' ').trim(),
+                }))
+                .filter((msg) => msg.content.length > 0);
 
-            const envelope = await agentService.librarianRecommend(latestUserMessage);
+            const envelope = await agentService.librarianRecommend(latestUserMessage, undefined, memoryMessages);
             const formatted = {
                 recommendations: envelope.recommendations.map((card) => ({
                     bookId: card.bookId,

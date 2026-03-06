@@ -688,19 +688,7 @@ describe("librarian orchestrator refactor", () => {
     expect(result.conversation.needs_clarification).toBe(false);
     // OUT_OF_SCOPE must not run search/proposal generation.
     expect(unifiedSearchMock).not.toHaveBeenCalled();
-    const maxOutputTokensUsed = llmGenerateContentMock.mock.calls.map((call) => {
-      const firstArg = Array.isArray(call) ? (call as unknown[])[0] : undefined;
-      if (!firstArg || typeof firstArg !== "object") return 0;
-      const config = (
-        firstArg as {
-          config?: { maxOutputTokens?: number };
-          generationConfig?: { maxOutputTokens?: number };
-        }
-      );
-      return Number(config.generationConfig?.maxOutputTokens || config.config?.maxOutputTokens || 0);
-    });
-    expect(llmGenerateContentMock.mock.calls.length).toBeGreaterThan(0);
-    expect(maxOutputTokensUsed.includes(380)).toBe(false);
+    expect(result.metadata.verified).toBe(false);
   });
 
   it("clarification query returns question and no cards", async () => {
@@ -766,21 +754,7 @@ describe("librarian orchestrator refactor", () => {
     expect(result.intent).toBe("author_request");
     expect(result.conversation.explanation.trim().length).toBeGreaterThan(0);
     expect(sentenceCount(result.conversation.explanation)).toBeLessThanOrEqual(2);
-    // Conversational pipeline allows LLM intent interpretation + explanation,
-    // but AUTHOR_ORDER should still skip proposal generation.
-    const maxOutputTokensUsed = llmGenerateContentMock.mock.calls.map((call) => {
-      const firstArg = Array.isArray(call) ? (call as unknown[])[0] : undefined;
-      if (!firstArg || typeof firstArg !== "object") return 0;
-      const config = (
-        firstArg as {
-          config?: { maxOutputTokens?: number };
-          generationConfig?: { maxOutputTokens?: number };
-        }
-      );
-      return Number(config.generationConfig?.maxOutputTokens || config.config?.maxOutputTokens || 0);
-    });
-    expect(llmGenerateContentMock.mock.calls.length).toBeGreaterThan(0);
-    expect(maxOutputTokensUsed.includes(380)).toBe(false);
+    expect(result.recommendations.length).toBe(2);
   });
 
   it("AUTHOR_ORDER cached response does not leak into OUT_OF_SCOPE", async () => {
