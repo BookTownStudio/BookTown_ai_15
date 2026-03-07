@@ -254,12 +254,25 @@ const CANONICAL_AUTHORS = [
   "kafka",
   "camus",
   "borges",
+  "umberto eco",
+  "amin maalouf",
+  "rumi",
+  "kahlil gibran",
   "virginia woolf",
   "marcel proust",
   "james joyce",
   "gabriel garcia marquez",
   "milan kundera",
 ] as const;
+
+const AUTHOR_ENTITY_ALIASES: Record<string, string> = {
+  eco: "umberto eco",
+  maalouf: "amin maalouf",
+  rumi: "rumi",
+  gibran: "kahlil gibran",
+  jibran: "kahlil gibran",
+  jubran: "kahlil gibran",
+};
 
 const CANONICAL_BOOKS = [
   "the trial",
@@ -359,6 +372,10 @@ const NON_LITERARY_TITLE_PATTERN =
   /\b(planning area|wilderness|district|county|municipality|zoning|ordinance|statute|regulation|code section|impact statement)\b/i;
 const NON_AUTHOR_ENTITY_PATTERN =
   /\b(publisher|publishing|press|editorial|edition|editions|ministry|department|committee|council|institute|university|association|agency|office|bureau|llc|inc|ltd|corp|corporation)\b/i;
+const DERIVATIVE_BOOK_TITLE_PATTERN =
+  /\b(coloring|colouring|guide|workbook|summary|analysis|companion|journal|notebook|trivia|quiz|study guide)\b/i;
+const AUTHOR_COLLECTION_TITLE_PATTERN =
+  /\b(complete novels?|complete works?|collected works?|curated works?|selected works?|illustrated|box set|books set|omnibus|anthology|volumes?|vol\.|collection)\b/i;
 const SIGNAL_THEME_STOPWORDS = new Set([
   "book",
   "books",
@@ -605,9 +622,17 @@ function isLikelyAuthorEntity(value: string): boolean {
 function findKnownAuthorInQuery(query: string): string {
   const normalized = normalizeText(query);
   if (!normalized) return "";
+  const haystack = ` ${normalized} `;
+  const aliasEntries = Object.entries(AUTHOR_ENTITY_ALIASES)
+    .map(([alias, canonical]) => [normalizeText(alias), normalizeText(canonical)] as const)
+    .sort((a, b) => b[0].length - a[0].length);
+  for (const [alias, canonical] of aliasEntries) {
+    if (!alias || !canonical) continue;
+    if (haystack.includes(` ${alias} `)) return canonical;
+  }
   for (const author of CANONICAL_AUTHOR_LOOKUP) {
     if (!author) continue;
-    if (normalized.includes(author)) return author;
+    if (haystack.includes(` ${author} `)) return author;
   }
   return "";
 }
@@ -1723,6 +1748,24 @@ function isLikelyLiteraryCandidate(params: {
   if (title.length > 180) return false;
   if (EXCLUDED_TYPE_PATTERN.test(title) || EXCLUDED_TYPE_PATTERN.test(description)) return false;
   if (NON_LITERARY_TITLE_PATTERN.test(title) || NON_LITERARY_TITLE_PATTERN.test(description)) return false;
+  return true;
+}
+
+function isPreferredAuthorWorkTitle(title: string): boolean {
+  const normalizedTitle = normalizeText(title);
+  if (!normalizedTitle) return false;
+  if (DERIVATIVE_BOOK_TITLE_PATTERN.test(normalizedTitle)) return false;
+  if (AUTHOR_COLLECTION_TITLE_PATTERN.test(normalizedTitle)) return false;
+  return true;
+}
+
+function isExplanationEligibleBookCard(row: LibrarianBookCard): boolean {
+  const bookId = String(row.bookId || "").trim();
+  const title = normalizeText(row.title);
+  const author = normalizeText(row.author);
+  if (!bookId || bookId.startsWith("fallback_") || bookId.startsWith("topic_seed_")) return false;
+  if (!title || BLOCKED_SIGNAL_VALUES.has(title)) return false;
+  if (!author || BLOCKED_SIGNAL_VALUES.has(author)) return false;
   return true;
 }
 
@@ -3300,6 +3343,7 @@ function resolveTopicAnchorKey(normalizedQuery: string, topic: string): string {
 async function resolveCanonicalTopicAnchorCards(params: {
   normalizedQuery: string;
   topic: string;
+  budget: UnifiedSearchBudget;
   maxBooks?: number;
 }): Promise<LibrarianBookCard[]> {
   const maxBooks = Math.max(3, Math.min(params.maxBooks ?? 5, LIBRARIAN_LIMITS.MAX_BOOKS));
@@ -3344,6 +3388,57 @@ async function resolveCanonicalTopicAnchorCards(params: {
       short_reason: toKnowledgeReason(anchorKey),
     });
     if (cards.length >= maxBooks) break;
+  }
+
+  if (cards.length >= Math.min(3, maxBooks)) {
+    return dedupeCards(cards).slice(0, maxBooks);
+  }
+
+  for (const anchor of anchors) {
+    if (cards.length >= maxBooks) break;
+    const alreadyResolved = cards.some(
+      (row) =>
+        normalizeText(row.title) === normalizeText(anchor.title) &&
+        authorMatchScore(row.author, anchor.author) >= 0.72
+    );
+    if (alreadyResolved) continue;
+
+    // eslint-disable-next-line no-await-in-loop
+    const searchResponse = await unifiedSearchWithBudget({
+      budget: params.budget,
+      query: `${anchor.title} ${anchor.author}`.trim(),
+      limit: 8,
+      reason: "topic_anchor_exact_resolution",
+    });
+    if (!searchResponse) continue;
+
+    for (const row of searchResponse.results) {
+      const title = String(row.title || row.titleEn || "").trim();
+      const author = String(
+        row.authorEn || (Array.isArray(row.authors) && row.authors.length > 0 ? row.authors[0] : "")
+      ).trim();
+      if (!title || !author) continue;
+      if (normalizeText(title) !== normalizeText(anchor.title)) continue;
+      if (authorMatchScore(author, anchor.author) < 0.72) continue;
+      if (!isLikelyLiteraryCandidate({ title, author, description: String(row.description || "").trim() })) {
+        continue;
+      }
+      const key = proposalKey(title, author);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      const bookId = row.resultType === "canonical" ? String(row.bookId || "").trim() : externalFallbackBookId(row);
+      if (!bookId) continue;
+      cards.push({
+        bookId,
+        title,
+        author,
+        ...(typeof row.coverUrl === "string" && row.coverUrl.trim().length > 0
+          ? { coverUrl: row.coverUrl.trim() }
+          : {}),
+        short_reason: toKnowledgeReason(anchorKey),
+      });
+      break;
+    }
   }
 
   return dedupeCards(cards).slice(0, maxBooks);
@@ -3562,6 +3657,7 @@ async function resolveAuthorWorksCards(params: {
       if (!candidate) return null;
       if (authorMatchScore(candidate.author, authorName) < 0.75) return null;
       if (!isLikelyLiteraryCandidate({ title: candidate.title, author: candidate.author })) return null;
+      if (!isPreferredAuthorWorkTitle(candidate.title)) return null;
       const publicationYearRaw = Number(docSnap.get("publicationYear") || 0);
       const publicationYear =
         Number.isFinite(publicationYearRaw) && publicationYearRaw > 0
@@ -3621,6 +3717,7 @@ async function resolveAuthorWorksCards(params: {
       if (!isLikelyLiteraryCandidate({ title, author, description: String(row.description || "").trim() })) {
         continue;
       }
+      if (!isPreferredAuthorWorkTitle(title)) continue;
       const key = proposalKey(title, author);
       if (!key || seen.has(key)) continue;
       seen.add(key);
@@ -3857,14 +3954,15 @@ async function generateConversationalExplanation(params: {
     .slice(0, 2)
     .map(([author]) => author.trim())
     .filter((author) => author.length > 0 && !BLOCKED_SIGNAL_VALUES.has(normalizeText(author)));
+  const eligibleBooks = params.books.filter((row) => isExplanationEligibleBookCard(row));
   const favoriteAuthorDisplay = favoriteAuthorsRaw
     .map((author) => {
-      const matched = params.books.find((row) => normalizeText(row.author) === author);
+      const matched = eligibleBooks.find((row) => normalizeText(row.author) === author);
       return matched?.author?.trim() || author;
     })
     .find((author) => author.length > 0) || "";
 
-  const topBooks = params.books
+  const topBooks = eligibleBooks
     .slice(0, 2)
     .map((row) => row.title.trim())
     .filter((row) => row.length > 0);
@@ -3894,7 +3992,7 @@ async function generateConversationalExplanation(params: {
 
   const authorFocus =
     params.authorCards[0]?.name?.trim() ||
-    params.books[0]?.author?.trim() ||
+    eligibleBooks[0]?.author?.trim() ||
     "";
   const explanation = authorFocus
     ? `If you are exploring ${authorFocus}, ${topBooks.join(" and ")} make a strong starting path for this request.`
@@ -4882,6 +4980,7 @@ export async function runLibrarianRecommendation(params: {
   const topicAnchorCards = await resolveCanonicalTopicAnchorCards({
     normalizedQuery: validation.normalizedQuery,
     topic: topicEntity,
+    budget: unifiedSearchBudget,
     maxBooks: LIBRARIAN_LIMITS.MAX_BOOKS,
   });
   if (topicAnchorCards.length >= 3) {

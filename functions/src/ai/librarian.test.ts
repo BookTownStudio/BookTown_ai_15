@@ -1036,6 +1036,189 @@ describe("librarian orchestrator refactor", () => {
     expect(result.recommendations.some((row) => row.title === "Start with a concrete title")).toBe(false);
   });
 
+  it("single-token Eco resolves through author mode, not topic noise", async () => {
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      const normalized = query.toLowerCase();
+      if (
+        normalized.includes("books by umberto eco") ||
+        normalized.includes("umberto eco novels") ||
+        normalized.includes("umberto eco books")
+      ) {
+        return buildSearchResponse([
+          {
+            title: "The Name of the Rose",
+            titleEn: "The Name of the Rose",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-ECO-SHORT-1",
+            bookId: "ol-eco-short-1",
+          },
+          {
+            title: "Foucault's Pendulum",
+            titleEn: "Foucault's Pendulum",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-ECO-SHORT-2",
+            bookId: "gb-eco-short-2",
+          },
+          {
+            title: "The Prague Cemetery",
+            titleEn: "The Prague Cemetery",
+            authorEn: "Umberto Eco",
+            authors: ["Umberto Eco"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-ECO-SHORT-3",
+            bookId: "ol-eco-short-3",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "Eco",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(3);
+    expect(result.recommendations.every((row) => row.author.toLowerCase().includes("eco"))).toBe(true);
+    expect(result.recommendations.some((row) => row.title.includes("Ground Bio-Engineering"))).toBe(false);
+  });
+
+  it("greek philosophy query resolves deterministic anchor books before fallback", async () => {
+    unifiedSearchMock.mockImplementation(async (query: string) => {
+      const normalized = query.toLowerCase();
+      if (normalized.includes("the republic") && normalized.includes("plato")) {
+        return buildSearchResponse([
+          {
+            title: "The Republic",
+            titleEn: "The Republic",
+            authorEn: "Plato",
+            authors: ["Plato"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-GP-1",
+            bookId: "ol-gp-1",
+          },
+        ]);
+      }
+      if (normalized.includes("nicomachean ethics") && normalized.includes("aristotle")) {
+        return buildSearchResponse([
+          {
+            title: "Nicomachean Ethics",
+            titleEn: "Nicomachean Ethics",
+            authorEn: "Aristotle",
+            authors: ["Aristotle"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-GP-2",
+            bookId: "gb-gp-2",
+          },
+        ]);
+      }
+      if (normalized.includes("meditations") && normalized.includes("marcus aurelius")) {
+        return buildSearchResponse([
+          {
+            title: "Meditations",
+            titleEn: "Meditations",
+            authorEn: "Marcus Aurelius",
+            authors: ["Marcus Aurelius"],
+            source: "openLibrary",
+            resultType: "external",
+            externalId: "OL-GP-3",
+            bookId: "ol-gp-3",
+          },
+        ]);
+      }
+      if (normalized.includes("enchiridion") && normalized.includes("epictetus")) {
+        return buildSearchResponse([
+          {
+            title: "Enchiridion",
+            titleEn: "Enchiridion",
+            authorEn: "Epictetus",
+            authors: ["Epictetus"],
+            source: "googleBooks",
+            resultType: "external",
+            externalId: "GB-GP-4",
+            bookId: "gb-gp-4",
+          },
+        ]);
+      }
+      return buildSearchResponse([]);
+    });
+
+    const result = await runLibrarian({
+      query: "what should i read to learn more about greek philosophy",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.length).toBeGreaterThanOrEqual(3);
+    expect(result.recommendations.some((row) => row.title === "The Republic")).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "Nicomachean Ethics")).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "Meditations")).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "No verified books yet")).toBe(false);
+  });
+
+  it("single-token Kafka excludes omnibus editions in author mode", async () => {
+    setDoc("books/kafka_1", {
+      title: "Complete Novels of Kafka",
+      author: "Franz Kafka",
+      authorNamesNormalized: ["kafka"],
+      search: {
+        tokens: ["kafka", "franz"],
+      },
+      publicationYear: 1920,
+      normalizedTitle: "complete novels of kafka",
+    });
+    setDoc("books/kafka_2", {
+      title: "The Trial",
+      author: "Franz Kafka",
+      authorNamesNormalized: ["kafka"],
+      search: {
+        tokens: ["trial", "kafka", "franz"],
+      },
+      publicationYear: 1925,
+      normalizedTitle: "the trial",
+    });
+    setDoc("books/kafka_3", {
+      title: "The Castle",
+      author: "Franz Kafka",
+      authorNamesNormalized: ["kafka"],
+      search: {
+        tokens: ["castle", "kafka", "franz"],
+      },
+      publicationYear: 1926,
+      normalizedTitle: "the castle",
+    });
+    setDoc("books/kafka_4", {
+      title: "The Metamorphosis",
+      author: "Franz Kafka",
+      authorNamesNormalized: ["kafka"],
+      search: {
+        tokens: ["metamorphosis", "kafka", "franz"],
+      },
+      publicationYear: 1915,
+      normalizedTitle: "the metamorphosis",
+    });
+
+    unifiedSearchMock.mockResolvedValue(buildSearchResponse([]));
+
+    const result = await runLibrarian({
+      query: "Kafka",
+      intent: "HighConfidencePrecision",
+    });
+
+    expect(result.recommendations.some((row) => row.title === "Complete Novels of Kafka")).toBe(false);
+    expect(result.recommendations.some((row) => row.title === "The Trial")).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "The Castle")).toBe(true);
+    expect(result.recommendations.some((row) => row.title === "The Metamorphosis")).toBe(true);
+  });
+
   it("similarity_query returns verified sci-fi titles for loved dune", async () => {
     llmTextResponse = JSON.stringify([
       { title: "Hyperion", author: "Dan Simmons" },
