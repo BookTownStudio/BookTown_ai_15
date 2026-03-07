@@ -618,6 +618,49 @@ function detectAuthorEntity(query: string): string {
   return "";
 }
 
+function splitNormalizedWords(value: string): string[] {
+  return value
+    .split(" ")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function tokenOverlapRatio(queryWords: string[], titleWords: string[]): number {
+  if (queryWords.length === 0 || titleWords.length === 0) return 0;
+  const titleSet = new Set(titleWords);
+  let matches = 0;
+  for (const word of queryWords) {
+    if (titleSet.has(word)) matches += 1;
+  }
+  return matches / queryWords.length;
+}
+
+function isStrongDirectTitleMatch(query: string, title: string): boolean {
+  const queryNorm = normalizeText(query);
+  const titleNorm = normalizeText(title);
+  if (!queryNorm || !titleNorm) return false;
+  if (queryNorm === titleNorm) return true;
+
+  const queryWords = splitNormalizedWords(queryNorm);
+  const titleWords = splitNormalizedWords(titleNorm);
+  return (
+    queryWords.length >= 2 &&
+    titleWords.length > queryWords.length &&
+    titleNorm.endsWith(queryNorm) &&
+    tokenOverlapRatio(queryWords, titleWords) >= 0.7
+  );
+}
+
+function isDirectTitleStyleQuery(normalizedQuery: string): boolean {
+  const query = normalizeText(normalizedQuery);
+  if (!query) return false;
+  if (hasTermFromSet(query, BOOK_CONTEXT_TERMS)) return false;
+  if (hasTermFromSet(query, NON_BOOK_TERMS)) return false;
+  if (/[?]/.test(normalizedQuery)) return false;
+  const tokens = tokenize(query);
+  return tokens.length >= 1 && tokens.length <= 6;
+}
+
 const TOPIC_EXCLUDE_TERMS = new Set([
   "what",
   "whats",
@@ -2015,6 +2058,84 @@ async function resolveAnchorBook(normalizedQuery: string): Promise<CandidateBook
   }
 
   return resolveAnchorByIndexedField("searchableTitleAuthor", query);
+}
+
+async function resolveDirectTitleCards(params: {
+  normalizedQuery: string;
+  anchor: CandidateBook | null;
+  budget: UnifiedSearchBudget;
+}): Promise<LibrarianBookCard[]> {
+  const query = normalizeText(params.normalizedQuery);
+  if (!query) return [];
+
+  const cards: LibrarianBookCard[] = [];
+  const seen = new Set<string>();
+
+  const pushCandidate = (candidate: {
+    id: string;
+    title: string;
+    author: string;
+    coverUrl?: string;
+    description?: string;
+  }): void => {
+    if (!isStrongDirectTitleMatch(query, candidate.title)) return;
+    if (
+      !isLikelyLiteraryCandidate({
+        title: candidate.title,
+        author: candidate.author,
+        description: candidate.description,
+      })
+    ) {
+      return;
+    }
+    const key = proposalKey(candidate.title, candidate.author);
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    cards.push({
+      bookId: candidate.id,
+      title: candidate.title,
+      author: candidate.author,
+      ...(typeof candidate.coverUrl === "string" && candidate.coverUrl.trim().length > 0
+        ? { coverUrl: candidate.coverUrl.trim() }
+        : {}),
+      short_reason: "A direct canonical match for your query and the strongest place to begin.",
+    });
+  };
+
+  if (params.anchor) {
+    pushCandidate(params.anchor);
+  }
+  if (cards.length > 0) {
+    return cards.slice(0, 1);
+  }
+
+  const searchResponse = await unifiedSearchWithBudget({
+    budget: params.budget,
+    query: params.normalizedQuery,
+    limit: 8,
+    reason: "direct_title_resolution",
+  });
+  if (!searchResponse) return [];
+
+  for (const result of searchResponse.results) {
+    if (result.resultType !== "canonical") continue;
+    const title = String(result.title || result.titleEn || "").trim();
+    const author = String(
+      result.authorEn || (Array.isArray(result.authors) && result.authors.length > 0 ? result.authors[0] : "")
+    ).trim();
+    const bookId = String(result.bookId || "").trim();
+    if (!title || !author || !bookId) continue;
+    pushCandidate({
+      id: bookId,
+      title,
+      author,
+      coverUrl: typeof result.coverUrl === "string" ? result.coverUrl : "",
+      description: typeof result.description === "string" ? result.description : "",
+    });
+    if (cards.length >= 1) break;
+  }
+
+  return cards.slice(0, 1);
 }
 
 function proposalKey(title: string, author: string): string {
@@ -3720,17 +3841,22 @@ async function generateConversationalExplanation(params: {
 
   const favoriteGenres = (params.context.genres.topGenres || [])
     .map((row) => String(row?.name || "").trim())
-    .filter((row) => row.length > 0)
+    .filter((row) => row.length > 0 && !BLOCKED_SIGNAL_VALUES.has(normalizeText(row)))
     .slice(0, 2);
-  if (favoriteGenres.length === 0 && params.context.genres.dominantGenre.trim().length > 0) {
-    favoriteGenres.push(params.context.genres.dominantGenre.trim());
+  const dominantGenre = params.context.genres.dominantGenre.trim();
+  if (
+    favoriteGenres.length === 0 &&
+    dominantGenre.length > 0 &&
+    !BLOCKED_SIGNAL_VALUES.has(normalizeText(dominantGenre))
+  ) {
+    favoriteGenres.push(dominantGenre);
   }
   const favoriteAuthorsRaw = Object.entries(params.recentSignalAffinity?.authorWeights || {})
     .filter(([, weight]) => Number.isFinite(weight) && weight > 0)
     .sort((a, b) => b[1] - a[1])
     .slice(0, 2)
     .map(([author]) => author.trim())
-    .filter((author) => author.length > 0);
+    .filter((author) => author.length > 0 && !BLOCKED_SIGNAL_VALUES.has(normalizeText(author)));
   const favoriteAuthorDisplay = favoriteAuthorsRaw
     .map((author) => {
       const matched = params.books.find((row) => normalizeText(row.author) === author);
@@ -4229,7 +4355,7 @@ export async function runLibrarianRecommendation(params: {
   normalizedQuery: string;
 }> {
   const validation = validateRequest(params.request);
-  if (!validation.ok) {
+  if ("reason" in validation) {
     throw new Error(validation.reason);
   }
 
@@ -4250,8 +4376,6 @@ export async function runLibrarianRecommendation(params: {
     intentClassification.intent
   );
   const explicitRoutingLocked = intentClassification.intent !== "BOOK_RECOMMENDATION";
-  const needsClarification =
-    !explicitRoutingLocked && isGenericClarificationQuery(validation.normalizedQuery);
   const followUpQuestion =
     "Share one author, one title you loved, or a specific theme and I will refine precisely.";
   const intentConfidence = 0.72;
@@ -4277,11 +4401,29 @@ export async function runLibrarianRecommendation(params: {
     params.context.genres.dominantGenre ||
     (anchorGenres.length > 0 ? anchorGenres[0] : "");
   const requestedAuthor = intentClassification.authorName;
-  const queryTokens = tokenize(validation.normalizedQuery);
   const unifiedSearchBudget: UnifiedSearchBudget = {
     used: 0,
     limit: LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS,
   };
+  const classifiedTopic = intentClassification.topic.trim();
+  const directTitleCards =
+    !requestedAuthor &&
+    !classifiedTopic &&
+    isDirectTitleStyleQuery(validation.normalizedQuery)
+      ? await resolveDirectTitleCards({
+          normalizedQuery: validation.normalizedQuery,
+          anchor,
+          budget: unifiedSearchBudget,
+        })
+      : [];
+  const needsClarification =
+    !explicitRoutingLocked &&
+    !requestedAuthor &&
+    !classifiedTopic &&
+    !anchor &&
+    directTitleCards.length === 0 &&
+    isGenericClarificationQuery(validation.normalizedQuery);
+  const queryTokens = tokenize(validation.normalizedQuery);
   let explanationSignalAffinity: RecentSignalAffinity | null = null;
   const excludedProposalKeys = new Set<string>();
   logger.info("[AI][LIBRARIAN][READER_INTENT]", {
@@ -4308,6 +4450,7 @@ export async function runLibrarianRecommendation(params: {
       verifiedCount?: number;
       candidateCount?: number;
       authorName?: string;
+      suppressAuthorRecommendations?: boolean;
     }
   ) => {
     const normalizeCards = (rows: LibrarianBookCard[]): LibrarianBookCard[] =>
@@ -4424,21 +4567,24 @@ export async function runLibrarianRecommendation(params: {
       });
     }
 
-    let authorRecommendations = await buildAuthorRecommendations({
-      normalizedQuery: validation.normalizedQuery,
-      authorName: options.authorName || intentClassification.authorName,
-      intent: options.intent,
-      books: attributedRecommendations,
-    });
-    authorRecommendations = dedupeAuthorCards(authorRecommendations);
-    if (attributedRecommendations.length >= 3) {
-      authorRecommendations = [];
-    } else if (attributedRecommendations.length > 0) {
-      authorRecommendations = authorRecommendations
-        .filter((row) => row.verification.source !== "internal")
-        .slice(0, 2);
-    } else {
-      authorRecommendations = authorRecommendations.slice(0, 2);
+    let authorRecommendations: LibrarianAuthorCard[] = [];
+    if (!options.suppressAuthorRecommendations) {
+      authorRecommendations = await buildAuthorRecommendations({
+        normalizedQuery: validation.normalizedQuery,
+        authorName: options.authorName || intentClassification.authorName,
+        intent: options.intent,
+        books: attributedRecommendations,
+      });
+      authorRecommendations = dedupeAuthorCards(authorRecommendations);
+      if (attributedRecommendations.length >= 3) {
+        authorRecommendations = [];
+      } else if (attributedRecommendations.length > 0) {
+        authorRecommendations = authorRecommendations
+          .filter((row) => row.verification.source !== "internal")
+          .slice(0, 2);
+      } else {
+        authorRecommendations = authorRecommendations.slice(0, 2);
+      }
     }
     const requestedAnchorTitle = anchor?.title?.trim() || "";
     const topRecommendation = attributedRecommendations[0];
@@ -4732,7 +4878,7 @@ export async function runLibrarianRecommendation(params: {
     }
   }
 
-  const topicEntity = intentClassification.topic || extractTopicFromQuery(validation.normalizedQuery);
+  const topicEntity = classifiedTopic || extractTopicFromQuery(validation.normalizedQuery);
   const topicAnchorCards = await resolveCanonicalTopicAnchorCards({
     normalizedQuery: validation.normalizedQuery,
     topic: topicEntity,
@@ -4752,6 +4898,24 @@ export async function runLibrarianRecommendation(params: {
       verifiedCount: topicAnchorCards.length,
       candidateCount: topicAnchorCards.length,
       authorName: intentClassification.authorName,
+      });
+  }
+
+  if (directTitleCards.length > 0) {
+    const directTitle = directTitleCards[0];
+    return finalizeAndReturn(directTitleCards, {
+      fromCache: false,
+      remainingQuota: quota.remaining,
+      intent: "book_recommendation",
+      suggestionMode: "HighConfidencePrecision",
+      minRecommendations: 1,
+      allowCardFallback: false,
+      suppressAuthorRecommendations: true,
+      explanationOverride: `If you are looking for ${directTitle.title}, that is the direct match and the strongest place to begin.`,
+      confidence: Math.max(intentConfidence, 0.84),
+      verifiedCount: directTitleCards.length,
+      candidateCount: directTitleCards.length,
+      fallbackReason: "direct_title_match",
     });
   }
 
