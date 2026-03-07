@@ -102,6 +102,14 @@ export const queryKeys = {
     author: (id: string | undefined) =>
       ['catalog', 'author', safe({ id })] as const,
 
+    quotes: (filters: {
+      query: string | null;
+      bookId: string | null;
+      authorId: string | null;
+      limit: number | null;
+    }) =>
+      ['catalog', 'quotes', safe(filters)] as const,
+
     reviews: (bookId: string | undefined) =>
       ['catalog', 'reviews', safe({ bookId })] as const,
   },

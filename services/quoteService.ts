@@ -22,6 +22,13 @@ export interface ListQuotesResponse {
   nextCursor?: string;
 }
 
+export interface SearchPublicQuotesRequest {
+  limit?: number;
+  bookId?: string;
+  authorId?: string;
+  query?: string;
+}
+
 type FailureEnvelope = {
   success: false;
   error: {
@@ -202,6 +209,20 @@ export const quoteService = {
       params
     );
     return parseManagedQuote(data);
+  },
+
+  async searchPublicQuotes(
+    request: SearchPublicQuotesRequest = {}
+  ): Promise<ManagedQuote[]> {
+    const data = await callQuoteEndpoint<SearchPublicQuotesRequest, {
+      quotes: unknown[];
+    }>("searchPublicQuotes", request);
+
+    if (!Array.isArray(data.quotes)) {
+      throw new Error("[searchPublicQuotes] Invalid quotes payload.");
+    }
+
+    return data.quotes.map(parseManagedQuote);
   },
 
   async createQuote(params: {

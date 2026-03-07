@@ -1067,6 +1067,33 @@ export const apiContracts = {
       }
     ),
 
+    backfillSeedAuthorSourceMetadata: defineContract(
+      z
+        .object({
+          dryRun: z.boolean().optional(),
+          pageSize: z.number().int().positive().max(100).optional(),
+          maxDocs: z.number().int().positive().max(5000).optional(),
+          cursorDocId: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          dryRun: z.boolean(),
+          processed: z.number().int().nonnegative(),
+          updated: z.number().int().nonnegative(),
+          unchanged: z.number().int().nonnegative(),
+          skippedHasProviderIds: z.number().int().nonnegative(),
+          hasMore: z.boolean(),
+          nextCursorDocId: z.string().min(1).optional(),
+          previewAuthorIds: z.array(z.string().min(1)),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
     ingestBook: defineContract(
       z
         .object({
@@ -1732,6 +1759,26 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/quoteService.ts", "lib/hooks/useQuotes.ts"],
+      }
+    ),
+
+    searchPublicQuotes: defineContract(
+      z
+        .object({
+          limit: z.number().int().positive().max(50).optional(),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          query: z.string().max(120).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          quotes: z.array(quoteSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/quoteService.ts", "lib/hooks/useDiscoverQuotes.ts"],
       }
     ),
 

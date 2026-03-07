@@ -1,0 +1,15 @@
+{
+  "projectId": "booktown-ai",
+  "dryRun": false,
+  "pagesCompleted": 1,
+  "nextCursorDocId": null,
+  "hasMore": false,
+  "totals": {
+    "processed": 10,
+    "enriched": 0,
+    "unchanged": 0,
+    "skippedNoSource": 10,
+    "skippedProviderFetch": 0
+  },
+  "updatedAt": "2026-03-07T20:38:53.679Z"
+}

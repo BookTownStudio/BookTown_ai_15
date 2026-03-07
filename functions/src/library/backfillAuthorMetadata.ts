@@ -229,11 +229,23 @@ export const backfillAuthorMetadata = onCall(
           continue;
         }
 
-        const resolvedRawAuthor = await resolveAuthorProviderPayload({
-          source: provider.source,
-          providerExternalId: provider.providerExternalId,
-          rawAuthor: existingAuthor,
-        });
+        let resolvedRawAuthor: Record<string, unknown>;
+        try {
+          resolvedRawAuthor = await resolveAuthorProviderPayload({
+            source: provider.source,
+            providerExternalId: provider.providerExternalId,
+            rawAuthor: existingAuthor,
+          });
+        } catch (error) {
+          skippedProviderFetch += 1;
+          logger.warn("[AUTHOR_BACKFILL][PROVIDER_FETCH_FAILED]", {
+            authorId: doc.id,
+            source: provider.source,
+            providerExternalId: provider.providerExternalId,
+            error: String(error),
+          });
+          continue;
+        }
 
         const changedFields = collectChangedFields(existingAuthor, resolvedRawAuthor);
         if (changedFields.length === 0) {

@@ -241,6 +241,8 @@ describe("ingestAuthor smoke", () => {
     expect(ingestion?.state).toBe("COMPLETE");
     expect(author?.nameEn).toBe("Virginia Woolf");
     expect(author?.canonicalKey).toBe("virginia woolf::1882");
+    expect(author?.sourceRecordType).toBe("provider");
+    expect(author?.enrichmentEligible).toBe(true);
     expect(Array.isArray(author?.searchPrefixes)).toBe(true);
   });
 
@@ -339,6 +341,8 @@ describe("ingestAuthor smoke", () => {
     expect(author?.nameEn).toBe("J. K. Rowling");
     expect(author?.nameAr).toBe("ج. ك. رولينغ");
     expect(author?.sourceIds?.wikidata).toBe("Q34660");
+    expect(author?.sourceRecordType).toBe("provider");
+    expect(author?.enrichmentEligible).toBe(true);
     expect(author?.officialLinks).toEqual(["https://www.jkrowling.com/"]);
     expect(author?.workCount).toBe(406);
     expect(author?.topWorks?.[0]?.title).toBe("Harry Potter and the Philosopher's Stone");

@@ -327,6 +327,7 @@ export interface RecommendedShelf {
 
 export interface Quote {
     id: string;
+    ownerId?: string;
     textEn: string;
     textAr: string;
     sourceEn: string;

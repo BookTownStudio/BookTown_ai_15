@@ -86,8 +86,35 @@ function listCollectionDocs(collectionPath: string): Array<{ path: string; id: s
     }));
 }
 
+function listCollectionGroupDocs(collectionName: string): Array<{
+  path: string;
+  id: string;
+  data: DocData;
+}> {
+  return Array.from(store.entries())
+    .filter(([path]) => {
+      const segments = path.split("/").filter(Boolean);
+      return (
+        segments.length >= 2 &&
+        segments[segments.length - 2] === collectionName
+      );
+    })
+    .map(([path, data]) => ({
+      path,
+      id: (() => {
+        const parts = path.split("/").filter(Boolean);
+        return parts[parts.length - 1] || "";
+      })(),
+      data: clone(data),
+    }));
+}
+
 class MockDocSnapshot {
   constructor(public readonly path: string) {}
+
+  get ref(): { path: string } {
+    return { path: this.path };
+  }
 
   get id(): string {
     const parts = this.path.split("/").filter(Boolean);
@@ -139,25 +166,27 @@ class MockQuerySnapshot {
 class MockQuery {
   constructor(
     protected readonly collectionPath: string,
-    protected readonly filters: Array<{ field: string; value: unknown }> = [],
+    protected readonly filters: Array<{ field: string; op: "==" | "array-contains"; value: unknown }> = [],
     protected readonly orderByField = "updatedAt",
     protected readonly orderDirection: "asc" | "desc" = "desc",
     protected readonly limitCount: number | null = null,
-    protected readonly startAfterId: string | null = null
+    protected readonly startAfterId: string | null = null,
+    protected readonly isCollectionGroup = false
   ) {}
 
   where(field: string, op: string, value: unknown): MockQuery {
-    if (op !== "==") {
+    if (op !== "==" && op !== "array-contains") {
       throw new Error(`Unsupported operator: ${op}`);
     }
 
     return new MockQuery(
       this.collectionPath,
-      [...this.filters, { field, value }],
+      [...this.filters, { field, op: op as "==" | "array-contains", value }],
       this.orderByField,
       this.orderDirection,
       this.limitCount,
-      this.startAfterId
+      this.startAfterId,
+      this.isCollectionGroup
     );
   }
 
@@ -168,7 +197,8 @@ class MockQuery {
       field,
       direction,
       this.limitCount,
-      this.startAfterId
+      this.startAfterId,
+      this.isCollectionGroup
     );
   }
 
@@ -179,7 +209,8 @@ class MockQuery {
       this.orderByField,
       this.orderDirection,
       count,
-      this.startAfterId
+      this.startAfterId,
+      this.isCollectionGroup
     );
   }
 
@@ -190,13 +221,28 @@ class MockQuery {
       this.orderByField,
       this.orderDirection,
       this.limitCount,
-      snapshot.id
+      snapshot.id,
+      this.isCollectionGroup
     );
   }
 
   async get(): Promise<MockQuerySnapshot> {
-    let docs = listCollectionDocs(this.collectionPath).filter(({ data }) =>
-      this.filters.every(({ field, value }) => data[field] === value)
+    let docs = (
+      this.isCollectionGroup
+        ? listCollectionGroupDocs(this.collectionPath)
+        : listCollectionDocs(this.collectionPath)
+    ).filter(({ data }) =>
+      this.filters.every(({ field, op, value }) => {
+        if (op === "==") {
+          return data[field] === value;
+        }
+
+        if (op === "array-contains") {
+          return Array.isArray(data[field]) && (data[field] as unknown[]).includes(value);
+        }
+
+        return false;
+      })
     );
 
     docs.sort((a, b) => {
@@ -240,6 +286,9 @@ class MockCollectionRef extends MockQuery {
 const firestoreMock = {
   collection(path: string): MockCollectionRef {
     return new MockCollectionRef(path);
+  },
+  collectionGroup(path: string): MockQuery {
+    return new MockQuery(path, [], "updatedAt", "desc", null, null, true);
   },
   doc(path: string): MockDocRef {
     return new MockDocRef(path);
@@ -413,5 +462,62 @@ describe("quotes callable hardening", () => {
 
     expect(result.quotes).toHaveLength(1);
     expect(result.quotes[0]?.id).toBe("q1");
+  });
+
+  it("searchPublicQuotes returns public quotes across users and preserves owner identity", async () => {
+    setDoc("users/user-1/quotes/q1", {
+      ownerId: "user-1",
+      textEn: "The sea is memory.",
+      textAr: "البحر ذاكرة.",
+      sourceEn: "Salt Book",
+      sourceAr: "كتاب الملح",
+      searchTextNormalized: "the sea is memory salt book",
+      searchTokens: ["sea", "memory", "salt", "book"],
+      updatedAt: "2026-03-04T00:00:00.000Z",
+      createdAt: "2026-03-04T00:00:00.000Z",
+      isPublic: true,
+      version: 2,
+    });
+    setDoc("users/user-2/quotes/q2", {
+      ownerId: "user-2",
+      textEn: "Memory walks with the sea.",
+      textAr: "تمشي الذاكرة مع البحر.",
+      sourceEn: "Blue Notes",
+      sourceAr: "ملاحظات زرقاء",
+      searchTextNormalized: "memory walks with the sea blue notes",
+      searchTokens: ["memory", "walks", "sea", "blue", "notes"],
+      updatedAt: "2026-03-05T00:00:00.000Z",
+      createdAt: "2026-03-05T00:00:00.000Z",
+      isPublic: true,
+      version: 2,
+    });
+    setDoc("users/user-3/quotes/q3", {
+      ownerId: "user-3",
+      textEn: "Private quote",
+      textAr: "اقتباس خاص",
+      sourceEn: "Secret",
+      sourceAr: "سري",
+      searchTextNormalized: "private quote secret",
+      searchTokens: ["private", "quote", "secret"],
+      updatedAt: "2026-03-06T00:00:00.000Z",
+      createdAt: "2026-03-06T00:00:00.000Z",
+      isPublic: false,
+      version: 2,
+    });
+
+    const { searchPublicQuotes } = await getQuotesModule();
+    const result = (await searchPublicQuotes.run({
+      rawRequest: {} as never,
+      data: {
+        query: "memory sea",
+        limit: 10,
+      },
+    })) as { quotes: Array<Record<string, unknown>> };
+
+    expect(result.quotes).toHaveLength(2);
+    expect(result.quotes[0]?.id).toBe("q2");
+    expect(result.quotes[0]?.ownerId).toBe("user-2");
+    expect(result.quotes[1]?.id).toBe("q1");
+    expect(result.quotes[1]?.ownerId).toBe("user-1");
   });
 });

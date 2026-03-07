@@ -244,6 +244,22 @@ function buildSearchPrefixes(parts, max = 120) {
   return Array.from(prefixes).slice(0, max);
 }
 
+function tokenizeSearchText(input, max = 40) {
+  const normalized = normalizeSearchText(input);
+  if (!normalized) return [];
+
+  const tokens = normalized.split(' ').filter(Boolean);
+  const dedup = new Set();
+
+  for (const token of tokens) {
+    if (token.length < 2) continue;
+    dedup.add(token.slice(0, 40));
+    if (dedup.size >= max) break;
+  }
+
+  return Array.from(dedup);
+}
+
 function timestampDaysAgo(daysAgo, extraSeconds = 0) {
   return admin.firestore.Timestamp.fromDate(
     new Date(Date.now() - (daysAgo * DAY_MS + extraSeconds * 1000))
@@ -574,6 +590,9 @@ async function main() {
       id: authorId,
       nameEn,
       nameAr,
+      sourceIds: {},
+      sourceRecordType: 'synthetic_seed',
+      enrichmentEligible: false,
       avatarUrl: `https://api.dicebear.com/9.x/lorelei/svg?seed=${encodeURIComponent(authorId)}`,
       bioEn: `${nameEn} writes on craft, memory, and urban reading culture.`,
       bioAr: `${nameAr} يكتب عن الحرفة والذاكرة وثقافة القراءة الحضرية.`,
@@ -958,6 +977,10 @@ async function main() {
     const book = pick(rng, books);
     const author = authors.find((a) => a.id === book.authorId) || pick(rng, authors);
     const textEn = `${pick(rng, QUOTE_SNIPPETS)} (${i})`;
+    const searchTextNormalized = normalizeSearchText(
+      `${textEn} اقتباس ${i}: ${textEn} ${book.titleEn} ${book.titleAr}`
+    );
+    const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
 
     const quoteDoc = {
       ownerId: uid,
@@ -967,6 +990,8 @@ async function main() {
       sourceAr: book.titleAr,
       bookId: book.id,
       authorId: author.id,
+      searchTextNormalized,
+      searchTokens,
       isPublic: true,
       createdAt: randomPastTimestamp(rng, 420),
       updatedAt: nowTs,

@@ -265,4 +265,53 @@ describe("backfillAuthorMetadata", () => {
     expect(result.updatedAuthorIds).toEqual(["author-1"]);
     expect(getDoc("authors/author-1")?.bioEn).toBe("Fresh bio");
   });
+
+  it("continues when a provider fetch fails for one author", async () => {
+    setDoc("authors/author-1", {
+      id: "author-1",
+      nameEn: "Author One",
+      sourceIds: {
+        openLibrary: "OL1A",
+      },
+    });
+    setDoc("authors/author-2", {
+      id: "author-2",
+      nameEn: "Author Two",
+      sourceIds: {
+        openLibrary: "OL2A",
+      },
+    });
+
+    resolveAuthorProviderPayloadMock.mockImplementation(async (params: any) => {
+      if (params.providerExternalId === "OL1A") {
+        throw new Error("provider timeout");
+      }
+
+      return {
+        id: "author-2",
+        nameEn: "Author Two",
+        bioEn: "Recovered bio",
+        sourceIds: {
+          openLibrary: params.providerExternalId,
+        },
+      };
+    });
+
+    const callable = await getBackfillCallable();
+    const result = await callable.run({
+      auth: { uid: "admin-1", token: {} as never },
+      rawRequest: {} as never,
+      data: {
+        dryRun: false,
+        maxDocs: 10,
+      },
+    });
+
+    expect(result.processed).toBe(2);
+    expect(result.enriched).toBe(1);
+    expect(result.skippedProviderFetch).toBe(1);
+    expect(result.updatedAuthorIds).toEqual(["author-2"]);
+    expect(getDoc("authors/author-1")?.bioEn).toBeUndefined();
+    expect(getDoc("authors/author-2")?.bioEn).toBe("Recovered bio");
+  });
 });

@@ -11,6 +11,8 @@ const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
 const QUOTE_SCAN_BATCH_SIZE = 50;
 const MAX_QUOTE_SCAN_DOCS = 300;
+const DEFAULT_PUBLIC_QUOTE_LIMIT = 24;
+const MAX_PUBLIC_QUOTE_LIMIT = 50;
 const QUOTE_TEXT_MAX = 2000;
 const QUOTE_SOURCE_MAX = 240;
 const QUOTE_QUERY_MAX = 120;
@@ -319,7 +321,12 @@ function isQuoteMatch(
     return true;
   }
 
-  return quote.searchTextNormalized.includes(filters.query);
+  const queryTokens = tokenizeSearchText(filters.query, 8);
+  if (queryTokens.length === 0) {
+    return quote.searchTextNormalized.includes(filters.query);
+  }
+
+  return queryTokens.every((token) => quote.searchTextNormalized.includes(token));
 }
 
 function resolveOwnerId(inputOwnerId: unknown, uid: string): string {
@@ -336,6 +343,47 @@ function resolveOwnerId(inputOwnerId: unknown, uid: string): string {
   }
 
   return normalized;
+}
+
+function normalizePublicQuoteLimit(value: unknown): number {
+  if (value === undefined || value === null) {
+    return DEFAULT_PUBLIC_QUOTE_LIMIT;
+  }
+
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new HttpsError("invalid-argument", "limit must be a number.");
+  }
+
+  const integer = Math.trunc(value);
+  if (integer < 1 || integer > MAX_PUBLIC_QUOTE_LIMIT) {
+    throw new HttpsError(
+      "invalid-argument",
+      `limit must be between 1 and ${MAX_PUBLIC_QUOTE_LIMIT}.`
+    );
+  }
+
+  return integer;
+}
+
+function extractOwnerIdFromQuotePath(path: string): string | null {
+  const segments = path.split("/").filter(Boolean);
+  if (segments.length !== 4) {
+    return null;
+  }
+
+  if (segments[0] !== "users" || segments[2] !== "quotes") {
+    return null;
+  }
+
+  return segments[1] || null;
+}
+
+function sortQuotesByFreshness(quotes: CanonicalQuote[]): CanonicalQuote[] {
+  return [...quotes].sort((left, right) => {
+    const leftUpdatedAt = left.updatedAt || left.createdAt || "";
+    const rightUpdatedAt = right.updatedAt || right.createdAt || "";
+    return rightUpdatedAt.localeCompare(leftUpdatedAt) || left.id.localeCompare(right.id);
+  });
 }
 
 function sanitizeIdentifier(value: string): string {
@@ -525,6 +573,82 @@ export const getQuoteById = onCall({ cors: true }, async (request) => {
   }
 
   return publicQuotePayload(parsed);
+});
+
+export const searchPublicQuotes = onCall({ cors: true }, async (request) => {
+  const data = (request.data ?? {}) as Record<string, unknown>;
+
+  const limit = normalizePublicQuoteLimit(data.limit);
+  const bookId = normalizeOptionalString(data.bookId, "bookId", 180);
+  const authorId = normalizeOptionalString(data.authorId, "authorId", 180);
+  const queryValue = normalizeQueryValue(data.query);
+
+  if (!bookId && !authorId && !queryValue) {
+    return {
+      quotes: [],
+    };
+  }
+
+  let queryRef: Query = db.collectionGroup("quotes").where("isPublic", "==", true);
+  let shouldRunLegacyFallback = false;
+
+  if (bookId) {
+    queryRef = queryRef.where("bookId", "==", bookId);
+  } else if (authorId) {
+    queryRef = queryRef.where("authorId", "==", authorId);
+  } else if (queryValue) {
+    const searchTokens = tokenizeSearchText(queryValue, 8);
+    const primaryToken = searchTokens.sort((left, right) => right.length - left.length)[0];
+
+    if (!primaryToken) {
+      return {
+        quotes: [],
+      };
+    }
+
+    queryRef = queryRef.where("searchTokens", "array-contains", primaryToken);
+    shouldRunLegacyFallback = true;
+  }
+
+  const materializeMatches = (docs: QueryDocumentSnapshot<DocumentData>[]) =>
+    docs
+    .map((docSnap) => {
+      const ownerId = extractOwnerIdFromQuotePath(docSnap.ref.path);
+      if (!ownerId) {
+        logger.warn("[QUOTES][PUBLIC_SEARCH][INVALID_PATH]", {
+          path: docSnap.ref.path,
+        });
+        return null;
+      }
+
+      return parseQuote(ownerId, docSnap.id, docSnap.data());
+    })
+    .filter((quote): quote is CanonicalQuote => quote !== null)
+    .filter((quote) =>
+      isQuoteMatch(quote, {
+        ...(bookId ? { bookId } : {}),
+        ...(authorId ? { authorId } : {}),
+        ...(queryValue ? { query: queryValue } : {}),
+      })
+    );
+
+  const snap = await queryRef.limit(MAX_QUOTE_SCAN_DOCS).get();
+  let matchedQuotes = materializeMatches(snap.docs);
+
+  if (matchedQuotes.length === 0 && shouldRunLegacyFallback) {
+    const legacySnap = await db
+      .collectionGroup("quotes")
+      .where("isPublic", "==", true)
+      .limit(MAX_QUOTE_SCAN_DOCS)
+      .get();
+    matchedQuotes = materializeMatches(legacySnap.docs);
+  }
+
+  return {
+    quotes: sortQuotesByFreshness(matchedQuotes)
+      .slice(0, limit)
+      .map(publicQuotePayload),
+  };
 });
 
 export const createQuote = onCall({ cors: true }, async (request) => {

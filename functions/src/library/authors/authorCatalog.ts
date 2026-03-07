@@ -526,6 +526,9 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     wikidata: providerIds.wikidata || asNonEmptyString(existingSourceIds?.wikidata),
     googleBooks: providerIds.googleBooks || asNonEmptyString(existingSourceIds?.googleBooks),
   };
+  const hasProviderSourceId = Boolean(
+    sourceIds.openLibrary || sourceIds.wikidata || sourceIds.googleBooks
+  );
   const primarySource = resolvePrimarySource(
     asNonEmptyString(existingAuthor?.primarySource),
     sourceIds,
@@ -570,6 +573,9 @@ export async function materializeCanonicalAuthorInTransaction(params: {
       languageEn: preferNonEmpty(asNonEmptyString(params.rawAuthor.languageEn), existingAuthor?.languageEn),
       languageAr: preferNonEmpty(asNonEmptyString(params.rawAuthor.languageAr), existingAuthor?.languageAr),
       sourceIds,
+      sourceRecordType: hasProviderSourceId ? "provider" : asNonEmptyString(existingAuthor?.sourceRecordType),
+      enrichmentEligible:
+        hasProviderSourceId || existingAuthor?.enrichmentEligible === true,
       remoteIds,
       primarySource,
       officialLinks,

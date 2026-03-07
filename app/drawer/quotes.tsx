@@ -7,7 +7,7 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import QuotesList from '../../components/features/quotes/QuotesList.tsx';
-import { useSearchUserQuotes } from '../../lib/hooks/useSearchUserQuotes.ts';
+import { useDiscoverQuotes } from '../../lib/hooks/useDiscoverQuotes.ts';
 import InputField from '../../components/ui/InputField.tsx';
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { useAuthorDetails } from '../../lib/hooks/useAuthorDetails.ts';
@@ -20,7 +20,12 @@ const QuotesScreen: React.FC = () => {
     const bookId = currentView.params?.bookId;
     const authorId = currentView.params?.authorId;
     
-    const { data: quotes, isLoading, isError } = useSearchUserQuotes(searchQuery, bookId, authorId);
+    const { data: quotes, isLoading, isError } = useDiscoverQuotes({
+        query: searchQuery,
+        bookId,
+        authorId,
+        limit: 24,
+    });
     const { data: book } = useBookCatalog(bookId);
     const { data: author } = useAuthorDetails(authorId);
 
@@ -49,10 +54,22 @@ const QuotesScreen: React.FC = () => {
             );
         }
         
+        if (!searchQuery.trim() && !bookId && !authorId) {
+            return (
+                <div className="flex-grow flex items-center justify-center h-full text-center">
+                    <BilingualText>
+                        {lang === 'en'
+                            ? 'Search public quotes, then open a quote card to save it.'
+                            : 'ابحث في الاقتباسات العامة ثم افتح بطاقة الاقتباس لحفظها.'}
+                    </BilingualText>
+                </div>
+            );
+        }
+
         if (quotes.length === 0 && bookId) {
              return (
                 <div className="flex-grow flex items-center justify-center h-full text-center">
-                    <BilingualText>{lang === 'en' ? `No saved quotes from this book.` : `لا توجد اقتباسات محفوظة من هذا الكتاب.`}</BilingualText>
+                    <BilingualText>{lang === 'en' ? `No public quotes found for this book.` : `لا توجد اقتباسات عامة لهذا الكتاب.`}</BilingualText>
                 </div>
             );
         }
@@ -60,7 +77,7 @@ const QuotesScreen: React.FC = () => {
         if (quotes.length === 0 && authorId) {
             return (
                <div className="flex-grow flex items-center justify-center h-full text-center">
-                   <BilingualText>{lang === 'en' ? `No saved quotes from this author.` : `لا توجد اقتباسات محفوظة من هذا المؤلف.`}</BilingualText>
+                   <BilingualText>{lang === 'en' ? `No public quotes found for this author.` : `لا توجد اقتباسات عامة لهذا المؤلف.`}</BilingualText>
                </div>
            );
        }
@@ -100,7 +117,7 @@ const QuotesScreen: React.FC = () => {
                             type="search"
                             value={searchQuery}
                             onChange={(e) => setSearchQuery(e.target.value)}
-                            placeholder={lang === 'en' ? 'Search your quotes...' : 'ابحث في اقتباساتك...'}
+                            placeholder={lang === 'en' ? 'Search public quotes...' : 'ابحث في الاقتباسات العامة...'}
                         />
                     </div>
                     {renderContent()}

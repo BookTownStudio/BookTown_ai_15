@@ -19,6 +19,19 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
     const { lang } = useI18n();
     const { navigate, currentView } = useNavigation();
 
+    const handleOpenDetails = () => {
+        if (!quote.ownerId) return;
+        navigate({
+            type: 'immersive',
+            id: 'quoteDetails',
+            params: {
+                quoteId: quote.id,
+                ownerId: quote.ownerId,
+                from: currentView,
+            },
+        });
+    };
+
     const handleShare = (e: React.MouseEvent) => {
         e.stopPropagation();
         navigate({
@@ -40,7 +53,7 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
 
 
     return (
-        <GlassCard>
+        <GlassCard onClick={quote.ownerId ? handleOpenDetails : undefined} className={quote.ownerId ? 'cursor-pointer' : ''}>
             <BilingualText role="Quote" className="text-white">
                 "{lang === 'en' ? quote.textEn : quote.textAr}"
             </BilingualText>

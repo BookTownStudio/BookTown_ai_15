@@ -3,7 +3,7 @@ import { useNavigation } from "../store/navigation.tsx";
 import { useI18n } from "../store/i18n.tsx";
 import { useAuthorDetails } from "../lib/hooks/useAuthorDetails.ts";
 import { useBooksByAuthor } from "../lib/hooks/useBooksByAuthor.ts";
-import { useSearchUserQuotes } from "../lib/hooks/useSearchUserQuotes.ts";
+import { useDiscoverQuotes } from "../lib/hooks/useDiscoverQuotes.ts";
 import { useAuthorFollowStatus } from "../lib/hooks/useAuthorFollowStatus.ts";
 import { useFollowAuthor } from "../lib/hooks/useFollowAuthor.ts";
 import LoadingSpinner from "../components/ui/LoadingSpinner.tsx";
@@ -24,7 +24,7 @@ const AuthorDetailsScreen: React.FC = () => {
 
   const { data: author, isLoading, isError } = useAuthorDetails(authorId);
   const { data: books = [], isLoading: isBooksLoading } = useBooksByAuthor(authorId);
-  const { data: quotes = [] } = useSearchUserQuotes("", undefined, authorId);
+  const { data: quotes = [] } = useDiscoverQuotes({ authorId, limit: 1 });
   const { data: isAuthorFollowed = false, isLoading: isFollowStateLoading } =
     useAuthorFollowStatus(authorId);
 
@@ -209,10 +209,28 @@ const AuthorDetailsScreen: React.FC = () => {
               {lang === "en" ? "Featured Quote" : "اقتباس مميز"}
             </BilingualText>
             {quotes.length > 0 ? (
-              <QuoteSnippetCard quote={quotes[0]} />
+              <button
+                type="button"
+                onClick={() =>
+                  quotes[0]?.ownerId
+                    ? navigate({
+                        type: "immersive",
+                        id: "quoteDetails",
+                        params: {
+                          quoteId: quotes[0].id,
+                          ownerId: quotes[0].ownerId,
+                          from: currentView,
+                        },
+                      })
+                    : undefined
+                }
+                className="w-full text-left"
+              >
+                <QuoteSnippetCard quote={quotes[0]} />
+              </button>
             ) : (
               <BilingualText role="Caption" className="text-white/60">
-                {lang === "en" ? "No saved quotes found." : "لا توجد اقتباسات محفوظة."}
+                {lang === "en" ? "No public quotes found." : "لا توجد اقتباسات عامة."}
               </BilingualText>
             )}
           </section>

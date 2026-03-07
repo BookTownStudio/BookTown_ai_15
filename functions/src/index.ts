@@ -8,6 +8,7 @@ import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
 import { ingestAuthor as ingestAuthorRaw } from "./library/ingestAuthor";
 import { backfillAuthorMetadata as backfillAuthorMetadataRaw } from "./library/backfillAuthorMetadata";
+import { backfillSeedAuthorSourceMetadata as backfillSeedAuthorSourceMetadataRaw } from "./library/backfillSeedAuthorSourceMetadata";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { finalizeUserUpload as finalizeUserUploadRaw } from "./library/finalizeUserUpload";
 import {
@@ -83,6 +84,7 @@ import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfil
 import { backfillReadingProgressCanonical as backfillReadingProgressCanonicalRaw } from "./admin/backfillReadingProgressCanonical";
 import {
   listUserQuotes as listUserQuotesRaw,
+  searchPublicQuotes as searchPublicQuotesRaw,
   getQuoteById as getQuoteByIdRaw,
   createQuote as createQuoteRaw,
   saveQuoteFromReference as saveQuoteFromReferenceRaw,
@@ -300,6 +302,10 @@ export const backfillAuthorMetadata = wrapCallableV2(
   "backfillAuthorMetadata",
   backfillAuthorMetadataRaw
 );
+export const backfillSeedAuthorSourceMetadata = wrapCallableV2(
+  "backfillSeedAuthorSourceMetadata",
+  backfillSeedAuthorSourceMetadataRaw
+);
 export const ingestBook = wrapCallableV2("ingestBook", ingestBookRaw);
 export const uploadUserBook = wrapCallableV2(
   "uploadUserBook",
@@ -497,6 +503,10 @@ export const removeBookFromShelf = wrapCallableV2(
 export const listUserQuotes = wrapCallableV2(
   "listUserQuotes",
   listUserQuotesRaw
+);
+export const searchPublicQuotes = wrapCallableV2(
+  "searchPublicQuotes",
+  searchPublicQuotesRaw
 );
 export const getQuoteById = wrapCallableV2("getQuoteById", getQuoteByIdRaw);
 export const createQuote = wrapCallableV2("createQuote", createQuoteRaw);
