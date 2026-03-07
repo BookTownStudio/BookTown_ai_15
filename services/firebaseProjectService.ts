@@ -168,13 +168,6 @@ async function callEndpoint<TRequest, TData>(
   return extractSuccessData<TData>(endpoint, result.data);
 }
 
-function isRevisionMismatchError(error: unknown): boolean {
-  if (!(error instanceof Error) || typeof error.message !== "string") {
-    return false;
-  }
-  return error.message.includes("[FAILED_PRECONDITION]") && error.message.includes("Revision mismatch");
-}
-
 function sanitizeWriteUpdates(input: Partial<Project>): {
   titleEn?: string;
   titleAr?: string;
@@ -312,7 +305,8 @@ export const firebaseProjectService: ProjectDataService = {
   async updateProject(
     uid: string,
     projectId: string,
-    updates: Partial<Project>
+    updates: Partial<Project>,
+    options?: { expectedRevision?: number }
   ): Promise<WriteUpdateResult> {
     const sanitized = sanitizeWriteUpdates(updates);
     if (Object.keys(sanitized).length === 0) {
@@ -333,16 +327,12 @@ export const firebaseProjectService: ProjectDataService = {
         updates: sanitized,
       });
 
-    const current = await this.getProject(uid, projectId);
-    try {
-      return await invokeUpdate(current.revision);
-    } catch (error) {
-      if (!isRevisionMismatchError(error)) {
-        throw error;
-      }
-      const latest = await this.getProject(uid, projectId);
-      return invokeUpdate(latest.revision);
+    if (typeof options?.expectedRevision === "number" && Number.isInteger(options.expectedRevision)) {
+      return invokeUpdate(options.expectedRevision);
     }
+
+    const current = await this.getProject(uid, projectId);
+    return invokeUpdate(current.revision);
   },
 
   async duplicateProject(_uid: string, projectId: string): Promise<Project> {

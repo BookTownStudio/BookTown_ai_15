@@ -252,4 +252,18 @@ describe("ingestBook v2 smoke", () => {
       expect((coverJob?.candidateUrls as unknown[]).length).toBeGreaterThan(0);
     }
   });
+
+  it("materializes and links a canonical author record for the primary author", async () => {
+    const result = await callIngest();
+
+    const book = getDoc(`books/${result.bookId}`);
+    const authorId = typeof book?.authorId === "string" ? book.authorId : "";
+    const author = authorId ? getDoc(`authors/${authorId}`) : null;
+    const authorIdentity = getDoc("author_identity/canonical:author one::unknown");
+
+    expect(authorId).toBeTruthy();
+    expect(book?.authorCanonicalKey).toBe("author one::unknown");
+    expect(author?.nameEn).toBe("Author One");
+    expect(authorIdentity?.authorId).toBe(authorId);
+  });
 });

@@ -6,6 +6,8 @@ import { recomputeUserStats } from "./userStats/recomputeUserStats";
 import { wrapCallableV2 } from "./contracts/wrapCallableV2";
 import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
+import { ingestAuthor as ingestAuthorRaw } from "./library/ingestAuthor";
+import { backfillAuthorMetadata as backfillAuthorMetadataRaw } from "./library/backfillAuthorMetadata";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { finalizeUserUpload as finalizeUserUploadRaw } from "./library/finalizeUserUpload";
 import {
@@ -292,6 +294,11 @@ const createDefaultShelvesRaw = onCall({ cors: true }, async (request) => {
 export const createDefaultShelves = wrapCallableV2(
   "createDefaultShelves",
   createDefaultShelvesRaw
+);
+export const ingestAuthor = wrapCallableV2("ingestAuthor", ingestAuthorRaw);
+export const backfillAuthorMetadata = wrapCallableV2(
+  "backfillAuthorMetadata",
+  backfillAuthorMetadataRaw
 );
 export const ingestBook = wrapCallableV2("ingestBook", ingestBookRaw);
 export const uploadUserBook = wrapCallableV2(

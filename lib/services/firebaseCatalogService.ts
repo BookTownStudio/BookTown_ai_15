@@ -22,6 +22,7 @@ import {
   getFirebaseStorage,
 } from "../firebase.ts";
 import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts";
+import { ensureCanonicalAuthor } from "../authors/ensureCanonicalAuthor.ts";
 import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
 import type { BookStats } from "../../services/db.types.ts";
@@ -447,6 +448,24 @@ export const firebaseCatalogService = {
       providerExternalId,
       source: params.source,
       rawBook: params.rawBook,
+    });
+  },
+
+  async ingestAuthor(params: {
+    providerExternalId?: string;
+    authorId?: string;
+    source: "openLibrary" | "wikidata";
+    rawAuthor: any;
+  }) {
+    const providerExternalId =
+      typeof params.providerExternalId === "string" && params.providerExternalId.trim().length > 0
+        ? params.providerExternalId
+        : params.authorId || "";
+
+    return ensureCanonicalAuthor({
+      providerExternalId,
+      source: params.source,
+      rawAuthor: params.rawAuthor,
     });
   },
 

@@ -248,7 +248,8 @@ export interface ProjectDataService {
   updateProject(
     uid: string,
     projectId: string,
-    updates: Partial<Project>
+    updates: Partial<Project>,
+    options?: { expectedRevision?: number }
   ): Promise<{ projectId: string; revision: number; updatedAt: string }>;
   duplicateProject(uid: string, projectId: string): Promise<Project>;
   deleteProject(uid: string, projectId: string): Promise<void>;
@@ -328,6 +329,12 @@ export interface CatalogDataService {
     bookId?: string;
     source: 'googleBooks' | 'openLibrary';
     rawBook: any;
+  }): Promise<any>;
+  ingestAuthor(params: {
+    providerExternalId?: string;
+    authorId?: string;
+    source: 'openLibrary' | 'wikidata';
+    rawAuthor: any;
   }): Promise<any>;
 
   searchBooks(query: string): Promise<Book[]>;

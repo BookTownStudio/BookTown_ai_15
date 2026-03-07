@@ -5,6 +5,11 @@ import * as logger from "firebase-functions/logger";
 import { v4 as uuidv4 } from "uuid";
 import { Buffer } from "buffer";
 
+import {
+  buildRawAuthorFromBookPayload,
+  materializeCanonicalAuthorInTransaction,
+} from "./authors/authorCatalog";
+import { resolveAuthorProviderPayload } from "./authors/providerSources";
 import { buildCanonicalKey } from "./persistence/canonicalKey";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 
@@ -593,6 +598,22 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
     });
 
     const now = FieldValue.serverTimestamp();
+    const authorMaterializationInput = buildRawAuthorFromBookPayload({
+      source,
+      rawBook,
+      primaryAuthor,
+    });
+    const resolvedAuthorPayload = await resolveAuthorProviderPayload({
+      source,
+      providerExternalId: authorMaterializationInput.providerExternalId,
+      rawAuthor: authorMaterializationInput.rawAuthor,
+    });
+    const canonicalAuthor = await materializeCanonicalAuthorInTransaction({
+      tx,
+      source,
+      providerExternalId: authorMaterializationInput.providerExternalId,
+      rawAuthor: resolvedAuthorPayload,
+    });
 
     tx.set(
       bookRef,
@@ -601,6 +622,8 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
         title,
         titleEn: asNonEmptyString(rawBook.titleEn) || title,
         titleAr: asNonEmptyString(rawBook.titleAr) || "",
+        authorId: canonicalAuthor.authorId,
+        authorCanonicalKey: canonicalAuthor.canonicalKey,
         author: primaryAuthor,
         authorEn: asNonEmptyString(rawBook.authorEn) || primaryAuthor,
         authorAr: asNonEmptyString(rawBook.authorAr) || "",
@@ -651,6 +674,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
         id: editionDocId,
         editionId: editionDocId,
         bookId,
+        authorId: canonicalAuthor.authorId,
         canonicalKey,
         source,
         externalId,

@@ -2,15 +2,27 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { Query, DocumentData, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { normalizeSearchText, tokenizeSearchText } from "../search/normalization";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 const db = admin.firestore();
 
 const DEFAULT_PAGE_SIZE = 50;
 const MAX_PAGE_SIZE = 100;
+const QUOTE_SCAN_BATCH_SIZE = 50;
+const MAX_QUOTE_SCAN_DOCS = 300;
 const QUOTE_TEXT_MAX = 2000;
 const QUOTE_SOURCE_MAX = 240;
 const QUOTE_QUERY_MAX = 120;
+
+type QuoteProvenance = {
+  sourceType: "book" | "author" | "manual";
+  verificationStatus: "unverified" | "canonical_linked" | "saved_reference";
+  sourceBookId?: string;
+  sourceAuthorId?: string;
+  savedFromOwnerId?: string;
+  savedFromQuoteId?: string;
+};
 
 type CanonicalQuote = {
   id: string;
@@ -24,6 +36,8 @@ type CanonicalQuote = {
   createdAt?: string;
   updatedAt?: string;
   isPublic: boolean;
+  provenance?: QuoteProvenance;
+  searchTextNormalized: string;
 };
 
 function normalizeRequiredString(
@@ -104,8 +118,88 @@ function quoteDocRef(ownerId: string, quoteId: string) {
   return db.collection("users").doc(ownerId).collection("quotes").doc(quoteId);
 }
 
+function quoteCollection(ownerId: string) {
+  return db.collection("users").doc(ownerId).collection("quotes");
+}
+
 function quoteBookmarkId(quoteId: string, quoteOwnerId: string): string {
   return quoteId;
+}
+
+function normalizeQuoteSearchText(parts: Array<string | undefined>): string {
+  return normalizeSearchText(parts.filter(Boolean).join(" "));
+}
+
+function parseQuoteProvenance(value: unknown): QuoteProvenance | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const sourceType =
+    raw.sourceType === "book" || raw.sourceType === "author" || raw.sourceType === "manual"
+      ? raw.sourceType
+      : null;
+  const verificationStatus =
+    raw.verificationStatus === "unverified" ||
+    raw.verificationStatus === "canonical_linked" ||
+    raw.verificationStatus === "saved_reference"
+      ? raw.verificationStatus
+      : null;
+
+  if (!sourceType || !verificationStatus) {
+    return undefined;
+  }
+
+  const sourceBookId =
+    typeof raw.sourceBookId === "string" && raw.sourceBookId.trim()
+      ? raw.sourceBookId.trim()
+      : undefined;
+  const sourceAuthorId =
+    typeof raw.sourceAuthorId === "string" && raw.sourceAuthorId.trim()
+      ? raw.sourceAuthorId.trim()
+      : undefined;
+  const savedFromOwnerId =
+    typeof raw.savedFromOwnerId === "string" && raw.savedFromOwnerId.trim()
+      ? raw.savedFromOwnerId.trim()
+      : undefined;
+  const savedFromQuoteId =
+    typeof raw.savedFromQuoteId === "string" && raw.savedFromQuoteId.trim()
+      ? raw.savedFromQuoteId.trim()
+      : undefined;
+
+  return {
+    sourceType,
+    verificationStatus,
+    ...(sourceBookId ? { sourceBookId } : {}),
+    ...(sourceAuthorId ? { sourceAuthorId } : {}),
+    ...(savedFromOwnerId ? { savedFromOwnerId } : {}),
+    ...(savedFromQuoteId ? { savedFromQuoteId } : {}),
+  };
+}
+
+function buildQuoteProvenance(params: {
+  bookId?: string;
+  authorId?: string;
+  savedFromOwnerId?: string;
+  savedFromQuoteId?: string;
+}): QuoteProvenance {
+  const sourceType = params.bookId ? "book" : params.authorId ? "author" : "manual";
+  const verificationStatus =
+    params.savedFromOwnerId && params.savedFromQuoteId
+      ? "saved_reference"
+      : params.bookId || params.authorId
+        ? "canonical_linked"
+        : "unverified";
+
+  return {
+    sourceType,
+    verificationStatus,
+    ...(params.bookId ? { sourceBookId: params.bookId } : {}),
+    ...(params.authorId ? { sourceAuthorId: params.authorId } : {}),
+    ...(params.savedFromOwnerId ? { savedFromOwnerId: params.savedFromOwnerId } : {}),
+    ...(params.savedFromQuoteId ? { savedFromQuoteId: params.savedFromQuoteId } : {}),
+  };
 }
 
 function parseQuote(
@@ -141,6 +235,11 @@ function parseQuote(
     createdAt: timestampToIso(raw.createdAt),
     updatedAt: timestampToIso(raw.updatedAt),
     isPublic: raw.isPublic !== false,
+    provenance: parseQuoteProvenance(raw.provenance),
+    searchTextNormalized:
+      typeof raw.searchTextNormalized === "string" && raw.searchTextNormalized.trim()
+        ? raw.searchTextNormalized.trim()
+        : normalizeQuoteSearchText([textEn, textAr, sourceEn, sourceAr]),
   };
 }
 
@@ -156,6 +255,7 @@ function publicQuotePayload(quote: CanonicalQuote) {
     ...(quote.authorId ? { authorId: quote.authorId } : {}),
     ...(quote.createdAt ? { createdAt: quote.createdAt } : {}),
     ...(quote.updatedAt ? { updatedAt: quote.updatedAt } : {}),
+    ...(quote.provenance ? { provenance: quote.provenance } : {}),
   };
 }
 
@@ -188,7 +288,7 @@ function normalizeQueryValue(value: unknown): string | undefined {
     throw new HttpsError("invalid-argument", "query must be a string.");
   }
 
-  const normalized = value.trim().toLowerCase();
+  const normalized = normalizeSearchText(value);
   if (!normalized) {
     return undefined;
   }
@@ -219,13 +319,7 @@ function isQuoteMatch(
     return true;
   }
 
-  const query = filters.query;
-  return (
-    quote.textEn.toLowerCase().includes(query) ||
-    quote.textAr.toLowerCase().includes(query) ||
-    quote.sourceEn.toLowerCase().includes(query) ||
-    quote.sourceAr.toLowerCase().includes(query)
-  );
+  return quote.searchTextNormalized.includes(filters.query);
 }
 
 function resolveOwnerId(inputOwnerId: unknown, uid: string): string {
@@ -248,6 +342,46 @@ function sanitizeIdentifier(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100);
 }
 
+async function resolveCanonicalQuoteLinks(params: {
+  bookId?: string;
+  authorId?: string;
+}): Promise<{ bookId?: string; authorId?: string }> {
+  const bookId = params.bookId;
+  const authorId = params.authorId;
+
+  let resolvedAuthorId = authorId;
+
+  if (bookId) {
+    const bookSnap = await db.collection("books").doc(bookId).get();
+    if (!bookSnap.exists) {
+      throw new HttpsError("invalid-argument", "bookId is invalid.");
+    }
+
+    const bookAuthorId =
+      typeof bookSnap.data()?.authorId === "string" && bookSnap.data()?.authorId.trim()
+        ? String(bookSnap.data()?.authorId).trim()
+        : undefined;
+
+    if (resolvedAuthorId && bookAuthorId && resolvedAuthorId !== bookAuthorId) {
+      throw new HttpsError("invalid-argument", "authorId does not match bookId.");
+    }
+
+    resolvedAuthorId = resolvedAuthorId || bookAuthorId;
+  }
+
+  if (resolvedAuthorId) {
+    const authorSnap = await db.collection("authors").doc(resolvedAuthorId).get();
+    if (!authorSnap.exists) {
+      throw new HttpsError("invalid-argument", "authorId is invalid.");
+    }
+  }
+
+  return {
+    ...(bookId ? { bookId } : {}),
+    ...(resolvedAuthorId ? { authorId: resolvedAuthorId } : {}),
+  };
+}
+
 export const listUserQuotes = onCall({ cors: true }, async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Authentication required.");
@@ -264,44 +398,94 @@ export const listUserQuotes = onCall({ cors: true }, async (request) => {
   const authorId = normalizeOptionalString(data.authorId, "authorId", 180);
   const queryValue = normalizeQueryValue(data.query);
 
-  let queryRef: Query = db
-    .collection("users")
-    .doc(ownerId)
-    .collection("quotes")
-    .orderBy("updatedAt", "desc")
-    .limit(limit + 1);
+  let queryRef: Query = quoteCollection(ownerId).orderBy("updatedAt", "desc");
 
+  if (bookId) {
+    queryRef = queryRef.where("bookId", "==", bookId);
+  }
+
+  if (authorId) {
+    queryRef = queryRef.where("authorId", "==", authorId);
+  }
+
+  let scanCursor: QueryDocumentSnapshot<DocumentData> | null = null;
   if (cursor) {
     const cursorSnap = await quoteDocRef(ownerId, cursor).get();
     if (!cursorSnap.exists) {
       throw new HttpsError("invalid-argument", "Invalid cursor.");
     }
-    queryRef = queryRef.startAfter(cursorSnap as QueryDocumentSnapshot<DocumentData>);
+    scanCursor = cursorSnap as QueryDocumentSnapshot<DocumentData>;
   }
 
-  const snap = await queryRef.get();
-  const pageDocs = snap.docs.slice(0, limit);
+  const matchedQuotes: CanonicalQuote[] = [];
+  let lastScannedDoc: QueryDocumentSnapshot<DocumentData> | null = null;
+  let scannedDocs = 0;
+  let exhausted = false;
 
-  const parsedQuotes = pageDocs
-    .map((docSnap) => {
+  while (matchedQuotes.length < limit && scannedDocs < MAX_QUOTE_SCAN_DOCS) {
+    const remainingScanBudget = Math.min(
+      QUOTE_SCAN_BATCH_SIZE,
+      MAX_QUOTE_SCAN_DOCS - scannedDocs
+    );
+    let pageQuery = queryRef.limit(remainingScanBudget);
+
+    if (scanCursor) {
+      pageQuery = pageQuery.startAfter(scanCursor);
+    }
+
+    const snap = await pageQuery.get();
+    if (snap.empty) {
+      exhausted = true;
+      break;
+    }
+
+    for (const docSnap of snap.docs) {
+      lastScannedDoc = docSnap;
+      scanCursor = docSnap;
+      scannedDocs += 1;
+
       const parsed = parseQuote(ownerId, docSnap.id, docSnap.data());
       if (!parsed) {
         logger.warn("[QUOTES][LIST][INVALID_DOC]", {
           ownerId,
           quoteId: docSnap.id,
         });
+        continue;
       }
-      return parsed;
-    })
-    .filter((quote): quote is CanonicalQuote => quote !== null)
-    .filter((quote) => isQuoteMatch(quote, { bookId, authorId, query: queryValue }));
 
-  const hasMore = snap.docs.length > limit;
+      if (isQuoteMatch(parsed, { bookId, authorId, query: queryValue })) {
+        matchedQuotes.push(parsed);
+        if (matchedQuotes.length >= limit) {
+          break;
+        }
+      }
+    }
+
+    if (snap.docs.length < remainingScanBudget) {
+      exhausted = true;
+      break;
+    }
+  }
+
+  if (!exhausted && scannedDocs >= MAX_QUOTE_SCAN_DOCS && queryValue) {
+    logger.warn("[QUOTES][LIST][SCAN_LIMIT_REACHED]", {
+      ownerId,
+      limit,
+      query: queryValue,
+      scannedDocs,
+    });
+  }
+
+  let hasMore = false;
+  if (lastScannedDoc && matchedQuotes.length >= limit) {
+    const probeSnap = await queryRef.limit(1).startAfter(lastScannedDoc).get();
+    hasMore = !probeSnap.empty;
+  }
 
   return {
-    quotes: parsedQuotes.map(publicQuotePayload),
-    ...(hasMore && pageDocs.length > 0
-      ? { nextCursor: pageDocs[pageDocs.length - 1].id }
+    quotes: matchedQuotes.map(publicQuotePayload),
+    ...(hasMore && lastScannedDoc
+      ? { nextCursor: lastScannedDoc.id }
       : {}),
   };
 });
@@ -344,14 +528,11 @@ export const getQuoteById = onCall({ cors: true }, async (request) => {
 });
 
 export const createQuote = onCall({ cors: true }, async (request) => {
-  if (!request.auth?.uid) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const uid = request.auth.uid;
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const uid = caller.uid;
   const data = (request.data ?? {}) as Record<string, unknown>;
 
-  const quote = {
+  const rawQuote = {
     textEn: normalizeRequiredString(data.textEn, "textEn", QUOTE_TEXT_MAX),
     textAr: normalizeRequiredString(data.textAr, "textAr", QUOTE_TEXT_MAX),
     sourceEn: normalizeRequiredString(data.sourceEn, "sourceEn", QUOTE_SOURCE_MAX),
@@ -360,33 +541,49 @@ export const createQuote = onCall({ cors: true }, async (request) => {
     authorId: normalizeOptionalString(data.authorId, "authorId", 180),
     isPublic: data.isPublic === undefined ? true : data.isPublic === true,
   };
+  const canonicalLinks = await resolveCanonicalQuoteLinks({
+    bookId: rawQuote.bookId,
+    authorId: rawQuote.authorId,
+  });
+  const provenance = buildQuoteProvenance(canonicalLinks);
+  const searchTextNormalized = normalizeQuoteSearchText([
+    rawQuote.textEn,
+    rawQuote.textAr,
+    rawQuote.sourceEn,
+    rawQuote.sourceAr,
+  ]);
+  const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
 
   const nowIso = new Date().toISOString();
-  const quoteRef = db.collection("users").doc(uid).collection("quotes").doc();
+  const quoteRef = quoteCollection(uid).doc();
 
   await quoteRef.set({
     ownerId: uid,
-    textEn: quote.textEn,
-    textAr: quote.textAr,
-    sourceEn: quote.sourceEn,
-    sourceAr: quote.sourceAr,
-    ...(quote.bookId ? { bookId: quote.bookId } : {}),
-    ...(quote.authorId ? { authorId: quote.authorId } : {}),
-    isPublic: quote.isPublic,
+    textEn: rawQuote.textEn,
+    textAr: rawQuote.textAr,
+    sourceEn: rawQuote.sourceEn,
+    sourceAr: rawQuote.sourceAr,
+    ...(canonicalLinks.bookId ? { bookId: canonicalLinks.bookId } : {}),
+    ...(canonicalLinks.authorId ? { authorId: canonicalLinks.authorId } : {}),
+    provenance,
+    searchTextNormalized,
+    searchTokens,
+    isPublic: rawQuote.isPublic,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    version: 1,
+    version: 2,
   });
 
   return {
     id: quoteRef.id,
     ownerId: uid,
-    textEn: quote.textEn,
-    textAr: quote.textAr,
-    sourceEn: quote.sourceEn,
-    sourceAr: quote.sourceAr,
-    ...(quote.bookId ? { bookId: quote.bookId } : {}),
-    ...(quote.authorId ? { authorId: quote.authorId } : {}),
+    textEn: rawQuote.textEn,
+    textAr: rawQuote.textAr,
+    sourceEn: rawQuote.sourceEn,
+    sourceAr: rawQuote.sourceAr,
+    ...(canonicalLinks.bookId ? { bookId: canonicalLinks.bookId } : {}),
+    ...(canonicalLinks.authorId ? { authorId: canonicalLinks.authorId } : {}),
+    provenance,
     createdAt: nowIso,
     updatedAt: nowIso,
   };
@@ -449,6 +646,19 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
   }
 
   const nowIso = new Date().toISOString();
+  const provenance = buildQuoteProvenance({
+    bookId: sourceQuote.bookId,
+    authorId: sourceQuote.authorId,
+    savedFromOwnerId: sourceOwnerId,
+    savedFromQuoteId: sourceQuoteId,
+  });
+  const searchTextNormalized = normalizeQuoteSearchText([
+    sourceQuote.textEn,
+    sourceQuote.textAr,
+    sourceQuote.sourceEn,
+    sourceQuote.sourceAr,
+  ]);
+  const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
 
   await targetRef.set({
     ownerId: uid,
@@ -458,6 +668,9 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
     sourceAr: sourceQuote.sourceAr,
     ...(sourceQuote.bookId ? { bookId: sourceQuote.bookId } : {}),
     ...(sourceQuote.authorId ? { authorId: sourceQuote.authorId } : {}),
+    provenance,
+    searchTextNormalized,
+    searchTokens,
     isPublic: true,
     savedFrom: {
       ownerId: sourceOwnerId,
@@ -465,7 +678,7 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
     },
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    version: 1,
+    version: 2,
   });
 
   return {
@@ -478,6 +691,7 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
       sourceAr: sourceQuote.sourceAr,
       ...(sourceQuote.bookId ? { bookId: sourceQuote.bookId } : {}),
       ...(sourceQuote.authorId ? { authorId: sourceQuote.authorId } : {}),
+      provenance,
       createdAt: nowIso,
       updatedAt: nowIso,
     },

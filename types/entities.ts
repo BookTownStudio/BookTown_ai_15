@@ -333,6 +333,14 @@ export interface Quote {
     sourceAr: string;
     bookId?: string;
     authorId?: string;
+    provenance?: {
+        sourceType: 'book' | 'author' | 'manual';
+        verificationStatus: 'unverified' | 'canonical_linked' | 'saved_reference';
+        sourceBookId?: string;
+        sourceAuthorId?: string;
+        savedFromOwnerId?: string;
+        savedFromQuoteId?: string;
+    };
 }
 
 export interface Project {

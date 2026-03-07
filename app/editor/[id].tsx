@@ -1,38 +1,56 @@
 import { devLog } from '../../lib/logging/devLog';
 import React, { useEffect, useReducer, useState, useRef, useCallback } from 'react';
+import { Editor } from '@tiptap/react';
+import { useDebounce } from 'use-debounce';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
+import { useToast } from '../../store/toast.tsx';
+import { useAuth } from '../../lib/auth.tsx';
+import { useOffline } from '../../lib/offline/OfflineProvider.tsx';
+import { useQueryClient } from '../../lib/react-query.ts';
+import { queryKeys } from '../../lib/queryKeys.ts';
+import { WriteRepository } from '../../services/writeRepository.ts';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
-import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
-import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
+import Modal from '../../components/ui/Modal.tsx';
+import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
+import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
 import TiptapEditor, { EditorChangePayload, EditorOutlineItem } from '../../components/editor/TiptapEditor.tsx';
+import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
-import { useDebounce } from 'use-debounce';
-import Modal from '../../components/ui/Modal.tsx';
-import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { mockAgents, mockTemplates } from '../../data/mocks.ts';
-import { useToast } from '../../store/toast.tsx';
-import { Editor } from '@tiptap/react';
 import { cn } from '../../lib/utils.ts';
-import { WriteContentDoc } from '../../types/entities.ts';
 import { countWordsScriptAware } from '../../lib/editor/writeDocument.ts';
+import {
+    writeLocalDrafts,
+    WriteDraftReason,
+    WriteDraftRecord,
+    WriteDraftSnapshot,
+} from '../../lib/editor/writeLocalDrafts.ts';
+import { Project, WriteContentDoc } from '../../types/entities.ts';
 
-type EditorSnapshot = {
-    titleEn: string;
-    titleAr: string;
-    content: string;
-    contentDoc?: WriteContentDoc;
-    wordCount: number;
-};
+type EditorSnapshot = WriteDraftSnapshot;
 type HistoryState = { present: EditorSnapshot };
 type HistoryAction = { type: 'SET', payload: EditorSnapshot };
 
-type SyncStatus = 'ephemeral' | 'materializing' | 'persistent' | 'error';
+type AuthorityStatus = 'ephemeral' | 'materializing' | 'persistent' | 'error';
+type SaveIndicator = 'local-only' | 'unsaved' | 'saving' | 'saved' | 'offline' | 'conflict' | 'error';
+type RecoveryBanner =
+    | { mode: 'recovered'; draft: WriteDraftRecord }
+    | { mode: 'available'; draft: WriteDraftRecord }
+    | null;
+
+const EMPTY_SNAPSHOT: EditorSnapshot = {
+    titleEn: '',
+    titleAr: '',
+    content: '<p></p>',
+    contentDoc: undefined,
+    wordCount: 0,
+};
 
 const historyReducer = (state: HistoryState, action: HistoryAction): HistoryState => {
     return { ...state, present: action.payload };
@@ -41,174 +59,462 @@ const historyReducer = (state: HistoryState, action: HistoryAction): HistoryStat
 const stripHtml = (html: string): string => html.replace(/<[^>]*>/g, ' ').trim();
 const serializeDoc = (doc?: WriteContentDoc): string => JSON.stringify(doc?.content ?? []);
 
+function buildScopeId(projectId?: string, templateId?: string): string {
+    if (projectId && projectId !== 'new') {
+        return projectId;
+    }
+    return `new:${templateId || 'blank'}`;
+}
+
+function snapshotsEqual(a: EditorSnapshot, b: EditorSnapshot): boolean {
+    return (
+        a.titleEn === b.titleEn &&
+        a.titleAr === b.titleAr &&
+        a.content === b.content &&
+        a.wordCount === b.wordCount &&
+        serializeDoc(a.contentDoc) === serializeDoc(b.contentDoc)
+    );
+}
+
+function snapshotFromProject(project: Project): EditorSnapshot {
+    return {
+        titleEn: project.titleEn || '',
+        titleAr: project.titleAr || '',
+        content: project.content || '<p></p>',
+        contentDoc: project.contentDoc,
+        wordCount: project.wordCount || 0,
+    };
+}
+
+function toDraftRecord(
+    uid: string,
+    scopeId: string,
+    projectId: string | undefined,
+    serverRevision: number | null,
+    snapshot: EditorSnapshot,
+    reason: WriteDraftReason
+): WriteDraftRecord {
+    return {
+        schemaVersion: 1,
+        uid,
+        scopeId,
+        projectId,
+        serverRevision,
+        savedAt: Date.now(),
+        reason,
+        snapshot,
+    };
+}
+
+function isRevisionMismatchError(error: unknown): boolean {
+    return error instanceof Error && error.message.includes('Revision mismatch');
+}
+
+function isOfflineWriteError(error: unknown): boolean {
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+        return true;
+    }
+
+    if (!(error instanceof Error)) {
+        return false;
+    }
+
+    const message = error.message.toLowerCase();
+    return (
+        message.includes('network') ||
+        message.includes('offline') ||
+        message.includes('unavailable') ||
+        message.includes('failed to fetch')
+    );
+}
+
+function getIndicatorLabel(indicator: SaveIndicator, lang: string): string {
+    if (lang === 'ar') {
+        if (indicator === 'local-only') return 'محلي فقط';
+        if (indicator === 'unsaved') return 'غير محفوظ';
+        if (indicator === 'saving') return 'جارٍ الحفظ';
+        if (indicator === 'saved') return 'محفوظ';
+        if (indicator === 'offline') return 'محفوظ محلياً';
+        if (indicator === 'conflict') return 'تعارض';
+        return 'خطأ في المزامنة';
+    }
+
+    if (indicator === 'local-only') return 'Local draft';
+    if (indicator === 'unsaved') return 'Unsaved';
+    if (indicator === 'saving') return 'Saving';
+    if (indicator === 'saved') return 'Saved';
+    if (indicator === 'offline') return 'Saved locally';
+    if (indicator === 'conflict') return 'Conflict';
+    return 'Sync issue';
+}
+
 const EditorScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
     const { showToast } = useToast();
+    const { user } = useAuth();
+    const { isOffline } = useOffline();
+    const queryClient = useQueryClient();
 
     const projectId = currentView.type === 'immersive' ? currentView.params?.projectId : undefined;
     const templateId = currentView.type === 'immersive' ? currentView.params?.templateId : undefined;
-
     const isNewRoute = projectId === 'new';
+    const scopeId = buildScopeId(projectId, templateId);
+    const uid = user?.uid;
 
-    const [syncStatus, setSyncStatus] = useState<SyncStatus>(isNewRoute ? 'ephemeral' : 'persistent');
+    const [authorityStatus, setAuthorityStatus] = useState<AuthorityStatus>(isNewRoute ? 'ephemeral' : 'persistent');
     const [isSaving, setIsSaving] = useState(false);
+    const [saveIssue, setSaveIssue] = useState<'none' | 'offline' | 'conflict' | 'error'>('none');
     const [isMentorOpen, setIsMentorOpen] = useState(false);
     const [isMicModalOpen, setIsMicModalOpen] = useState(false);
     const [hasInteractedWithTitle, setHasInteractedWithTitle] = useState(false);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [outline, setOutline] = useState<EditorOutlineItem[]>([]);
-    const [conflictBannerVisible, setConflictBannerVisible] = useState(false);
+    const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBanner>(null);
 
     const mentor = mockAgents.find(a => a.id === 'mentor');
 
-    const [state, dispatch] = useReducer(historyReducer, {
-        present: { titleEn: '', titleAr: '', content: '<p></p>', contentDoc: undefined, wordCount: 0 }
-    });
+    const [state, dispatch] = useReducer(historyReducer, { present: EMPTY_SNAPSHOT });
     const { present } = state;
+
+    const presentRef = useRef<EditorSnapshot>(present);
+    const hasHydratedRef = useRef(false);
+    const hasLocalEditsRef = useRef(false);
+    const lastConfirmedSnapshotRef = useRef<EditorSnapshot>(EMPTY_SNAPSHOT);
+    const currentRevisionRef = useRef<number | null>(null);
+    const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
+    const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
+    const latestAvailableDraftRef = useRef<WriteDraftRecord | null>(null);
 
     const [debouncedContent] = useDebounce(present.content, 2000);
     const [debouncedTitleEn] = useDebounce(present.titleEn, 2000);
     const [debouncedTitleAr] = useDebounce(present.titleAr, 2000);
+    const [debouncedDocSignature] = useDebounce(serializeDoc(present.contentDoc), 2000);
 
     const [editor, setEditor] = useState<Editor | null>(null);
 
-    const hasHydratedRef = useRef<boolean>(false);
-    const hasLocalEditsRef = useRef<boolean>(false);
-    const lastSavedSnapshot = useRef<EditorSnapshot>({ titleEn: '', titleAr: '', content: '', contentDoc: undefined, wordCount: -1 });
-    const saveInFlightRef = useRef<boolean>(false);
-    const queuedSnapshotRef = useRef<EditorSnapshot | null>(null);
-    const queuedNotifyRef = useRef<boolean>(false);
-    const conflictRetryCountRef = useRef<number>(0);
-
-    const { data: project, isLoading: isFetching, isError: isFetchError, error: fetchError } = useProjectDetails(isNewRoute ? undefined : projectId);
-    const { mutate: autosave } = useAutosaveProject();
+    const {
+        data: project,
+        isLoading: isFetching,
+        isError: isFetchError,
+        error: fetchError,
+        refetch: refetchProject,
+    } = useProjectDetails(isNewRoute ? undefined : projectId);
+    const { mutateAsync: autosaveAsync } = useAutosaveProject();
     const { mutate: createProject } = useCreateProject();
 
-    const persistSnapshot = useCallback((snapshot: EditorSnapshot, notifyOnSuccess = false) => {
-        if (!projectId || projectId === 'new' || syncStatus !== 'persistent') {
-            return;
-        }
-
-        if (saveInFlightRef.current) {
-            queuedSnapshotRef.current = snapshot;
-            queuedNotifyRef.current = queuedNotifyRef.current || notifyOnSuccess;
-            return;
-        }
-
-        saveInFlightRef.current = true;
-        setIsSaving(true);
-
-        const completeSaveCycle = () => {
-            saveInFlightRef.current = false;
-
-            const queuedSnapshot = queuedSnapshotRef.current;
-            const queuedNotify = queuedNotifyRef.current;
-            queuedSnapshotRef.current = null;
-            queuedNotifyRef.current = false;
-
-            if (queuedSnapshot && projectId && projectId !== 'new' && syncStatus === 'persistent') {
-                persistSnapshot(queuedSnapshot, queuedNotify);
-                return;
-            }
-
-            setIsSaving(false);
-        };
-
-        autosave(
-            {
-                projectId: projectId as string,
-                updates: snapshot
-            },
-            {
-                onSuccess: () => {
-                    conflictRetryCountRef.current = 0;
-                    setConflictBannerVisible(false);
-                    lastSavedSnapshot.current = snapshot;
-                    if (notifyOnSuccess) {
-                        showToast(lang === 'en' ? 'Saved successfully.' : 'تم الحفظ بنجاح.');
-                    }
-                    completeSaveCycle();
-                },
-                onError: (err: any) => {
-                    if (err?.message?.includes('Revision mismatch')) {
-                        if (conflictRetryCountRef.current < 2) {
-                            conflictRetryCountRef.current += 1;
-                            queuedSnapshotRef.current = snapshot;
-                            queuedNotifyRef.current = queuedNotifyRef.current || notifyOnSuccess;
-                            showToast(lang === 'en' ? 'Save conflict detected. Retrying...' : 'تم اكتشاف تعارض في الحفظ. جارٍ إعادة المحاولة...');
-                        } else {
-                            conflictRetryCountRef.current = 0;
-                            setConflictBannerVisible(true);
-                            showToast(lang === 'en' ? 'Save conflict persists. Use Reconcile to retry.' : 'تعارض الحفظ مستمر. استخدم المصالحة لإعادة المحاولة.');
-                        }
-                        completeSaveCycle();
-                        return;
-                    }
-                    if (err?.message?.includes('not found')) {
-                        setSyncStatus('error');
-                        showToast(lang === 'en' ? 'Critical: Project authority lost.' : 'خطأ فادح: فقدت صلاحية المشروع.');
-                        completeSaveCycle();
-                        return;
-                    }
-                    conflictRetryCountRef.current = 0;
-                    showToast(lang === 'en' ? 'Save failed. Please retry.' : 'فشل الحفظ. يرجى إعادة المحاولة.');
-                    completeSaveCycle();
-                }
-            }
-        );
-    }, [autosave, lang, projectId, showToast, syncStatus]);
+    useEffect(() => {
+        presentRef.current = present;
+    }, [present]);
 
     useEffect(() => {
-        if (hasHydratedRef.current) return;
+        hasHydratedRef.current = false;
+        hasLocalEditsRef.current = false;
+        lastConfirmedSnapshotRef.current = EMPTY_SNAPSHOT;
+        currentRevisionRef.current = null;
+        latestAvailableDraftRef.current = null;
+        activeSavePromiseRef.current = null;
+        queuedSnapshotRef.current = null;
+        setAuthorityStatus(isNewRoute ? 'ephemeral' : 'persistent');
+        setIsSaving(false);
+        setSaveIssue('none');
+        setOutline([]);
+        setRecoveryBanner(null);
+        dispatch({ type: 'SET', payload: EMPTY_SNAPSHOT });
+    }, [isNewRoute, scopeId]);
+
+    useEffect(() => {
+        if (!isNewRoute && projectId && projectId !== 'new') {
+            void refetchProject();
+        }
+    }, [isNewRoute, projectId, refetchProject]);
+
+    const hasDirtyChanges = snapshotsEqual(present, lastConfirmedSnapshotRef.current) === false;
+
+    const indicator: SaveIndicator = (() => {
+        if (authorityStatus === 'error') {
+            return 'error';
+        }
+        if (authorityStatus === 'materializing' || isSaving) {
+            return 'saving';
+        }
+        if (saveIssue === 'conflict') {
+            return 'conflict';
+        }
+        if (saveIssue === 'error') {
+            return 'error';
+        }
+        if (authorityStatus === 'ephemeral') {
+            return hasLocalEditsRef.current ? 'local-only' : 'saved';
+        }
+        if ((saveIssue === 'offline' || isOffline) && hasDirtyChanges) {
+            return 'offline';
+        }
+        if (hasDirtyChanges) {
+            return 'unsaved';
+        }
+        return 'saved';
+    })();
+
+    const persistLocalDraft = useCallback((snapshot: EditorSnapshot, reason: WriteDraftReason) => {
+        if (!uid) {
+            return;
+        }
+
+        writeLocalDrafts.save(
+            toDraftRecord(
+                uid,
+                scopeId,
+                projectId && projectId !== 'new' ? projectId : undefined,
+                currentRevisionRef.current,
+                snapshot,
+                reason
+            )
+        );
+    }, [projectId, scopeId, uid]);
+
+    const clearLocalDraft = useCallback(() => {
+        if (!uid) {
+            return;
+        }
+        writeLocalDrafts.clear(uid, scopeId);
+    }, [scopeId, uid]);
+
+    const updateProjectCaches = useCallback((nextProject: Project) => {
+        if (!uid) {
+            return;
+        }
+
+        queryClient.setQueryData(
+            queryKeys.user.project(uid, nextProject.id) as unknown as any[],
+            nextProject
+        );
+        queryClient.setQueryData<Project[]>(
+            queryKeys.user.projects(uid) as unknown as any[],
+            (old = []) => old.map(item => item.id === nextProject.id ? nextProject : item)
+        );
+    }, [queryClient, uid]);
+
+    const persistSnapshot = useCallback(async (
+        snapshot: EditorSnapshot,
+        options?: { expectedRevision?: number; draftReason?: WriteDraftReason }
+    ): Promise<boolean> => {
+        if (!uid || !projectId || projectId === 'new' || authorityStatus !== 'persistent') {
+            return false;
+        }
+
+        if (isOffline) {
+            persistLocalDraft(snapshot, options?.draftReason || 'offline');
+            setSaveIssue('offline');
+            return false;
+        }
+
+        if (activeSavePromiseRef.current) {
+            queuedSnapshotRef.current = {
+                snapshot,
+                expectedRevision: options?.expectedRevision,
+            };
+            return activeSavePromiseRef.current.then(async () => {
+                const queued = queuedSnapshotRef.current;
+                if (!queued) {
+                    return true;
+                }
+                queuedSnapshotRef.current = null;
+                return persistSnapshot(queued.snapshot, {
+                    expectedRevision: queued.expectedRevision,
+                    draftReason: options?.draftReason,
+                });
+            });
+        }
+
+        const run = async (): Promise<boolean> => {
+            setIsSaving(true);
+            setSaveIssue('none');
+
+            try {
+                const result = await autosaveAsync({
+                    projectId,
+                    expectedRevision: options?.expectedRevision ?? currentRevisionRef.current ?? 1,
+                    updates: snapshot,
+                });
+
+                currentRevisionRef.current = result.revision;
+                lastConfirmedSnapshotRef.current = snapshot;
+                hasLocalEditsRef.current = false;
+                setSaveIssue('none');
+                clearLocalDraft();
+                return true;
+            } catch (error) {
+                if (isRevisionMismatchError(error)) {
+                    setSaveIssue('conflict');
+                    persistLocalDraft(snapshot, options?.draftReason || 'conflict');
+                    return false;
+                }
+
+                if (isOfflineWriteError(error)) {
+                    setSaveIssue('offline');
+                    persistLocalDraft(snapshot, options?.draftReason || 'offline');
+                    return false;
+                }
+
+                console.error('[WRITE][AUTOSAVE_FAILED]', error);
+                setSaveIssue('error');
+                persistLocalDraft(snapshot, options?.draftReason || 'error');
+                return false;
+            } finally {
+                setIsSaving(false);
+            }
+        };
+
+        activeSavePromiseRef.current = run();
+        const success = await activeSavePromiseRef.current;
+        activeSavePromiseRef.current = null;
+
+        if (success && queuedSnapshotRef.current) {
+            const queued = queuedSnapshotRef.current;
+            queuedSnapshotRef.current = null;
+            return persistSnapshot(queued.snapshot, {
+                expectedRevision: queued.expectedRevision,
+                draftReason: options?.draftReason,
+            });
+        }
+
+        return success;
+    }, [authorityStatus, autosaveAsync, clearLocalDraft, isOffline, persistLocalDraft, projectId, uid]);
+
+    const reconcileConflict = useCallback(async () => {
+        if (!uid || !projectId || projectId === 'new') {
+            return;
+        }
+
+        setIsSaving(true);
+        try {
+            const latestProject = await WriteRepository.getProject(uid, projectId);
+            updateProjectCaches(latestProject);
+
+            const latestSnapshot = snapshotFromProject(latestProject);
+            currentRevisionRef.current = latestProject.revision ?? 1;
+            lastConfirmedSnapshotRef.current = latestSnapshot;
+
+            if (!snapshotsEqual(presentRef.current, latestSnapshot)) {
+                const reconciled = await persistSnapshot(presentRef.current, {
+                    expectedRevision: latestProject.revision ?? 1,
+                    draftReason: 'conflict',
+                });
+
+                if (!reconciled) {
+                    showToast(lang === 'en' ? 'Conflict requires another retry.' : 'يتطلب التعارض إعادة محاولة أخرى.');
+                    return;
+                }
+            } else {
+                clearLocalDraft();
+                setSaveIssue('none');
+            }
+
+            showToast(lang === 'en' ? 'Conflict reconciled.' : 'تمت المصالحة.');
+        } catch (error) {
+            console.error('[WRITE][RECONCILE_FAILED]', error);
+            setSaveIssue('error');
+            persistLocalDraft(presentRef.current, 'error');
+            showToast(lang === 'en' ? 'Failed to reconcile with server.' : 'فشلت المصالحة مع الخادم.');
+        } finally {
+            setIsSaving(false);
+        }
+    }, [clearLocalDraft, lang, persistLocalDraft, persistSnapshot, projectId, showToast, uid, updateProjectCaches]);
+
+    const hydrateFromRecoveryDraft = useCallback((draft: WriteDraftRecord, mode: RecoveryBanner['mode']) => {
+        latestAvailableDraftRef.current = draft;
+        dispatch({ type: 'SET', payload: draft.snapshot });
+        presentRef.current = draft.snapshot;
+        hasLocalEditsRef.current = true;
+        setRecoveryBanner({ mode, draft });
+        setSaveIssue(
+            draft.reason === 'offline'
+                ? 'offline'
+                : draft.reason === 'conflict'
+                    ? 'conflict'
+                    : draft.reason === 'error'
+                        ? 'error'
+                        : 'none'
+        );
+    }, []);
+
+    useEffect(() => {
+        if (hasHydratedRef.current) {
+            return;
+        }
 
         if (isNewRoute) {
             const template = templateId ? mockTemplates.find(t => t.id === templateId) : null;
             const initContent = template?.boilerplateContent || '<p></p>';
             const initTitleEn = template?.titleEn || 'Untitled Project';
             const initTitleAr = template?.titleAr || 'مشروع غير معنون';
-            const plainText = stripHtml(initContent);
-
-            const payload = {
+            const baseSnapshot: EditorSnapshot = {
                 content: initContent,
                 contentDoc: undefined,
-                wordCount: countWordsScriptAware(plainText),
+                wordCount: countWordsScriptAware(stripHtml(initContent)),
                 titleEn: initTitleEn,
                 titleAr: initTitleAr,
             };
 
-            dispatch({ type: 'SET', payload });
-            lastSavedSnapshot.current = payload;
+            lastConfirmedSnapshotRef.current = baseSnapshot;
+
+            const draft = uid ? writeLocalDrafts.load(uid, scopeId) : null;
+            if (draft && !snapshotsEqual(draft.snapshot, baseSnapshot)) {
+                hydrateFromRecoveryDraft(draft, 'recovered');
+            } else {
+                dispatch({ type: 'SET', payload: baseSnapshot });
+                presentRef.current = baseSnapshot;
+            }
+
+            currentRevisionRef.current = draft?.serverRevision ?? null;
             hasHydratedRef.current = true;
-            setSyncStatus('ephemeral');
-        } else if (project) {
-            const payload = {
-                content: project.content,
-                contentDoc: project.contentDoc,
-                wordCount: project.wordCount,
-                titleEn: project.titleEn || '',
-                titleAr: project.titleAr || '',
-            };
-            dispatch({ type: 'SET', payload });
-            lastSavedSnapshot.current = payload;
-            hasHydratedRef.current = true;
-            setSyncStatus('persistent');
+            setAuthorityStatus('ephemeral');
+            return;
         }
-    }, [isNewRoute, project, templateId]);
+
+        if (project) {
+            const serverSnapshot = snapshotFromProject(project);
+            const serverRevision = project.revision ?? 1;
+            currentRevisionRef.current = serverRevision;
+            lastConfirmedSnapshotRef.current = serverSnapshot;
+
+            const draft = uid ? writeLocalDrafts.load(uid, scopeId) : null;
+            if (draft && !snapshotsEqual(draft.snapshot, serverSnapshot)) {
+                if ((draft.serverRevision ?? 0) >= serverRevision) {
+                    hydrateFromRecoveryDraft(draft, 'recovered');
+                } else {
+                    dispatch({ type: 'SET', payload: serverSnapshot });
+                    presentRef.current = serverSnapshot;
+                    latestAvailableDraftRef.current = draft;
+                    setRecoveryBanner({ mode: 'available', draft });
+                }
+            } else {
+                dispatch({ type: 'SET', payload: serverSnapshot });
+                presentRef.current = serverSnapshot;
+            }
+
+            hasHydratedRef.current = true;
+            setAuthorityStatus('persistent');
+        }
+    }, [hydrateFromRecoveryDraft, isNewRoute, project, scopeId, templateId, uid]);
 
     useEffect(() => {
-        const needsMaterialization =
+        const shouldMaterialize =
             isNewRoute &&
+            !isOffline &&
             hasHydratedRef.current &&
-            syncStatus === 'ephemeral' &&
+            authorityStatus === 'ephemeral' &&
             hasLocalEditsRef.current;
 
-        if (!needsMaterialization) return;
+        if (!shouldMaterialize) {
+            return;
+        }
 
-        setSyncStatus('materializing');
+        setAuthorityStatus('materializing');
         devLog('[WRITE][PHASE_2] MATERIALIZATION_STARTED: Establishing backend authority...');
 
-        const initialSnapshot: EditorSnapshot = { ...present };
+        const initialSnapshot: EditorSnapshot = { ...presentRef.current };
 
         createProject(
             {
@@ -221,8 +527,15 @@ const EditorScreen: React.FC = () => {
             {
                 onSuccess: (newProject) => {
                     devLog(`[WRITE][PHASE_3] MATERIALIZATION_SUCCESS: Canonical ID verified: ${newProject.id}`);
-                    lastSavedSnapshot.current = initialSnapshot;
-                    setSyncStatus('persistent');
+                    lastConfirmedSnapshotRef.current = initialSnapshot;
+                    currentRevisionRef.current = newProject.revision ?? 1;
+                    hasLocalEditsRef.current = false;
+                    setAuthorityStatus('persistent');
+                    setSaveIssue('none');
+
+                    if (uid) {
+                        writeLocalDrafts.clear(uid, scopeId);
+                    }
 
                     navigate({
                         type: 'immersive',
@@ -230,73 +543,207 @@ const EditorScreen: React.FC = () => {
                         params: { ...currentView.params, projectId: newProject.id }
                     });
                 },
-                onError: (err) => {
-                    console.error('[WRITE][MATERIALIZATION_FAILED]', err);
-                    setSyncStatus('error');
-                    showToast(lang === 'en' ? 'Persistence Failure: Project remains local.' : 'فشل الحفظ: المشروع سيبقى محلياً فقط.');
+                onError: (error) => {
+                    console.error('[WRITE][MATERIALIZATION_FAILED]', error);
+                    setAuthorityStatus('ephemeral');
+                    setSaveIssue(isOfflineWriteError(error) ? 'offline' : 'error');
+                    persistLocalDraft(initialSnapshot, isOffline ? 'offline' : 'error');
+                    showToast(lang === 'en' ? 'Draft kept locally until sync is available.' : 'تم الاحتفاظ بالمسودة محلياً حتى تتوفر المزامنة.');
                 }
             }
         );
-    }, [present, isNewRoute, createProject, navigate, currentView, lang, showToast, syncStatus]);
+    }, [authorityStatus, createProject, currentView.params, isNewRoute, isOffline, lang, navigate, persistLocalDraft, scopeId, showToast, uid]);
 
     useEffect(() => {
         const canAutosave =
             hasHydratedRef.current &&
-            syncStatus === 'persistent' &&
+            authorityStatus === 'persistent' &&
             projectId &&
-            projectId !== 'new';
+            projectId !== 'new' &&
+            !isOffline &&
+            saveIssue !== 'conflict' &&
+            saveIssue !== 'error';
 
-        if (!canAutosave) return;
+        if (!canAutosave) {
+            return;
+        }
 
-        const hasChanges =
-            debouncedContent !== lastSavedSnapshot.current.content ||
-            debouncedTitleEn !== lastSavedSnapshot.current.titleEn ||
-            debouncedTitleAr !== lastSavedSnapshot.current.titleAr ||
-            serializeDoc(present.contentDoc) !== serializeDoc(lastSavedSnapshot.current.contentDoc);
+        const liveDocSignature = serializeDoc(present.contentDoc);
+        const isSettled =
+            debouncedContent === present.content &&
+            debouncedTitleEn === present.titleEn &&
+            debouncedTitleAr === present.titleAr &&
+            debouncedDocSignature === liveDocSignature;
 
-        if (!hasChanges) return;
+        if (!isSettled) {
+            return;
+        }
 
-        const currentSnapshot: EditorSnapshot = {
-            content: debouncedContent,
-            contentDoc: present.contentDoc,
-            wordCount: present.wordCount,
-            titleEn: debouncedTitleEn,
-            titleAr: debouncedTitleAr,
+        const pendingSnapshot: EditorSnapshot = { ...present };
+
+        const hasDebouncedChanges =
+            pendingSnapshot.content !== lastConfirmedSnapshotRef.current.content ||
+            pendingSnapshot.titleEn !== lastConfirmedSnapshotRef.current.titleEn ||
+            pendingSnapshot.titleAr !== lastConfirmedSnapshotRef.current.titleAr ||
+            serializeDoc(pendingSnapshot.contentDoc) !== serializeDoc(lastConfirmedSnapshotRef.current.contentDoc);
+
+        if (!hasDebouncedChanges) {
+            return;
+        }
+
+        void persistSnapshot(pendingSnapshot, { draftReason: 'unsaved' });
+    }, [
+        authorityStatus,
+        debouncedContent,
+        debouncedDocSignature,
+        debouncedTitleAr,
+        debouncedTitleEn,
+        isOffline,
+        persistSnapshot,
+        present,
+        projectId,
+        saveIssue,
+    ]);
+
+    useEffect(() => {
+        if (!uid || !hasHydratedRef.current) {
+            return;
+        }
+
+        const shouldPersistLocally =
+            authorityStatus === 'ephemeral'
+                ? hasLocalEditsRef.current
+                : hasDirtyChanges || saveIssue !== 'none' || isSaving;
+
+        if (!shouldPersistLocally) {
+            if (authorityStatus === 'persistent') {
+                clearLocalDraft();
+            }
+            return;
+        }
+
+        const draftReason: WriteDraftReason =
+            saveIssue === 'conflict'
+                ? 'conflict'
+                : saveIssue === 'offline'
+                    ? 'offline'
+                    : saveIssue === 'error'
+                        ? 'error'
+                        : 'unsaved';
+
+        const timer = window.setTimeout(() => {
+            persistLocalDraft(presentRef.current, draftReason);
+        }, 600);
+
+        return () => window.clearTimeout(timer);
+    }, [authorityStatus, clearLocalDraft, hasDirtyChanges, isSaving, persistLocalDraft, present, saveIssue, uid]);
+
+    const flushBeforeExit = useCallback(async (): Promise<boolean> => {
+        if (!hasHydratedRef.current) {
+            return true;
+        }
+
+        const snapshot = presentRef.current;
+
+        if (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) {
+            persistLocalDraft(snapshot, 'exit');
+            showToast(lang === 'en' ? 'Draft saved locally.' : 'تم حفظ المسودة محلياً.');
+            return true;
+        }
+
+        if (authorityStatus !== 'persistent' || !projectId || projectId === 'new' || !hasDirtyChanges) {
+            return true;
+        }
+
+        if (saveIssue === 'conflict') {
+            persistLocalDraft(snapshot, 'conflict');
+            showToast(lang === 'en' ? 'Conflict kept locally. Reopen to reconcile.' : 'تم الاحتفاظ بالتعارض محلياً. أعد الفتح للمصالحة.');
+            return true;
+        }
+
+        if (isOffline) {
+            persistLocalDraft(snapshot, 'offline');
+            showToast(lang === 'en' ? 'Draft saved locally while offline.' : 'تم حفظ المسودة محلياً أثناء عدم الاتصال.');
+            return true;
+        }
+
+        const flushed = await persistSnapshot(snapshot, { draftReason: 'exit' });
+        if (!flushed) {
+            showToast(lang === 'en' ? 'Could not confirm server save. Staying in editor.' : 'تعذر تأكيد الحفظ على الخادم. ستبقى في المحرر.');
+            return false;
+        }
+
+        return true;
+    }, [authorityStatus, hasDirtyChanges, isOffline, lang, persistLocalDraft, persistSnapshot, projectId, saveIssue, showToast]);
+
+    useEffect(() => {
+        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+            if (!hasHydratedRef.current) {
+                return;
+            }
+
+            const snapshot = presentRef.current;
+            const shouldGuard =
+                (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) ||
+                (authorityStatus === 'persistent' && hasDirtyChanges);
+
+            if (!shouldGuard) {
+                return;
+            }
+
+            if (uid) {
+                persistLocalDraft(
+                    snapshot,
+                    saveIssue === 'conflict'
+                        ? 'conflict'
+                        : isOffline
+                            ? 'offline'
+                            : 'exit'
+                );
+            }
+
+            event.preventDefault();
+            event.returnValue = '';
         };
 
-        persistSnapshot(currentSnapshot, false);
-    }, [debouncedContent, debouncedTitleEn, debouncedTitleAr, persistSnapshot, present.wordCount, present.contentDoc, syncStatus, projectId]);
+        const handlePageHide = () => {
+            if (!hasHydratedRef.current || !uid) {
+                return;
+            }
 
-    const handleBack = () => {
+            const shouldPersist =
+                (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) ||
+                (authorityStatus === 'persistent' && hasDirtyChanges);
+
+            if (!shouldPersist) {
+                return;
+            }
+
+            persistLocalDraft(
+                presentRef.current,
+                saveIssue === 'conflict'
+                    ? 'conflict'
+                    : isOffline
+                        ? 'offline'
+                        : 'exit'
+            );
+        };
+
+        window.addEventListener('beforeunload', handleBeforeUnload);
+        window.addEventListener('pagehide', handlePageHide);
+
+        return () => {
+            window.removeEventListener('beforeunload', handleBeforeUnload);
+            window.removeEventListener('pagehide', handlePageHide);
+        };
+    }, [authorityStatus, hasDirtyChanges, isOffline, persistLocalDraft, saveIssue, uid]);
+
+    const handleBack = async () => {
+        const canExit = await flushBeforeExit();
+        if (!canExit) {
+            return;
+        }
         navigate(currentView.params?.from || { type: 'tab', id: 'write' });
-    };
-
-    const handleManualSave = () => {
-        if (syncStatus !== 'persistent' || !projectId || projectId === 'new') {
-            showToast(lang === 'en' ? 'Project is not ready for server save yet.' : 'المشروع غير جاهز للحفظ على الخادم بعد.');
-            return;
-        }
-
-        const currentSnapshot: EditorSnapshot = {
-            content: present.content,
-            contentDoc: present.contentDoc,
-            wordCount: present.wordCount,
-            titleEn: present.titleEn,
-            titleAr: present.titleAr,
-        };
-
-        const hasChanges =
-            currentSnapshot.content !== lastSavedSnapshot.current.content ||
-            currentSnapshot.titleEn !== lastSavedSnapshot.current.titleEn ||
-            currentSnapshot.titleAr !== lastSavedSnapshot.current.titleAr ||
-            serializeDoc(currentSnapshot.contentDoc) !== serializeDoc(lastSavedSnapshot.current.contentDoc);
-
-        if (!hasChanges) {
-            showToast(lang === 'en' ? 'Already up to date.' : 'تم الحفظ بالفعل.');
-            return;
-        }
-
-        persistSnapshot(currentSnapshot, true);
     };
 
     const handleEditorChange = (payload: EditorChangePayload) => {
@@ -304,50 +751,65 @@ const EditorScreen: React.FC = () => {
             return;
         }
 
-        if (!hasLocalEditsRef.current && payload.html !== lastSavedSnapshot.current.content) {
+        const nextSnapshot: EditorSnapshot = {
+            ...presentRef.current,
+            content: payload.html,
+            contentDoc: payload.contentDoc,
+            wordCount: payload.wordCount,
+        };
+
+        if (!hasLocalEditsRef.current && !snapshotsEqual(nextSnapshot, lastConfirmedSnapshotRef.current)) {
             hasLocalEditsRef.current = true;
         }
 
         setOutline(payload.outline);
-        dispatch({
-            type: 'SET',
-            payload: {
-                ...present,
-                content: payload.html,
-                contentDoc: payload.contentDoc,
-                wordCount: payload.wordCount,
-            },
-        });
+        dispatch({ type: 'SET', payload: nextSnapshot });
     };
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const nextSnapshot = { ...presentRef.current };
         const newTitle = e.target.value;
-        const newState = { ...present };
 
         if (lang === 'en') {
-            if (!hasLocalEditsRef.current && newTitle !== lastSavedSnapshot.current.titleEn) hasLocalEditsRef.current = true;
-            newState.titleEn = newTitle;
+            nextSnapshot.titleEn = newTitle;
         } else {
-            if (!hasLocalEditsRef.current && newTitle !== lastSavedSnapshot.current.titleAr) hasLocalEditsRef.current = true;
-            newState.titleAr = newTitle;
+            nextSnapshot.titleAr = newTitle;
         }
-        dispatch({ type: 'SET', payload: newState });
+
+        if (!hasLocalEditsRef.current && !snapshotsEqual(nextSnapshot, lastConfirmedSnapshotRef.current)) {
+            hasLocalEditsRef.current = true;
+        }
+
+        dispatch({ type: 'SET', payload: nextSnapshot });
     };
 
     const handleTitleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
         if (isNewRoute && !hasInteractedWithTitle) {
-            const val = e.target.value;
-            if (val === 'Untitled Project' || val === 'مشروع غير معنون') {
-                const newState = { ...present, titleEn: '', titleAr: '' };
-                dispatch({ type: 'SET', payload: newState });
+            const value = e.target.value;
+            if (value === 'Untitled Project' || value === 'مشروع غير معنون') {
+                const nextSnapshot = { ...presentRef.current, titleEn: '', titleAr: '' };
+                dispatch({ type: 'SET', payload: nextSnapshot });
                 setHasInteractedWithTitle(true);
             }
         }
     };
 
+    const handleRestoreLocalDraft = () => {
+        const draft = latestAvailableDraftRef.current;
+        if (!draft) {
+            return;
+        }
+
+        hydrateFromRecoveryDraft(draft, 'recovered');
+        showToast(lang === 'en' ? 'Local draft restored.' : 'تمت استعادة المسودة المحلية.');
+    };
+
     const toggleVoice = () => setIsMicModalOpen(true);
+
     const handleVoiceResult = (text: string) => {
-        if (text && editor) editor.commands.insertContent(text + ' ');
+        if (text && editor) {
+            editor.commands.insertContent(text + ' ');
+        }
         setIsMicModalOpen(false);
     };
 
@@ -355,21 +817,29 @@ const EditorScreen: React.FC = () => {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 p-8 text-center">
                 <BilingualText role="H1" className="text-red-500 mb-2">Authority Conflict</BilingualText>
-                <BilingualText role="Body" className="text-slate-500 mb-6">{fetchError instanceof Error ? fetchError.message : 'Persistence failure.'}</BilingualText>
-                <Button onClick={handleBack}>Return to Library</Button>
+                <BilingualText role="Body" className="text-slate-500 mb-6">
+                    {fetchError instanceof Error ? fetchError.message : 'Persistence failure.'}
+                </BilingualText>
+                <Button onClick={() => void handleBack()}>Return to Library</Button>
             </div>
         );
     }
 
     if (isFetching && !hasHydratedRef.current) {
-        return <div className="h-screen w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
+        return (
+            <div className="h-screen w-full flex items-center justify-center bg-slate-900">
+                <LoadingSpinner />
+            </div>
+        );
     }
 
     return (
         <div className="h-screen w-full flex flex-col bg-white dark:bg-slate-900">
             <header className="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
                 <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-8">
-                    <Button variant="ghost" onClick={handleBack}><ChevronLeftIcon className="h-6 w-6" /></Button>
+                    <Button variant="ghost" onClick={() => void handleBack()}>
+                        <ChevronLeftIcon className="h-6 w-6" />
+                    </Button>
                     <div className="text-center flex-grow mx-4 flex flex-col items-center">
                         <input
                             type="text"
@@ -381,24 +851,25 @@ const EditorScreen: React.FC = () => {
                         />
                         <div className="flex items-center gap-2 text-xs text-slate-500">
                             <span>{present.wordCount} {lang === 'en' ? 'words' : 'كلمة'}</span>
-                            {isSaving ? <span className="text-accent animate-pulse">Syncing...</span> : syncStatus === 'persistent' ? <span>Saved</span> : <span className="text-amber-500">Draft</span>}
+                            <span
+                                className={cn(
+                                    indicator === 'saving' && 'text-accent animate-pulse',
+                                    indicator === 'conflict' && 'text-amber-500',
+                                    indicator === 'offline' && 'text-amber-500',
+                                    indicator === 'error' && 'text-red-500'
+                                )}
+                            >
+                                {getIndicatorLabel(indicator, lang)}
+                            </span>
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
                         <Button
                             variant="ghost"
-                            onClick={() => setIsFocusMode((prev) => !prev)}
+                            onClick={() => setIsFocusMode(prev => !prev)}
                             className="text-xs px-3 py-1"
                         >
                             {isFocusMode ? (lang === 'en' ? 'Exit Focus' : 'إنهاء التركيز') : (lang === 'en' ? 'Focus' : 'تركيز')}
-                        </Button>
-                        <Button
-                            variant="ghost"
-                            onClick={handleManualSave}
-                            disabled={isSaving || syncStatus !== 'persistent'}
-                            className="text-xs px-3 py-1"
-                        >
-                            {lang === 'en' ? 'Save' : 'حفظ'}
                         </Button>
                         <Button variant="ghost" onClick={() => setIsMentorOpen(true)}>
                             <BrainIcon className="h-6 w-6 text-accent" />
@@ -407,12 +878,37 @@ const EditorScreen: React.FC = () => {
                 </div>
             </header>
 
-            {conflictBannerVisible && (
+            {recoveryBanner && (
+                <div className="px-4 md:px-8 py-2 bg-sky-500/10 border-b border-sky-500/30 flex items-center justify-between gap-3">
+                    <BilingualText className="text-sky-200 text-sm">
+                        {recoveryBanner.mode === 'recovered'
+                            ? (lang === 'en'
+                                ? 'Recovered a newer local draft. Review and continue writing.'
+                                : 'تمت استعادة مسودة محلية أحدث. راجعها وتابع الكتابة.')
+                            : (lang === 'en'
+                                ? 'A newer local draft is available from this device.'
+                                : 'تتوفر مسودة محلية أحدث من هذا الجهاز.')}
+                    </BilingualText>
+                    {recoveryBanner.mode === 'available' ? (
+                        <Button variant="ghost" onClick={handleRestoreLocalDraft} className="!text-sky-100 border border-sky-500/30">
+                            {lang === 'en' ? 'Restore Draft' : 'استعادة المسودة'}
+                        </Button>
+                    ) : (
+                        <Button variant="ghost" onClick={() => setRecoveryBanner(null)} className="!text-sky-100 border border-sky-500/30">
+                            {lang === 'en' ? 'Dismiss' : 'إغلاق'}
+                        </Button>
+                    )}
+                </div>
+            )}
+
+            {indicator === 'conflict' && (
                 <div className="px-4 md:px-8 py-2 bg-amber-500/10 border-b border-amber-500/30 flex items-center justify-between gap-3">
                     <BilingualText className="text-amber-300 text-sm">
-                        {lang === 'en' ? 'Save conflict detected. Reconcile with server and retry.' : 'تم اكتشاف تعارض حفظ. قم بالمصالحة مع الخادم وأعد المحاولة.'}
+                        {lang === 'en'
+                            ? 'Revision conflict detected. Reconcile with server before further sync.'
+                            : 'تم اكتشاف تعارض في المراجعة. قم بالمصالحة مع الخادم قبل متابعة المزامنة.'}
                     </BilingualText>
-                    <Button variant="ghost" onClick={handleManualSave} className="!text-amber-200 border border-amber-500/30">
+                    <Button variant="ghost" onClick={() => void reconcileConflict()} className="!text-amber-200 border border-amber-500/30">
                         {lang === 'en' ? 'Reconcile Now' : 'مصالحة الآن'}
                     </Button>
                 </div>
@@ -474,17 +970,31 @@ const EditorScreen: React.FC = () => {
 
             <Modal isOpen={isMentorOpen} onClose={() => setIsMentorOpen(false)}>
                 <div className="flex flex-col items-center text-center p-2">
-                    <div className="p-4 rounded-full bg-sky-100 dark:bg-sky-900/30 mb-4">{mentor?.icon && <mentor.icon className="h-12 w-12 text-sky-500" />}</div>
+                    <div className="p-4 rounded-full bg-sky-100 dark:bg-sky-900/30 mb-4">
+                        {mentor?.icon && <mentor.icon className="h-12 w-12 text-sky-500" />}
+                    </div>
                     <BilingualText role="H1" className="!text-2xl mb-2">{mentor?.name}</BilingualText>
-                    <BilingualText className="text-slate-600 dark:text-slate-300 mb-6">{lang === 'en' ? mentor?.descriptionEn : mentor?.descriptionAr}</BilingualText>
-                    <Button onClick={() => { setIsMentorOpen(false); navigate({ type: 'immersive', id: 'agentChat', params: { agentId: 'mentor', from: currentView } }); }} className="w-full">
+                    <BilingualText className="text-slate-600 dark:text-slate-300 mb-6">
+                        {lang === 'en' ? mentor?.descriptionEn : mentor?.descriptionAr}
+                    </BilingualText>
+                    <Button
+                        onClick={() => {
+                            setIsMentorOpen(false);
+                            navigate({ type: 'immersive', id: 'agentChat', params: { agentId: 'mentor', from: currentView } });
+                        }}
+                        className="w-full"
+                    >
                         {lang === 'en' ? 'Chat with Mentor' : 'تحدث مع المرشد'}
                     </Button>
                 </div>
             </Modal>
 
             {isMicModalOpen && (
-                <VoiceSearchModal isOpen={isMicModalOpen} onClose={() => setIsMicModalOpen(false)} onResult={handleVoiceResult} />
+                <VoiceSearchModal
+                    isOpen={isMicModalOpen}
+                    onClose={() => setIsMicModalOpen(false)}
+                    onResult={handleVoiceResult}
+                />
             )}
         </div>
     );

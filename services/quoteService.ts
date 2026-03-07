@@ -63,6 +63,37 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
   const authorId = normalizeOptionalString(quote.authorId);
   const createdAt = normalizeOptionalString(quote.createdAt);
   const updatedAt = normalizeOptionalString(quote.updatedAt);
+  const provenance =
+    quote.provenance && typeof quote.provenance === "object"
+      ? (() => {
+          const raw = quote.provenance as Record<string, unknown>;
+          const sourceType = normalizeOptionalString(raw.sourceType);
+          const verificationStatus = normalizeOptionalString(raw.verificationStatus);
+
+          if (
+            (sourceType !== "book" && sourceType !== "author" && sourceType !== "manual") ||
+            (verificationStatus !== "unverified" &&
+              verificationStatus !== "canonical_linked" &&
+              verificationStatus !== "saved_reference")
+          ) {
+            return undefined;
+          }
+
+          const sourceBookId = normalizeOptionalString(raw.sourceBookId);
+          const sourceAuthorId = normalizeOptionalString(raw.sourceAuthorId);
+          const savedFromOwnerId = normalizeOptionalString(raw.savedFromOwnerId);
+          const savedFromQuoteId = normalizeOptionalString(raw.savedFromQuoteId);
+
+          return {
+            sourceType,
+            verificationStatus,
+            ...(sourceBookId ? { sourceBookId } : {}),
+            ...(sourceAuthorId ? { sourceAuthorId } : {}),
+            ...(savedFromOwnerId ? { savedFromOwnerId } : {}),
+            ...(savedFromQuoteId ? { savedFromQuoteId } : {}),
+          } as Quote["provenance"];
+        })()
+      : undefined;
 
   return {
     id: assertNonEmptyString(quote.id, "quote.id"),
@@ -75,6 +106,7 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
     ...(authorId ? { authorId } : {}),
     ...(createdAt ? { createdAt } : {}),
     ...(updatedAt ? { updatedAt } : {}),
+    ...(provenance ? { provenance } : {}),
   };
 }
 

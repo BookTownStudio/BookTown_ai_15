@@ -7,6 +7,7 @@ import { queryKeys } from '../queryKeys.ts';
 
 interface AutosaveVariables {
     projectId: string;
+    expectedRevision?: number;
     updates: Partial<Pick<Project, 'titleEn' | 'titleAr' | 'content' | 'contentDoc' | 'wordCount'>>;
 }
 
@@ -16,7 +17,7 @@ export const useAutosaveProject = () => {
     const uid = user?.uid;
     
     return useMutation({
-        mutationFn: async ({ projectId, updates }: AutosaveVariables) => {
+        mutationFn: async ({ projectId, expectedRevision, updates }: AutosaveVariables) => {
             if (!uid) throw new Error("Not authenticated");
             
             // RULE: AUTOSAVE_HARD_GATE
@@ -26,7 +27,9 @@ export const useAutosaveProject = () => {
                 throw new Error("WRITE_PERSISTENCE_VIOLATION: Ephemeral document cannot be autosaved.");
             }
 
-            return dataService.projects.updateProject(uid, projectId, updates);
+            return dataService.projects.updateProject(uid, projectId, updates, {
+                expectedRevision,
+            });
         },
         onSuccess: (result, { projectId, updates }) => {
             if (uid) {

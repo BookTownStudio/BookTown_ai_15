@@ -169,6 +169,21 @@ const quoteSchema = z
     authorId: z.string().min(1).optional(),
     createdAt: z.string().optional(),
     updatedAt: z.string().optional(),
+    provenance: z
+      .object({
+        sourceType: z.enum(["book", "author", "manual"]),
+        verificationStatus: z.enum([
+          "unverified",
+          "canonical_linked",
+          "saved_reference",
+        ]),
+        sourceBookId: z.string().min(1).optional(),
+        sourceAuthorId: z.string().min(1).optional(),
+        savedFromOwnerId: z.string().min(1).optional(),
+        savedFromQuoteId: z.string().min(1).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict();
 
@@ -978,6 +993,77 @@ export const apiContracts = {
           "services/firebaseDbService.ts",
           "lib/hooks/useUserProfileBooks.ts",
         ],
+      }
+    ),
+
+    ingestAuthor: defineContract(
+      z
+        .object({
+          providerExternalId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          source: z.enum(["openLibrary", "wikidata"]),
+          rawAuthor: z.record(z.string(), z.unknown()),
+        })
+        .strict()
+        .refine(
+          (value) =>
+            (typeof value.providerExternalId === "string" &&
+              value.providerExternalId.trim().length > 0) ||
+            (typeof value.authorId === "string" && value.authorId.trim().length > 0),
+          {
+            message: "providerExternalId_or_authorId_required",
+          }
+        ),
+      z
+        .object({
+          canonicalAuthorId: z.string().min(1),
+          authorId: z.string().min(1),
+          canonicalKey: z.string().min(1),
+          status: z.string().min(1),
+          providerExternalId: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/authors/ensureCanonicalAuthor.ts"],
+      }
+    ),
+
+    backfillAuthorMetadata: defineContract(
+      z
+        .object({
+          dryRun: z.boolean().optional(),
+          pageSize: z.number().int().positive().max(100).optional(),
+          maxDocs: z.number().int().positive().max(2000).optional(),
+          cursorDocId: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          dryRun: z.boolean(),
+          processed: z.number().int().nonnegative(),
+          enriched: z.number().int().nonnegative(),
+          unchanged: z.number().int().nonnegative(),
+          skippedNoSource: z.number().int().nonnegative(),
+          skippedProviderFetch: z.number().int().nonnegative(),
+          hasMore: z.boolean(),
+          nextCursorDocId: z.string().min(1).optional(),
+          previews: z.array(
+            z
+              .object({
+                authorId: z.string().min(1),
+                source: z.enum(["openLibrary", "wikidata", "googleBooks"]),
+                providerExternalId: z.string().min(1),
+                changedFields: z.array(z.string().min(1)),
+              })
+              .strict()
+          ),
+          updatedAuthorIds: z.array(z.string().min(1)).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
       }
     ),
 

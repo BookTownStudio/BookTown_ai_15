@@ -10,10 +10,6 @@ import { Editor } from '@tiptap/react';
 import { cn } from '../../lib/utils.ts';
 import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
-import {
-    applyManualLanguageForCurrentBlock,
-    clearManualLanguageForCurrentBlock,
-} from './extensions/languageAwareBlocks.ts';
 
 // Simple Justify Icon for the alignment dropdown
 const AlignJustifyIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -54,9 +50,6 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
     const ButtonClass = "h-9 px-2 flex items-center justify-center rounded transition-all text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-white/5 hover:text-slate-900 dark:hover:text-white font-medium text-sm gap-1";
     const ActiveClass = "bg-slate-200 dark:bg-white/10 text-primary dark:text-accent shadow-inner";
     const DropdownItemClass = "w-full text-left px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-white/10 transition-colors flex items-center gap-3 first:rounded-t-lg last:rounded-b-lg";
-    const activeAttrs = editor.isActive('heading') ? editor.getAttributes('heading') : editor.getAttributes('paragraph');
-    const activeLang = typeof activeAttrs.lang === 'string' ? activeAttrs.lang : 'en';
-
     const getActiveStyleLabel = () => {
         if (editor.isActive('heading', { level: 1 })) return 'H1';
         if (editor.isActive('heading', { level: 2 })) return 'H2';
@@ -133,30 +126,7 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                     <PlusIcon className="h-4 w-4" />
                 </button>
 
-                {/* 6. Language override (manual block authority) */}
-                <button
-                    onClick={() => applyManualLanguageForCurrentBlock(editor, 'en', 'ltr')}
-                    className={cn(ButtonClass, activeLang === 'en' && ActiveClass, 'w-10')}
-                    title={lang === 'en' ? 'English block' : 'مقطع إنجليزي'}
-                >
-                    EN
-                </button>
-                <button
-                    onClick={() => applyManualLanguageForCurrentBlock(editor, 'ar', 'rtl')}
-                    className={cn(ButtonClass, activeLang === 'ar' && ActiveClass, 'w-10')}
-                    title={lang === 'en' ? 'Arabic block' : 'مقطع عربي'}
-                >
-                    AR
-                </button>
-                <button
-                    onClick={() => clearManualLanguageForCurrentBlock(editor)}
-                    className={cn(ButtonClass, 'w-9')}
-                    title={lang === 'en' ? 'Auto language detect' : 'كشف اللغة تلقائياً'}
-                >
-                    ⟳
-                </button>
-
-                {/* 7. Voice Dictation - Moved to far right with extra distance */}
+                {/* 6. Voice Dictation - Moved to far right with extra distance */}
                 <button 
                     onClick={onToggleVoice}
                     className={cn(
