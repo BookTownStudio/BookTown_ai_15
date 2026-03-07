@@ -103,6 +103,22 @@ const SEARCH_STOPWORDS = new Set([
   "with",
 ]);
 
+const DERIVATIVE_TITLE_KEYWORDS = new Set([
+  "coloring",
+  "colouring",
+  "cookbook",
+  "guide",
+  "workbook",
+  "summary",
+  "analysis",
+  "companion",
+  "journal",
+  "notebook",
+  "study",
+  "quiz",
+  "trivia",
+]);
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
@@ -183,6 +199,52 @@ function computeLengthNormalizationFactor(queryNorm: string, titleNorm: string):
   if (!queryNorm || !titleNorm) return 0.4;
   const ratio = queryNorm.length / Math.max(1, titleNorm.length);
   return clamp(ratio, 0.4, 1);
+}
+
+function splitNormalizedWords(value: string): string[] {
+  return value
+    .split(" ")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function computeTokenOverlapRatio(queryWords: string[], titleWords: string[]): number {
+  if (queryWords.length === 0 || titleWords.length === 0) return 0;
+  const titleWordSet = new Set(titleWords);
+  let matched = 0;
+  for (const word of queryWords) {
+    if (titleWordSet.has(word)) matched += 1;
+  }
+  return matched / queryWords.length;
+}
+
+function computeCanonicalTitleAdjustment(queryNorm: string, title: string): number {
+  const titleNorm = normalizeSearchText(title);
+  if (!queryNorm || !titleNorm) return 0;
+
+  let adjustment = 0;
+  const queryWords = splitNormalizedWords(queryNorm);
+  const titleWords = splitNormalizedWords(titleNorm);
+
+  if (queryNorm === titleNorm && titleWords.length >= 3) {
+    adjustment += 3;
+  }
+
+  if (
+    queryNorm !== titleNorm &&
+    queryWords.length >= 2 &&
+    titleWords.length > queryWords.length &&
+    titleNorm.endsWith(queryNorm) &&
+    computeTokenOverlapRatio(queryWords, titleWords) >= 0.7
+  ) {
+    adjustment += 1.5;
+  }
+
+  if (titleWords.some((word) => DERIVATIVE_TITLE_KEYWORDS.has(word))) {
+    adjustment -= 2;
+  }
+
+  return adjustment;
 }
 
 function computeTierSubScore(params: {
@@ -527,6 +589,7 @@ function mapCanonicalBook(
     asNonEmptyString(data.titleEn) ||
     "";
   if (!title) return null;
+  const normalizedTitle = asNonEmptyString(data.normalizedTitle) || normalizeSearchText(title);
 
   const authors =
     asStringArray(data.authors).length > 0
@@ -583,7 +646,7 @@ function mapCanonicalBook(
 
   const canonicalKey =
     asNonEmptyString(data.canonicalKey) ||
-    `${normalizeSearchText(authors[0] || "unknown")}::${normalizeSearchText(title)}`;
+    `${normalizeSearchText(authors[0] || "unknown")}::${normalizedTitle}`;
 
   return {
     id: docId,
@@ -614,8 +677,7 @@ function mapCanonicalBook(
     popularityScore: Number(data.popularityScore || 0),
     engagementScore: Number(data.engagementScore || 0),
     recentActivityMs: toEpochMillis(data.recentActivityAt || data.updatedAt),
-    normalizedTitle:
-      asNonEmptyString(data.normalizedTitle) || normalizeSearchText(title),
+    normalizedTitle,
     isbn13: isbn13 || undefined,
     isbn10: isbn10 || undefined,
     canonicalKey,
@@ -946,9 +1008,25 @@ function rerankWithIntent(
     confidence: rank.confidence,
     rank: rank.rankTier,
     rankTier: rank.rankTier,
-    computedScore: rank.computedScore,
+    computedScore:
+      result.resultType === "canonical"
+        ? Math.round((rank.computedScore + computeCanonicalTitleAdjustment(queryNorm, result.title)) * 1_000_000) /
+          1_000_000
+        : rank.computedScore,
     tokenCoverageRatio: rank.tokenCoverageRatio,
   };
+}
+
+function rankCanonicalResults(
+  canonicalCandidates: RankedResult[],
+  queryNorm: string,
+  queryTokens: string[],
+  queryIntent: QueryIntent
+): RankedResult[] {
+  return canonicalCandidates
+    .map((entry) => rerankWithIntent(entry, queryNorm, queryTokens, queryIntent))
+    .filter((entry): entry is RankedResult => Boolean(entry))
+    .sort(compareRanked);
 }
 
 function compareRanked(a: RankedResult, b: RankedResult): number {
@@ -1158,10 +1236,12 @@ export async function unifiedSearch(
     }))
   );
 
-  const rerankedCanonical = canonicalCandidates
-    .map((entry) => rerankWithIntent(entry, queryNorm, queryTokens, queryIntent))
-    .filter((entry): entry is RankedResult => Boolean(entry));
-  rerankedCanonical.sort(compareRanked);
+  const rerankedCanonical = rankCanonicalResults(
+    canonicalCandidates,
+    queryNorm,
+    queryTokens,
+    queryIntent
+  );
   const internalSearchDurationMs = Date.now() - totalStartMs;
 
   let externalCandidates: RankedResult[] = [];
