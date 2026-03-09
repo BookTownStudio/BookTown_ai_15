@@ -24,41 +24,36 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
     const { mutate: sendMessage, isLoading: isSending } = useMutation<any, string>({
         mutationFn: async (messageText: string) => {
             if (!uid || !sessionId || !agentId) throw new Error("Missing chat parameters");
-            
-            // 1. Save user message to backend
+
             const userMessage: Omit<ChatMessage, 'id'> = {
                 role: 'user',
                 text: messageText,
                 timestamp: new Date().toISOString(),
             };
-            await dataService.users.saveAgentMessage(uid, sessionId, userMessage);
-
-            // 2. Update session metadata
-            await dataService.users.updateAgentSession(uid, sessionId, {
-                id: sessionId,
-                agentId,
-                lastMessage: messageText,
-                timestamp: new Date().toISOString(),
-            });
-
-            // 3. Prepare context and call agent
-            // Fetch fresh history to ensure consistency
-            const currentHistory = await dataService.users.getChatHistory(uid, sessionId);
-            const context = currentHistory.slice(-20).map(m => ({ role: m.role, text: m.text }));
+            const currentHistory = queryClient.getQueryData<ChatMessage[]>(queryKey) || [];
+            const latestMessage = currentHistory[currentHistory.length - 1];
+            const historyWithLatestTurn =
+                latestMessage?.role === 'user' && latestMessage.text === messageText
+                    ? currentHistory
+                    : [...currentHistory, { id: `local-${Date.now()}`, ...userMessage }];
+            const context = historyWithLatestTurn
+                .slice(-20)
+                .map(m => ({ role: m.role, text: m.text }));
 
             try {
                 const agentResponse = await callAgent(agentId, context);
 
-                // 4. Save agent response
                 const modelMessage: Omit<ChatMessage, 'id'> = {
                     role: 'model',
                     text: agentResponse.responseText,
                     timestamp: new Date().toISOString(),
                 };
+                await dataService.users.saveAgentMessage(uid, sessionId, userMessage);
                 await dataService.users.saveAgentMessage(uid, sessionId, modelMessage);
 
-                // 5. Update session metadata with agent response
                 await dataService.users.updateAgentSession(uid, sessionId, {
+                    id: sessionId,
+                    agentId,
                     lastMessage: agentResponse.responseText.substring(0, 50) + '...',
                     timestamp: new Date().toISOString(),
                 });
@@ -66,14 +61,20 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
                 return agentResponse;
             } catch (error) {
                 console.error("Failed to get agent response", error);
-                
-                // Save specific error message to DB so conversation flow is preserved
+
                 const errorMessage: Omit<ChatMessage, 'id'> = {
                     role: 'model',
                     text: "I'm having trouble connecting to the library archives right now. Please try again in a moment.",
                     timestamp: new Date().toISOString(),
                 };
+                await dataService.users.saveAgentMessage(uid, sessionId, userMessage);
                 await dataService.users.saveAgentMessage(uid, sessionId, errorMessage);
+                await dataService.users.updateAgentSession(uid, sessionId, {
+                    id: sessionId,
+                    agentId,
+                    lastMessage: messageText,
+                    timestamp: new Date().toISOString(),
+                });
                 throw error;
             }
         },

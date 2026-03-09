@@ -29,58 +29,25 @@ export const useUserStats = (uid?: string) => {
     queryKey: queryKeys.user.stats(finalUid ?? undefined) as unknown as any[],
 
     queryFn: async (): Promise<UserStats> => {
-      // 🔒 Hard fallback for unauthenticated / missing UID
-      // FIX: Check finalUid instead of the potentially missing uid parameter.
       if (!finalUid) {
-        return {
-          followers: 0,
-          following: 0,
-          postsPublished: 0,
-          shelvesCreated: 0,
-          quotesAuthored: 0,
-          posts: 0,
-          reviews: 0,
-          booksRead: 0,
-          booksPublished: 0,
-          wordsWritten: 0,
-        };
+        throw new Error('USER_STATS_UID_REQUIRED');
       }
 
-      try {
-        // FIX: Pass finalUid to dataService.
-        const stats = await dataService.users.getStats(finalUid);
+      const stats = await dataService.users.getStats(finalUid);
 
-        // 🔒 Defensive normalization (never trust partial backend data)
-        return {
-          followers: stats.followers ?? 0,
-          following: stats.following ?? 0,
-          postsPublished: stats.postsPublished ?? 0,
-          shelvesCreated: stats.shelvesCreated ?? 0,
-          quotesAuthored: stats.quotesAuthored ?? 0,
-          posts: stats.posts ?? 0,
-          reviews: stats.reviews ?? 0,
-          booksRead: stats.booksRead ?? 0,
-          booksPublished: stats.booksPublished ?? 0,
-          wordsWritten: stats.wordsWritten ?? 0,
-          profileCompletionScore: stats.profileCompletionScore,
-        };
-      } catch (error) {
-        console.warn('[USER_STATS_FALLBACK]', finalUid, error);
-
-        // 🔒 Absolute safety fallback — profile must render
-        return {
-          followers: 0,
-          following: 0,
-          postsPublished: 0,
-          shelvesCreated: 0,
-          quotesAuthored: 0,
-          posts: 0,
-          reviews: 0,
-          booksRead: 0,
-          booksPublished: 0,
-          wordsWritten: 0,
-        };
-      }
+      return {
+        followers: stats.followers ?? 0,
+        following: stats.following ?? 0,
+        postsPublished: stats.postsPublished ?? 0,
+        shelvesCreated: stats.shelvesCreated ?? 0,
+        quotesAuthored: stats.quotesAuthored ?? 0,
+        posts: stats.posts ?? 0,
+        reviews: stats.reviews ?? 0,
+        booksRead: stats.booksRead ?? 0,
+        booksPublished: stats.booksPublished ?? 0,
+        wordsWritten: stats.wordsWritten ?? 0,
+        profileCompletionScore: stats.profileCompletionScore,
+      };
     },
 
     enabled: !!finalUid,

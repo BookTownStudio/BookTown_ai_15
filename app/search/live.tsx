@@ -32,12 +32,18 @@ const LiveSearchScreen: React.FC = () => {
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
 
   const { history, addToHistory } = useSearchHistory();
-  const { data: searchResponse, isLoading } = useBookSearch(query, {
+  const { data: searchResponse, isLoading, error: searchError } = useBookSearch(query, {
     ebookOnly: false,
     lang,
     limit: 15,
   });
   const validResults: SearchResultDTO[] = searchResponse?.results || [];
+  const searchErrorMessage =
+    searchError instanceof Error && searchError.message.trim().length > 0
+      ? searchError.message
+      : lang === 'en'
+      ? 'Search is temporarily unavailable.'
+      : 'البحث غير متاح مؤقتاً.';
   const clickedRankFor = (id: string): number => {
     const index = validResults.findIndex((entry) => entry.id === id);
     return index >= 0 ? index + 1 : 1;
@@ -162,7 +168,13 @@ const LiveSearchScreen: React.FC = () => {
           </div>
         )}
 
-        {!isLoading && validResults.length > 0 && (
+        {!isLoading && searchError && query.trim().length >= 2 && (
+          <BilingualText className="text-center text-red-300 mt-12">
+            {searchErrorMessage}
+          </BilingualText>
+        )}
+
+        {!isLoading && !searchError && validResults.length > 0 && (
           <div className="space-y-3">
             {validResults.map(r => (
               <SearchResultCard
@@ -177,7 +189,7 @@ const LiveSearchScreen: React.FC = () => {
           </div>
         )}
 
-        {!isLoading && query && validResults.length === 0 && (
+        {!isLoading && !searchError && query && validResults.length === 0 && (
           <BilingualText className="text-center text-white/60 mt-12">
             {lang === 'en' ? 'No results found.' : 'لا توجد نتائج.'}
           </BilingualText>

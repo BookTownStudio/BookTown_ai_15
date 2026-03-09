@@ -16,14 +16,15 @@ export const useDeleteShelf = () => {
         },
         onMutate: async (shelfId) => {
             if (!uid) return;
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
+            const shelvesKey = [
+                ...queryKeys.user.shelves(uid),
+                { ownerId: uid }
+            ] as unknown as any[];
             await queryClient.cancelQueries(queryKeys.user.shelves(uid) as unknown as any[]);
 
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            const previousShelves = queryClient.getQueryData(queryKeys.user.shelves(uid) as unknown as any[]);
+            const previousShelves = queryClient.getQueryData(shelvesKey);
 
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.setQueryData(queryKeys.user.shelves(uid) as unknown as any[], (old: Shelf[] = []) => {
+            queryClient.setQueryData(shelvesKey, (old: Shelf[] = []) => {
                 return old.filter(shelf => shelf.id !== shelfId);
             });
 
@@ -31,8 +32,11 @@ export const useDeleteShelf = () => {
         },
         onError: (err, shelfId, context: any) => {
             if (uid && context?.previousShelves) {
-                // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.setQueryData(queryKeys.user.shelves(uid) as unknown as any[], context.previousShelves);
+                const shelvesKey = [
+                    ...queryKeys.user.shelves(uid),
+                    { ownerId: uid }
+                ] as unknown as any[];
+                queryClient.setQueryData(shelvesKey, context.previousShelves);
             }
         },
         onSettled: () => {

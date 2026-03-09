@@ -7,6 +7,7 @@ import { wrapCallableV2 } from "./contracts/wrapCallableV2";
 import { wrapRestExport } from "./contracts/wrapRestExport";
 import { ingestBook as ingestBookRaw } from "./library/ingestBook";
 import { ingestAuthor as ingestAuthorRaw } from "./library/ingestAuthor";
+import { discoverAuthors as discoverAuthorsRaw } from "./library/discoverAuthors";
 import { backfillAuthorMetadata as backfillAuthorMetadataRaw } from "./library/backfillAuthorMetadata";
 import { backfillSeedAuthorSourceMetadata as backfillSeedAuthorSourceMetadataRaw } from "./library/backfillSeedAuthorSourceMetadata";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
@@ -25,6 +26,8 @@ import { processCoverJobs } from "./library/processCoverJobs";
 import { requestEbookReadAccess as requestEbookReadAccessRaw } from "./reader/requestEbookReadAccess";
 import { recordReadingProgress as recordReadingProgressRaw } from "./reader/recordReadingProgress";
 import { getReaderProgress as getReaderProgressRaw } from "./reader/getReaderProgress";
+import { getReaderBookmarks as getReaderBookmarksRaw } from "./reader/getReaderBookmarks";
+import { getReaderHighlights as getReaderHighlightsRaw } from "./reader/getReaderHighlights";
 import { getReaderInsights as getReaderInsightsRaw } from "./reader/getReaderInsights";
 import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "./reader/getOrCreateReadingSession";
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "./reader/requestEbookOfflineAccess";
@@ -32,6 +35,7 @@ import { getReaderManifest as getReaderManifestRaw } from "./reader/getReaderMan
 import { syncReaderOperations as syncReaderOperationsRaw } from "./reader/syncReaderOperations";
 import {
   getPublicProfile as getPublicProfileRaw,
+  getProfileStats as getProfileStatsRaw,
   updateOwnProfile as updateOwnProfileRaw,
   followUser as followUserRaw,
   unfollowUser as unfollowUserRaw,
@@ -48,6 +52,11 @@ import {
 } from "./reviews/bookReviews";
 import { searchSocial as searchSocialRaw } from "./social/search";
 import { createSocialPost as createSocialPostRaw } from "./createSocialPost";
+import {
+  listSocialFeed as listSocialFeedRaw,
+  getSocialPost as getSocialPostRaw,
+  listSocialComments as listSocialCommentsRaw,
+} from "./social/read";
 import {
   addSocialComment as addSocialCommentRaw,
   likeSocialComment as likeSocialCommentRaw,
@@ -104,6 +113,13 @@ import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
 import { duplicateShelf as duplicateShelfRaw } from "./shelves/duplicateShelf";
 import { addBookToShelf as addBookToShelfRaw } from "./shelves/addBookToShelf";
 import { removeBookFromShelf as removeBookFromShelfRaw } from "./shelves/removeBookFromShelf";
+import {
+  listUserShelves as listUserShelvesRaw,
+  getShelf as getShelfRaw,
+  createShelf as createShelfRaw,
+  updateShelf as updateShelfRaw,
+  deleteShelf as deleteShelfRaw,
+} from "./shelves/manageShelves";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { canonicalizeRoleClaim } from "./shared/auth";
 
@@ -221,6 +237,7 @@ async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Prom
         ...shelf,
         ownerId: uid,
         entries: {},
+        visibility: "public",
         createdAt: now,
         updatedAt: now,
         isSystem: true,
@@ -298,6 +315,7 @@ export const createDefaultShelves = wrapCallableV2(
   createDefaultShelvesRaw
 );
 export const ingestAuthor = wrapCallableV2("ingestAuthor", ingestAuthorRaw);
+export const discoverAuthors = wrapCallableV2("discoverAuthors", discoverAuthorsRaw);
 export const backfillAuthorMetadata = wrapCallableV2(
   "backfillAuthorMetadata",
   backfillAuthorMetadataRaw
@@ -350,6 +368,14 @@ export const getReaderProgress = wrapCallableV2(
   "getReaderProgress",
   getReaderProgressRaw
 );
+export const getReaderBookmarks = wrapCallableV2(
+  "getReaderBookmarks",
+  getReaderBookmarksRaw
+);
+export const getReaderHighlights = wrapCallableV2(
+  "getReaderHighlights",
+  getReaderHighlightsRaw
+);
 export const getReaderInsights = wrapCallableV2(
   "getReaderInsights",
   getReaderInsightsRaw
@@ -377,6 +403,10 @@ export const requestEbookOfflineAccess = wrapCallableV2(
 export const getPublicProfile = wrapCallableV2(
   "getPublicProfile",
   getPublicProfileRaw
+);
+export const getProfileStats = wrapCallableV2(
+  "getProfileStats",
+  getProfileStatsRaw
 );
 export const updateOwnProfile = wrapCallableV2(
   "updateOwnProfile",
@@ -408,6 +438,14 @@ export const listBookReviews = wrapCallableV2(
   "listBookReviews",
   listBookReviewsRaw
 );
+export const listUserShelves = wrapCallableV2(
+  "listUserShelves",
+  listUserShelvesRaw
+);
+export const getShelf = wrapCallableV2("getShelf", getShelfRaw);
+export const createShelf = wrapCallableV2("createShelf", createShelfRaw);
+export const updateShelf = wrapCallableV2("updateShelf", updateShelfRaw);
+export const deleteShelf = wrapCallableV2("deleteShelf", deleteShelfRaw);
 export const upsertBookReview = wrapCallableV2(
   "upsertBookReview",
   upsertBookReviewRaw
@@ -425,6 +463,18 @@ export const deleteBookReview = wrapCallableV2(
 export const createSocialPost = wrapCallableV2(
   "createSocialPost",
   createSocialPostRaw
+);
+export const listSocialFeed = wrapCallableV2(
+  "listSocialFeed",
+  listSocialFeedRaw
+);
+export const getSocialPost = wrapCallableV2(
+  "getSocialPost",
+  getSocialPostRaw
+);
+export const listSocialComments = wrapCallableV2(
+  "listSocialComments",
+  listSocialCommentsRaw
 );
 export const searchSocial = wrapCallableV2(
   "searchSocial",
@@ -580,7 +630,10 @@ export const createEbookAttachment = wrapCallableV2(
   "createEbookAttachment",
   createEbookAttachmentRaw
 );
-export const getUploadToken = getUploadTokenRaw;
+export const getUploadToken = wrapCallableV2(
+  "getUploadToken",
+  getUploadTokenRaw
+);
 export const finalizeMetadata = wrapCallableV2(
   "finalizeMetadata",
   finalizeMetadataRaw

@@ -211,6 +211,9 @@ export interface Author {
     languageAr: string;
     signatureQuoteEn?: string;
     signatureQuoteAr?: string;
+    providerSource?: 'openLibrary' | 'wikidata';
+    providerExternalId?: string;
+    requiresCanonicalization?: boolean;
 }
 
 export interface Book {
@@ -462,6 +465,13 @@ export interface AttachmentRef {
     renderHint: RenderHint;
 }
 
+export interface HydratedSocialEntity {
+    type: 'book' | 'author' | 'quote' | 'shelf' | 'venue';
+    id: string;
+    ownerId?: string;
+    data: Record<string, unknown>;
+}
+
 export interface Post {
     id: string;
     authorId: string;
@@ -496,6 +506,9 @@ export interface Post {
         hasAttachments: boolean;
     };
     editedAt?: string | null;
+    primaryEntityType?: 'book' | 'author' | 'quote' | 'shelf' | 'venue' | null;
+    primaryEntityId?: string | null;
+    hydratedEntity?: HydratedSocialEntity | null;
 
     attachments?: PostAttachment[];
     comments?: PostComment[];

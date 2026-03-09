@@ -43,3 +43,18 @@ export interface ReaderRuntimeSelection {
   engine: ReaderEngineKind;
   format: ReaderFormat;
 }
+
+export interface ReaderTextSelection {
+  quote: string;
+  page: number;
+  cfi: string;
+  rect: DOMRect;
+}
+
+export interface ReaderHighlightOverlay {
+  highlightId: string;
+  cfi: string | null;
+  color: string;
+  page: number | null;
+  quote: string;
+}

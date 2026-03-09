@@ -719,6 +719,72 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
   };
 };
 
+const toShelf = (source: Record<string, unknown>): Shelf => {
+  const entriesSource =
+    source.entries && typeof source.entries === "object" && !Array.isArray(source.entries)
+      ? (source.entries as Record<string, unknown>)
+      : {};
+  const entries: Shelf["entries"] = Object.fromEntries(
+    Object.entries(entriesSource)
+      .filter(([bookId, entry]) => {
+        return (
+          normalizeString(bookId, 128).length > 0 &&
+          !!entry &&
+          typeof entry === "object" &&
+          !Array.isArray(entry)
+        );
+      })
+      .map(([bookId, entry]) => [bookId, entry as ShelfEntry])
+  );
+  const orderedBookIds = Array.isArray(source.orderedBookIds)
+    ? source.orderedBookIds
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .map((value) => value.trim().slice(0, 128))
+    : undefined;
+  const visibilityRaw = normalizeString(source.visibility, 32).toLowerCase();
+  const visibility =
+    visibilityRaw === "public" || visibilityRaw === "unlisted" || visibilityRaw === "private"
+      ? (visibilityRaw as Shelf["visibility"])
+      : "public";
+  const copiedFromSource =
+    source.copiedFrom && typeof source.copiedFrom === "object" && !Array.isArray(source.copiedFrom)
+      ? (source.copiedFrom as Record<string, unknown>)
+      : null;
+
+  return {
+    id: ensureNonEmptyString(normalizeString(source.id, 190), "id", 190),
+    ownerId: ensureNonEmptyString(normalizeString(source.ownerId, 128), "ownerId", 128),
+    titleEn: normalizeString(source.titleEn, 120) || "Shelf",
+    titleAr: normalizeString(source.titleAr, 120) || normalizeString(source.titleEn, 120) || "Shelf",
+    descriptionEn: normalizeString(source.descriptionEn, 280),
+    descriptionAr: normalizeString(source.descriptionAr, 280),
+    entries,
+    ...(orderedBookIds && orderedBookIds.length > 0 ? { orderedBookIds } : {}),
+    ...(normalizeString(source.userCoverUrl, 2048)
+      ? { userCoverUrl: normalizeString(source.userCoverUrl, 2048) }
+      : {}),
+    visibility,
+    bookCount: toNonNegativeInt(source.bookCount ?? Object.keys(entries).length),
+    createdAt: toIsoString(source.createdAt),
+    updatedAt: toIsoString(source.updatedAt),
+    isSystem: source.isSystem === true,
+    ...(copiedFromSource
+      ? {
+          copiedFrom: {
+            shelfId: normalizeString(copiedFromSource.shelfId, 190),
+            ownerId: normalizeString(copiedFromSource.ownerId, 128),
+            ...(copiedFromSource.createdAt
+              ? { createdAt: toIsoString(copiedFromSource.createdAt) }
+              : {}),
+            ...(copiedFromSource.copiedAt
+              ? { copiedAt: toIsoString(copiedFromSource.copiedAt) }
+              : {}),
+          },
+        }
+      : {}),
+  };
+};
+
 /* =========================
    USERS
 ========================= */
@@ -964,56 +1030,26 @@ class FirebaseUserService {
   }
 
   async getStats(uid: string): Promise<UserStats> {
-    const db = getDb();
-    if (!db) {
-      return {
-        followers: 0,
-        following: 0,
-        posts: 0,
-        reviews: 0,
-        booksRead: 0,
-        booksPublished: 0,
-        wordsWritten: 0,
-        postsPublished: 0,
-        shelvesCreated: 0,
-        quotesAuthored: 0,
-      };
-    }
-
-    const snap = await getDoc(doc(db, "user_stats", uid));
-
-    if (!snap.exists()) {
-      return {
-        followers: 0,
-        following: 0,
-        posts: 0,
-        reviews: 0,
-        booksRead: 0,
-        booksPublished: 0,
-        wordsWritten: 0,
-        postsPublished: 0,
-        shelvesCreated: 0,
-        quotesAuthored: 0,
-      };
-    }
-
-    const data = snap.data() as Partial<UserStats> & {
-      counters?: Record<string, unknown>;
-    };
-    const counters = data.counters || {};
-
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const data = await callEndpoint<{ uid: string }, Record<string, unknown>>(
+      "getProfileStats",
+      { uid: normalizedUid }
+    );
     return {
-      followers: toNonNegativeInt(data.followers ?? counters.followers),
-      following: toNonNegativeInt(data.following ?? counters.following),
-      posts: data.posts || 0,
-      reviews: data.reviews || 0,
-      booksRead: toNonNegativeInt(data.booksRead ?? counters.totalBooks),
-      booksPublished: data.booksPublished || 0,
-      wordsWritten: data.wordsWritten || 0,
-      postsPublished: data.postsPublished || 0,
-      shelvesCreated: toNonNegativeInt(data.shelvesCreated ?? counters.totalShelves),
-      quotesAuthored: data.quotesAuthored || 0,
-      profileCompletionScore: data.profileCompletionScore,
+      followers: toNonNegativeInt(data.followers),
+      following: toNonNegativeInt(data.following),
+      posts: toNonNegativeInt(data.posts),
+      reviews: toNonNegativeInt(data.reviews),
+      booksRead: toNonNegativeInt(data.booksRead),
+      booksPublished: toNonNegativeInt(data.booksPublished),
+      wordsWritten: toNonNegativeInt(data.wordsWritten),
+      postsPublished: toNonNegativeInt(data.postsPublished),
+      shelvesCreated: toNonNegativeInt(data.shelvesCreated),
+      quotesAuthored: toNonNegativeInt(data.quotesAuthored),
+      ...(typeof data.profileCompletionScore === "number" &&
+      Number.isFinite(data.profileCompletionScore)
+        ? { profileCompletionScore: Math.max(0, Math.trunc(data.profileCompletionScore)) }
+        : {}),
     };
   }
 
@@ -1369,45 +1405,51 @@ class FirebaseUserService {
 ========================= */
 class FirebaseShelfService {
   async getUserShelves(uid: string): Promise<Shelf[]> {
-    const db = getDb();
-    if (!db) return [];
-    const q = query(
-      collection(db, "shelves"),
-      where("ownerId", "==", uid),
-      orderBy("createdAt", "asc")
-    );
-    const snap = await getDocs(q);
-    return snap.docs.map((d) => ({ ...d.data(), id: d.id })) as Shelf[];
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const response = await callEndpoint<
+      { uid: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean }
+    >("listUserShelves", { uid: normalizedUid, limit: 100 });
+    return response.items
+      .map((item) => {
+        try {
+          return toShelf(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter((shelf): shelf is Shelf => shelf !== null);
   }
 
   async getShelf(ownerId: string, shelfId: string): Promise<Shelf> {
-    const db = getDb();
-    if (!db) throw new Error("Firebase not initialized");
-    const snap = await getDoc(doc(db, "shelves", shelfId));
-    if (!snap.exists()) throw new Error("Shelf not found");
-    return { ...snap.data(), id: snap.id } as Shelf;
+    ensureNonEmptyString(ownerId, "ownerId", 128);
+    const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
+    const result = await callEndpoint<{ shelfId: string }, Record<string, unknown>>(
+      "getShelf",
+      { shelfId: normalizedShelfId }
+    );
+    return toShelf(result);
   }
 
   async createShelf(
     uid: string,
-    data: { titleEn: string; titleAr: string; entries?: Record<string, any> }
+    data: {
+      titleEn: string;
+      titleAr: string;
+      entries?: Record<string, any>;
+      visibility?: Shelf["visibility"];
+    }
   ): Promise<Shelf> {
-    const db = getDb();
-    if (!db) throw new Error("Firebase not initialized");
-
-    const shelfRef = doc(collection(db, "shelves"));
-    const shelfData = {
-      ownerId: uid,
-      titleEn: data.titleEn,
-      titleAr: data.titleAr,
-      entries: data.entries || {},
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-      isSystem: false,
-    };
-
-    await setDoc(shelfRef, shelfData);
-    return { id: shelfRef.id, ...shelfData } as unknown as Shelf;
+    ensureNonEmptyString(uid, "uid", 128);
+    const result = await callEndpoint<
+      { titleEn: string; titleAr: string; visibility?: Shelf["visibility"] },
+      Record<string, unknown>
+    >("createShelf", {
+      titleEn: ensureNonEmptyString(data.titleEn, "titleEn", 120),
+      titleAr: ensureNonEmptyString(data.titleAr, "titleAr", 120),
+      visibility: data.visibility ?? "public",
+    });
+    return toShelf(result);
   }
 
   async duplicateShelf(
@@ -1451,27 +1493,51 @@ class FirebaseShelfService {
       throw new Error("FAILED_PRECONDITION: duplicateShelf owner mismatch.");
     }
 
-    return {
-      ...(duplicated as Shelf),
+    return toShelf({
+      ...duplicated,
       id: duplicatedShelfId,
       ownerId: duplicatedOwnerId || normalizedUid,
-    } as Shelf;
+    });
   }
 
   async updateShelf(uid: string, shelfId: string, updates: Partial<Shelf>): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    const shelfRef = doc(db, "shelves", shelfId);
-    await updateDoc(shelfRef, {
-      ...updates,
-      updatedAt: serverTimestamp()
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
+    const safeUpdates = stripUndefined({
+      ...(typeof updates.titleEn === "string"
+        ? { titleEn: updates.titleEn.trim().slice(0, 120) }
+        : {}),
+      ...(typeof updates.titleAr === "string"
+        ? { titleAr: updates.titleAr.trim().slice(0, 120) }
+        : {}),
+      ...(typeof updates.descriptionEn === "string"
+        ? { descriptionEn: updates.descriptionEn.trim().slice(0, 280) }
+        : {}),
+      ...(typeof updates.descriptionAr === "string"
+        ? { descriptionAr: updates.descriptionAr.trim().slice(0, 280) }
+        : {}),
+      ...(typeof updates.userCoverUrl === "string" || updates.userCoverUrl === null
+        ? { userCoverUrl: updates.userCoverUrl ?? null }
+        : {}),
+      ...(updates.visibility ? { visibility: updates.visibility } : {}),
+    });
+
+    await callEndpoint<
+      { shelfId: string; updates: Record<string, unknown> },
+      { shelfId: string; updated: boolean }
+    >("updateShelf", {
+      shelfId: normalizedShelfId,
+      updates: safeUpdates,
     });
   }
 
   async deleteShelf(uid: string, shelfId: string): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    await deleteDoc(doc(db, "shelves", shelfId));
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
+    await callEndpoint<{ shelfId: string }, { shelfId: string; deleted: boolean }>(
+      "deleteShelf",
+      { shelfId: normalizedShelfId }
+    );
   }
 
   async getShelfEntries(
@@ -2831,148 +2897,82 @@ class FirebaseSocialService {
     filters: string[] = [],
     cursorId?: string
   ): Promise<{ posts: Post[]; nextCursor?: string }> {
-    const db = getDb();
-    if (!db) return { posts: [], nextCursor: undefined };
+    normalizeString(uid, 128);
+    const normalizedScope = normalizeString(scope, 32).toLowerCase() || "explore";
+    const normalizedFilters = Array.isArray(filters)
+      ? filters
+          .map((value) => normalizeString(value, 32).toLowerCase())
+          .filter((value): value is string => value.length > 0)
+      : [];
 
-    const PAGE_SIZE = FOLLOWING_FEED_PAGE_SIZE;
-    const normalizedUid = normalizeString(uid, 128);
+    const result = await callEndpoint<
+      { scope: string; filters: string[]; cursor?: string },
+      { posts: Post[]; nextCursor?: string }
+    >("listSocialFeed", {
+      scope: normalizedScope,
+      filters: normalizedFilters,
+      ...(typeof cursorId === "string" && cursorId.trim()
+        ? { cursor: cursorId.trim() }
+        : {}),
+    });
 
-    try {
-      const normScope = (scope || "explore").toLowerCase();
-      const isGuest = this.isGuestIdentity(normalizedUid);
-      if (normScope === "following" && !isGuest) {
-        return this.getFollowingFeedPage(db, normalizedUid, filters, cursorId);
-      }
-
-      const postsRef = collection(db, "posts");
-
-      let baseConstraints: any[] = [
-        where("status", "==", "published"),
-        where("isDeleted", "!=", true),
-      ];
-
-      if (normScope === "explore" || normScope === "discover") {
-        baseConstraints.push(where("visibility", "==", "public"));
-      } else if (normScope === "following") {
-        if (isGuest) {
-          baseConstraints.push(where("visibility", "==", "public"));
-        } else {
-          baseConstraints.push(where("visibility", "in", ["public", "followers"]));
-        }
-      } else if (normScope === "books") {
-        baseConstraints.push(where("visibility", "==", "public"));
-        baseConstraints.push(where("flags.hasAttachments", "==", true));
-      }
-
-      let q = query(
-        postsRef,
-        ...baseConstraints,
-        orderBy("isDeleted"),
-        orderBy("timestamps.createdAt", "desc"),
-        orderBy("__name__", "desc"),
-        limit(PAGE_SIZE)
-      );
-
-      if (cursorId && cursorRegistry.has(cursorId)) {
-        const docSnap = cursorRegistry.get(cursorId);
-        if (docSnap) q = query(q, startAfter(docSnap));
-      }
-
-      const snap = await getDocs(q);
-      const contexts: FeedPostContext[] = snap.docs.map((docRef) => {
-        const raw = docRef.data() as Record<string, unknown>;
-        return {
-          post: normalizePost({ ...raw, id: docRef.id }),
-          raw,
-        };
-      });
-      const filteredContexts = contexts
-        .filter((context) => this.matchesFeedFilters(context.post, filters))
-        .slice(0, PAGE_SIZE);
-      const posts = await this.hydrateFeedPrimaryEntities(db, filteredContexts);
-
-      const lastDoc = snap.docs[snap.docs.length - 1];
-      let nextCursor: string | undefined;
-      if (lastDoc && snap.docs.length === PAGE_SIZE) {
-        nextCursor = lastDoc.id;
-        cursorRegistry.set(nextCursor, lastDoc);
-      }
-
-      return { posts, nextCursor };
-    } catch (error) {
-      console.error("[SOCIAL][FEED_EXECUTION_ERROR]", error);
-      throw error;
-    }
+    return {
+      posts: Array.isArray(result.posts)
+        ? result.posts.map((post) => normalizePost(post))
+        : [],
+      ...(typeof result.nextCursor === "string" && result.nextCursor.trim()
+        ? { nextCursor: result.nextCursor.trim() }
+        : {}),
+    };
   }
 
   async getComments(
     postId: string,
     cursorId?: string
   ): Promise<{ comments: ThreadComment[]; hasMore: boolean; nextCursor?: string }> {
-    const db = getDb();
-    if (!db) return { comments: [], hasMore: false };
     const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
-
-    const PAGE_SIZE = 20;
-
-    const commentsRef = collection(db, "posts", normalizedPostId, "comments");
-    let q = query(
-      commentsRef,
-      where("status", "==", "published"),
-      orderBy("timestamp", "asc"),
-      limit(PAGE_SIZE)
-    );
-
-    if (cursorId && cursorRegistry.has(cursorId)) {
-      const docSnap = cursorRegistry.get(cursorId);
-      if (docSnap) q = query(q, startAfter(docSnap));
-    }
-
-    const snap = await getDocs(q);
-    const comments = snap.docs.map((docRef) => {
-      const data = docRef.data();
-      return {
-        id: docRef.id,
-        authorId: data.authorId,
-        authorName: data.authorName,
-        authorHandle: data.authorHandle,
-        authorAvatar: data.authorAvatar,
-        text: data.text,
-        createdAt:
-          data.timestamp?.toDate?.()?.toISOString() ||
-          new Date().toISOString(),
-        parentId: data.parentId || null,
-        likesCount: data.likesCount || 0,
-        liked: false,
-      } as ThreadComment;
+    const result = await callEndpoint<
+      { postId: string; cursor?: string },
+      { comments: ThreadComment[]; hasMore: boolean; nextCursor?: string }
+    >("listSocialComments", {
+      postId: normalizedPostId,
+      ...(typeof cursorId === "string" && cursorId.trim()
+        ? { cursor: cursorId.trim() }
+        : {}),
     });
 
-    const lastDoc = snap.docs[snap.docs.length - 1];
-    const nextCursor = lastDoc?.id;
-    if (lastDoc && nextCursor) {
-      cursorRegistry.set(nextCursor, lastDoc);
-    }
-
     return {
-      comments,
-      hasMore: snap.docs.length === PAGE_SIZE,
-      nextCursor,
+      comments: Array.isArray(result.comments)
+        ? result.comments.map((comment) => ({
+            id: normalizeString(comment.id, 128),
+            authorId: normalizeString(comment.authorId, 128),
+            authorName: normalizeString(comment.authorName, 120) || "Unknown",
+            authorHandle: normalizeString(comment.authorHandle, 120) || "@user",
+            authorAvatar: normalizeString(comment.authorAvatar, 2048),
+            text: normalizeString(comment.text, 4000),
+            createdAt: toIsoString(comment.createdAt),
+            parentId:
+              typeof comment.parentId === "string" && comment.parentId.trim()
+                ? comment.parentId.trim()
+                : null,
+            likesCount: toNonNegativeInt(comment.likesCount),
+            liked: comment.liked === true,
+          }))
+        : [],
+      hasMore: result.hasMore === true,
+      ...(typeof result.nextCursor === "string" && result.nextCursor.trim()
+        ? { nextCursor: result.nextCursor.trim() }
+        : {}),
     };
   }
 
   async getPost(postId: string): Promise<Post> {
-    const db = getDb();
-    if (!db) {
-      throw new Error("Firebase not initialized");
-    }
-
     const normalizedPostId = ensureNonEmptyString(postId, "postId", 128);
-    const snap = await getDoc(doc(db, "posts", normalizedPostId));
-    if (!snap.exists()) {
-      throw new Error("NOT_FOUND: Post not found.");
-    }
-
-    return normalizePost({ ...snap.data(), id: snap.id });
+    const result = await callEndpoint<{ postId: string }, Post>(
+      "getSocialPost",
+      { postId: normalizedPostId }
+    );
+    return normalizePost(result);
   }
 
   async getPostStats(postId: string): Promise<PostStats> {

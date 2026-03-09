@@ -110,6 +110,17 @@ const createSocialPostAttachmentSchema = z.union([
   createStructuredAttachmentSchema,
 ]);
 
+const socialAttachmentParentTypeSchema = z.enum([
+  "posts",
+  "projects",
+  "drafts",
+]);
+
+const socialUploadAttachmentTypeSchema = z.enum([
+  "IMAGE",
+  "DOCUMENT",
+]);
+
 const readerInsightsDataSchema = z
   .object({
     currentlyReading: z.array(
@@ -203,12 +214,70 @@ const publicProfileSchema = z
   })
   .strict();
 
+const shelfVisibilitySchema = z.enum(["public", "unlisted", "private"]);
+
+const shelfCopiedFromSchema = z
+  .object({
+    shelfId: z.string().min(1),
+    ownerId: z.string().min(1),
+    createdAt: z.string().min(1).optional(),
+    copiedAt: z.string().min(1).optional(),
+  })
+  .strict();
+
+const shelfSchema = z
+  .object({
+    id: z.string().min(1),
+    ownerId: z.string().min(1),
+    titleEn: z.string().min(1).max(120),
+    titleAr: z.string().min(1).max(120),
+    descriptionEn: z.string().max(280).optional(),
+    descriptionAr: z.string().max(280).optional(),
+    entries: z.record(z.string(), z.record(z.string(), z.unknown())),
+    orderedBookIds: z.array(z.string().min(1)).optional(),
+    userCoverUrl: z.string().min(1).nullable().optional(),
+    visibility: shelfVisibilitySchema,
+    bookCount: z.number().int().nonnegative(),
+    isSystem: z.boolean(),
+    copiedFrom: shelfCopiedFromSchema.optional(),
+    createdAt: z.string().min(1),
+    updatedAt: z.string().min(1),
+  })
+  .strict();
+
+const userStatsSchema = z
+  .object({
+    followers: z.number().int().nonnegative(),
+    following: z.number().int().nonnegative(),
+    postsPublished: z.number().int().nonnegative(),
+    shelvesCreated: z.number().int().nonnegative(),
+    quotesAuthored: z.number().int().nonnegative(),
+    posts: z.number().int().nonnegative(),
+    reviews: z.number().int().nonnegative(),
+    booksRead: z.number().int().nonnegative(),
+    booksPublished: z.number().int().nonnegative(),
+    wordsWritten: z.number().int().nonnegative(),
+    profileCompletionScore: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 const profileAttachmentRefSchema = z
   .object({
     attachmentId: z.string().min(1),
+    entityId: z.string().min(1).optional(),
+    entityOwnerId: z.string().min(1).optional(),
     type: z.string().min(1),
     role: z.string().min(1),
     renderHint: z.string().min(1),
+  })
+  .strict();
+
+const hydratedSocialEntitySchema = z
+  .object({
+    type: primaryStructuredEntityTypeSchema,
+    id: z.string().min(1),
+    ownerId: z.string().min(1).optional(),
+    data: z.record(z.string(), z.unknown()),
   })
   .strict();
 
@@ -250,6 +319,7 @@ const profilePostSchema = z
       .strict(),
     primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
     primaryEntityId: z.string().min(1).nullable().optional(),
+    hydratedEntity: hydratedSocialEntitySchema.nullable().optional(),
   })
   .strict();
 
@@ -307,6 +377,8 @@ const socialSearchTypeSchema = z.enum(["users", "posts", "topics"]);
 const socialSearchAttachmentRefSchema = z
   .object({
     attachmentId: z.string().min(1),
+    entityId: z.string().min(1).optional(),
+    entityOwnerId: z.string().min(1).optional(),
     type: z.string().min(1),
     role: z.string().min(1),
     renderHint: z.string().min(1),
@@ -370,8 +442,24 @@ const socialSearchPostSchema = z
       .strict(),
     primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
     primaryEntityId: z.string().min(1).nullable().optional(),
+    hydratedEntity: hydratedSocialEntitySchema.nullable().optional(),
     score: z.number(),
     rankReasons: z.array(z.string().min(1)).max(6),
+  })
+  .strict();
+
+const socialCommentSchema = z
+  .object({
+    id: z.string().min(1),
+    authorId: z.string().min(1),
+    authorName: z.string().min(1),
+    authorHandle: z.string().min(2),
+    authorAvatar: z.string().max(2048),
+    text: z.string().min(1),
+    createdAt: z.string().min(1),
+    parentId: z.string().nullable(),
+    likesCount: z.number().int().nonnegative(),
+    liked: z.boolean(),
   })
   .strict();
 
@@ -522,6 +610,113 @@ export const apiContracts = {
       }
     ),
 
+    listUserShelves: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          limit: z.number().int().min(1).max(200).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(shelfSchema),
+          hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts", "lib/hooks/useUserShelves.ts"],
+      }
+    ),
+
+    getShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+        })
+        .strict(),
+      shelfSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useShelfDetails.ts",
+        ],
+      }
+    ),
+
+    createShelf: defineContract(
+      z
+        .object({
+          titleEn: z.string().min(1).max(120),
+          titleAr: z.string().min(1).max(120),
+          visibility: shelfVisibilitySchema.optional(),
+        })
+        .strict(),
+      shelfSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useCreateShelf.ts",
+        ],
+      }
+    ),
+
+    updateShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+          updates: z
+            .object({
+              titleEn: z.string().min(1).max(120).optional(),
+              titleAr: z.string().min(1).max(120).optional(),
+              descriptionEn: z.string().max(280).optional(),
+              descriptionAr: z.string().max(280).optional(),
+              userCoverUrl: z.string().max(2048).nullable().optional(),
+              visibility: shelfVisibilitySchema.optional(),
+            })
+            .strict(),
+        })
+        .strict(),
+      z
+        .object({
+          shelfId: z.string().min(1),
+          updated: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useUpdateShelf.ts",
+          "lib/actions/shelfActions.ts",
+        ],
+      }
+    ),
+
+    deleteShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          shelfId: z.string().min(1),
+          deleted: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useDeleteShelf.ts",
+          "lib/actions/shelfActions.ts",
+        ],
+      }
+    ),
+
     duplicateShelf: defineContract(
       z
         .object({
@@ -530,28 +725,7 @@ export const apiContracts = {
           titleAr: z.string().min(1).max(120).optional(),
         })
         .strict(),
-      z
-        .object({
-          id: z.string().min(1),
-          ownerId: z.string().min(1),
-          titleEn: z.string().min(1),
-          titleAr: z.string().min(1),
-          entries: z.record(z.string(), z.record(z.string(), z.unknown())),
-          orderedBookIds: z.array(z.string().min(1)).optional(),
-          userCoverUrl: z.string().min(1).nullable().optional(),
-          isSystem: z.boolean(),
-          copiedFrom: z
-            .object({
-              shelfId: z.string().min(1),
-              ownerId: z.string().min(1),
-              createdAt: z.unknown().optional(),
-              copiedAt: z.string().min(1),
-            })
-            .strict(),
-          createdAt: z.string().min(1),
-          updatedAt: z.string().min(1),
-        })
-        .strict(),
+      shelfSchema,
       "httpsCallable",
       {
         callSites: [
@@ -710,6 +884,19 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    getProfileStats: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+        })
+        .strict(),
+      userStatsSchema,
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts", "lib/hooks/useUserStats.ts"],
       }
     ),
 
@@ -1029,6 +1216,46 @@ export const apiContracts = {
       }
     ),
 
+    discoverAuthors: defineContract(
+      z
+        .object({
+          query: z.string().min(1).max(120),
+          limit: z.number().int().positive().max(12).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          authors: z.array(
+            z
+              .object({
+                id: z.string().min(1),
+                nameEn: z.string().min(1),
+                nameAr: z.string().min(1),
+                avatarUrl: z.string(),
+                bioEn: z.string(),
+                bioAr: z.string(),
+                lifespan: z.string(),
+                countryEn: z.string(),
+                countryAr: z.string(),
+                languageEn: z.string(),
+                languageAr: z.string(),
+                providerSource: z.enum(["openLibrary", "wikidata"]).optional(),
+                providerExternalId: z.string().min(1).optional(),
+                requiresCanonicalization: z.boolean().optional(),
+              })
+              .strict()
+          ),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useSearchUserAuthors.ts",
+        ],
+      }
+    ),
+
     backfillAuthorMetadata: defineContract(
       z
         .object({
@@ -1318,12 +1545,13 @@ export const apiContracts = {
     requestEbookOfflineAccess: defineContract(
       z
         .object({
-          ebookId: z.string().min(1),
+          bookId: z.string().min(1),
         })
         .strict(),
       z
         .object({
-          ebookId: z.string().min(1),
+          bookId: z.string().min(1),
+          format: z.enum(["pdf", "epub", "unknown"]),
           signedUrl: z.string().url(),
           expiresAt: z.number().int().positive(),
           checksum: z.string().nullable(),
@@ -1448,6 +1676,36 @@ export const apiContracts = {
       }
     ),
 
+    getUploadToken: defineContract(
+      z
+        .object({
+          parentType: socialAttachmentParentTypeSchema,
+          parentId: z.string().min(1),
+          type: socialUploadAttachmentTypeSchema,
+          fileName: z.string().min(1),
+          contentType: z.string().min(1),
+          size: z.number().int().positive(),
+        })
+        .strict(),
+      z
+        .object({
+          token: z.string().min(1),
+          attachmentId: z.string().min(1),
+          uploadUrl: z.string().url(),
+          storagePath: z.string().min(1),
+          fileName: z.string().min(1),
+          purpose: z.string().min(1),
+          format: z.string().min(1),
+          type: socialUploadAttachmentTypeSchema,
+          expiresAt: z.number().int().positive(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseUploadService.ts"],
+      }
+    ),
+
     editSocialPost: defineContract(
       z
         .object({
@@ -1509,6 +1767,62 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useCreatePost.ts"],
+      }
+    ),
+
+    listSocialFeed: defineContract(
+      z
+        .object({
+          scope: z.enum(["explore", "following", "books", "discover"]),
+          filters: z
+            .array(z.enum(["media", "text", "book", "quote", "project"]))
+            .max(5)
+            .optional(),
+          cursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          posts: z.array(profilePostSchema),
+          nextCursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useSocialFeeds.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    getSocialPost: defineContract(
+      z
+        .object({
+          postId: z.string().min(1),
+        })
+        .strict(),
+      profilePostSchema,
+      "httpsCallable",
+      {
+        callSites: ["app/social/post-discussion.tsx", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    listSocialComments: defineContract(
+      z
+        .object({
+          postId: z.string().min(1),
+          cursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          comments: z.array(socialCommentSchema),
+          hasMore: z.boolean(),
+          nextCursor: z.string().min(1).optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useThreadComments.ts", "services/firebaseDbService.ts"],
       }
     ),
 
@@ -2085,6 +2399,64 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useReaderProgress.ts"],
+      }
+    ),
+
+    getReaderBookmarks: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          bookmarks: z.array(
+            z
+              .object({
+                bookmarkId: z.string().min(1),
+                bookId: z.string().min(1),
+                label: z.string(),
+                page: z.number().int().positive().nullable(),
+                cfi: z.string().nullable(),
+                updatedAt: z.number().int().nonnegative().nullable(),
+              })
+              .strict()
+          ),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useReaderBookmarks.ts"],
+      }
+    ),
+
+    getReaderHighlights: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          highlights: z.array(
+            z
+              .object({
+                highlightId: z.string().min(1),
+                bookId: z.string().min(1),
+                quote: z.string(),
+                note: z.string(),
+                color: z.string().min(1),
+                page: z.number().int().positive().nullable(),
+                cfi: z.string().nullable(),
+                updatedAt: z.number().int().nonnegative().nullable(),
+              })
+              .strict()
+          ),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useReaderHighlights.ts"],
       }
     ),
 

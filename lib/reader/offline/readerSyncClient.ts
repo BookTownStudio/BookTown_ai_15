@@ -52,6 +52,94 @@ export function enqueueProgressSyncOperation(params: {
   return readerSyncQueue.enqueue(op);
 }
 
+export function enqueueBookmarkUpsertSyncOperation(params: {
+  bookId: string;
+  bookmarkId: string;
+  page: number;
+  label?: string;
+  cfi?: string | null;
+}): ReaderSyncOperation {
+  const op: ReaderSyncOperation = {
+    opId: generateOpId(),
+    idempotencyKey: `bookmark:${params.bookId}:${params.bookmarkId}`,
+    type: "upsert_bookmark",
+    bookId: params.bookId,
+    clientTimestampMs: Date.now(),
+    payload: {
+      bookmarkId: params.bookmarkId,
+      label: params.label || "",
+      cfi: params.cfi || null,
+      page: Math.max(1, Math.trunc(params.page)),
+    },
+  };
+
+  return readerSyncQueue.enqueue(op);
+}
+
+export function enqueueHighlightUpsertSyncOperation(params: {
+  bookId: string;
+  highlightId: string;
+  page: number;
+  color?: string;
+  quote?: string;
+  note?: string;
+  cfi?: string | null;
+}): ReaderSyncOperation {
+  const op: ReaderSyncOperation = {
+    opId: generateOpId(),
+    idempotencyKey: `highlight:${params.bookId}:${params.highlightId}`,
+    type: "upsert_highlight",
+    bookId: params.bookId,
+    clientTimestampMs: Date.now(),
+    payload: {
+      highlightId: params.highlightId,
+      color: params.color || "yellow",
+      quote: params.quote || "",
+      note: params.note || "",
+      cfi: params.cfi || null,
+      page: Math.max(1, Math.trunc(params.page)),
+    },
+  };
+
+  return readerSyncQueue.enqueue(op);
+}
+
+export function enqueueHighlightDeleteSyncOperation(params: {
+  bookId: string;
+  highlightId: string;
+}): ReaderSyncOperation {
+  const op: ReaderSyncOperation = {
+    opId: generateOpId(),
+    idempotencyKey: `highlight:${params.bookId}:${params.highlightId}`,
+    type: "delete_highlight",
+    bookId: params.bookId,
+    clientTimestampMs: Date.now(),
+    payload: {
+      highlightId: params.highlightId,
+    },
+  };
+
+  return readerSyncQueue.enqueue(op);
+}
+
+export function enqueueBookmarkDeleteSyncOperation(params: {
+  bookId: string;
+  bookmarkId: string;
+}): ReaderSyncOperation {
+  const op: ReaderSyncOperation = {
+    opId: generateOpId(),
+    idempotencyKey: `bookmark:${params.bookId}:${params.bookmarkId}`,
+    type: "delete_bookmark",
+    bookId: params.bookId,
+    clientTimestampMs: Date.now(),
+    payload: {
+      bookmarkId: params.bookmarkId,
+    },
+  };
+
+  return readerSyncQueue.enqueue(op);
+}
+
 export async function flushReaderOperations(options?: {
   batchSize?: number;
   maxBatches?: number;

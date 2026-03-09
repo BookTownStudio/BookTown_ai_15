@@ -52,7 +52,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const [isUploadBusy, setIsUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const { data: searchResponse, isLoading: isSearching } = useBookSearch(searchQuery, {
+  const { data: searchResponse, isLoading: isSearching, error: searchError } = useBookSearch(searchQuery, {
     ebookOnly: false,
     lang,
     limit: 15,
@@ -109,7 +109,11 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const resolveCanonicalBookId = async (
     result: SearchResultDTO
   ): Promise<string | null> => {
-    if (typeof result.bookId === 'string' && result.bookId.trim().length > 0) {
+    if (
+      result.resultType === 'canonical' &&
+      typeof result.bookId === 'string' &&
+      result.bookId.trim().length > 0
+    ) {
       return result.bookId.trim();
     }
 
@@ -269,6 +273,12 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
   const mode: 'discovery' | 'insertion' =
     targetShelfId ? 'insertion' : 'discovery';
+  const searchErrorMessage =
+    searchError instanceof Error && searchError.message.trim().length > 0
+      ? searchError.message
+      : lang === 'en'
+      ? 'Search is temporarily unavailable.'
+      : 'البحث غير متاح مؤقتاً.';
 
   const handleUploadFileChange = (
     event: React.ChangeEvent<HTMLInputElement>
@@ -529,19 +539,27 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
                 </div>
               )}
 
-              {!isSearching &&
-                searchQuery.length > 1 &&
-                normalizedResults.length === 0 && (
-                  <BilingualText className="text-center pt-8 text-slate-500">
+                {!isSearching && searchError && (
+                  <BilingualText className="text-center pt-8 text-red-400">
+                    {searchErrorMessage}
+                  </BilingualText>
+                )}
+
+                {!isSearching &&
+                  !searchError &&
+                  searchQuery.length > 1 &&
+                  normalizedResults.length === 0 && (
+                    <BilingualText className="text-center pt-8 text-slate-500">
                     {lang === 'en'
                       ? 'No results found.'
                       : 'لم يتم العثور على نتائج.'}
                   </BilingualText>
                 )}
 
-              {!isSearching &&
-                normalizedResults.map((result) => (
-                  <SearchResultCard
+                {!isSearching &&
+                  !searchError &&
+                  normalizedResults.map((result) => (
+                    <SearchResultCard
                     key={result.id}
                     result={result}
                     lang={lang}

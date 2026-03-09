@@ -47,10 +47,12 @@ export const useMoveBookBetweenShelves = () => {
       if (!uid) return;
 
       const bookId = book.id;
+      const shelvesKey =
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[];
 
       await Promise.all([
         queryClient.cancelQueries({
-          queryKey: queryKeys.user.shelves(uid) as unknown as any[]
+          queryKey: shelvesKey
         }),
         queryClient.cancelQueries({
           queryKey: queryKeys.user.shelfEntries(uid, fromShelfId) as unknown as any[]
@@ -64,9 +66,6 @@ export const useMoveBookBetweenShelves = () => {
         queryKeys.user.shelfEntries(uid, fromShelfId) as unknown as any[];
       const toEntriesKey =
         queryKeys.user.shelfEntries(uid, toShelfId) as unknown as any[];
-      const shelvesKey =
-        queryKeys.user.shelves(uid) as unknown as any[];
-
       const previousFromEntries =
         queryClient.getQueryData(fromEntriesKey);
       const previousToEntries =
@@ -157,7 +156,7 @@ export const useMoveBookBetweenShelves = () => {
       );
 
       queryClient.setQueryData(
-        queryKeys.user.shelves(uid) as unknown as any[],
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[],
         context.previousShelves
       );
     },

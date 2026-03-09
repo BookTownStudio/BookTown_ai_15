@@ -75,10 +75,12 @@ export const useToggleBookOnShelf = () => {
      */
     onMutate: async ({ shelfId, bookId, book }) => {
       if (!uid) return;
+      const shelvesKey =
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[];
 
       await Promise.all([
         queryClient.cancelQueries({
-          queryKey: queryKeys.user.shelves(uid) as unknown as any[]
+          queryKey: shelvesKey
         }),
         queryClient.cancelQueries({
           queryKey: queryKeys.user.shelfEntries(uid, shelfId) as unknown as any[]
@@ -87,9 +89,6 @@ export const useToggleBookOnShelf = () => {
 
       const shelfEntriesKey =
         queryKeys.user.shelfEntries(uid, shelfId) as unknown as any[];
-      const shelvesKey =
-        queryKeys.user.shelves(uid) as unknown as any[];
-
       const previousEntries =
         queryClient.getQueryData(shelfEntriesKey);
       const previousShelves =
@@ -160,7 +159,7 @@ export const useToggleBookOnShelf = () => {
       );
 
       queryClient.setQueryData(
-        queryKeys.user.shelves(uid) as unknown as any[],
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[],
         context.previousShelves
       );
     },
@@ -215,10 +214,12 @@ export const useRemoveBookFromShelf = () => {
 
     onMutate: async ({ shelfId, bookId }) => {
       if (!uid) return;
+      const shelvesKey =
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[];
 
       await Promise.all([
         queryClient.cancelQueries({
-          queryKey: queryKeys.user.shelves(uid) as unknown as any[]
+          queryKey: shelvesKey
         }),
         queryClient.cancelQueries({
           queryKey: queryKeys.user.shelfEntries(uid, shelfId) as unknown as any[]
@@ -227,9 +228,6 @@ export const useRemoveBookFromShelf = () => {
 
       const shelfEntriesKey =
         queryKeys.user.shelfEntries(uid, shelfId) as unknown as any[];
-      const shelvesKey =
-        queryKeys.user.shelves(uid) as unknown as any[];
-
       const previousEntries =
         queryClient.getQueryData(shelfEntriesKey);
       const previousShelves =
@@ -284,7 +282,7 @@ export const useRemoveBookFromShelf = () => {
       );
 
       queryClient.setQueryData(
-        queryKeys.user.shelves(uid) as unknown as any[],
+        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[],
         context.previousShelves
       );
     },

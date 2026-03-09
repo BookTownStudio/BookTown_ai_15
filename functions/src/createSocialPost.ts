@@ -18,6 +18,11 @@ type MediaAttachment = {
   type: string;
 };
 
+type CanonicalMediaAttachmentRecord = {
+  ref: FirebaseFirestore.DocumentReference;
+  data: Record<string, unknown>;
+};
+
 const STRUCTURED_ENTITY_TYPES = new Set<StructuredEntityType>([
   "book",
   "author",
@@ -191,6 +196,20 @@ async function assertStructuredEntityAccessible(
   }
 }
 
+function readAttachmentUploaderUid(source: Record<string, unknown>): string {
+  const uploader =
+    source.uploader && typeof source.uploader === "object"
+      ? (source.uploader as Record<string, unknown>)
+      : {};
+  return readNonEmptyString(uploader.uid);
+}
+
+function normalizeAttachmentLifecycleStatus(
+  source: Record<string, unknown>
+): string {
+  return readNonEmptyString(source.status).toLowerCase();
+}
+
 /**
  * createSocialPost
  * Authoritative backend path for creating social posts.
@@ -353,7 +372,87 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         await checkUserMutationQuota(db, transaction, uid, "createPost");
 
         const postRef = db.collection('posts').doc();
+        const verifiedMediaAttachments: CanonicalMediaAttachmentRecord[] = [];
+
+        for (const attachment of mediaAttachments) {
+            const attachmentRef = db.collection("attachments").doc(attachment.attachmentId);
+            const attachmentSnap = await transaction.get(attachmentRef);
+            if (!attachmentSnap.exists) {
+                throw new HttpsError("failed-precondition", "Attachment is missing.");
+            }
+
+            const attachmentData = (attachmentSnap.data() ?? {}) as Record<string, unknown>;
+            const uploaderUid = readAttachmentUploaderUid(attachmentData);
+            if (uploaderUid !== uid) {
+                throw new HttpsError(
+                    "permission-denied",
+                    "Attachment does not belong to caller."
+                );
+            }
+
+            const attachmentStatus = normalizeAttachmentLifecycleStatus(attachmentData);
+            if (attachmentStatus !== "active") {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "Attachment is not finalized."
+                );
+            }
+
+            const boundParentType = readNonEmptyString(attachmentData.parentType).toLowerCase();
+            const boundParentId = readNonEmptyString(attachmentData.parentId);
+            const metadata =
+                attachmentData.metadata && typeof attachmentData.metadata === "object"
+                    ? (attachmentData.metadata as Record<string, unknown>)
+                    : {};
+            const metadataParentType = readNonEmptyString(metadata.parentType).toLowerCase();
+            const metadataParentId = readNonEmptyString(metadata.parentId);
+
+            if (
+                (boundParentType === "posts" && boundParentId && boundParentId !== postRef.id) ||
+                (metadataParentType === "posts" && metadataParentId && metadataParentId !== postRef.id)
+            ) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "Attachment is already bound to another post."
+                );
+            }
+
+            if (boundParentType && !["drafts", "posts"].includes(boundParentType)) {
+                throw new HttpsError(
+                    "failed-precondition",
+                    "Attachment parent type is invalid for publish."
+                );
+            }
+
+            verifiedMediaAttachments.push({
+                ref: attachmentRef,
+                data: attachmentData,
+            });
+        }
+
         transaction.set(postRef, postData);
+
+        for (const attachment of verifiedMediaAttachments) {
+            const attachmentMetadata =
+                attachment.data.metadata && typeof attachment.data.metadata === "object"
+                    ? (attachment.data.metadata as Record<string, unknown>)
+                    : {};
+
+            transaction.set(
+                attachment.ref,
+                {
+                    parentType: "posts",
+                    parentId: postRef.id,
+                    updatedAt: now,
+                    metadata: {
+                        ...attachmentMetadata,
+                        parentType: "posts",
+                        parentId: postRef.id,
+                    },
+                },
+                { merge: true }
+            );
+        }
 
         transaction.set(idempotencyRef, {
             postId: postRef.id,
@@ -371,13 +470,23 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         return { success: true, postId: postRef.id, isDuplicate: false };
     });
 
-    // 🔒 Authoritative Recompute
-    await recomputeUserStats(uid);
+    try {
+        await recomputeUserStats(uid);
+    } catch (error: any) {
+        logger.warn("[SOCIAL][PUBLISH_RECOMPUTE_USER_STATS_FAILED]", {
+            uid,
+            postId: result.postId,
+            message: error instanceof Error ? error.message : String(error),
+        });
+    }
 
     return result;
 
   } catch (error: any) {
     logger.error(`[SOCIAL][PUBLISH_FAILURE] ${error.message}`, { error });
+    if (error instanceof HttpsError) {
+        throw error;
+    }
     throw new HttpsError("internal", "Failed to publish post.");
   }
 });

@@ -36,6 +36,18 @@ const AuthorsScreen: React.FC = () => {
         
         // Rule: STATE_INITIALIZATION_SAFETY
         const authors = authorsData ?? [];
+
+        if (!searchQuery.trim()) {
+            return (
+                <div className="flex-grow flex items-center justify-center h-full text-center">
+                    <BilingualText>
+                        {lang === 'en'
+                            ? 'Search authors, then open an author card to load it into BookTown.'
+                            : 'ابحث عن المؤلفين ثم افتح بطاقة المؤلف لتحميله إلى بوك تاون.'}
+                    </BilingualText>
+                </div>
+            );
+        }
         
         if (authors.length === 0 && searchQuery) {
              return (

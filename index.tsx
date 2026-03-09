@@ -14,6 +14,7 @@ import { initializeFirebase } from './lib/firebase.ts';
 import { QueryClientProvider } from '@tanstack/react-query';
 // FIX: Imported queryClient from the correct instance file (lib/query-client.ts)
 import { queryClient } from './lib/query-client.ts';
+import { I18nProvider } from './store/i18n.tsx';
 
 /* ------------------------------------------------------------------ */
 /* Bootstrap (order matters)                                           */
@@ -23,13 +24,16 @@ import { queryClient } from './lib/query-client.ts';
 const isReaderBenchmarkMode =
   typeof window !== 'undefined' &&
   new URLSearchParams(window.location.search).get('readerBenchmark') === '1';
+const isReaderHighlightBenchmarkMode =
+  typeof window !== 'undefined' &&
+  new URLSearchParams(window.location.search).get('readerHighlightE2E') === '1';
 
-if (!isReaderBenchmarkMode) {
+if (!isReaderBenchmarkMode && !isReaderHighlightBenchmarkMode) {
   initializeFirebase();
 }
 
 // 2️⃣ Enforce MEDIA_PERMISSION_GUARD_V1 at bootstrap
-if (!isReaderBenchmarkMode) {
+if (!isReaderBenchmarkMode && !isReaderHighlightBenchmarkMode) {
   initMediaGuard();
 }
 
@@ -58,7 +62,23 @@ async function mount() {
     );
     root.render(
       <React.StrictMode>
-        <ReaderPerfBenchmarkApp />
+        <I18nProvider>
+          <ReaderPerfBenchmarkApp />
+        </I18nProvider>
+      </React.StrictMode>
+    );
+    return;
+  }
+
+  if (isReaderHighlightBenchmarkMode) {
+    const { default: ReaderHighlightBenchmarkApp } = await import(
+      './app/benchmark/ReaderHighlightBenchmarkApp.tsx'
+    );
+    root.render(
+      <React.StrictMode>
+        <I18nProvider>
+          <ReaderHighlightBenchmarkApp />
+        </I18nProvider>
       </React.StrictMode>
     );
     return;

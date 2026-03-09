@@ -6,12 +6,16 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "preview": "vite preview",
     "fixtures:reader-bench": "node scripts/generateReaderBenchmarkPdf.mjs",
     "perf:reader:gate": "node scripts/readerPerformanceGate.mjs",
     "perf:reader:browser-gate": "node scripts/readerBrowserPerfGate.mjs",
+    "e2e:reader:highlight": "node scripts/readerHighlightLifecycleE2E.mjs",
     "ci:reader:perf": "npm run fixtures:reader-bench && npm run build && npm run perf:reader:gate",
-    "ci:reader:browser-perf": "npm run fixtures:reader-bench && npm run build && npm run perf:reader:browser-gate"
+    "ci:reader:browser-perf": "npm run fixtures:reader-bench && npm run build && npm run perf:reader:browser-gate",
+    "ci:reader:highlight-e2e": "npm run fixtures:reader-bench && npm run build && npm run e2e:reader:highlight"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.20",
@@ -34,15 +38,19 @@
     "use-debounce": "^10.0.6"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22.14.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.18",
+    "jsdom": "^28.1.0",
     "playwright": "^1.54.2",
     "postcss": "^8.4.35",
     "rollup": "3.29.4",
     "tailwindcss": "^3.4.1",
     "ts-node": "^10.9.2",
     "typescript": "~5.8.2",
-    "vite": "4.5.14"
+    "vite": "4.5.14",
+    "vitest": "^4.0.18"
   }
 }

@@ -58,6 +58,19 @@ const PostDiscussionScreen: React.FC = () => {
     }
   }, [params?.from, navigate]);
 
+  const handleOpenAuthorProfile = React.useCallback(() => {
+    if (!sourcePost?.authorId) return;
+
+    navigate({
+      type: 'immersive',
+      id: 'profile',
+      params: {
+        userId: sourcePost.authorId,
+        from: currentView,
+      },
+    });
+  }, [currentView, navigate, sourcePost?.authorId]);
+
   // -----------------------------
   // 🔒 HOOKS MUST BE UNCONDITIONAL
   // -----------------------------
@@ -140,19 +153,28 @@ const PostDiscussionScreen: React.FC = () => {
                   'flex items-center gap-3 min-w-0',
                   isRTL && 'flex-row-reverse'
                 )}>
-                  <img
-                    src={threadPost.authorAvatar}
-                    alt={threadPost.authorName}
-                    className="h-8 w-8 rounded-full object-cover border border-white/20"
-                  />
-                  <div className="min-w-0">
-                    <BilingualText className="font-semibold text-[13px] text-white/85 truncate">
-                      {threadPost.authorName}
-                    </BilingualText>
-                    <BilingualText role="Caption" className="!text-[10px] !text-white/52">
-                      {threadPost.authorHandle} • {timeLabel}
-                    </BilingualText>
-                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenAuthorProfile}
+                    className={cn(
+                      'flex items-center gap-3 min-w-0 text-left',
+                      isRTL && 'flex-row-reverse text-right'
+                    )}
+                  >
+                    <img
+                      src={threadPost.authorAvatar}
+                      alt={threadPost.authorName}
+                      className="h-8 w-8 rounded-full object-cover border border-white/20"
+                    />
+                    <div className="min-w-0">
+                      <BilingualText className="font-semibold text-[13px] text-white/85 truncate">
+                        {threadPost.authorName}
+                      </BilingualText>
+                      <BilingualText role="Caption" className="!text-[10px] !text-white/52">
+                        {threadPost.authorHandle} • {timeLabel}
+                      </BilingualText>
+                    </div>
+                  </button>
                 </div>
 
                 <Button

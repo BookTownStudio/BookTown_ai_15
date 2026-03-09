@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { buildRowKey, normalizeIsbn, parseCsvDateToIso, parseDsarUtcTimestampToIso } from "../goodreads/normalization";
 import { detectSourceKind } from "../goodreads/sourceDetection";
+import { iterateDsarCanonicalRows } from "../goodreads/adapters/dsarJsonAdapter";
+import type { ParseIssue } from "../goodreads/types";
 
 type ZipEntryInput = {
   name: string;
@@ -162,5 +164,41 @@ describe("goodreads import v2 source detection", () => {
         buffer: unsupported,
       })
     ).toThrowError(/UNSUPPORTED_SOURCE_FORMAT/);
+  });
+});
+
+describe("goodreads import v2 DSAR hardening", () => {
+  it("rejects DSAR rows without strong identity fields", async () => {
+    const reviewJson = Buffer.from(
+      JSON.stringify([
+        {
+          book: "Shared Title",
+          review: "private note",
+          rating: 4,
+          read_status: "read",
+        },
+      ]),
+      "utf8"
+    );
+    const reviewZip = createStoredZip([{ name: "review.json", data: reviewJson }]);
+    const outerZip = createStoredZip([{ name: "review.zip", data: reviewZip }]);
+    const bucket = {
+      file: () => ({
+        download: async () => [outerZip] as [Buffer],
+      }),
+    };
+
+    const items: Array<ParseIssue | unknown> = [];
+    for await (const item of iterateDsarCanonicalRows({
+      bucket,
+      sourcePath: "imports/test/source.zip",
+    })) {
+      items.push(item);
+    }
+
+    expect(items).toHaveLength(1);
+    expect(items[0]).toMatchObject({
+      code: "LOW_CONFIDENCE_MATCH_REJECTED",
+    });
   });
 });

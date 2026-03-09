@@ -51,21 +51,11 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
       getFunctions(),
       'getOrCreateReadingSession'
     );
-    const manifestFn = httpsCallable<{ bookId: string }, ReaderManifestSnapshot>(
-      getFunctions(),
-      'getReaderManifest'
-    );
 
-    Promise.all([
-      sessionFn({ bookId }),
-      manifestFn({ bookId }).catch(() => null),
-    ])
-      .then(([sessionRes, manifestRes]) => {
+    sessionFn({ bookId })
+      .then((sessionRes) => {
         if (!active) return;
         const nextSession = normalizeEnvelope<ReaderSessionSnapshot>(sessionRes.data);
-        const nextManifest = manifestRes
-          ? normalizeEnvelope<ReaderManifestSnapshot>(manifestRes.data)
-          : null;
 
         if (
           !nextSession ||
@@ -76,7 +66,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
         }
 
         setSession(nextSession);
-        setManifest(nextManifest);
+        setManifest(null);
       })
       .catch((err: any) => {
         if (!active) return;

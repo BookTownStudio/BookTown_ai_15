@@ -702,7 +702,9 @@ async function isViewerFollowingTarget(
   viewerUid: string,
   targetUid: string
 ): Promise<boolean> {
-  if (!viewerUid || !targetUid || viewerUid === targetUid) return true;
+  if (!targetUid) return false;
+  if (!viewerUid) return false;
+  if (viewerUid === targetUid) return true;
   const followSnap = await db
     .collection("users")
     .doc(targetUid)
@@ -713,10 +715,6 @@ async function isViewerFollowingTarget(
 }
 
 export const getPublicProfile = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
   const uid = ensureUid(request.data?.uid, "uid");
   const profile = await readOrCreatePublicProfile(uid);
   if (!profile) {
@@ -729,6 +727,43 @@ export const getPublicProfile = onCall({ cors: true }, async (request) => {
     ...profile,
     followers: followStats.followers,
     following: followStats.following,
+  };
+});
+
+export const getProfileStats = onCall({ cors: true }, async (request) => {
+  const uid = ensureUid(request.data?.uid, "uid");
+  const viewerUid = request.auth?.uid ? ensureUid(request.auth.uid, "auth.uid") : "";
+  const profile = await readOrCreatePublicProfile(uid);
+  if (!profile) {
+    throw new HttpsError("not-found", "Profile not found.");
+  }
+
+  const statsSnap = await db.collection("user_stats").doc(uid).get();
+  const stats = (statsSnap.exists ? statsSnap.data() : {}) || {};
+  const counters = (stats.counters || {}) as Record<string, unknown>;
+  const followStats = await resolveFollowStats(uid, profile);
+
+  return {
+    followers: followStats.followers,
+    following: followStats.following,
+    postsPublished: toNonNegativeInt(stats.postsPublished ?? counters.postsPublished),
+    shelvesCreated: toNonNegativeInt(stats.shelvesCreated ?? counters.totalShelves),
+    quotesAuthored: toNonNegativeInt(stats.quotesAuthored ?? counters.quotesAuthored),
+    posts: toNonNegativeInt(stats.posts ?? counters.posts),
+    reviews: toNonNegativeInt(stats.reviews ?? counters.reviews),
+    booksRead: toNonNegativeInt(stats.booksRead ?? counters.totalBooks),
+    booksPublished: toNonNegativeInt(stats.booksPublished ?? counters.booksPublished),
+    wordsWritten: toNonNegativeInt(stats.wordsWritten ?? counters.wordsWritten),
+    ...(viewerUid === uid &&
+    typeof stats.profileCompletionScore === "number" &&
+    Number.isFinite(stats.profileCompletionScore)
+      ? {
+          profileCompletionScore: Math.max(
+            0,
+            Math.trunc(stats.profileCompletionScore)
+          ),
+        }
+      : {}),
   };
 });
 
@@ -972,11 +1007,7 @@ export const getSuggestedProfiles = onCall({ cors: true }, async (request) => {
 });
 
 export const listProfilePosts = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const viewerUid = ensureUid(request.auth.uid, "auth.uid");
+  const viewerUid = request.auth?.uid ? ensureUid(request.auth.uid, "auth.uid") : "";
   const targetUid = ensureUid(request.data?.uid, "uid");
   const limitSize = resolveLimit(request.data?.limit);
 
@@ -1028,15 +1059,11 @@ export const listProfilePosts = onCall({ cors: true }, async (request) => {
 });
 
 export const listProfileReviews = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
-  const viewerUid = ensureUid(request.auth.uid, "auth.uid");
+  const viewerUid = request.auth?.uid ? ensureUid(request.auth.uid, "auth.uid") : "";
   const targetUid = ensureUid(request.data?.uid, "uid");
   const limitSize = resolveLimit(request.data?.limit);
   const cursor = decodeCursor(request.data?.cursor);
-  const isOwnerView = viewerUid === targetUid;
+  const isOwnerView = viewerUid.length > 0 && viewerUid === targetUid;
 
   const profile = await readOrCreatePublicProfile(targetUid);
   if (!profile) {
@@ -1273,10 +1300,6 @@ export const runReviewStackReleaseGate = onCall({ cors: true }, async (request) 
 });
 
 export const listProfileBooks = onCall({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Authentication required.");
-  }
-
   const targetUid = ensureUid(request.data?.uid, "uid");
   const limitSize = resolveLimit(request.data?.limit);
 

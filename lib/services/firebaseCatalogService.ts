@@ -149,6 +149,15 @@ function mapBook(data: any, id: string): Book {
 function mapAuthor(data: any, id: string): Author {
   const nameEn = data.nameEn || data.authorEn || data.name || "";
   const nameAr = data.nameAr || data.authorAr || nameEn;
+  const providerSource =
+    data.providerSource === "openLibrary" || data.providerSource === "wikidata"
+      ? data.providerSource
+      : undefined;
+  const providerExternalId =
+    typeof data.providerExternalId === "string" && data.providerExternalId.trim().length > 0
+      ? data.providerExternalId.trim()
+      : undefined;
+  const requiresCanonicalization = data.requiresCanonicalization === true;
 
   return {
     id,
@@ -164,6 +173,9 @@ function mapAuthor(data: any, id: string): Author {
     languageAr: data.languageAr || "",
     signatureQuoteEn: data.signatureQuoteEn,
     signatureQuoteAr: data.signatureQuoteAr,
+    ...(providerSource ? { providerSource } : {}),
+    ...(providerExternalId ? { providerExternalId } : {}),
+    ...(requiresCanonicalization ? { requiresCanonicalization } : {}),
   };
 }
 
@@ -629,6 +641,31 @@ export const firebaseCatalogService = {
     const authors = docs.map((d) => mapAuthor(d.data(), d.id));
     authors.sort((a, b) => a.nameEn.localeCompare(b.nameEn));
     return authors;
+  },
+
+  async discoverAuthors(params: {
+    query: string;
+    limit?: number;
+  }): Promise<Author[]> {
+    const request = {
+      query: String(params.query || "").trim(),
+      ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+    };
+
+    if (!request.query) {
+      return [];
+    }
+
+    const data = await callEndpoint<typeof request, { authors: any[] }>(
+      "discoverAuthors",
+      request
+    );
+
+    if (!Array.isArray(data.authors)) {
+      throw new Error("[discoverAuthors] Invalid authors payload.");
+    }
+
+    return data.authors.map((author) => mapAuthor(author, String(author?.id || "")));
   },
 
   async followAuthor(uid: string, authorId: string): Promise<void> {

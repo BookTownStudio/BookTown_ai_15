@@ -3,6 +3,10 @@ import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { FontSize } from '../../store/reading-prefs.tsx';
+import type {
+  ReaderHighlightOverlay,
+  ReaderTextSelection,
+} from '../../lib/reader/runtime/contracts.ts';
 import {
   buildPageOffsetIndex,
   findPageForAnchor,
@@ -19,8 +23,10 @@ interface PdfViewerProps {
   theme?: 'light' | 'dark' | 'sepia';
   readingMode?: 'scroll' | 'page';
   fontSize?: FontSize;
+  highlights?: ReaderHighlightOverlay[];
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
+  onTextSelection?: (selection: ReaderTextSelection | null) => void;
   onDocumentLoadSuccess?: (numPages: number) => void;
   onFirstPageRender?: () => void;
 }
@@ -47,14 +53,116 @@ function clampPage(page: number, total: number): number {
   return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
 }
 
+function normalizeSelectionText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function hashSelectionAnchor(value: string): string {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function parsePdfHighlightAnchor(anchor: string | null): {
+  page: number;
+  start: number;
+  end: number;
+} | null {
+  if (!anchor || !anchor.startsWith('pdf:')) return null;
+  const parts = anchor.split(':');
+  if (parts.length < 5) return null;
+  const page = Number(parts[1]);
+  const start = Number(parts[2]);
+  const end = Number(parts[3]);
+  if (!Number.isFinite(page) || !Number.isFinite(start) || !Number.isFinite(end)) {
+    return null;
+  }
+  if (page <= 0 || start < 0 || end <= start) return null;
+  return {
+    page: Math.trunc(page),
+    start: Math.trunc(start),
+    end: Math.trunc(end),
+  };
+}
+
+function pdfHighlightColor(color: string): string {
+  if (color === 'green') return 'rgba(52, 211, 153, 0.35)';
+  return 'rgba(250, 204, 21, 0.35)';
+}
+
+function clearPdfHighlightMarks(root: HTMLElement): void {
+  const marks = Array.from(
+    root.querySelectorAll('mark[data-reader-pdf-highlight="true"]')
+  ) as HTMLElement[];
+
+  for (const mark of marks) {
+    const parent = mark.parentNode;
+    if (!parent) continue;
+    while (mark.firstChild) {
+      parent.insertBefore(mark.firstChild, mark);
+    }
+    parent.removeChild(mark);
+    parent.normalize();
+  }
+}
+
+function applyPdfHighlightRange(params: {
+  textLayer: HTMLElement;
+  start: number;
+  end: number;
+  color: string;
+  highlightId: string;
+}): void {
+  const { textLayer, start, end, color, highlightId } = params;
+  const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
+  let node = walker.nextNode();
+  let position = 0;
+
+  while (node) {
+    const textNode = node as Text;
+    const textLength = textNode.textContent?.length || 0;
+    const nodeStart = position;
+    const nodeEnd = position + textLength;
+    const overlapStart = Math.max(start, nodeStart);
+    const overlapEnd = Math.min(end, nodeEnd);
+
+    if (overlapStart < overlapEnd && textNode.parentElement?.closest('mark[data-reader-pdf-highlight="true"]') === null) {
+      try {
+        const range = document.createRange();
+        range.setStart(textNode, overlapStart - nodeStart);
+        range.setEnd(textNode, overlapEnd - nodeStart);
+
+        const mark = document.createElement('mark');
+        mark.dataset.readerPdfHighlight = 'true';
+        mark.dataset.highlightId = highlightId;
+        mark.style.backgroundColor = pdfHighlightColor(color);
+        mark.style.borderRadius = '2px';
+        mark.style.padding = '0';
+        mark.style.margin = '0';
+
+        range.surroundContents(mark);
+      } catch (error) {
+        console.warn('[READER][PDF_HIGHLIGHT_RENDER_FAILED]', error);
+      }
+    }
+
+    position = nodeEnd;
+    node = walker.nextNode();
+  }
+}
+
 const PdfViewer: React.FC<PdfViewerProps> = ({
   url,
   initialPage = 1,
   theme = 'dark',
   readingMode = 'scroll',
   fontSize = 'md',
+  highlights = [],
   onPageChange,
   onLoadError,
+  onTextSelection,
   onDocumentLoadSuccess,
   onFirstPageRender,
 }) => {
@@ -64,6 +172,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const pageOffsetsRef = useRef<number[]>([]);
   const pageNumberRef = useRef<number>(1);
   const lastWheelNavAtRef = useRef<number>(0);
+  const onTextSelectionRef = useRef<PdfViewerProps['onTextSelection']>(onTextSelection);
 
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [numPages, setNumPages] = useState<number>(0);
@@ -75,6 +184,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     pageNumberRef.current = pageNumber;
   }, [pageNumber]);
+
+  useEffect(() => {
+    onTextSelectionRef.current = onTextSelection;
+  }, [onTextSelection]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -256,12 +369,117 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     onFirstPageRender?.();
   }, [onFirstPageRender]);
 
+  const captureTextSelection = useCallback(() => {
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0) {
+      onTextSelectionRef.current?.(null);
+      return;
+    }
+
+    const quote = normalizeSelectionText(selection.toString());
+    if (!quote) {
+      onTextSelectionRef.current?.(null);
+      return;
+    }
+
+    const range = selection.getRangeAt(0);
+    const startElement =
+      range.startContainer.nodeType === Node.ELEMENT_NODE
+        ? (range.startContainer as Element)
+        : range.startContainer.parentElement;
+    const endElement =
+      range.endContainer.nodeType === Node.ELEMENT_NODE
+        ? (range.endContainer as Element)
+        : range.endContainer.parentElement;
+    const startPageNode = startElement?.closest('[data-reader-pdf-page]') as HTMLElement | null;
+    const endPageNode = endElement?.closest('[data-reader-pdf-page]') as HTMLElement | null;
+
+    if (!startPageNode || !endPageNode || startPageNode !== endPageNode) {
+      onTextSelectionRef.current?.(null);
+      return;
+    }
+
+    const page = Number(startPageNode.dataset.readerPdfPage || '');
+    if (!Number.isFinite(page) || page <= 0) {
+      onTextSelectionRef.current?.(null);
+      return;
+    }
+
+    const textLayer = startPageNode.querySelector('.react-pdf__Page__textContent') as HTMLElement | null;
+    if (!textLayer) {
+      onTextSelectionRef.current?.(null);
+      return;
+    }
+
+    const preRange = range.cloneRange();
+    preRange.selectNodeContents(textLayer);
+    preRange.setEnd(range.startContainer, range.startOffset);
+    const startOffset = preRange.toString().length;
+    const endOffset = startOffset + range.toString().length;
+    const rect = range.getBoundingClientRect();
+
+    onTextSelectionRef.current?.({
+      quote,
+      page,
+      cfi: `pdf:${page}:${startOffset}:${endOffset}:${hashSelectionAnchor(quote)}`,
+      rect: new DOMRect(rect.x, rect.y, rect.width, rect.height),
+    });
+  }, []);
+
+  const rehydratePdfHighlights = useCallback(() => {
+    if (!containerRef.current) return;
+
+    const pageNodes = Array.from(
+      containerRef.current.querySelectorAll('[data-reader-pdf-page]')
+    ) as HTMLElement[];
+
+    for (const pageNode of pageNodes) {
+      const page = Number(pageNode.dataset.readerPdfPage || '');
+      const textLayer = pageNode.querySelector('.react-pdf__Page__textContent') as HTMLElement | null;
+      if (!Number.isFinite(page) || !textLayer) continue;
+
+      clearPdfHighlightMarks(textLayer);
+
+      const pageHighlights = highlights
+        .map((highlight) => ({
+          highlight,
+          anchor: parsePdfHighlightAnchor(highlight.cfi),
+        }))
+        .filter((entry) => entry.anchor && entry.anchor.page === page)
+        .sort((left, right) => (right.anchor!.start - left.anchor!.start));
+
+      for (const entry of pageHighlights) {
+        applyPdfHighlightRange({
+          textLayer,
+          start: entry.anchor!.start,
+          end: entry.anchor!.end,
+          color: entry.highlight.color,
+          highlightId: entry.highlight.highlightId,
+        });
+      }
+    }
+  }, [highlights]);
+
+  useEffect(() => {
+    const raf = window.requestAnimationFrame(() => {
+      rehydratePdfHighlights();
+    });
+
+    return () => window.cancelAnimationFrame(raf);
+  }, [highlights, pageNumber, readingMode, rehydratePdfHighlights, url]);
+
   return (
     <div
       ref={containerRef}
       className="h-full w-full min-h-0 flex flex-col"
       style={{ backgroundColor: viewerBackground }}
       onWheel={handleWheelInPageMode}
+      onMouseDown={() => onTextSelectionRef.current?.(null)}
+      onMouseUp={() => {
+        window.setTimeout(() => {
+          captureTextSelection();
+        }, 0);
+      }}
     >
       <div
         ref={scrollViewportRef}
@@ -294,6 +512,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                       ref={(node) => {
                         pageRefs.current[index] = node;
                       }}
+                      data-reader-pdf-page={page}
                       className="mb-4 last:mb-0"
                     >
                       <Page
@@ -301,19 +520,31 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                         width={pageWidth}
                         renderTextLayer
                         renderAnnotationLayer
+                        onRenderSuccess={() => {
+                          window.requestAnimationFrame(() => {
+                            rehydratePdfHighlights();
+                          });
+                        }}
                       />
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <Page
-                pageNumber={pageNumber}
-                width={pageWidth}
-                renderTextLayer
-                renderAnnotationLayer
-                onRenderSuccess={handleFirstPageRender}
-              />
+              <div data-reader-pdf-page={pageNumber}>
+                <Page
+                  pageNumber={pageNumber}
+                  width={pageWidth}
+                  renderTextLayer
+                  renderAnnotationLayer
+                  onRenderSuccess={() => {
+                    handleFirstPageRender();
+                    window.requestAnimationFrame(() => {
+                      rehydratePdfHighlights();
+                    });
+                  }}
+                />
+              </div>
             )}
           </Document>
         )}

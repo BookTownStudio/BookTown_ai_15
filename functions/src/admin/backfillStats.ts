@@ -243,23 +243,31 @@ export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
       const chunk = bookDocs.docs.slice(i, i + BATCH_SIZE);
 
       for (const bookDoc of chunk) {
-        const reviewsSnap = await db.collection(`books/${bookDoc.id}/reviews`).get();
+        const reviewsSnap = await db
+          .collection(`books/${bookDoc.id}/reviews`)
+          .where("visibility", "==", "public")
+          .get();
+        const ratingsSnap = await db
+          .collection(`books/${bookDoc.id}/ratings`)
+          .where("visibility", "==", "public")
+          .get();
         const reviewsCount = reviewsSnap.size;
-        const ratingSum = reviewsSnap.docs.reduce((sum, reviewDoc) => {
-          const data = reviewDoc.data() as Record<string, unknown>;
+        const ratingsCount = ratingsSnap.size;
+        const ratingSum = ratingsSnap.docs.reduce((sum, ratingDoc) => {
+          const data = ratingDoc.data() as Record<string, unknown>;
           const rating =
             typeof data.rating === "number" && Number.isFinite(data.rating)
               ? Math.trunc(data.rating)
               : 0;
           return sum + Math.max(0, Math.min(5, rating));
         }, 0);
-        const averageRating = reviewsCount > 0 ? ratingSum / reviewsCount : 0;
+        const averageRating = ratingsCount > 0 ? ratingSum / ratingsCount : 0;
 
         batch.set(
           db.collection("book_stats").doc(bookDoc.id),
           {
             reviews: reviewsCount,
-            ratingsCount: reviewsCount,
+            ratingsCount,
             ratingSum,
             averageRating,
             lastBackfilledAt: timestamp,

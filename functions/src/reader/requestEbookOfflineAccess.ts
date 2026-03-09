@@ -4,9 +4,11 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
-import { getSignedUrl } from "../attachments/storageSignedUrl";
+import { getOrBuildReaderManifest } from "./readerManifestService";
 
 const db = admin.firestore();
+const storage = admin.storage();
+const OFFLINE_URL_TTL_MS = 10 * 60 * 1000;
 
 /**
  * requestEbookOfflineAccess
@@ -15,7 +17,7 @@ const db = admin.firestore();
  *
  * Contract:
  * - User must be authenticated
- * - Ebook must exist and be readable by user
+ * - Book must exist and be readable by user
  * - Offline eligibility is SERVER-DECIDED
  * - Returns short-lived signed URL + offline policy
  *
@@ -24,6 +26,7 @@ const db = admin.firestore();
  * - expiresAt
  * - checksum (if available)
  * - maxBytes
+ * - format
  */
 export const requestEbookOfflineAccess = onCall(
   { cors: true },
@@ -33,50 +36,34 @@ export const requestEbookOfflineAccess = onCall(
     }
 
     const uid = request.auth.uid;
-    const { ebookId } = request.data || {};
+    const { bookId } = request.data || {};
 
-    if (!ebookId || typeof ebookId !== "string") {
-      throw new HttpsError("invalid-argument", "Invalid ebookId.");
+    if (!bookId || typeof bookId !== "string") {
+      throw new HttpsError("invalid-argument", "Invalid bookId.");
     }
 
-    logger.info("[OFFLINE][REQUEST]", { uid, ebookId });
+    logger.info("[OFFLINE][REQUEST]", { uid, bookId });
 
-    const ebookRef = db.collection("ebooks").doc(ebookId);
-    const ebookSnap = await ebookRef.get();
+    const manifest = await getOrBuildReaderManifest({
+      uid,
+      bookId,
+    });
+    const file = storage.bucket().file(manifest.storagePath);
+    const [exists] = await file.exists();
 
-    if (!ebookSnap.exists) {
-      throw new HttpsError("not-found", "Ebook not found.");
+    if (!exists) {
+      throw new HttpsError("not-found", "Ebook file missing from storage.");
     }
 
-    const ebook = ebookSnap.data();
-    if (!ebook) {
-      throw new HttpsError("internal", "Ebook record corrupted.");
-    }
-
-    /**
-     * 🔒 ACCESS CONTROL
-     */
-    if (
-      ebook.visibility === "private" &&
-      ebook.ownerUid !== uid
-    ) {
-      throw new HttpsError("permission-denied", "Access denied.");
-    }
+    const [fileMetadata] = await file.getMetadata();
 
     /**
      * 🔒 OFFLINE ELIGIBILITY (LOCKED RULES)
      */
-    if (!ebook.downloadable) {
+    if (manifest.format === "unknown") {
       throw new HttpsError(
         "failed-precondition",
         "This ebook is not available for offline reading."
-      );
-    }
-
-    if (!ebook.storagePath || typeof ebook.storagePath !== "string") {
-      throw new HttpsError(
-        "failed-precondition",
-        "Ebook storage path missing."
       );
     }
 
@@ -91,22 +78,38 @@ export const requestEbookOfflineAccess = onCall(
     /**
      * 🔒 SIGNED URL (INTENT-BASED)
      */
-    const signedUrl = await getSignedUrl({
-      bucket: admin.storage().bucket().name,
-      path: ebook.storagePath,
-      intent: "ebook",
-    });
+    let signedUrl: string;
+    try {
+      const [issuedUrl] = await file.getSignedUrl({
+        version: "v4",
+        action: "read",
+        expires: Date.now() + OFFLINE_URL_TTL_MS,
+      });
+      signedUrl = issuedUrl;
+    } catch (error) {
+      logger.error("[OFFLINE][SIGNED_URL_ISSUE_FAILED]", {
+        uid,
+        bookId,
+        storagePath: manifest.storagePath,
+        error: String(error),
+      });
+      throw new HttpsError(
+        "internal",
+        "Reader URL signing is not configured for this environment."
+      );
+    }
 
     /**
      * 🔒 SERVER STATE WRITE
      */
-    await ebookRef.set(
+    await db.collection("reading_sessions").doc(`${uid}_${bookId}`).set(
       {
         offline: {
           state: "AVAILABLE",
-          grantedTo: uid,
           grantedAt: FieldValue.serverTimestamp(),
           expiresAt,
+          storagePath: manifest.storagePath,
+          manifestVersion: manifest.version,
         },
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -115,16 +118,28 @@ export const requestEbookOfflineAccess = onCall(
 
     logger.info("[OFFLINE][GRANTED]", {
       uid,
-      ebookId,
+      bookId,
       expiresAt: expiresAt.toDate().toISOString(),
+      format: manifest.format,
     });
 
+    const maxBytesRaw =
+      typeof fileMetadata.size === "string" ? Number(fileMetadata.size) : fileMetadata.size;
+    const maxBytes =
+      typeof maxBytesRaw === "number" && Number.isFinite(maxBytesRaw) && maxBytesRaw > 0
+        ? Math.trunc(maxBytesRaw)
+        : null;
+
     return {
-      ebookId,
+      bookId,
+      format: manifest.format,
       signedUrl,
       expiresAt: expiresAt.toMillis(),
-      checksum: ebook.checksum ?? null,
-      maxBytes: ebook.bytes ?? null,
+      checksum:
+        typeof fileMetadata.md5Hash === "string" && fileMetadata.md5Hash.length > 0
+          ? fileMetadata.md5Hash
+          : null,
+      maxBytes,
     };
   }
 );

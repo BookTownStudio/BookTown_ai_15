@@ -162,6 +162,11 @@ function normalizeReadStatusToShelf(statusRaw: string): string | null {
   return mapped;
 }
 
+function hasStrongDsarIdentity(params: { title: string; author: string }): boolean {
+  const { titleNorm, authorNorm } = normalizedCanonicalTitleAndAuthor(params);
+  return titleNorm.length > 0 && authorNorm.length > 0;
+}
+
 export async function* iterateDsarCanonicalRows(params: {
   bucket: StorageBucketLike;
   sourcePath: string;
@@ -191,6 +196,19 @@ export async function* iterateDsarCanonicalRows(params: {
         rowKey: sha256Hex(`dsar:review:${rowIndex}:missing-title`),
         code: "ROW_VALIDATION_FAILED",
         message: "Missing book title in DSAR review row.",
+      };
+      continue;
+    }
+    if (!hasStrongDsarIdentity({ title, author: asString(record.author) })) {
+      yield {
+        rowIndex,
+        rowKey: sha256Hex(`dsar:review:${rowIndex}:weak-identity:${title.trim().toLowerCase()}`),
+        code: "LOW_CONFIDENCE_MATCH_REJECTED",
+        message: "DSAR row is missing strong identity fields required for canonical matching.",
+        details: {
+          entry: "review.json",
+          requires: ["author"],
+        },
       };
       continue;
     }
@@ -237,6 +255,19 @@ export async function* iterateDsarCanonicalRows(params: {
         rowKey: sha256Hex(`dsar:owned:${rowIndex}:missing-title`),
         code: "ROW_VALIDATION_FAILED",
         message: "Missing book title in DSAR owned_book row.",
+      };
+      continue;
+    }
+    if (!hasStrongDsarIdentity({ title, author: asString(record.author) })) {
+      yield {
+        rowIndex,
+        rowKey: sha256Hex(`dsar:owned:${rowIndex}:weak-identity:${title.trim().toLowerCase()}`),
+        code: "LOW_CONFIDENCE_MATCH_REJECTED",
+        message: "DSAR row is missing strong identity fields required for canonical matching.",
+        details: {
+          entry: "owned_book.json",
+          requires: ["author"],
+        },
       };
       continue;
     }

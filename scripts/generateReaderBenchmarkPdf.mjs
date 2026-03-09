@@ -14,6 +14,10 @@ function createPdf() {
     '0 -34 Td',
     '/F1 16 Tf',
     '(Deterministic PDF for CI timing gates.) Tj',
+    '0 -28 Td',
+    '(Highlight lifecycle regression target text.) Tj',
+    '0 -28 Td',
+    '(Select this line to verify save reopen and remove.) Tj',
     'ET',
     '',
   ].join('\n');

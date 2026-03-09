@@ -6,6 +6,7 @@ const db = admin.firestore();
 
 const MAX_BOOKS_PER_RUN = 25;
 const MAX_REVIEWS_PER_BOOK = 10000;
+const MAX_RATINGS_PER_BOOK = 10000;
 const CHECKPOINT_COLLECTION = "_ops";
 const CHECKPOINT_DOC_ID = "review_aggregate_reconcile_checkpoint";
 const RUN_REPORT_COLLECTION = "_ops/review_aggregate_reconcile_runs/logs";
@@ -16,9 +17,11 @@ type ReconcileItem = {
   bookId: string;
   status: ReconcileStatus;
   expectedReviews?: number;
+  expectedRatingsCount?: number;
   expectedRatingSum?: number;
   expectedAverageRating?: number;
   observedReviews?: number;
+  observedRatingsCount?: number;
   observedRatingSum?: number;
   observedAverageRating?: number;
   reason?: string;
@@ -44,7 +47,11 @@ function normalizeCounterFloat(value: unknown): number {
 
 async function reconcileBook(bookId: string): Promise<ReconcileItem> {
   const reviewsRef = db.collection("books").doc(bookId).collection("reviews");
-  const reviewsSnap = await reviewsRef.limit(MAX_REVIEWS_PER_BOOK + 1).get();
+  const ratingsRef = db.collection("books").doc(bookId).collection("ratings");
+  const reviewsSnap = await reviewsRef
+    .where("visibility", "==", "public")
+    .limit(MAX_REVIEWS_PER_BOOK + 1)
+    .get();
 
   if (reviewsSnap.size > MAX_REVIEWS_PER_BOOK) {
     return {
@@ -54,14 +61,27 @@ async function reconcileBook(bookId: string): Promise<ReconcileItem> {
     };
   }
 
+  const ratingsSnap = await ratingsRef
+    .where("visibility", "==", "public")
+    .limit(MAX_RATINGS_PER_BOOK + 1)
+    .get();
+  if (ratingsSnap.size > MAX_RATINGS_PER_BOOK) {
+    return {
+      bookId,
+      status: "skipped_cap",
+      reason: `rating_count_exceeds_cap:${MAX_RATINGS_PER_BOOK}`,
+    };
+  }
+
   const expectedReviews = reviewsSnap.size;
   let expectedRatingSum = 0;
-  for (const reviewDoc of reviewsSnap.docs) {
-    expectedRatingSum += normalizeRating(reviewDoc.get("rating"));
+  for (const ratingDoc of ratingsSnap.docs) {
+    expectedRatingSum += normalizeRating(ratingDoc.get("rating"));
   }
+  const expectedRatingsCount = ratingsSnap.size;
   const expectedAverageRating =
-    expectedReviews > 0
-      ? Number((expectedRatingSum / expectedReviews).toFixed(4))
+    expectedRatingsCount > 0
+      ? Number((expectedRatingSum / expectedRatingsCount).toFixed(4))
       : 0;
 
   const statsRef = db.collection("book_stats").doc(bookId);
@@ -72,11 +92,13 @@ async function reconcileBook(bookId: string): Promise<ReconcileItem> {
       : {};
 
   const observedReviews = normalizeCounterInt(counters.reviews);
+  const observedRatingsCount = normalizeCounterInt(counters.ratingsCount);
   const observedRatingSum = normalizeCounterFloat(counters.ratingSum);
   const observedAverageRating = normalizeCounterFloat(counters.averageRating);
 
   const hasDrift =
     observedReviews !== expectedReviews ||
+    observedRatingsCount !== expectedRatingsCount ||
     Math.abs(observedRatingSum - expectedRatingSum) > 0.0001 ||
     Math.abs(observedAverageRating - expectedAverageRating) > 0.0001;
 
@@ -85,9 +107,11 @@ async function reconcileBook(bookId: string): Promise<ReconcileItem> {
       bookId,
       status: "clean",
       expectedReviews,
+      expectedRatingsCount,
       expectedRatingSum,
       expectedAverageRating,
       observedReviews,
+      observedRatingsCount,
       observedRatingSum,
       observedAverageRating,
     };
@@ -98,12 +122,12 @@ async function reconcileBook(bookId: string): Promise<ReconcileItem> {
       counters: {
         ...counters,
         reviews: expectedReviews,
-        ratingsCount: expectedReviews,
+        ratingsCount: expectedRatingsCount,
         ratingSum: expectedRatingSum,
         averageRating: expectedAverageRating,
       },
       reviews: expectedReviews,
-      ratingsCount: expectedReviews,
+      ratingsCount: expectedRatingsCount,
       averageRating: expectedAverageRating,
       lastReconciledAt: admin.firestore.FieldValue.serverTimestamp(),
       lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -116,9 +140,11 @@ async function reconcileBook(bookId: string): Promise<ReconcileItem> {
     bookId,
     status: "repaired",
     expectedReviews,
+    expectedRatingsCount,
     expectedRatingSum,
     expectedAverageRating,
     observedReviews,
+    observedRatingsCount,
     observedRatingSum,
     observedAverageRating,
   };

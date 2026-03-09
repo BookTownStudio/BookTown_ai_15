@@ -17,6 +17,7 @@
  */
 
 import {
+  getAllOfflineBookIds,
   getOfflineRecord,
   clearOfflineEbook,
   isOfflineValid,
@@ -27,10 +28,9 @@ import {
  * Defined implicitly by offlineManager.ts
  */
 interface OfflineEbookRecord {
-  ebookId: string;
+  bookId: string;
   expiresAt: number;
-  downloadedAt: number;
-  storageKey: string;
+  storedAt: number;
 }
 
 /**
@@ -46,23 +46,13 @@ interface OfflineEbookRecord {
  */
 export async function enforceOfflineExpiry(): Promise<void> {
   try {
-    const now = Date.now();
-
-    // localStorage namespace used by offlineManager
-    const namespacePrefix = "BOOKTOWN_OFFLINE_EBOOK:";
-
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (!key || !key.startsWith(namespacePrefix)) continue;
-
-      const ebookId = key.replace(namespacePrefix, "");
-      const record = getOfflineRecord(ebookId) as OfflineEbookRecord | null;
+    for (const bookId of getAllOfflineBookIds()) {
+      const record = getOfflineRecord(bookId) as OfflineEbookRecord | null;
 
       if (!record) continue;
 
-      // 🔒 Authoritative expiry check
-      if (!isOfflineValid(record, now)) {
-        await clearOfflineEbook(ebookId);
+      if (!isOfflineValid(record)) {
+        await clearOfflineEbook(bookId);
       }
     }
   } catch {

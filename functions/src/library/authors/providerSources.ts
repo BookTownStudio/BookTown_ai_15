@@ -4,6 +4,7 @@ const PROVIDER_TIMEOUT_MS = 4000;
 const OPEN_LIBRARY_BASE_URL = "https://openlibrary.org";
 const WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php";
 const MAX_OPEN_LIBRARY_WORKS = 12;
+const MAX_OPEN_LIBRARY_AUTHOR_SEARCH_RESULTS = 12;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -115,6 +116,89 @@ function normalizeOpenLibraryWorkEntries(payload: Record<string, unknown>): Reco
   };
 }
 
+function buildOpenLibraryAuthorAvatarUrl(authorId: string): string {
+  const normalizedId = asString(authorId).replace(/^\/authors\//, "").toUpperCase();
+  return /^OL\d+A$/.test(normalizedId)
+    ? `https://covers.openlibrary.org/a/olid/${normalizedId}-L.jpg`
+    : "";
+}
+
+function buildOpenLibrarySearchBio(entry: Record<string, unknown>): string {
+  const topWork = asString(entry.top_work);
+  const workCount =
+    typeof entry.work_count === "number" && Number.isFinite(entry.work_count)
+      ? Math.max(0, Math.trunc(entry.work_count))
+      : 0;
+
+  if (topWork && workCount > 0) {
+    return `Known for ${topWork} - ${workCount} works`;
+  }
+
+  if (topWork) {
+    return `Known for ${topWork}`;
+  }
+
+  if (workCount > 0) {
+    return `${workCount} works`;
+  }
+
+  return "";
+}
+
+function normalizeOpenLibraryAuthorSearchEntry(entry: Record<string, unknown>): Record<string, unknown> | null {
+  const externalId = asString(entry.key).replace(/^\/authors\//, "").toUpperCase();
+  const name = asString(entry.name);
+
+  if (!externalId || !/^OL\d+A$/.test(externalId) || !name) {
+    return null;
+  }
+
+  const birthYear = asString(entry.birth_date).slice(0, 4);
+  const deathYear = asString(entry.death_date).slice(0, 4);
+  const lifespan =
+    birthYear && deathYear
+      ? `${birthYear}-${deathYear}`
+      : birthYear
+        ? `${birthYear}-`
+        : deathYear
+          ? `-${deathYear}`
+          : "";
+
+  const topWork = asString(entry.top_work);
+
+  return {
+    key: `/authors/${externalId}`,
+    id: externalId,
+    name,
+    nameEn: name,
+    nameAr: name,
+    bioEn: buildOpenLibrarySearchBio(entry),
+    bioAr: "",
+    lifespan,
+    avatarUrl: buildOpenLibraryAuthorAvatarUrl(externalId),
+    sourceIds: {
+      openLibrary: externalId,
+    },
+    workCount:
+      typeof entry.work_count === "number" && Number.isFinite(entry.work_count)
+        ? Math.max(0, Math.trunc(entry.work_count))
+        : 0,
+    ...(topWork
+      ? {
+          topWorks: [
+            {
+              workId: "",
+              title: topWork,
+            },
+          ],
+        }
+      : {}),
+    alternate_names: Array.isArray(entry.alternate_names)
+      ? entry.alternate_names.filter((value): value is string => typeof value === "string")
+      : [],
+  };
+}
+
 export async function fetchOpenLibraryAuthorAuthoritativeData(
   authorId: string
 ): Promise<Record<string, unknown> | null> {
@@ -139,6 +223,33 @@ export async function fetchOpenLibraryAuthorAuthoritativeData(
     ...authorPayload,
     ...(worksPayload ? normalizeOpenLibraryWorkEntries(worksPayload) : {}),
   };
+}
+
+export async function searchOpenLibraryAuthors(
+  query: string,
+  limit = MAX_OPEN_LIBRARY_AUTHOR_SEARCH_RESULTS
+): Promise<Record<string, unknown>[]> {
+  const normalizedQuery = asString(query);
+  if (!normalizedQuery) {
+    return [];
+  }
+
+  const normalizedLimit = Math.max(
+    1,
+    Math.min(MAX_OPEN_LIBRARY_AUTHOR_SEARCH_RESULTS, Math.trunc(limit || 0) || 8)
+  );
+  const url = new URL(`${OPEN_LIBRARY_BASE_URL}/search/authors.json`);
+  url.searchParams.set("q", normalizedQuery);
+  url.searchParams.set("limit", String(normalizedLimit));
+
+  const payload = await fetchJsonWithTimeout(url.toString());
+  const docs = Array.isArray(payload?.docs) ? payload.docs : [];
+
+  return docs
+    .map((entry) => asRecord(entry))
+    .map((entry) => (entry ? normalizeOpenLibraryAuthorSearchEntry(entry) : null))
+    .filter((entry): entry is Record<string, unknown> => entry !== null)
+    .slice(0, normalizedLimit);
 }
 
 function normalizeWikidataEntitiesPayload(

@@ -46,14 +46,6 @@ const QuotesScreen: React.FC = () => {
             );
         }
 
-        if (isError || !quotes) {
-            return (
-                <div className="flex-grow flex items-center justify-center h-full">
-                    <BilingualText>{lang === 'en' ? 'Error loading quotes.' : 'خطأ في تحميل الاقتباسات.'}</BilingualText>
-                </div>
-            );
-        }
-        
         if (!searchQuery.trim() && !bookId && !authorId) {
             return (
                 <div className="flex-grow flex items-center justify-center h-full text-center">
@@ -62,6 +54,14 @@ const QuotesScreen: React.FC = () => {
                             ? 'Search public quotes, then open a quote card to save it.'
                             : 'ابحث في الاقتباسات العامة ثم افتح بطاقة الاقتباس لحفظها.'}
                     </BilingualText>
+                </div>
+            );
+        }
+
+        if (isError || !quotes) {
+            return (
+                <div className="flex-grow flex items-center justify-center h-full">
+                    <BilingualText>{lang === 'en' ? 'Error loading quotes.' : 'خطأ في تحميل الاقتباسات.'}</BilingualText>
                 </div>
             );
         }

@@ -193,6 +193,10 @@ function isParseIssue(value: CanonicalImportRow | ParseIssue): value is ParseIss
   return "code" in value;
 }
 
+function canIssueUploadForStatus(status: unknown): boolean {
+  return status === "RECEIVED" || status === "UPLOADING";
+}
+
 function toIdentityKeyFromRow(row: CanonicalImportRow): string {
   return row.identityKey;
 }
@@ -342,14 +346,16 @@ function toSessionShelfDocs(uid: string, row: CanonicalImportRow): Array<{
 
 function estimateLogicalOps(params: {
   shelfCount: number;
+  writesRating: boolean;
   writesReview: boolean;
   writesProgress: boolean;
 }): number {
   const baseReadsAndWrites = 20;
   const perShelf = params.shelfCount * 4;
+  const rating = params.writesRating ? 3 : 0;
   const review = params.writesReview ? 4 : 0;
   const progress = params.writesProgress ? 2 : 0;
-  return baseReadsAndWrites + perShelf + review + progress;
+  return baseReadsAndWrites + perShelf + rating + review + progress;
 }
 
 function deriveUserBookState(row: CanonicalImportRow): "completed" | "reading" | "want_to_read" | "unknown" {
@@ -390,12 +396,14 @@ async function applyCanonicalRow(params: {
       return;
     }
 
-    const writesReview = row.rating > 0 || row.reviewText.length > 0;
+    const writesRating = row.rating > 0;
+    const writesReview = row.reviewText.length > 0;
     const exclusive = row.exclusiveShelf ? mapReservedShelf(row.exclusiveShelf) : null;
     const writesProgress = exclusive === "currently-reading" || row.dateRead !== null;
 
     const estimatedOps = estimateLogicalOps({
       shelfCount: row.shelfNames.length,
+      writesRating,
       writesReview,
       writesProgress,
     });
@@ -457,6 +465,51 @@ async function applyCanonicalRow(params: {
       );
     }
 
+    if (writesRating) {
+      const ratingRef = db.doc(`books/${bookId}/ratings/${uid}`);
+      const ratingSnap = await tx.get(ratingRef);
+      const ratingCreatedAt = ratingSnap.exists ? ratingSnap.data()?.createdAt || now : now;
+      const ratingCreatedAtIso = (() => {
+        const raw = ratingSnap.exists ? ratingSnap.data()?.createdAt || now : now;
+        if (typeof raw === "string" && raw.trim()) {
+          const parsed = new Date(raw);
+          if (!Number.isNaN(parsed.getTime())) return parsed.toISOString();
+        }
+        if (raw && typeof raw.toDate === "function") {
+          const parsed = raw.toDate();
+          if (parsed instanceof Date && !Number.isNaN(parsed.getTime())) {
+            return parsed.toISOString();
+          }
+        }
+        return nowIso();
+      })();
+
+      tx.set(
+        ratingRef,
+        {
+          id: uid,
+          domain: "book",
+          bookId,
+          bookTitleEn: trimTo(row.title, 300),
+          bookTitleAr: "",
+          bookAuthorEn: trimTo(row.author, 300),
+          bookAuthorAr: "",
+          bookCoverThumbUrl: "",
+          bookCoverUrl: "",
+          userId: uid,
+          rating: row.rating,
+          source: "goodreads_import",
+          visibility: "private",
+          parserVersion: PARSER_VERSION,
+          updatedAtIso: nowIso(),
+          updatedAt: now,
+          createdAtIso: ratingCreatedAtIso,
+          createdAt: ratingCreatedAt,
+        },
+        { merge: true }
+      );
+    }
+
     let reviewCreated = false;
     if (writesReview) {
       const reviewRef = db.doc(`books/${bookId}/reviews/${uid}`);
@@ -491,7 +544,7 @@ async function applyCanonicalRow(params: {
           bookCoverThumbUrl: "",
           bookCoverUrl: "",
           userId: uid,
-          rating: row.rating > 0 ? row.rating : 1,
+          rating: row.rating,
           text: row.reviewText,
           source: "goodreads_import",
           visibility: "private",
@@ -620,6 +673,66 @@ async function persistIssue(params: {
     },
     { merge: true }
   );
+}
+
+async function cleanupImportSource(params: {
+  uid: string;
+  importId: string;
+  sourcePath: string;
+  terminalStatus: Extract<SessionStatus, "COMPLETE" | "FAILED">;
+}): Promise<void> {
+  const { uid, importId, sourcePath, terminalStatus } = params;
+  if (!sourcePath) {
+    return;
+  }
+
+  const sessionRef = db.doc(`imports/${uid}/sessions/${importId}`);
+
+  try {
+    const file = bucket.file(sourcePath);
+    const [exists] = await file.exists();
+    if (exists) {
+      await file.delete();
+    }
+
+    await sessionRef.set(
+      {
+        source: {
+          cleanup: {
+            status: "DELETED",
+            deletedAt: nowIso(),
+            terminalStatus,
+          },
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.error("[GOODREADS_IMPORT][SOURCE_CLEANUP_FAILED]", {
+      uid,
+      importId,
+      sourcePath,
+      terminalStatus,
+      error: message,
+    });
+
+    await sessionRef.set(
+      {
+        source: {
+          cleanup: {
+            status: "DELETE_FAILED",
+            error: trimTo(message, 500),
+            attemptedAt: nowIso(),
+            terminalStatus,
+          },
+        },
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
 }
 
 async function updateSessionProgress(params: {
@@ -918,6 +1031,13 @@ async function processQueuedSession(uid: string, importId: string): Promise<void
       { merge: true }
     );
 
+    await cleanupImportSource({
+      uid,
+      importId,
+      sourcePath,
+      terminalStatus: "COMPLETE",
+    });
+
     logger.info("[GOODREADS_IMPORT][PROCESS_COMPLETE]", {
       uid,
       importId,
@@ -963,6 +1083,13 @@ async function processQueuedSession(uid: string, importId: string): Promise<void
       },
       { merge: true }
     );
+
+    await cleanupImportSource({
+      uid,
+      importId,
+      sourcePath,
+      terminalStatus: "FAILED",
+    });
 
     logger.error("[GOODREADS_IMPORT][PROCESS_FAILED]", {
       uid,
@@ -1083,10 +1210,17 @@ export const startGoodreadsImport = onCall<GoodreadsStartRequest>(
       throw new HttpsError("internal", "Import session not found after reservation.");
     }
     const session = snap.data() as Record<string, unknown>;
+    const sessionStatus = String(session.status || "");
     const source = session.source as Record<string, unknown>;
     const sourcePath = String(source?.path || "");
     if (!sourcePath) {
       throw new HttpsError("internal", "Import session missing source path.");
+    }
+    if (reservation.existingSession && !canIssueUploadForStatus(sessionStatus)) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Import session is immutable once it leaves upload stage. Current status: ${sessionStatus}.`
+      );
     }
 
     const effectiveMimeType = mimeType || (fileType === "csv" ? "text/csv" : "application/zip");
@@ -1154,6 +1288,7 @@ export const finalizeGoodreadsImport = onCall<GoodreadsFinalizeRequest>(
     }
 
     const session = sessionSnap.data() as Record<string, unknown>;
+    const sessionStatus = String(session.status || "");
     const source = session.source as Record<string, unknown> | undefined;
     const sourcePath = typeof source?.path === "string" ? source.path : "";
     const fileType = (source?.fileType as ImportFileType | undefined) || "csv";
@@ -1166,6 +1301,29 @@ export const finalizeGoodreadsImport = onCall<GoodreadsFinalizeRequest>(
 
     if (!sourcePath) {
       throw new HttpsError("failed-precondition", "Import source path missing.");
+    }
+    if (
+      (sessionStatus === "QUEUED" || sessionStatus === "PROCESSING") &&
+      (source?.detectedKind === "CSV" || source?.detectedKind === "DSAR_JSON")
+    ) {
+      return {
+        importId,
+        status: "QUEUED",
+        detectedSourceKind: source.detectedKind as DetectedSourceKind,
+        parserVersion: PARSER_VERSION,
+      };
+    }
+    if (sessionStatus === "COMPLETE" || sessionStatus === "FAILED") {
+      throw new HttpsError(
+        "failed-precondition",
+        `Import session is immutable after terminal state. Current status: ${sessionStatus}.`
+      );
+    }
+    if (!canIssueUploadForStatus(sessionStatus)) {
+      throw new HttpsError(
+        "failed-precondition",
+        `Import session cannot be finalized from status ${sessionStatus}.`
+      );
     }
 
     const file = bucket.file(sourcePath);

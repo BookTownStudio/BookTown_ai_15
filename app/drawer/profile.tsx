@@ -139,7 +139,10 @@ const ProfileScreen: React.FC = () => {
   const { data: fetchedProfile, isLoading } =
     useUserProfile(effectiveProfileUserId);
 
-  const { data: userStats } = useUserStats(effectiveProfileUserId);
+  const {
+    data: userStats,
+    isError: userStatsError,
+  } = useUserStats(effectiveProfileUserId);
 
   const { data: shelves, isLoading: shelvesLoading } =
     useUserShelves(effectiveProfileUserId);
@@ -284,6 +287,8 @@ const ProfileScreen: React.FC = () => {
     typeof (profileReviewsErrorObject as { code?: unknown }).code === 'string'
       ? String((profileReviewsErrorObject as { code: string }).code)
       : 'UNKNOWN';
+  const statDisplay = (value: number | undefined): string =>
+    userStatsError ? '--' : String(value ?? 0);
   const handleOpenReviewedBook = (
     bookId: string,
     reviewId: string,
@@ -426,6 +431,11 @@ const ProfileScreen: React.FC = () => {
               <ProfileStrengthBar score={userStats.profileCompletionScore} />
             </div>
           )}
+          {userStatsError && (
+            <BilingualText role="Caption" className="mt-2 text-amber-600 dark:text-amber-400">
+              {lang === 'en' ? 'Profile stats unavailable.' : 'إحصاءات الملف الشخصي غير متاحة.'}
+            </BilingualText>
+          )}
         </div>
 
         {/* STICKY PROFILE BAR + TABS */}
@@ -449,22 +459,22 @@ const ProfileScreen: React.FC = () => {
   className="text-xs text-slate-500 flex items-center gap-2"
 >
   <span className="font-medium text-slate-700 dark:text-slate-200">
-    {userStats?.booksRead ?? 0}
+    {statDisplay(userStats?.booksRead)}
   </span>
   Books
   <span>·</span>
   <span className="font-medium text-slate-700 dark:text-slate-200">
-    {userStats?.wordsWritten ?? 0}
+    {statDisplay(userStats?.wordsWritten)}
   </span>
   Words
   <span>·</span>
   <span className="font-medium text-slate-700 dark:text-slate-200">
-    {userStats?.followers ?? 0}
+    {statDisplay(userStats?.followers)}
   </span>
   Followers
   <span>·</span>
   <span className="font-medium text-slate-700 dark:text-slate-200">
-    {userStats?.following ?? 0}
+    {statDisplay(userStats?.following)}
   </span>
   Following
 </motion.div>

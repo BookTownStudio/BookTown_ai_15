@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FontSize, FontStyle } from '../../store/reading-prefs.tsx';
+import type {
+  ReaderHighlightOverlay,
+  ReaderTextSelection,
+} from '../../lib/reader/runtime/contracts.ts';
 
 type ReaderTheme = 'light' | 'dark' | 'sepia';
 type ReaderMode = 'scroll' | 'page';
@@ -11,8 +15,10 @@ type EpubViewerProps = {
   readingMode?: ReaderMode;
   fontSize?: FontSize;
   fontStyle?: FontStyle;
+  highlights?: ReaderHighlightOverlay[];
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
+  onTextSelection?: (selection: ReaderTextSelection | null) => void;
 };
 
 type EpubThemeStyles = Record<string, Record<string, string>>;
@@ -38,6 +44,16 @@ type EpubRendition = {
     next: () => Promise<void>;
     on: (event: string, callback: (payload: any) => void) => void;
     destroy: () => void;
+    annotations?: {
+      highlight: (
+        cfiRange: string,
+        data?: object,
+        cb?: Function,
+        className?: string,
+        styles?: Record<string, string>
+      ) => void;
+      remove: (cfiRange: string, type: string) => void;
+    };
     themes?: {
       default: (styles: EpubThemeStyles) => void;
       select: (name: string) => void;
@@ -150,6 +166,40 @@ function getContainerBackground(theme: ReaderTheme): string {
   return '#0b0f14';
 }
 
+function normalizeSelectionText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+function toViewportRect(rect: DOMRect, frame: HTMLElement | null): DOMRect {
+  if (!frame) {
+    return new DOMRect(rect.x, rect.y, rect.width, rect.height);
+  }
+
+  const frameRect = frame.getBoundingClientRect();
+  return new DOMRect(
+    frameRect.left + rect.left,
+    frameRect.top + rect.top,
+    rect.width,
+    rect.height
+  );
+}
+
+function epubHighlightStyles(color: string): Record<string, string> {
+  if (color === 'green') {
+    return {
+      fill: '#34d399',
+      'fill-opacity': '0.28',
+      'mix-blend-mode': 'multiply',
+    };
+  }
+
+  return {
+    fill: '#facc15',
+    'fill-opacity': '0.28',
+    'mix-blend-mode': 'multiply',
+  };
+}
+
 const EpubViewer: React.FC<EpubViewerProps> = ({
   url,
   initialPage = 1,
@@ -157,14 +207,18 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   readingMode = 'scroll',
   fontSize = 'md',
   fontStyle = 'default',
+  highlights = [],
   onPageChange,
   onLoadError,
+  onTextSelection,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const renditionRef = useRef<ReturnType<EpubBook['renderTo']> | null>(null);
   const bookRef = useRef<EpubBook | null>(null);
   const onPageChangeRef = useRef<EpubViewerProps["onPageChange"]>(onPageChange);
   const onLoadErrorRef = useRef<EpubViewerProps["onLoadError"]>(onLoadError);
+  const onTextSelectionRef = useRef<EpubViewerProps["onTextSelection"]>(onTextSelection);
+  const appliedHighlightCfisRef = useRef<string[]>([]);
   const lastWheelNavAtRef = useRef<number>(0);
   const isRenditionReadyRef = useRef<boolean>(false);
   const [pageState, setPageState] = useState({ current: 1, total: 1 });
@@ -177,6 +231,10 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   useEffect(() => {
     onLoadErrorRef.current = onLoadError;
   }, [onLoadError]);
+
+  useEffect(() => {
+    onTextSelectionRef.current = onTextSelection;
+  }, [onTextSelection]);
 
   const emitPage = useCallback(
     (current: number, total: number) => {
@@ -256,6 +314,39 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
 
           emitPage(current, totalLocations);
         });
+
+        rendition.on('selected', (cfiRange: string, contents: any) => {
+          if (cancelled) return;
+          if (!cfiRange || typeof cfiRange !== 'string') return;
+
+          const selection =
+            typeof contents?.window?.getSelection === 'function'
+              ? contents.window.getSelection()
+              : null;
+          const quote = normalizeSelectionText(selection?.toString?.() || '');
+          if (!quote || !selection || selection.rangeCount === 0) {
+            onTextSelectionRef.current?.(null);
+            return;
+          }
+
+          const range = selection.getRangeAt(0);
+          const rawRect = range.getBoundingClientRect();
+          const frame =
+            (contents?.document?.defaultView?.frameElement as HTMLElement | null) || null;
+          const rect = toViewportRect(rawRect, frame);
+          const percentage = book.locations.percentageFromCfi(cfiRange);
+          const page = Math.max(
+            1,
+            Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
+          );
+
+          onTextSelectionRef.current?.({
+            quote,
+            page,
+            cfi: cfiRange,
+            rect,
+          });
+        });
       } catch (error: any) {
         if (abortController.signal.aborted) return;
         const message = error?.message || 'Failed to load EPUB.';
@@ -271,6 +362,12 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       cancelled = true;
       abortController.abort();
       try {
+        const applied = appliedHighlightCfisRef.current;
+        if (renditionRef.current?.annotations && applied.length > 0) {
+          for (const cfi of applied) {
+            renditionRef.current.annotations.remove(cfi, 'highlight');
+          }
+        }
         renditionRef.current?.destroy();
       } catch {
         // no-op
@@ -283,8 +380,43 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       renditionRef.current = null;
       bookRef.current = null;
       isRenditionReadyRef.current = false;
+      appliedHighlightCfisRef.current = [];
     };
   }, [emitPage, fontSize, fontStyle, initialPage, readingMode, theme, url]);
+
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    if (!rendition?.annotations) return;
+
+    for (const cfi of appliedHighlightCfisRef.current) {
+      try {
+        rendition.annotations.remove(cfi, 'highlight');
+      } catch (error) {
+        console.warn('[READER][EPUB_HIGHLIGHT_REMOVE_FAILED]', error);
+      }
+    }
+
+    const nextCfis = highlights
+      .filter((highlight) => highlight.cfi && !highlight.cfi.startsWith('pdf:'))
+      .map((highlight) => highlight.cfi as string);
+
+    for (const highlight of highlights) {
+      if (!highlight.cfi || highlight.cfi.startsWith('pdf:')) continue;
+      try {
+        rendition.annotations.highlight(
+          highlight.cfi,
+          { highlightId: highlight.highlightId },
+          undefined,
+          'booktown-reader-highlight',
+          epubHighlightStyles(highlight.color)
+        );
+      } catch (error) {
+        console.warn('[READER][EPUB_HIGHLIGHT_RENDER_FAILED]', error);
+      }
+    }
+
+    appliedHighlightCfisRef.current = nextCfis;
+  }, [highlights, theme]);
 
   const navigateRendition = useCallback(
     (direction: 'prev' | 'next') => {
@@ -341,6 +473,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       className="h-full w-full min-h-0 flex flex-col"
       style={{ backgroundColor: getContainerBackground(theme) }}
       onWheel={handleWheel}
+      onMouseDown={() => onTextSelectionRef.current?.(null)}
     >
       <div className="flex-1 min-h-0 overflow-auto">
         {loadError ? (

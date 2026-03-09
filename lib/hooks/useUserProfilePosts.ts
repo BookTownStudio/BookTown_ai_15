@@ -11,7 +11,7 @@ export const useUserProfilePosts = (
 ) => {
   const { user } = useAuth();
   const sessionUid = user?.uid;
-  const enabled = enabledOverride && !!sessionUid && !!profileUid;
+  const enabled = enabledOverride && !!profileUid;
 
   return useQuery<Post[]>({
     queryKey: queryKeys.user.profilePosts(
@@ -25,4 +25,3 @@ export const useUserProfilePosts = (
     refetchOnWindowFocus: false,
   });
 };
-

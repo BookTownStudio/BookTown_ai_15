@@ -99,6 +99,12 @@ function sanitizeRating(value: unknown): number {
   return intValue;
 }
 
+function normalizeStoredRating(value: unknown): number {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return 0;
+  return Math.max(0, Math.min(5, Math.trunc(numeric)));
+}
+
 function sanitizeLimit(value: unknown): number {
   const numeric = Number(value);
   if (!Number.isFinite(numeric) || numeric <= 0) {
@@ -209,7 +215,7 @@ function normalizeReviewItem(
     bookId: sanitizeString(source.bookId, MAX_BOOK_ID_LENGTH) || fallbackBookId,
     ...bookSnapshot,
     userId: sanitizeString(source.userId, MAX_UID_LENGTH),
-    rating: sanitizeRating(source.rating),
+    rating: normalizeStoredRating(source.rating),
     text: sanitizeString(source.text, MAX_REVIEW_TEXT_LENGTH),
     authorName: sanitizeString(source.authorName, 120),
     authorHandle: sanitizeString(source.authorHandle, 120),
@@ -272,10 +278,12 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
   const { authorName, authorHandle, authorAvatar } = await resolveAuthorIdentity(uid);
   const bookSnapshot = await resolveBookSnapshot(bookId);
   const reviewRef = db.collection("books").doc(bookId).collection("reviews").doc(uid);
+  const ratingRef = db.collection("books").doc(bookId).collection("ratings").doc(uid);
   const projectionRef = db.collection("user_reviews").doc(`${uid}_${bookId}`);
 
   const created = await db.runTransaction(async (tx) => {
     const existingSnap = await tx.get(reviewRef);
+    const existingRatingSnap = await tx.get(ratingRef);
     const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
     const existingRecommendationOrigin = sanitizeRecommendationOrigin(
       existingData.recommendationOrigin
@@ -292,8 +300,32 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
         : null);
     const createdAt = existingSnap.exists
       ? existingSnap.data()?.createdAt ?? existingSnap.data()?.createdAtIso ?? nowIso
-      : nowIso;
+      : existingRatingSnap.exists
+        ? existingRatingSnap.data()?.createdAt ?? existingRatingSnap.data()?.createdAtIso ?? nowIso
+        : nowIso;
     const isNew = !existingSnap.exists;
+
+    tx.set(
+      ratingRef,
+      {
+        id: uid,
+        domain: "book",
+        visibility,
+        bookId,
+        ...bookSnapshot,
+        userId: uid,
+        rating,
+        authorName,
+        authorHandle,
+        authorAvatar,
+        updatedAtIso: nowIso,
+        updatedAt: nowIso,
+        createdAtIso: toIso(createdAt),
+        createdAt,
+        sourcePath: ratingRef.path,
+      },
+      { merge: true }
+    );
 
     tx.set(
       reviewRef,
@@ -379,9 +411,11 @@ export const deleteBookReview = onCall({ cors: true }, async (request) => {
   const uid = ensureUid(request.auth.uid, "auth.uid");
   const bookId = ensureBookId(request.data?.bookId);
   const reviewRef = db.collection("books").doc(bookId).collection("reviews").doc(uid);
+  const ratingRef = db.collection("books").doc(bookId).collection("ratings").doc(uid);
   const projectionRef = db.collection("user_reviews").doc(`${uid}_${bookId}`);
 
   await db.runTransaction(async (tx) => {
+    tx.delete(ratingRef);
     tx.delete(reviewRef);
     tx.delete(projectionRef);
   });

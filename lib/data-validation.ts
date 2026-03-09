@@ -30,7 +30,10 @@ export const DEFAULT_POST: Post = {
     flags: {
         edited: false,
         hasAttachments: false
-    }
+    },
+    primaryEntityType: null,
+    primaryEntityId: null,
+    hydratedEntity: null,
 };
 
 export function normalizePost(data: any): Post {
@@ -102,6 +105,18 @@ export function normalizePost(data: any): Post {
             hasAttachments: attachments.length > 0
         },
         editedAt,
+        primaryEntityType:
+            typeof data.primaryEntityType === 'string' && data.primaryEntityType.trim()
+                ? data.primaryEntityType.trim().toLowerCase()
+                : null,
+        primaryEntityId:
+            typeof data.primaryEntityId === 'string' && data.primaryEntityId.trim()
+                ? data.primaryEntityId.trim()
+                : null,
+        hydratedEntity:
+            data.hydratedEntity && typeof data.hydratedEntity === 'object'
+                ? data.hydratedEntity
+                : null,
         attachments: data.attachments,
         comments: data.comments,
         isFeatured: !!data.isFeatured

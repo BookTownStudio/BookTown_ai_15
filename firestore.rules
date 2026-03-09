@@ -65,6 +65,23 @@ service cloud.firestore {
       ]);
     }
 
+    function resolveShelfVisibility(shelfData) {
+      return shelfData.visibility is string
+        ? shelfData.visibility
+        : "public";
+    }
+
+    function canReadShelfByData(shelfData) {
+      let ownerId = shelfData.ownerId is string ? shelfData.ownerId : "";
+      let visibility = resolveShelfVisibility(shelfData);
+
+      return (
+        visibility == "public"
+        || visibility == "unlisted"
+        || (isSignedIn() && request.auth.uid == ownerId)
+      );
+    }
+
     function isBoundedString(value, maxLen) {
       return value is string
         && value.size() > 0
@@ -450,33 +467,9 @@ service cloud.firestore {
        ========================= */
     match /shelves/{shelfDocId} {
 
-      allow read: if isSignedIn();
+      allow read: if canReadShelfByData(resource.data);
 
-      allow create: if isCreateShelfOwner()
-        && request.resource.data.keys().hasOnly([
-          "ownerId",
-          "titleEn",
-          "titleAr",
-          "entries",
-          "createdAt",
-          "updatedAt",
-          "isSystem"
-        ])
-        && (!("entries" in request.resource.data) || request.resource.data.entries.size() == 0);
-
-      allow update: if isShelfOwner()
-        && isShelfMetadataPatch()
-        && (
-          !isSystemShelfId(resource.data.id)
-          ||
-          (
-            request.resource.data.titleEn == resource.data.titleEn
-            && request.resource.data.titleAr == resource.data.titleAr
-          )
-        );
-
-      allow delete: if isShelfOwner()
-        && !isSystemShelfId(resource.data.id);
+      allow create, update, delete: if false;
     }
 
     /* =========================
@@ -776,15 +769,11 @@ service cloud.firestore {
        SOCIAL
        ========================= */
     match /posts/{postId} {
-      allow read: if canReadPostByData(resource.data);
+      allow read: if false;
       allow create, update, delete: if false;
 
       match /comments/{commentId} {
-        allow read: if canReadPostById(postId)
-          && (
-            !("status" in resource.data)
-            || resource.data.status == "published"
-          );
+        allow read: if false;
         allow create, update, delete: if false;
       }
     }

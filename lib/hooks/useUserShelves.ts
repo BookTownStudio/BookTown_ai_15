@@ -24,7 +24,10 @@ export const useUserShelves = (ownerId?: string) => {
   const enabled = !!finalUid;
 
   return useQuery<Shelf[]>({
-    queryKey: queryKeys.user.shelves(finalUid ?? undefined) as unknown as any[],
+    queryKey: [
+      ...queryKeys.user.shelves(effectiveUid ?? undefined),
+      { ownerId: finalUid ?? undefined },
+    ] as unknown as any[],
 
     queryFn: async () => {
       // Invariant: if this runs, uid must exist

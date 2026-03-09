@@ -97,7 +97,8 @@ const HomeScreen: React.FC = () => {
 
   const {
     data: searchResponse,
-    isLoading: isSearchingBooks
+    isLoading: isSearchingBooks,
+    error: searchError,
   } = useBookSearch(searchQuery, {
     ebookOnly,
     lang,
@@ -106,6 +107,12 @@ const HomeScreen: React.FC = () => {
 
   const { isLoading: isAnalyzingImage } = useIdentifyBook();
   const searchResults = searchResponse?.results || [];
+  const searchErrorMessage =
+    searchError instanceof Error && searchError.message.trim().length > 0
+      ? searchError.message
+      : lang === 'en'
+      ? 'Search is temporarily unavailable.'
+      : 'البحث غير متاح مؤقتاً.';
   const clickedRankFor = (id: string): number => {
     const index = searchResults.findIndex((entry) => entry.id === id);
     return index >= 0 ? index + 1 : 1;
@@ -207,7 +214,13 @@ const HomeScreen: React.FC = () => {
           </div>
         )}
 
-        {!isSearchingBooks && validResults.length > 0 && (
+        {!isSearchingBooks && searchError && searchQuery.trim().length >= 2 && (
+          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-5 text-sm text-red-200">
+            {searchErrorMessage}
+          </div>
+        )}
+
+        {!isSearchingBooks && !searchError && validResults.length > 0 && (
           <div className="space-y-3">
             {validResults.map(result => (
               <SearchResultCard

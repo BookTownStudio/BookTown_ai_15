@@ -347,6 +347,7 @@ export interface CatalogDataService {
   getAuthor(authorId: string): Promise<Author | null>;
   createAuthor(author: Author): Promise<void>;
   searchAuthors(query: string): Promise<Author[]>;
+  discoverAuthors(params: { query: string; limit?: number }): Promise<Author[]>;
 
   followAuthor(uid: string, authorId: string): Promise<void>;
   unfollowAuthor(uid: string, authorId: string): Promise<void>;

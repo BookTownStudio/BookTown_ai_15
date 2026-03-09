@@ -13,7 +13,7 @@ endobj
 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
 endobj
 5 0 obj
-<< /Length 128 >>
+<< /Length 251 >>
 stream
 BT
 /F1 28 Tf
@@ -22,6 +22,10 @@ BT
 0 -34 Td
 /F1 16 Tf
 (Deterministic PDF for CI timing gates.) Tj
+0 -28 Td
+(Highlight lifecycle regression target text.) Tj
+0 -28 Td
+(Select this line to verify save reopen and remove.) Tj
 ET
 endstream
 endobj
@@ -36,5 +40,5 @@ xref
 trailer
 << /Size 6 /Root 1 0 R >>
 startxref
-499
+622
 %%EOF

@@ -9,9 +9,19 @@ interface QuoteBubbleProps {
     rect: DOMRect;
     onSave: () => void;
     onDismiss: () => void;
+    saveLabel?: string;
+    dismissLabel?: string;
+    icon?: React.ReactNode;
 }
 
-const QuoteBubble: React.FC<QuoteBubbleProps> = ({ rect, onSave, onDismiss }) => {
+const QuoteBubble: React.FC<QuoteBubbleProps> = ({
+    rect,
+    onSave,
+    onDismiss,
+    saveLabel,
+    dismissLabel,
+    icon,
+}) => {
     const { lang } = useI18n();
 
     // Position securely above the selection, clamping to window edges if needed
@@ -39,8 +49,8 @@ const QuoteBubble: React.FC<QuoteBubbleProps> = ({ rect, onSave, onDismiss }) =>
                     className="!py-1.5 !px-4 !text-sm !text-white hover:!bg-white/10 !rounded-full flex items-center gap-2"
                     onClick={onSave}
                 >
-                    <QuoteIcon className="h-4 w-4 text-accent" />
-                    <span className="font-semibold">{lang === 'en' ? 'Save Quote' : 'حفظ الاقتباس'}</span>
+                    {icon ?? <QuoteIcon className="h-4 w-4 text-accent" />}
+                    <span className="font-semibold">{saveLabel ?? (lang === 'en' ? 'Save Quote' : 'حفظ الاقتباس')}</span>
                 </Button>
                 <div className="w-px h-4 bg-white/20 mx-1" />
                  <Button
@@ -48,7 +58,7 @@ const QuoteBubble: React.FC<QuoteBubbleProps> = ({ rect, onSave, onDismiss }) =>
                     className="!py-1.5 !px-3 !text-xs !text-white/60 hover:!text-white hover:!bg-white/10 !rounded-full"
                     onClick={onDismiss}
                 >
-                    {lang === 'en' ? 'Cancel' : 'إلغاء'}
+                    {dismissLabel ?? (lang === 'en' ? 'Cancel' : 'إلغاء')}
                 </Button>
             </div>
             {/* Arrow pointer */}

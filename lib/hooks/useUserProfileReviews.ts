@@ -11,7 +11,7 @@ export const useUserProfileReviews = (
 ) => {
   const { user } = useAuth();
   const sessionUid = user?.uid;
-  const enabled = enabledOverride && !!sessionUid && !!profileUid;
+  const enabled = enabledOverride && !!profileUid;
 
   return useQuery<Review[]>({
     queryKey: queryKeys.user.profileReviews(
@@ -25,4 +25,3 @@ export const useUserProfileReviews = (
     refetchOnWindowFocus: false,
   });
 };
-

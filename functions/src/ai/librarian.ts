@@ -192,6 +192,7 @@ const LIBRARIAN_MIN_LLM_CANDIDATES = 20;
 const LIBRARIAN_MAX_LLM_CANDIDATES = 30;
 const LIBRARIAN_DEFAULT_SELECTION_COUNT = 2;
 const LIBRARIAN_MAX_REGENERATION_ATTEMPTS = 1;
+const LIBRARIAN_MAX_VERIFICATION_ATTEMPTS_PER_ROUND = 4;
 const LIBRARIAN_LLM_TIMEOUT_MS = 3000;
 const LIBRARIAN_PROMPT_TOKEN_LIMIT = 2000;
 const LIBRARIAN_MAX_UNIFIED_SEARCH_CALLS = 8;
@@ -204,8 +205,7 @@ const LIBRARIAN_MMR_SELECTION_SIZE = 5;
 const CANONICAL_AUTHOR_BOOST = 0.08;
 const CANONICAL_TITLE_BOOST = 0.1;
 const CANONICAL_MOVEMENT_BOOST = 0.05;
-// Debug mode: bypass cache in all non-test runtimes so every request exercises full pipeline.
-const LIBRARIAN_CACHE_DISABLED = process.env.NODE_ENV !== "test";
+const LIBRARIAN_CACHE_DISABLED = process.env.LIBRARIAN_DISABLE_CACHE === "1";
 
 type UnifiedSearchBudget = {
   used: number;
@@ -4639,15 +4639,18 @@ export async function runLibrarianRecommendation(params: {
         rankPosition: index + 1,
       }));
 
+    const sideEffects: Array<Promise<void>> = [];
     if (!options.fromCache && recommendations.length > 0) {
       if (!LIBRARIAN_CACHE_DISABLED) {
-        await storeCachedRecommendations({
-          uid: normalizedUid,
-          profileVersion: params.context.profileVersion,
-          intent: cacheIntent,
-          normalizedQuery: validation.normalizedQuery,
-          recommendations,
-        });
+        sideEffects.push(
+          storeCachedRecommendations({
+            uid: normalizedUid,
+            profileVersion: params.context.profileVersion,
+            intent: cacheIntent,
+            normalizedQuery: validation.normalizedQuery,
+            recommendations,
+          })
+        );
       } else {
         logger.info("[AI][LIBRARIAN][CACHE_BYPASS]", {
           action: "write_skip",
@@ -4655,18 +4658,35 @@ export async function runLibrarianRecommendation(params: {
         });
       }
 
-      await emitHomeFeedSignal({
-        uid: normalizedUid,
-        profileVersion: params.context.profileVersion,
-        normalizedQuery: validation.normalizedQuery,
-        recommendationCount: recommendations.length,
-        suggestionSessionId,
-        suggestionIds: attributedRecommendations.map((row) => row.suggestionId),
-      });
+      sideEffects.push(
+        emitHomeFeedSignal({
+          uid: normalizedUid,
+          profileVersion: params.context.profileVersion,
+          normalizedQuery: validation.normalizedQuery,
+          recommendationCount: recommendations.length,
+          suggestionSessionId,
+          suggestionIds: attributedRecommendations.map((row) => row.suggestionId),
+        })
+      );
     }
 
+    sideEffects.push(
+      persistSuggestionSession({
+        uid: normalizedUid,
+        suggestionSessionId,
+        normalizedQuery: validation.normalizedQuery,
+        intent: params.request.intent.trim(),
+        mode: options.suggestionMode ?? mode,
+        books: attributedRecommendations,
+        fromCache: options.fromCache,
+      })
+    );
+
     let authorRecommendations: LibrarianAuthorCard[] = [];
-    if (!options.suppressAuthorRecommendations) {
+    const shouldBuildAuthorRecommendations =
+      !options.suppressAuthorRecommendations &&
+      (options.intent === "author_request" || attributedRecommendations.length === 0);
+    if (shouldBuildAuthorRecommendations) {
       authorRecommendations = await buildAuthorRecommendations({
         normalizedQuery: validation.normalizedQuery,
         authorName: options.authorName || intentClassification.authorName,
@@ -4745,23 +4765,25 @@ export async function runLibrarianRecommendation(params: {
       ),
     };
 
-    try {
-      await persistSuggestionSession({
+    const sideEffectResults = await Promise.allSettled(sideEffects);
+    for (let index = 0; index < sideEffectResults.length; index += 1) {
+      const result = sideEffectResults[index];
+      if (result.status === "fulfilled") continue;
+      const error = String(result.reason);
+      if (index === sideEffects.length - 1) {
+        logger.error("[AI][LIBRARIAN][SUGGESTION_SESSION_WRITE_FAILED]", {
+          uid: normalizedUid,
+          suggestionSessionId,
+          error,
+        });
+        throw new Error("ENGINE_FAILURE:suggestion_session_write_failed");
+      }
+      logger.warn("[AI][LIBRARIAN][SIDE_EFFECT_FAILED]", {
         uid: normalizedUid,
         suggestionSessionId,
-        normalizedQuery: validation.normalizedQuery,
-        intent: params.request.intent.trim(),
-        mode: options.suggestionMode ?? mode,
-        books: attributedRecommendations,
-        fromCache: options.fromCache,
+        stage: index === 0 ? "cache_or_signal" : "signal_or_cache",
+        error,
       });
-    } catch (error) {
-      logger.error("[AI][LIBRARIAN][SUGGESTION_SESSION_WRITE_FAILED]", {
-        uid: normalizedUid,
-        suggestionSessionId,
-        error: String(error),
-      });
-      throw new Error("ENGINE_FAILURE:suggestion_session_write_failed");
     }
 
     logger.info("[AI][LIBRARIAN][CONVERSATION_PAYLOAD]", {
@@ -5093,8 +5115,9 @@ export async function runLibrarianRecommendation(params: {
       break;
     }
 
+    const proposalsToVerify = freshProposals.slice(0, LIBRARIAN_MAX_VERIFICATION_ATTEMPTS_PER_ROUND);
     const verifiedRows = await Promise.all(
-      freshProposals.map(async (proposal) => {
+      proposalsToVerify.map(async (proposal) => {
         try {
           const verified = await verifyProposedBook({
             proposal,
@@ -5221,16 +5244,16 @@ export async function runLibrarianRecommendation(params: {
     anchorResolved: Boolean(anchor),
   });
 
-  return finalizeAndReturn(recommendations, {
-    fromCache: false,
-    remainingQuota: quota.remaining,
-    intent: conversationalIntent,
-    suggestionMode: mode,
-    excludedKeys: excludedProposalKeys,
-    minRecommendations: LIBRARIAN_LIMITS.MAX_BOOKS,
-    fallbackQuery: requestedAuthor
-      ? `books by ${requestedAuthor}`
-      : validation.normalizedQuery,
+    return finalizeAndReturn(recommendations, {
+      fromCache: false,
+      remainingQuota: quota.remaining,
+      intent: conversationalIntent,
+      suggestionMode: mode,
+      excludedKeys: excludedProposalKeys,
+      minRecommendations: 3,
+      fallbackQuery: requestedAuthor
+        ? `books by ${requestedAuthor}`
+        : validation.normalizedQuery,
     fallbackReason: "book_recommendation_finalize",
     fallbackShortReason: "A verified match for your request and a strong next reading step.",
     confidence: intentConfidence,

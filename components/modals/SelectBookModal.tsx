@@ -41,7 +41,7 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const { data: searchResponse, isLoading: isSearching } = useBookSearch(searchQuery, {
+  const { data: searchResponse, isLoading: isSearching, error: searchError } = useBookSearch(searchQuery, {
     ebookOnly: false,
     lang,
     limit: 15,
@@ -83,7 +83,11 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
   const resolveCanonicalBookId = async (
     result: SearchResultDTO
   ): Promise<string | null> => {
-    if (typeof result.bookId === 'string' && result.bookId.trim().length > 0) {
+    if (
+      result.resultType === 'canonical' &&
+      typeof result.bookId === 'string' &&
+      result.bookId.trim().length > 0
+    ) {
       return result.bookId.trim();
     }
 
@@ -111,6 +115,12 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
 
     return resolved?.canonicalBookId || null;
   };
+  const searchErrorMessage =
+    searchError instanceof Error && searchError.message.trim().length > 0
+      ? searchError.message
+      : lang === 'en'
+      ? 'Search is temporarily unavailable.'
+      : 'البحث غير متاح مؤقتاً.';
 
   const handleSelect = async (result: SearchResultDTO) => {
     if (busyId) return;
@@ -196,7 +206,14 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
             </div>
           )}
 
+          {!isSearching && searchError && (
+            <BilingualText className="text-center pt-8 text-red-400">
+              {searchErrorMessage}
+            </BilingualText>
+          )}
+
           {!isSearching &&
+            !searchError &&
             searchQuery.length > 1 &&
             (!searchResponse?.results || searchResponse.results.length === 0) && (
               <BilingualText className="text-center pt-8 text-slate-500">
@@ -207,6 +224,7 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
             )}
 
           {!isSearching &&
+            !searchError &&
             searchResponse?.results &&
             searchResponse.results.map((result) => (
               <SearchResultCard

@@ -10,11 +10,13 @@ import { getFunctions } from "firebase/functions";
  * Stored in IndexedDB / Cache (implementation-agnostic).
  */
 export interface OfflineEbookRecord {
-  ebookId: string;
+  bookId: string;
+  format: "pdf" | "epub" | "unknown";
   storedAt: number;
   expiresAt: number;
   bytes?: number;
   checksum?: string | null;
+  lastKnownPage?: number;
 }
 
 /**
@@ -22,26 +24,52 @@ export interface OfflineEbookRecord {
  * Centralized to prevent drift
  */
 const OFFLINE_NAMESPACE = "booktown_offline_ebooks";
+const OFFLINE_CACHE_KEY_PREFIX = "offline-book://";
+
+function buildStorageKey(bookId: string): string {
+  return `${OFFLINE_NAMESPACE}:${bookId}`;
+}
+
+function buildCacheKey(bookId: string): string {
+  return `${OFFLINE_CACHE_KEY_PREFIX}${bookId}`;
+}
+
+function normalizeEnvelope<T>(value: unknown): T {
+  const payload = value as any;
+
+  if (payload?.success === false) {
+    const code =
+      typeof payload?.error?.code === "string" ? payload.error.code : "UNKNOWN";
+    const message =
+      typeof payload?.error?.message === "string"
+        ? payload.error.message
+        : "Offline access request failed.";
+    throw new Error(`[${code}] ${message}`);
+  }
+
+  return (payload?.success === true ? payload.data : payload) as T;
+}
 
 /**
  * requestOfflineAccess
  *
  * Calls server to validate eligibility and issue signed URL.
  */
-async function requestOfflineAccess(ebookId: string) {
+async function requestOfflineAccess(bookId: string) {
   const fn = httpsCallable(
     getFunctions(),
     "requestEbookOfflineAccess"
   );
-  const res = await fn({ ebookId });
+  const res = await fn({ bookId });
 
-  return res.data as {
-    ebookId: string;
+  return normalizeEnvelope<{
+    bookId: string;
+    format: "pdf" | "epub" | "unknown";
     signedUrl: string;
     expiresAt: number;
     checksum: string | null;
     maxBytes: number | null;
-  };
+  }>(res.data);
 }
 
 /**
@@ -64,7 +92,7 @@ async function downloadAndStore(
 
   // Cache API (preferred for large binaries)
   const cache = await caches.open(OFFLINE_NAMESPACE);
-  await cache.put(record.ebookId, new Response(blob));
+  await cache.put(buildCacheKey(record.bookId), new Response(blob));
 
   return blob.size;
 }
@@ -75,32 +103,36 @@ async function downloadAndStore(
  * Public API — entry point
  */
 export async function markEbookOffline(
-  ebookId: string
+  bookId: string
 ): Promise<OfflineEbookRecord> {
   const {
     signedUrl,
     expiresAt,
     checksum,
     maxBytes,
-  } = await requestOfflineAccess(ebookId);
+    format,
+  } = await requestOfflineAccess(bookId);
 
   const record: OfflineEbookRecord = {
-    ebookId,
+    bookId,
+    format,
     storedAt: Date.now(),
     expiresAt,
     checksum,
+    lastKnownPage: 1,
   };
 
   const bytes = await downloadAndStore(record, signedUrl);
 
   if (maxBytes && bytes > maxBytes) {
+    await clearOfflineEbook(bookId);
     throw new Error("Offline file exceeds allowed size.");
   }
 
   record.bytes = bytes;
 
   localStorage.setItem(
-    `${OFFLINE_NAMESPACE}:${ebookId}`,
+    buildStorageKey(bookId),
     JSON.stringify(record)
   );
 
@@ -113,11 +145,9 @@ export async function markEbookOffline(
  * Safe lookup — no assumptions
  */
 export function getOfflineRecord(
-  ebookId: string
+  bookId: string
 ): OfflineEbookRecord | null {
-  const raw = localStorage.getItem(
-    `${OFFLINE_NAMESPACE}:${ebookId}`
-  );
+  const raw = localStorage.getItem(buildStorageKey(bookId));
 
   if (!raw) return null;
 
@@ -139,18 +169,60 @@ export function isOfflineValid(
   return Date.now() < record.expiresAt;
 }
 
+export function getAllOfflineBookIds(): string[] {
+  const ids: string[] = [];
+  for (let i = 0; i < localStorage.length; i += 1) {
+    const key = localStorage.key(i);
+    if (!key || !key.startsWith(`${OFFLINE_NAMESPACE}:`)) continue;
+    ids.push(key.slice(`${OFFLINE_NAMESPACE}:`.length));
+  }
+  return ids;
+}
+
+export function updateOfflineLastKnownPage(
+  bookId: string,
+  page: number
+): OfflineEbookRecord | null {
+  const record = getOfflineRecord(bookId);
+  if (!record) return null;
+
+  const nextRecord: OfflineEbookRecord = {
+    ...record,
+    lastKnownPage: Math.max(1, Math.trunc(page)),
+  };
+
+  localStorage.setItem(buildStorageKey(bookId), JSON.stringify(nextRecord));
+  return nextRecord;
+}
+
+export async function getOfflineBookObjectUrl(
+  bookId: string
+): Promise<string | null> {
+  const record = getOfflineRecord(bookId);
+  if (!record || !isOfflineValid(record)) {
+    return null;
+  }
+
+  const cache = await caches.open(OFFLINE_NAMESPACE);
+  const response = await cache.match(buildCacheKey(bookId));
+  if (!response) {
+    return null;
+  }
+
+  const blob = await response.blob();
+  return URL.createObjectURL(blob);
+}
+
 /**
  * clearOfflineEbook
  *
  * Used on expiry or manual cleanup.
  */
 export async function clearOfflineEbook(
-  ebookId: string
+  bookId: string
 ) {
   const cache = await caches.open(OFFLINE_NAMESPACE);
-  await cache.delete(ebookId);
+  await cache.delete(buildCacheKey(bookId));
 
-  localStorage.removeItem(
-    `${OFFLINE_NAMESPACE}:${ebookId}`
-  );
+  localStorage.removeItem(buildStorageKey(bookId));
 }

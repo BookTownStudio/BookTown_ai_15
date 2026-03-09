@@ -38,17 +38,17 @@ export const useCreateShelf = () => {
 
         onMutate: async ({ titleEn, titleAr }) => {
             if (!uid) return;
+            const shelvesKey = [
+                ...queryKeys.user.shelves(uid),
+                { ownerId: uid }
+            ] as unknown as any[];
 
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(queryKeys.user.shelves(uid) as unknown as any[]);
+            await queryClient.cancelQueries(shelvesKey);
 
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            const previousShelves =
-                queryClient.getQueryData(queryKeys.user.shelves(uid) as unknown as any[]);
+            const previousShelves = queryClient.getQueryData(shelvesKey);
 
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             queryClient.setQueryData(
-                queryKeys.user.shelves(uid) as unknown as any[],
+                shelvesKey,
                 (old: Shelf[] = []) => {
                     const optimisticShelf: Shelf = {
                         id: `temp-${Date.now()}`,
@@ -68,9 +68,12 @@ export const useCreateShelf = () => {
             console.error("[CREATE_SHELF] mutation error", err);
 
             if (uid && context?.previousShelves) {
-                // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
+                const shelvesKey = [
+                    ...queryKeys.user.shelves(uid),
+                    { ownerId: uid }
+                ] as unknown as any[];
                 queryClient.setQueryData(
-                    queryKeys.user.shelves(uid) as unknown as any[],
+                    shelvesKey,
                     context.previousShelves
                 );
             }
@@ -79,7 +82,6 @@ export const useCreateShelf = () => {
         onSettled: () => {
             if (uid) {
                 devLog("[CREATE_SHELF] mutation settled → invalidating shelves");
-                // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.shelves(uid) as unknown as any[]);
             }
         },

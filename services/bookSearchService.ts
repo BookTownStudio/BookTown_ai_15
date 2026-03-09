@@ -1,5 +1,10 @@
 import { SearchResponseDTO, SearchResultDTO } from '../types/bookSearch.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
+import {
+  getFirebaseAppCheckToken,
+  getFirebaseAuth,
+  isFirebaseInitialized,
+} from '../lib/firebase.ts';
 
 type SearchParams = {
   query: string;
@@ -21,6 +26,18 @@ type FailureEnvelope = {
     message?: string;
   };
 };
+
+export class BookSearchRequestError extends Error {
+  readonly code: string;
+  readonly status: number | null;
+
+  constructor(message: string, options?: { code?: string; status?: number | null }) {
+    super(message);
+    this.name = 'BookSearchRequestError';
+    this.code = options?.code || 'SEARCH_REQUEST_FAILED';
+    this.status = typeof options?.status === 'number' ? options.status : null;
+  }
+}
 
 function asString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
@@ -46,9 +63,12 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
   const resultType = asString(record.resultType) === 'external' ? 'external' : 'canonical';
   const id = asString(record.id);
   const editionId = asString(record.editionId) || id;
-  const bookId = asString(record.bookId) || id;
+  const canonicalBookId =
+    resultType === 'canonical'
+      ? asString(record.bookId) || id
+      : '';
 
-  if (!id || !editionId || !bookId) {
+  if (!id || !editionId || (resultType === 'canonical' && !canonicalBookId)) {
     return null;
   }
 
@@ -64,7 +84,7 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
   return {
     id,
     editionId,
-    bookId,
+    bookId: canonicalBookId,
     externalId: asString(record.externalId),
     source,
     resultType,
@@ -89,6 +109,44 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
         ? (record.rawBook as Record<string, unknown>)
         : undefined,
   };
+}
+
+async function buildSearchHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  const isDev = import.meta.env.DEV === true;
+
+  if (!isFirebaseInitialized()) {
+    throw new BookSearchRequestError('Search requires Firebase initialization.', {
+      code: 'FIREBASE_NOT_INITIALIZED',
+    });
+  }
+
+  try {
+    const auth = getFirebaseAuth();
+    const user = auth.currentUser;
+    if (user) {
+      const token = await user.getIdToken();
+      if (typeof token === 'string' && token.trim().length > 0) {
+        headers.Authorization = `Bearer ${token.trim()}`;
+      }
+    }
+  } catch {
+    // Backend remains authoritative; App Check is still required below.
+  }
+
+  const appCheckToken = await getFirebaseAppCheckToken();
+  if (typeof appCheckToken !== 'string' || appCheckToken.trim().length === 0) {
+    if (isDev) {
+      console.warn('[BOOK_SEARCH_SERVICE][APP_CHECK_BYPASS_DEV]');
+      return headers;
+    }
+    throw new BookSearchRequestError('Search requires App Check validation.', {
+      code: 'APP_CHECK_REQUIRED',
+    });
+  }
+
+  headers['X-Firebase-AppCheck'] = appCheckToken.trim();
+  return headers;
 }
 
 function normalizeResponse(payload: unknown): SearchResponseDTO {
@@ -142,6 +200,7 @@ export const bookSearchService = {
     }
 
     try {
+      const headers = await buildSearchHeaders();
       logBookEngineV2('BOOK_SEARCH_V2_HTTP', {
         phase: 'request',
         path: '/api/search/books',
@@ -156,7 +215,9 @@ export const bookSearchService = {
         cursor: params.cursor ? params.cursor.slice(0, 80) : null,
       });
 
-      const response = await fetch(url.toString());
+      const response = await fetch(url.toString(), {
+        headers,
+      });
       logBookEngineV2('BOOK_SEARCH_V2_HTTP', {
         phase: 'response',
         path: '/api/search/books',
@@ -164,25 +225,37 @@ export const bookSearchService = {
         ok: response.ok,
       });
       if (!response.ok) {
-        console.warn('[BOOK_SEARCH_SERVICE][HTTP_ERROR]', response.status);
-        return {
-          results: [],
-          nextCursor: null,
-          hasMore: false,
-          cursorUsed: false,
-        };
+        let errorCode = 'SEARCH_HTTP_ERROR';
+        let errorMessage = 'Search request failed.';
+        try {
+          const payload = await response.json();
+          errorCode =
+            typeof payload?.error === 'string' && payload.error.trim().length > 0
+              ? payload.error.trim()
+              : errorCode;
+          errorMessage =
+            typeof payload?.message === 'string' && payload.message.trim().length > 0
+              ? payload.message.trim()
+              : errorMessage;
+        } catch {
+          // Keep fallback message.
+        }
+        throw new BookSearchRequestError(errorMessage, {
+          code: errorCode,
+          status: response.status,
+        });
       }
 
       const payload = await response.json();
       return normalizeResponse(payload);
     } catch (error) {
       console.error('[BOOK_SEARCH_SERVICE][NETWORK_ERROR]', error);
-      return {
-        results: [],
-        nextCursor: null,
-        hasMore: false,
-        cursorUsed: false,
-      };
+      if (error instanceof BookSearchRequestError) {
+        throw error;
+      }
+      throw new BookSearchRequestError('Network error while searching books.', {
+        code: 'SEARCH_NETWORK_ERROR',
+      });
     }
   },
 };

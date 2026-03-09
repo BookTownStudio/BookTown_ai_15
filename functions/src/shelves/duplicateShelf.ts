@@ -117,6 +117,7 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
   const entries = normalizeEntries(sourceData.entries);
   const orderedBookIds = normalizeOrderedBookIds(sourceData.orderedBookIds);
   const userCoverUrl = readNonEmptyString(sourceData.userCoverUrl, 2048) || null;
+  const visibility = resolveShelfVisibility(sourceData);
 
   const now = admin.firestore.FieldValue.serverTimestamp();
   const duplicateRef = db.collection("shelves").doc();
@@ -127,6 +128,7 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     titleEn,
     titleAr,
     entries,
+    visibility,
     createdAt: now,
     updatedAt: now,
     isSystem: false,
@@ -181,6 +183,7 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     entries,
     ...(orderedBookIds ? { orderedBookIds } : {}),
     ...(userCoverUrl ? { userCoverUrl } : {}),
+    visibility,
     isSystem: false,
     copiedFrom: {
       shelfId: sourceShelfId,

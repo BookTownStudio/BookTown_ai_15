@@ -523,6 +523,61 @@ function normalizeReviewVisibility(value: unknown): "public" | "private" {
   return value === "private" ? "private" : "public";
 }
 
+export function applyPublicReviewCounterDelta(params: {
+  currentReviews: number;
+  beforePublic: boolean;
+  afterPublic: boolean;
+}): number {
+  const { currentReviews, beforePublic, afterPublic } = params;
+  if (!beforePublic && afterPublic) {
+    return currentReviews + 1;
+  }
+  if (beforePublic && !afterPublic) {
+    return Math.max(0, currentReviews - 1);
+  }
+  return currentReviews;
+}
+
+export function applyPublicRatingCounterDelta(params: {
+  currentRatingsCount: number;
+  currentRatingSum: number;
+  beforePublic: boolean;
+  afterPublic: boolean;
+  beforeRating: number;
+  afterRating: number;
+}): { ratingsCount: number; ratingSum: number; averageRating: number } {
+  const {
+    currentRatingsCount,
+    currentRatingSum,
+    beforePublic,
+    afterPublic,
+    beforeRating,
+    afterRating,
+  } = params;
+
+  let nextRatingsCount = currentRatingsCount;
+  let nextRatingSum = currentRatingSum;
+
+  if (!beforePublic && afterPublic) {
+    nextRatingsCount += 1;
+    nextRatingSum += afterRating;
+  } else if (beforePublic && !afterPublic) {
+    nextRatingsCount = Math.max(0, nextRatingsCount - 1);
+    nextRatingSum = Math.max(0, nextRatingSum - beforeRating);
+  } else if (beforePublic && afterPublic) {
+    nextRatingSum = Math.max(0, nextRatingSum + (afterRating - beforeRating));
+  }
+
+  const averageRating =
+    nextRatingsCount > 0 ? Number((nextRatingSum / nextRatingsCount).toFixed(4)) : 0;
+
+  return {
+    ratingsCount: nextRatingsCount,
+    ratingSum: nextRatingSum,
+    averageRating,
+  };
+}
+
 function toIso(value: unknown): string {
   if (typeof value === "string" && value.trim()) {
     const parsed = new Date(value);
@@ -623,6 +678,8 @@ export const onBookReviewWritten = onDocumentWritten(
     const afterExists = !!after;
     const beforeRating = normalizeReviewRating(before?.rating);
     const afterRating = normalizeReviewRating(after?.rating);
+    const beforePublic = beforeExists && normalizeReviewVisibility(before?.visibility) === "public";
+    const afterPublic = afterExists && normalizeReviewVisibility(after?.visibility) === "public";
     const beforeUserId =
       typeof before?.userId === "string" && before.userId.trim().length > 0
         ? before.userId.trim()
@@ -640,34 +697,12 @@ export const onBookReviewWritten = onDocumentWritten(
         typeof counters.reviews === "number"
           ? Math.max(0, Math.trunc(counters.reviews))
           : 0;
-      const currentRatingsCount =
-        typeof counters.ratingsCount === "number"
-          ? Math.max(0, Math.trunc(counters.ratingsCount))
-          : 0;
-      const currentRatingSum =
-        typeof counters.ratingSum === "number" && Number.isFinite(counters.ratingSum)
-          ? counters.ratingSum
-          : 0;
 
-      let nextReviews = currentReviews;
-      let nextRatingsCount = currentRatingsCount;
-      let nextRatingSum = currentRatingSum;
-
-      if (!beforeExists && afterExists) {
-        nextReviews += 1;
-        nextRatingsCount += 1;
-        nextRatingSum += afterRating;
-      } else if (beforeExists && !afterExists) {
-        nextReviews = Math.max(0, nextReviews - 1);
-        nextRatingsCount = Math.max(0, nextRatingsCount - 1);
-        nextRatingSum = Math.max(0, nextRatingSum - beforeRating);
-      } else if (beforeExists && afterExists) {
-        const delta = afterRating - beforeRating;
-        nextRatingSum = Math.max(0, nextRatingSum + delta);
-      }
-
-      const averageRating =
-        nextRatingsCount > 0 ? Number((nextRatingSum / nextRatingsCount).toFixed(4)) : 0;
+      const nextReviews = applyPublicReviewCounterDelta({
+        currentReviews,
+        beforePublic,
+        afterPublic,
+      });
 
       tx.set(
         statsRef,
@@ -675,13 +710,8 @@ export const onBookReviewWritten = onDocumentWritten(
           counters: {
             ...counters,
             reviews: nextReviews,
-            ratingsCount: nextRatingsCount,
-            ratingSum: nextRatingSum,
-            averageRating,
           },
           reviews: nextReviews,
-          ratingsCount: nextRatingsCount,
-          averageRating,
           updatedAt: admin.firestore.FieldValue.serverTimestamp(),
           lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
         },
@@ -792,6 +822,62 @@ export const onBookReviewWritten = onDocumentWritten(
         });
       }
     }
+  }
+);
+
+export const onBookRatingWritten = onDocumentWritten(
+  "books/{bookId}/ratings/{userId}",
+  async (event) => {
+    const before = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after?.data() as Record<string, unknown> | undefined;
+    const bookId = event.params.bookId;
+
+    const beforeExists = !!before;
+    const afterExists = !!after;
+    const beforeRating = normalizeReviewRating(before?.rating);
+    const afterRating = normalizeReviewRating(after?.rating);
+    const beforePublic = beforeExists && normalizeReviewVisibility(before?.visibility) === "public";
+    const afterPublic = afterExists && normalizeReviewVisibility(after?.visibility) === "public";
+
+    const statsRef = db.collection("book_stats").doc(bookId);
+    await db.runTransaction(async (tx) => {
+      const statsSnap = await tx.get(statsRef);
+      const counters = statsSnap.exists ? (statsSnap.data()?.counters || {}) : {};
+      const currentRatingsCount =
+        typeof counters.ratingsCount === "number"
+          ? Math.max(0, Math.trunc(counters.ratingsCount))
+          : 0;
+      const currentRatingSum =
+        typeof counters.ratingSum === "number" && Number.isFinite(counters.ratingSum)
+          ? counters.ratingSum
+          : 0;
+
+      const nextCounters = applyPublicRatingCounterDelta({
+        currentRatingsCount,
+        currentRatingSum,
+        beforePublic,
+        afterPublic,
+        beforeRating,
+        afterRating,
+      });
+
+      tx.set(
+        statsRef,
+        {
+          counters: {
+            ...counters,
+            ratingsCount: nextCounters.ratingsCount,
+            ratingSum: nextCounters.ratingSum,
+            averageRating: nextCounters.averageRating,
+          },
+          ratingsCount: nextCounters.ratingsCount,
+          averageRating: nextCounters.averageRating,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    });
   }
 );
 

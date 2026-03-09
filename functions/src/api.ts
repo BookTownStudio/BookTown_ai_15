@@ -11,6 +11,7 @@ import {
   getOrCreateAgentContextSnapshot,
 } from "./intelligence/agentContextBuilder";
 import { runLibrarianRecommendation } from "./ai/librarian";
+import { enforceSearchRequestQuota } from "./utils/searchRequestQuota";
 
 type SearchBookResponse = {
   id: string;
@@ -89,6 +90,14 @@ type AuthResolution =
 type AppCheckResolution =
   | { ok: true; appId: string }
   | { ok: false; status: 401; code: "missing_app_check" | "invalid_app_check" };
+
+function shouldEnforceSearchAppCheck(): boolean {
+  return process.env.NODE_ENV !== "test" && process.env.FUNCTIONS_EMULATOR !== "true";
+}
+
+function shouldEnforceSearchRateLimit(): boolean {
+  return process.env.NODE_ENV !== "test" && process.env.FUNCTIONS_EMULATOR !== "true";
+}
 
 function normalizeSearchText(value?: string | null): string {
   if (!value) return "";
@@ -244,6 +253,25 @@ async function resolveAuthenticatedUid(req: any): Promise<AuthResolution> {
   }
 }
 
+async function resolveOptionalAuthenticatedUid(req: any): Promise<string | null> {
+  const token = readBearerToken(req);
+  if (!token) {
+    return null;
+  }
+
+  try {
+    const decoded = await admin.auth().verifyIdToken(token);
+    const uid =
+      typeof decoded?.uid === "string" ? decoded.uid.trim().slice(0, 128) : "";
+    return uid || null;
+  } catch (error) {
+    logger.warn("[BOOK_SEARCH_V2_API][AUTH_OPTIONAL_VERIFY_FAILED]", {
+      error: String(error),
+    });
+    return null;
+  }
+}
+
 async function resolveAppCheck(req: any): Promise<AppCheckResolution> {
   const headerRaw =
     req?.headers?.["x-firebase-appcheck"] ?? req?.headers?.["X-Firebase-AppCheck"];
@@ -268,6 +296,30 @@ async function resolveAppCheck(req: any): Promise<AppCheckResolution> {
     logger.warn("[AI][APP_CHECK_VERIFY_FAILED]", { error: String(error) });
     return { ok: false, status: 401, code: "invalid_app_check" };
   }
+}
+
+function resolveClientIp(req: any): string {
+  const forwarded = req?.headers?.["x-forwarded-for"];
+  const candidate = Array.isArray(forwarded)
+    ? forwarded[0]
+    : typeof forwarded === "string"
+    ? forwarded.split(",")[0]
+    : typeof req?.ip === "string"
+    ? req.ip
+    : "";
+  return candidate.trim().slice(0, 128) || "unknown";
+}
+
+function buildSearchQuotaActorKey(params: {
+  appId: string;
+  uid: string | null;
+  clientIp: string;
+}): string {
+  const scope = params.uid ? `uid:${params.uid}` : `ip:${params.clientIp}`;
+  return crypto
+    .createHash("sha256")
+    .update(`${params.appId}::${scope}`)
+    .digest("hex");
 }
 
 async function ensureAiConsent(uid: string): Promise<boolean> {
@@ -427,8 +479,37 @@ apiRouter.get("/health", (_req: any, res: any) => {
  */
 apiRouter.get("/search/books", async (req: any, res: any) => {
   const startTime = Date.now();
+  let searchQuotaUid: string | null = null;
 
   try {
+    let resolvedAppId = "unknown";
+    if (shouldEnforceSearchAppCheck()) {
+      const appCheck = await resolveAppCheck(req);
+      if (!appCheck.ok) {
+        logger.warn("BOOK_SEARCH_V2_API", {
+          phase: "rejected",
+          reason: appCheck.code,
+        });
+        return res.status(appCheck.status).json({
+          error: "APP_CHECK_REQUIRED",
+          message: "App Check validation is required.",
+        });
+      }
+      resolvedAppId = appCheck.appId;
+    }
+
+    if (shouldEnforceSearchRateLimit()) {
+      searchQuotaUid = await resolveOptionalAuthenticatedUid(req);
+      await enforceSearchRequestQuota({
+        db: admin.firestore(),
+        actorKey: buildSearchQuotaActorKey({
+          appId: resolvedAppId,
+          uid: searchQuotaUid,
+          clientIp: resolveClientIp(req),
+        }),
+      });
+    }
+
     const q = req.query.q as string | undefined;
     const ebookOnly = req.query.ebookOnly === "true";
     const lang = req.query.lang as string | undefined;
@@ -612,12 +693,34 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     logger.error("BOOK_SEARCH_V2_API", {
       phase: "error",
       error: String(error),
+      uid: searchQuotaUid,
     });
-    return res.status(200).json({
-      results: [],
-      nextCursor: null,
-      hasMore: false,
-      cursorUsed: false,
+
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({
+        error: "INVALID_REQUEST",
+        message: "Search request validation failed.",
+      });
+    }
+
+    if (error instanceof Error && "code" in error && (error as { code?: unknown }).code === "resource-exhausted") {
+      const details =
+        (error as { details?: { retryAfterSeconds?: unknown } }).details || undefined;
+      const retryAfterSeconds =
+        typeof details?.retryAfterSeconds === "number" && Number.isFinite(details.retryAfterSeconds)
+          ? Math.max(1, Math.trunc(details.retryAfterSeconds))
+          : 60;
+      res.setHeader("Retry-After", String(retryAfterSeconds));
+      return res.status(429).json({
+        error: "BOOK_SEARCH_RATE_LIMIT_EXCEEDED",
+        message: "Search rate limit exceeded. Please retry shortly.",
+        retryAfterSeconds,
+      });
+    }
+
+    return res.status(500).json({
+      error: "SEARCH_INTERNAL_ERROR",
+      message: "Search request failed.",
     });
   }
 });

@@ -6,21 +6,43 @@ import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
+import QuoteBubble from '../components/reader/QuoteBubble.tsx';
 import ReaderSettings from '../components/reader/ReaderSettings.tsx';
 import ReaderSurface from '../components/reader/runtime/ReaderSurface.tsx';
 import { useToast } from '../store/toast.tsx';
 import { useReadingPreferences } from '../store/reading-prefs.tsx';
 import {
+  enqueueHighlightDeleteSyncOperation,
+  enqueueHighlightUpsertSyncOperation,
+  enqueueBookmarkDeleteSyncOperation,
+  enqueueBookmarkUpsertSyncOperation,
   enqueueProgressSyncOperation,
   flushReaderOperations,
 } from '../lib/reader/offline/readerSyncClient.ts';
+import { useReaderBookmarks } from '../lib/hooks/useReaderBookmarks.ts';
+import { useReaderHighlights } from '../lib/hooks/useReaderHighlights.ts';
 import { useReaderSessionBootstrap } from '../lib/hooks/useReaderSessionBootstrap.ts';
 import { resolveReaderEngine } from '../lib/reader/runtime/engineSelection.ts';
+import { useOffline } from '../lib/offline/OfflineProvider.tsx';
+import {
+  clearOfflineEbook,
+  getOfflineBookObjectUrl,
+  getOfflineRecord,
+  isOfflineValid,
+  markEbookOffline,
+  updateOfflineLastKnownPage,
+} from './lib/offline/offlineManager.ts';
 
 import { httpsCallable } from 'firebase/functions';
 import { getFunctions } from 'firebase/functions';
-import type { ReaderFormat } from '../lib/reader/runtime/contracts.ts';
+import { HighlightIcon } from '../components/icons/HighlightIcon.tsx';
+import type {
+  ReaderFormat,
+  ReaderHighlightOverlay,
+  ReaderTextSelection,
+} from '../lib/reader/runtime/contracts.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
+import type { OfflineEbookRecord } from './lib/offline/offlineManager.ts';
 
 function inferFormatFromUrl(url: string): ReaderFormat {
   const lower = url.toLowerCase();
@@ -61,11 +83,20 @@ function parseRecommendationContext(
   };
 }
 
+function buildHighlightId(anchor: string, page: number): string {
+  let hash = 0;
+  for (let i = 0; i < anchor.length; i += 1) {
+    hash = (hash * 31 + anchor.charCodeAt(i)) | 0;
+  }
+  return `hl_${page}_${Math.abs(hash).toString(36)}`;
+}
+
 const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
   const { showToast } = useToast();
   const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
+  const { isOffline } = useOffline();
 
   const bookId =
     currentView.type === 'immersive' && currentView.params?.bookId
@@ -87,9 +118,23 @@ const ReaderScreen: React.FC = () => {
     isLoading: loadingSession,
     error: sessionError,
   } = useReaderSessionBootstrap(bookId);
+  const { bookmarks, refetch: refetchBookmarks } = useReaderBookmarks(bookId);
+  const { highlights, refetch: refetchHighlights } = useReaderHighlights(bookId);
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [renderError, setRenderError] = useState<string | null>(null);
+  const [bookmarkOverrides, setBookmarkOverrides] = useState<Record<number, { bookmarkId: string } | null>>({});
+  const [highlightOverrides, setHighlightOverrides] = useState<Record<string, {
+    highlightId: string;
+    cfi: string;
+    page: number;
+    quote: string;
+    color: string;
+  } | null>>({});
+  const [offlineRecord, setOfflineRecord] = useState<OfflineEbookRecord | null>(null);
+  const [offlineObjectUrl, setOfflineObjectUrl] = useState<string | null>(null);
+  const [isOfflineAssetBusy, setIsOfflineAssetBusy] = useState(false);
+  const [pendingHighlightSelection, setPendingHighlightSelection] = useState<ReaderTextSelection | null>(null);
   const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressFingerprintRef = useRef<string>('');
   const latestProgressPayloadRef = useRef<{
@@ -100,10 +145,15 @@ const ReaderScreen: React.FC = () => {
     format: ReaderFormat;
     readingMode: 'scroll' | 'page';
   } | null>(null);
+  const hasOfflineCopy = useMemo(
+    () => Boolean(offlineRecord && isOfflineValid(offlineRecord)),
+    [offlineRecord]
+  );
 
   const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
     setCurrentPage(nextPage);
     setTotalPages(Math.max(1, pagesCount));
+    setPendingHighlightSelection(null);
   }, []);
 
   const handleEpubLoadError = useCallback(
@@ -144,6 +194,17 @@ const ReaderScreen: React.FC = () => {
   }, [lang, showToast]);
 
   useEffect(() => {
+    if (isOffline && hasOfflineCopy && offlineRecord && !readerSession) {
+      const resumePage =
+        typeof offlineRecord.lastKnownPage === 'number' && offlineRecord.lastKnownPage > 0
+          ? Math.trunc(offlineRecord.lastKnownPage)
+          : 1;
+      setCurrentPage(resumePage);
+      setTotalPages(1);
+      setRenderError(null);
+      return;
+    }
+
     if (!readerSession) return;
     const resumePage =
       typeof readerSession.resumePage === 'number' &&
@@ -154,10 +215,18 @@ const ReaderScreen: React.FC = () => {
     setCurrentPage(resumePage);
     setTotalPages(1);
     setRenderError(null);
-  }, [readerSession]);
+  }, [hasOfflineCopy, isOffline, offlineRecord, readerSession]);
+
+  useEffect(() => {
+    setBookmarkOverrides({});
+    setHighlightOverrides({});
+    setOfflineRecord(bookId ? getOfflineRecord(bookId) : null);
+    setPendingHighlightSelection(null);
+  }, [bookId]);
 
   useEffect(() => {
     if (!sessionError) return;
+    if (isOffline && hasOfflineCopy) return;
     console.error('[READER][SESSION_INIT_FAILED]', sessionError);
     showToast(
       lang === 'en'
@@ -167,14 +236,255 @@ const ReaderScreen: React.FC = () => {
 
     if (currentView.params?.from) navigate(currentView.params.from);
     else navigate({ type: 'tab', id: 'read' });
-  }, [sessionError, showToast, lang, currentView.params, navigate]);
+  }, [currentView.params, hasOfflineCopy, isOffline, lang, navigate, sessionError, showToast]);
 
   const effectiveFormat = useMemo<ReaderFormat>(() => {
+    if (offlineRecord?.format && offlineRecord.format !== 'unknown') return offlineRecord.format;
     if (!readerSession) return 'unknown';
     if (readerSession.format !== 'unknown') return readerSession.format;
     if (readerManifest?.format && readerManifest.format !== 'unknown') return readerManifest.format;
     return inferFormatFromUrl(readerSession.signedUrl);
-  }, [readerManifest, readerSession]);
+  }, [offlineRecord, readerManifest, readerSession]);
+
+  const effectiveBookmarks = useMemo(() => {
+    const merged = new Map<string, (typeof bookmarks)[number]>();
+    for (const bookmark of bookmarks) {
+      merged.set(bookmark.bookmarkId, bookmark);
+    }
+
+    for (const [pageKey, override] of Object.entries(bookmarkOverrides)) {
+      const page = Number(pageKey);
+      if (!Number.isFinite(page)) continue;
+
+      const existing = Array.from(merged.values()).find((entry) => entry.page === page);
+      if (override === null) {
+        if (existing) {
+          merged.delete(existing.bookmarkId);
+        }
+        continue;
+      }
+
+      merged.set(override.bookmarkId, {
+        bookmarkId: override.bookmarkId,
+        bookId: bookId || '',
+        label: `Page ${page}`,
+        page,
+        cfi: null,
+        updatedAt: null,
+      });
+    }
+
+    return Array.from(merged.values());
+  }, [bookmarkOverrides, bookmarks, bookId]);
+
+  const activeBookmark = useMemo(
+    () => effectiveBookmarks.find((bookmark) => bookmark.page === currentPage) || null,
+    [currentPage, effectiveBookmarks]
+  );
+
+  const effectiveHighlights = useMemo(() => {
+    const merged = new Map<string, (typeof highlights)[number]>();
+    for (const highlight of highlights) {
+      merged.set(highlight.cfi || highlight.highlightId, highlight);
+    }
+
+    for (const [anchorKey, override] of Object.entries(highlightOverrides)) {
+      if (override === null) {
+        merged.delete(anchorKey);
+        continue;
+      }
+
+      merged.set(anchorKey, {
+        highlightId: override.highlightId,
+        bookId: bookId || '',
+        quote: override.quote,
+        note: '',
+        color: override.color,
+        page: override.page,
+        cfi: override.cfi,
+        updatedAt: null,
+      });
+    }
+
+    return Array.from(merged.values());
+  }, [bookId, highlightOverrides, highlights]);
+
+  const selectedHighlight = useMemo(
+    () =>
+      pendingHighlightSelection
+        ? effectiveHighlights.find((highlight) => highlight.cfi === pendingHighlightSelection.cfi) || null
+        : null,
+    [effectiveHighlights, pendingHighlightSelection]
+  );
+  const runtimeHighlights = useMemo<ReaderHighlightOverlay[]>(
+    () =>
+      effectiveHighlights.map((highlight) => ({
+        highlightId: highlight.highlightId,
+        cfi: highlight.cfi,
+        color: highlight.color,
+        page: highlight.page,
+        quote: highlight.quote,
+      })),
+    [effectiveHighlights]
+  );
+
+  const handleBookmarkToggle = useCallback(async () => {
+    if (!bookId) return;
+
+    const page = Math.max(1, Math.trunc(currentPage));
+    const bookmarkId = activeBookmark?.bookmarkId || `page_${page}`;
+
+    if (activeBookmark) {
+      setBookmarkOverrides((current) => ({
+        ...current,
+        [page]: null,
+      }));
+
+      enqueueBookmarkDeleteSyncOperation({
+        bookId,
+        bookmarkId,
+      });
+    } else {
+      setBookmarkOverrides((current) => ({
+        ...current,
+        [page]: { bookmarkId },
+      }));
+
+      enqueueBookmarkUpsertSyncOperation({
+        bookId,
+        bookmarkId,
+        page,
+        label: `Page ${page}`,
+      });
+    }
+
+    try {
+      await flushReaderOperations({
+        batchSize: 20,
+        maxBatches: 3,
+      });
+      await refetchBookmarks();
+    } catch (error) {
+      console.warn('[READER][BOOKMARK_SYNC_DEFERRED]', error);
+    }
+  }, [activeBookmark, bookId, currentPage, refetchBookmarks]);
+
+  const handleHighlightToggle = useCallback(async () => {
+    if (!bookId) return;
+    if (!pendingHighlightSelection) {
+      showToast(
+        lang === 'en'
+          ? 'Select text to create a highlight.'
+          : 'حدد نصاً لإنشاء تمييز.'
+      );
+      return;
+    }
+
+    const anchorKey = pendingHighlightSelection.cfi;
+    const highlightId =
+      selectedHighlight?.highlightId ||
+      buildHighlightId(anchorKey, pendingHighlightSelection.page);
+
+    if (selectedHighlight) {
+      setHighlightOverrides((current) => ({
+        ...current,
+        [anchorKey]: null,
+      }));
+
+      enqueueHighlightDeleteSyncOperation({
+        bookId,
+        highlightId: selectedHighlight.highlightId,
+      });
+    } else {
+      setHighlightOverrides((current) => ({
+        ...current,
+        [anchorKey]: {
+          highlightId,
+          cfi: pendingHighlightSelection.cfi,
+          page: pendingHighlightSelection.page,
+          quote: pendingHighlightSelection.quote,
+          color: 'yellow',
+        },
+      }));
+
+      enqueueHighlightUpsertSyncOperation({
+        bookId,
+        highlightId,
+        page: pendingHighlightSelection.page,
+        color: 'yellow',
+        quote: pendingHighlightSelection.quote,
+        note: '',
+        cfi: pendingHighlightSelection.cfi,
+      });
+    }
+
+    try {
+      await flushReaderOperations({
+        batchSize: 20,
+        maxBatches: 3,
+      });
+      await refetchHighlights();
+      setPendingHighlightSelection(null);
+    } catch (error) {
+      console.warn('[READER][HIGHLIGHT_SYNC_DEFERRED]', error);
+    }
+  }, [bookId, lang, pendingHighlightSelection, refetchHighlights, selectedHighlight, showToast]);
+
+  const handleOfflineToggle = useCallback(async () => {
+    if (!bookId) return;
+
+    if (hasOfflineCopy) {
+      setIsOfflineAssetBusy(true);
+      try {
+        await clearOfflineEbook(bookId);
+        setOfflineRecord(null);
+        setOfflineObjectUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return null;
+        });
+        showToast(
+          lang === 'en' ? 'Offline copy removed.' : 'تمت إزالة النسخة غير المتصلة.'
+        );
+      } catch (error) {
+        console.error('[READER][OFFLINE_REMOVE_FAILED]', error);
+        showToast(
+          lang === 'en'
+            ? 'Unable to remove offline copy.'
+            : 'تعذّر إزالة النسخة غير المتصلة.'
+        );
+      } finally {
+        setIsOfflineAssetBusy(false);
+      }
+      return;
+    }
+
+    if (isOffline) {
+      showToast(
+        lang === 'en'
+          ? 'Reconnect to download this book for offline reading.'
+          : 'أعد الاتصال لتنزيل هذا الكتاب للقراءة دون اتصال.'
+      );
+      return;
+    }
+
+    setIsOfflineAssetBusy(true);
+    try {
+      const nextRecord = await markEbookOffline(bookId);
+      setOfflineRecord(nextRecord);
+      showToast(
+        lang === 'en' ? 'Book is now available offline.' : 'أصبح الكتاب متاحاً دون اتصال.'
+      );
+    } catch (error) {
+      console.error('[READER][OFFLINE_DOWNLOAD_FAILED]', error);
+      showToast(
+        lang === 'en'
+          ? 'Unable to prepare offline reading for this book.'
+          : 'تعذّر تجهيز القراءة دون اتصال لهذا الكتاب.'
+      );
+    } finally {
+      setIsOfflineAssetBusy(false);
+    }
+  }, [bookId, hasOfflineCopy, isOffline, lang, showToast]);
 
   // -------------------------------------------------
   // Progress persistence (authoritative)
@@ -255,7 +565,48 @@ const ReaderScreen: React.FC = () => {
   }, [bookId]);
 
   useEffect(() => {
-    if (!bookId || !readerSession || loadingSession || renderError) return;
+    if (!bookId || !isOffline || !hasOfflineCopy) {
+      setOfflineObjectUrl((current) => {
+        if (current) URL.revokeObjectURL(current);
+        return null;
+      });
+      return;
+    }
+
+    let active = true;
+    let createdUrl: string | null = null;
+
+    void getOfflineBookObjectUrl(bookId)
+      .then((nextUrl) => {
+        if (!active) {
+          if (nextUrl) URL.revokeObjectURL(nextUrl);
+          return;
+        }
+        createdUrl = nextUrl;
+        setOfflineObjectUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return nextUrl;
+        });
+      })
+      .catch((error) => {
+        console.warn('[READER][OFFLINE_OBJECT_URL_FAILED]', error);
+        if (!active) return;
+        setOfflineObjectUrl((current) => {
+          if (current) URL.revokeObjectURL(current);
+          return null;
+        });
+      });
+
+    return () => {
+      active = false;
+      if (createdUrl) {
+        URL.revokeObjectURL(createdUrl);
+      }
+    };
+  }, [bookId, hasOfflineCopy, isOffline]);
+
+  useEffect(() => {
+    if (!bookId || loadingSession || renderError || (!readerSession && !hasOfflineCopy)) return;
 
     const format = effectiveFormat;
     const safeTotal = Math.max(1, Math.trunc(totalPages || 1));
@@ -292,6 +643,7 @@ const ReaderScreen: React.FC = () => {
   }, [
     bookId,
     currentPage,
+    hasOfflineCopy,
     loadingSession,
     persistProgress,
     readerSession,
@@ -300,6 +652,15 @@ const ReaderScreen: React.FC = () => {
     renderError,
     totalPages,
   ]);
+
+  useEffect(() => {
+    if (!bookId || !hasOfflineCopy) return;
+    if (offlineRecord?.lastKnownPage === currentPage) return;
+    const nextRecord = updateOfflineLastKnownPage(bookId, currentPage);
+    if (nextRecord) {
+      setOfflineRecord(nextRecord);
+    }
+  }, [bookId, currentPage, hasOfflineCopy, offlineRecord?.lastKnownPage]);
 
   useEffect(() => {
     return () => {
@@ -322,7 +683,7 @@ const ReaderScreen: React.FC = () => {
   // -------------------------------------------------
   // Loading state
   // -------------------------------------------------
-  if (isBookLoading || loadingSession) {
+  if (isBookLoading || (loadingSession && !hasOfflineCopy) || (isOffline && hasOfflineCopy && !offlineObjectUrl)) {
     return (
       <div className="h-screen w-full flex items-center justify-center bg-black">
         <LoadingSpinner />
@@ -333,7 +694,7 @@ const ReaderScreen: React.FC = () => {
   // -------------------------------------------------
   // Terminal guard
   // -------------------------------------------------
-  if (!book || !readerSession) {
+  if (!bookId || (sessionError && !hasOfflineCopy)) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-black text-white gap-6">
         <p className="text-white/60 text-sm">
@@ -351,6 +712,28 @@ const ReaderScreen: React.FC = () => {
     );
   }
 
+  if (book === null) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-black">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
+  const activeReaderUrl = offlineObjectUrl || readerSession?.signedUrl || null;
+  const initialReaderPage =
+    hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
+      ? Math.max(1, Math.trunc(offlineRecord.lastKnownPage))
+      : readerSession?.resumePage || 1;
+
+  if (!book || !activeReaderUrl) {
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-black">
+        <LoadingSpinner />
+      </div>
+    );
+  }
+
   const runtimeSelection = resolveReaderEngine({
     platform: 'web',
     format: effectiveFormat,
@@ -361,7 +744,7 @@ const ReaderScreen: React.FC = () => {
     <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
       <p className="text-sm text-white/70 max-w-md">{message}</p>
       <a
-        href={readerSession.signedUrl}
+        href={activeReaderUrl}
         target="_blank"
         rel="noreferrer"
         className="px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 transition"
@@ -389,26 +772,38 @@ const ReaderScreen: React.FC = () => {
         totalPages={totalPages}
         onSettingsClick={() => setIsSettingsVisible(true)}
         onListeningClick={handleListeningClick}
+        isBookmarked={Boolean(activeBookmark)}
+        onBookmarkToggle={handleBookmarkToggle}
+        isHighlighted={Boolean(selectedHighlight || pendingHighlightSelection)}
+        onHighlightToggle={handleHighlightToggle}
+        isOfflineAvailable={hasOfflineCopy}
+        isOfflineBusy={isOfflineAssetBusy}
+        onOfflineToggle={handleOfflineToggle}
       />
 
       <div
         className="flex-grow min-h-0 relative"
-        onClick={() => setIsChromeVisible((v) => !v)}
+        onClick={() => {
+          if (pendingHighlightSelection) return;
+          setIsChromeVisible((v) => !v);
+        }}
       >
         {renderError ? (
           renderOpenFileFallback(renderError)
         ) : (
           <ReaderSurface
             selection={runtimeSelection}
-            signedUrl={readerSession.signedUrl}
-            initialPage={readerSession.resumePage}
+            signedUrl={activeReaderUrl}
+            initialPage={initialReaderPage}
             theme={theme}
             readingMode={readingMode}
             fontSize={fontSize}
             fontStyle={fontStyle}
+            highlights={runtimeHighlights}
             onPageChange={handleReaderPageChange}
             onPdfLoadError={handlePdfLoadError}
             onEpubLoadError={handleEpubLoadError}
+            onTextSelection={setPendingHighlightSelection}
             renderUnsupported={() =>
               renderOpenFileFallback(
                 lang === 'en'
@@ -419,6 +814,18 @@ const ReaderScreen: React.FC = () => {
           />
         )}
       </div>
+
+      {pendingHighlightSelection && (
+        <QuoteBubble
+          rect={pendingHighlightSelection.rect}
+          onSave={() => {
+            void handleHighlightToggle();
+          }}
+          onDismiss={() => setPendingHighlightSelection(null)}
+          saveLabel={selectedHighlight ? (lang === 'en' ? 'Remove Highlight' : 'إزالة التمييز') : (lang === 'en' ? 'Highlight' : 'تمييز')}
+          icon={<HighlightIcon className="h-4 w-4 text-amber-400" />}
+        />
+      )}
 
       {isSettingsVisible && (
         <ReaderSettings onClose={() => setIsSettingsVisible(false)} />

@@ -5,7 +5,10 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useReadingPreferences } from '../../store/reading-prefs.tsx';
 import { cn } from '../../lib/utils.ts';
 import Button from '../ui/Button.tsx';
+import { BookmarkIcon } from '../icons/BookmarkIcon.tsx';
 import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
+import { DownloadIcon } from '../icons/DownloadIcon.tsx';
+import { HighlightIcon } from '../icons/HighlightIcon.tsx';
 import { SettingsIcon } from '../icons/SettingsIcon.tsx';
 import { ViewListIcon } from '../icons/ViewListIcon.tsx';
 import { BookOpenIcon } from '../icons/BookOpenIcon.tsx';
@@ -20,6 +23,13 @@ interface ReaderChromeProps {
     totalPages: number;
     onSettingsClick: () => void;
     onListeningClick?: () => void;
+    isBookmarked?: boolean;
+    onBookmarkToggle?: () => void;
+    isHighlighted?: boolean;
+    onHighlightToggle?: () => void;
+    isOfflineAvailable?: boolean;
+    isOfflineBusy?: boolean;
+    onOfflineToggle?: () => void;
 }
 
 const ReaderChrome: React.FC<ReaderChromeProps> = ({
@@ -31,6 +41,13 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
     totalPages,
     onSettingsClick,
     onListeningClick,
+    isBookmarked = false,
+    onBookmarkToggle,
+    isHighlighted = false,
+    onHighlightToggle,
+    isOfflineAvailable = false,
+    isOfflineBusy = false,
+    onOfflineToggle,
 }) => {
     const { lang } = useI18n();
     const { readingMode, setReadingMode, theme } = useReadingPreferences();
@@ -58,6 +75,37 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                         {onListeningClick && (
                             <Button variant="ghost" onClick={onListeningClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10" aria-label="Listen">
                                 <PlayIcon className="h-5 w-5" /> 
+                            </Button>
+                        )}
+                        {onBookmarkToggle && (
+                            <Button
+                                variant="ghost"
+                                onClick={onBookmarkToggle}
+                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                aria-label="Bookmark page"
+                            >
+                                <BookmarkIcon className={cn('h-5 w-5', isBookmarked && 'fill-current text-yellow-400')} />
+                            </Button>
+                        )}
+                        {onHighlightToggle && (
+                            <Button
+                                variant="ghost"
+                                onClick={onHighlightToggle}
+                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                aria-label="Highlight page"
+                            >
+                                <HighlightIcon className={cn('h-5 w-5', isHighlighted && 'fill-current text-amber-400')} />
+                            </Button>
+                        )}
+                        {onOfflineToggle && (
+                            <Button
+                                variant="ghost"
+                                onClick={onOfflineToggle}
+                                disabled={isOfflineBusy}
+                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+                                aria-label={isOfflineAvailable ? 'Remove offline copy' : 'Download for offline reading'}
+                            >
+                                <DownloadIcon className={cn('h-5 w-5', isOfflineAvailable && 'text-emerald-400')} />
                             </Button>
                         )}
                         <Button variant="ghost" onClick={onSettingsClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"><SettingsIcon className="h-5 w-5" /></Button>
