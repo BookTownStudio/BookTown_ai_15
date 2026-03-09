@@ -251,6 +251,14 @@ const SettingsScreen: React.FC = () => {
                     <SettingsSection title={lang === 'en' ? 'Account' : 'الحساب'}>
                         <SettingsItem icon={UserIcon} label={lang === 'en' ? 'Edit Profile' : 'تعديل الملف الشخصي'} onClick={() => navigate({ type: 'immersive', id: 'profile' })} />
                     </SettingsSection>
+
+                    <SettingsSection title={lang === 'en' ? 'Data' : 'البيانات'}>
+                        <SettingsItem
+                            icon={UploadIcon}
+                            label={lang === 'en' ? 'Goodreads Import' : 'استيراد Goodreads'}
+                            onClick={() => navigate({ type: 'immersive', id: 'goodreadsImport', params: { from: currentView } })}
+                        />
+                    </SettingsSection>
                 </div>
             </main>
         </div>
