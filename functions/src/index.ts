@@ -107,6 +107,7 @@ import {
   markDirectConversationRead as markDirectConversationReadRaw,
 } from "./messaging/directMessages";
 import { aiLibrarianCallable as aiLibrarianCallableRaw } from "./ai/librarianCallable";
+import { aiDiscoverAgentCallable as aiDiscoverAgentCallableRaw } from "./ai/discoverAgentCallable";
 import { mutateAgentSession as mutateAgentSessionRaw } from "./agents/mutateAgentSession";
 import { api as apiRaw } from "./api";
 import { sitemap as sitemapRaw } from "./ssr/sitemap";
@@ -693,4 +694,5 @@ export { processUserUploadCoverJobs };
 // REST API (CRITICAL WIRING)
 export const api = wrapRestExport(apiRaw);
 export const aiLibrarian = aiLibrarianCallableRaw;
+export const aiDiscoverAgent = aiDiscoverAgentCallableRaw;
 export const mutateAgentSession = mutateAgentSessionRaw;

@@ -90,6 +90,11 @@ export interface LibrarianResponseEnvelope {
 
 export interface AgentService {
     /**
+     * Discover agent runtime for Mentor / Quotes / Lore.
+     */
+    discoverAgentChat(agentId: string, messages: AgentMessage[], systemInstruction: string): Promise<string>;
+
+    /**
      * General purpose chat with an AI agent.
      */
     chat(agentId: string, messages: AgentMessage[], systemInstruction?: string, jsonSchema?: any): Promise<string>;

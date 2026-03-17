@@ -4,6 +4,41 @@ import { httpsCallable } from 'firebase/functions';
 import { getFirebaseAppCheckToken, getFirebaseAuth, getFirebaseFunctions, isFirebaseInitialized } from '../lib/firebase.ts';
 
 export class RealAgentService implements AgentService {
+    private normalizeDiscoverAgentCallableError(error: unknown): Error {
+        const code =
+            error &&
+            typeof error === 'object' &&
+            'code' in error &&
+            typeof (error as { code?: unknown }).code === 'string'
+                ? String((error as { code: string }).code).trim()
+                : '';
+        const message =
+            error &&
+            typeof error === 'object' &&
+            'message' in error &&
+            typeof (error as { message?: unknown }).message === 'string'
+                ? String((error as { message: string }).message).trim()
+                : '';
+        const normalized = `${code} ${message}`.toUpperCase();
+
+        if (normalized.includes('APP_CHECK_REQUIRED') || code === 'functions/failed-precondition') {
+            return new Error('APP_CHECK_REQUIRED');
+        }
+        if (normalized.includes('AUTH_REQUIRED') || code === 'functions/unauthenticated') {
+            return new Error('AUTH_REQUIRED');
+        }
+        if (normalized.includes('CONSENT_REQUIRED') || code === 'functions/permission-denied') {
+            return new Error('CONSENT_REQUIRED');
+        }
+        if (normalized.includes('INVALID_REQUEST') || code === 'functions/invalid-argument') {
+            return new Error('INVALID_REQUEST');
+        }
+        if (normalized.includes('ENGINE_FAILURE') || code === 'functions/internal') {
+            return new Error('ENGINE_FAILURE');
+        }
+        return new Error(message || code || 'ENGINE_FAILURE');
+    }
+
     private normalizeLibrarianMessages(messages?: LibrarianMemoryMessage[]): LibrarianMemoryMessage[] {
         if (!Array.isArray(messages)) return [];
         return messages
@@ -159,6 +194,57 @@ export class RealAgentService implements AgentService {
         } catch (error) {
             console.error(`[RealAgentService] Error calling ${endpoint}:`, error);
             throw error;
+        }
+    }
+
+    async discoverAgentChat(agentId: string, messages: AgentMessage[], systemInstruction: string): Promise<string> {
+        const normalizedAgentId =
+            agentId === 'mentor' || agentId === 'quotes' || agentId === 'lore'
+                ? agentId
+                : null;
+        if (!normalizedAgentId) {
+            throw new Error('INVALID_REQUEST');
+        }
+
+        const normalizedMessages = messages
+            .filter((row) => row && typeof row.content === 'string' && row.content.trim().length > 0)
+            .map((row) => ({
+                role: row.role === 'model' ? 'model' : 'user',
+                content: row.content.trim().slice(0, 2000),
+            }))
+            .filter((row) => row.content.length > 0)
+            .slice(-20);
+        const normalizedSystemInstruction = String(systemInstruction || '').trim().slice(0, 5000);
+
+        if (!normalizedSystemInstruction || normalizedMessages.length === 0) {
+            throw new Error('INVALID_REQUEST');
+        }
+
+        try {
+            const fn = httpsCallable<
+                {
+                    agentId: 'mentor' | 'quotes' | 'lore';
+                    messages: AgentMessage[];
+                    systemInstruction: string;
+                },
+                { text: string }
+            >(getFirebaseFunctions(), 'aiDiscoverAgent');
+            const result = await fn({
+                agentId: normalizedAgentId,
+                messages: normalizedMessages,
+                systemInstruction: normalizedSystemInstruction,
+            });
+            const text =
+                result.data && typeof result.data.text === 'string'
+                    ? result.data.text.trim()
+                    : '';
+            if (!text) {
+                throw new Error('ENGINE_FAILURE');
+            }
+            return text;
+        } catch (error) {
+            console.error('[RealAgentService] Callable aiDiscoverAgent failed:', error);
+            throw this.normalizeDiscoverAgentCallableError(error);
         }
     }
 
