@@ -43,6 +43,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
 
   // Canonical membership state
   const { isOnShelf } = useBookShelfStatus(bookId);
+  const selectableShelves = shelves?.filter((shelf) => shelf.id !== 'currently-reading') || [];
 
   /**
    * Emit shelf intent only.
@@ -73,7 +74,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
         </div>
       ) : (
         <div className="space-y-2 max-h-64 overflow-y-auto">
-          {shelves?.map(shelf => {
+          {selectableShelves.map(shelf => {
             const isBookOnShelf = isOnShelf(shelf.id);
 
             return (

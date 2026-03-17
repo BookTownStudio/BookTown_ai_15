@@ -88,9 +88,9 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const targetShelf = targetShelfId
     ? shelves?.find((s) => s.id === targetShelfId)
     : null;
-  const targetShelfDisplayName = targetShelfId === 'currently-reading'
-    ? (lang === 'en' ? 'Currently Reading' : 'أقرأ حاليًا')
-    : (targetShelf ? (lang === 'en' ? targetShelf.titleEn : targetShelf.titleAr) : '');
+  const targetShelfDisplayName = targetShelf
+    ? (lang === 'en' ? targetShelf.titleEn : targetShelf.titleAr)
+    : '';
 
   const resolveUploadFileType = (file: File): 'epub' | 'pdf' | null => {
     const lowerName = file.name.toLowerCase();
@@ -149,6 +149,14 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
    */
   const handleAdd = async (result: SearchResultDTO) => {
     if (!targetShelfId || busyId) return;
+    if (targetShelfId === 'currently-reading') {
+      showToast(
+        lang === 'en'
+          ? 'Reading continuity is managed automatically.'
+          : 'يتم إدارة استمرارية القراءة تلقائياً.'
+      );
+      return;
+    }
 
     try {
       setBusyId(result.id);
@@ -208,10 +216,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
         {
           onSuccess: () => {
             const shelf = shelves?.find(s => s.id === targetShelfId);
-            const shelfName = shelf ? (lang === 'en' ? shelf.titleEn : shelf.titleAr) : '';
-            const displayName = targetShelfId === 'currently-reading'
-              ? (lang === 'en' ? 'Currently Reading' : 'أقرأ حاليًا')
-              : shelfName;
+            const displayName = shelf ? (lang === 'en' ? shelf.titleEn : shelf.titleAr) : '';
 
             showToast(lang === 'en' ? `Added to ${displayName}` : `تمت الإضافة إلى ${displayName}`);
             onClose();

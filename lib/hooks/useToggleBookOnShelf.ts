@@ -29,9 +29,9 @@ const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
  * - cache reconciliation
  * - delegates ALL logic to shelfActions
  *
- * 🔒 HARD RULE (UPDATED):
- * - This hook DOES allow mutations on "currently-reading"
- * - Reading state initialization is handled in shelfActions (write-through)
+ * 🔒 HARD RULE:
+ * - "currently-reading" is NOT an organizational shelf target
+ * - Reading continuity is owned exclusively by reading_progress
  */
 export const useToggleBookOnShelf = () => {
   const queryClient = useQueryClient();
@@ -52,8 +52,10 @@ export const useToggleBookOnShelf = () => {
     }) => {
       if (!uid) throw new Error('User not authenticated');
       if (!book) throw new Error('BOOK_REQUIRED');
+      if (shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID) {
+        throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
+      }
 
-      // ✅ Allow ALL shelves, including "currently-reading"
       await addBookToShelf({
         uid,
         shelfId,
@@ -190,9 +192,9 @@ export const useToggleBookOnShelf = () => {
  * -------------------------------------------------
  * Delegates to shelfActions, keeps optimistic UX
  *
- * NOTE (UNCHANGED):
- * - Removing from "currently-reading" removes membership
- * - Reading state archival is handled downstream (later phase)
+ * NOTE:
+ * - "currently-reading" is not removable through shelf mutations
+ * - Reading continuity remains owned by reading_progress
  */
 export const useRemoveBookFromShelf = () => {
   const queryClient = useQueryClient();
@@ -205,6 +207,9 @@ export const useRemoveBookFromShelf = () => {
   return useMutation({
     mutationFn: ({ shelfId, bookId }: { shelfId: string; bookId: string }) => {
       if (!uid) throw new Error('User not authenticated');
+      if (shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID) {
+        throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
+      }
 
       return removeBookFromShelf({
         uid,

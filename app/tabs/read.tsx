@@ -27,6 +27,7 @@ import PageShell from '../../components/layout/PageShell.tsx';
 import { useUserStats } from '../../lib/hooks/useUserStats.ts';
 
 const SYSTEM_ORDER = ['currently-reading', 'want-to-read', 'finished'];
+const ORGANIZATIONAL_SYSTEM_ORDER = ['want-to-read', 'finished'];
 
 const ReadScreen: React.FC = () => {
   const { lang } = useI18n();
@@ -142,9 +143,11 @@ const ReadScreen: React.FC = () => {
    */
   const sortedShelves = useMemo(() => {
     if (!shelves) return [];
-    return [...shelves].sort((a, b) => {
-      const ai = SYSTEM_ORDER.indexOf(a.id);
-      const bi = SYSTEM_ORDER.indexOf(b.id);
+    return shelves
+      .filter((shelf) => shelf.id !== 'currently-reading')
+      .sort((a, b) => {
+      const ai = ORGANIZATIONAL_SYSTEM_ORDER.indexOf(a.id);
+      const bi = ORGANIZATIONAL_SYSTEM_ORDER.indexOf(b.id);
 
       if (ai !== -1 && bi !== -1) return ai - bi;
       if (ai !== -1) return -1;
@@ -239,7 +242,7 @@ const ReadScreen: React.FC = () => {
                     }))
                   }
                   layout={shelfLayouts[shelf.id] || 'carousel'}
-                  isDeletable={!SYSTEM_ORDER.includes(shelf.id)}
+                  isDeletable={!ORGANIZATIONAL_SYSTEM_ORDER.includes(shelf.id)}
                 />
               ))}
             </div>

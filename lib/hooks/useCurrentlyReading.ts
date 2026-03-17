@@ -2,21 +2,20 @@
 
 import { useMemo } from 'react';
 import { Timestamp } from 'firebase/firestore';
+import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../auth.tsx';
-import { dataService } from '../../services/dataService.ts';
-import { Shelf } from '../../types/entities.ts';
 
 /**
  * Currently Reading (Home Projection)
  * ----------------------------------------
  * UX CONTRACT (LOCKED):
- * - Visibility is driven by 'currently-reading' shelf membership
- * - Progress is optional display metadata from shelf entries
- * - Order is recency-first (updatedAt DESC)
+ * - Visibility is driven by reading_progress state
+ * - Progress is server-derived display metadata
+ * - Order is recency-first (lastActiveAt DESC)
  *
  * SOURCE OF TRUTH:
- * - shelves/{currently-reading}.entries
+ * - getReaderInsights -> reading_progress
  */
 
 export interface CurrentlyReadingItem {
@@ -29,24 +28,6 @@ interface UseCurrentlyReadingResult {
   items: CurrentlyReadingItem[];
   isLoading: boolean;
 }
-
-const CURRENTLY_READING_KEY = 'currently-reading';
-
-const normalizeToken = (value: unknown): string =>
-  typeof value === 'string'
-    ? value.trim().toLowerCase().replace(/\s+/g, '-')
-    : '';
-
-const isCurrentlyReadingShelf = (shelf: Shelf): boolean => {
-  const idToken = normalizeToken(shelf.id);
-  const titleEnToken = normalizeToken(shelf.titleEn);
-
-  return (
-    idToken === CURRENTLY_READING_KEY ||
-    idToken.endsWith(`_${CURRENTLY_READING_KEY}`) ||
-    titleEnToken === CURRENTLY_READING_KEY
-  );
-};
 
 const toTimestampOrNull = (value: unknown): Timestamp | null => {
   if (value instanceof Timestamp) return value;
@@ -68,6 +49,28 @@ const toTimestampOrNull = (value: unknown): Timestamp | null => {
       return Timestamp.fromDate(parsed);
     }
   }
+  if (
+    value &&
+    typeof value === 'object' &&
+    (
+      (typeof (value as { seconds?: unknown }).seconds === 'number'
+        && Number.isFinite((value as { seconds: number }).seconds))
+      || (typeof (value as { _seconds?: unknown })._seconds === 'number'
+        && Number.isFinite((value as { _seconds: number })._seconds))
+    )
+  ) {
+    const seconds =
+      typeof (value as { seconds?: unknown }).seconds === 'number'
+        ? Math.trunc((value as { seconds: number }).seconds)
+        : Math.trunc((value as { _seconds: number })._seconds);
+    const nanoseconds =
+      typeof (value as { nanoseconds?: unknown }).nanoseconds === 'number'
+        ? Math.max(0, Math.trunc((value as { nanoseconds: number }).nanoseconds))
+        : typeof (value as { _nanoseconds?: unknown })._nanoseconds === 'number'
+          ? Math.max(0, Math.trunc((value as { _nanoseconds: number })._nanoseconds))
+          : 0;
+    return new Timestamp(seconds, nanoseconds);
+  }
   return null;
 };
 
@@ -88,47 +91,53 @@ export function useCurrentlyReading(
     enabled,
     queryFn: async () => {
       if (!user?.uid) return [];
-
-      const shelves = await dataService.shelves.getUserShelves(user.uid);
-      const currentShelf = shelves.find(isCurrentlyReadingShelf);
-      if (!currentShelf) return [];
-
-      const entries = await dataService.shelves.getShelfEntries(
-        user.uid,
-        currentShelf.id,
-        { resolveBooks: false }
-      );
-
-      const rows = [...entries].sort((a: any, b: any) => {
-        const ta = Date.parse(String(a?.addedAt || ''));
-        const tb = Date.parse(String(b?.addedAt || ''));
-        const safeA = Number.isFinite(ta) ? ta : 0;
-        const safeB = Number.isFinite(tb) ? tb : 0;
-        return safeB - safeA;
-      });
-
-      const deduped = new Set<string>();
-      const items: CurrentlyReadingItem[] = [];
-
-      for (const row of rows) {
-        const bookId =
-          typeof row?.bookId === 'string' ? row.bookId.trim() : '';
-        if (!bookId || deduped.has(bookId)) continue;
-
-        const progressRaw =
-          typeof row?.progress === 'number' && Number.isFinite(row.progress)
-            ? row.progress
-            : 0;
-
-        items.push({
-          bookId,
-          progress: progressToUnit(progressRaw),
-          updatedAt: toTimestampOrNull(row?.addedAt),
-        });
-        deduped.add(bookId);
+      const fn = httpsCallable<
+        void,
+        {
+          currentlyReading?: Array<{
+            bookId?: unknown;
+            progress?: unknown;
+            lastActiveAt?: unknown;
+          }>;
+        }
+      >(getFunctions(), 'getReaderInsights');
+      const res = await fn();
+      const envelope = res.data as any;
+      if (envelope?.success === false) {
+        const code =
+          typeof envelope?.error?.code === 'string' ? envelope.error.code : 'UNKNOWN';
+        const message =
+          typeof envelope?.error?.message === 'string'
+            ? envelope.error.message
+            : 'Reader insights request failed.';
+        throw new Error(`[${code}] ${message}`);
       }
 
-      return items;
+      const payload = (envelope?.success === true ? envelope.data : envelope) as {
+        currentlyReading?: Array<{
+          bookId?: unknown;
+          progress?: unknown;
+          lastActiveAt?: unknown;
+        }>;
+      };
+
+      const rows = Array.isArray(payload?.currentlyReading)
+        ? payload.currentlyReading
+        : [];
+
+      return rows
+        .map((row): CurrentlyReadingItem | null => {
+          const bookId =
+            typeof row?.bookId === 'string' ? row.bookId.trim() : '';
+          if (!bookId) return null;
+
+          return {
+            bookId,
+            progress: progressToUnit(row?.progress),
+            updatedAt: toTimestampOrNull(row?.lastActiveAt),
+          };
+        })
+        .filter((item): item is CurrentlyReadingItem => item !== null);
     },
     staleTime: 1000 * 60 * 2, // 2 minutes
     gcTime: 1000 * 60 * 10,   // 10 minutes
