@@ -32,6 +32,7 @@ import {
   UserStats,
   BookStats,
   ShelfStats,
+  AgentTurnPersistenceInput,
 } from "./db.types.ts";
 
 import {
@@ -1158,6 +1159,81 @@ class FirebaseUserService {
         } satisfies ChatMessage;
       })
       .filter((message): message is ChatMessage => message !== null);
+  }
+
+  async appendAgentTurn(
+    uid: string,
+    sessionId: string,
+    turn: AgentTurnPersistenceInput
+  ): Promise<void> {
+    const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
+    const agentId = ensureNonEmptyString(turn.agentId, "turn.agentId", 64);
+    const title = normalizeOptionalString(turn.title, 180);
+    const lastMessage = normalizeOptionalString(turn.lastMessage, 500);
+    const timestamp = normalizeOptionalString(turn.timestamp, 64) ?? new Date().toISOString();
+    const userTimestamp =
+      normalizeOptionalString(turn.userMessage?.timestamp, 64) ?? new Date().toISOString();
+    const modelTimestamp =
+      normalizeOptionalString(turn.modelMessage?.timestamp, 64) ?? new Date().toISOString();
+    const contextWindowSize =
+      typeof turn.contextWindowSize === "number" &&
+      Number.isInteger(turn.contextWindowSize) &&
+      turn.contextWindowSize >= 0
+        ? turn.contextWindowSize
+        : undefined;
+
+    const mutateAgentSession = httpsCallable<
+      {
+        sessionId: string;
+        mutation: {
+          type: "append_turn";
+          session: {
+            agentId: string;
+            title?: string;
+            lastMessage?: string;
+            timestamp?: string;
+            isPinned?: boolean;
+          };
+          turn: {
+            userMessage: {
+              text: string;
+              timestamp: string;
+            };
+            modelMessage: {
+              text: string;
+              timestamp: string;
+            };
+            contextWindowSize?: number;
+          };
+        };
+      },
+      { ok: boolean }
+    >(getFirebaseFunctions(), "mutateAgentSession");
+
+    await mutateAgentSession({
+      sessionId: normalizedSessionId,
+      mutation: {
+        type: "append_turn",
+        session: stripUndefined({
+          agentId,
+          title: title || "Conversation",
+          lastMessage,
+          timestamp,
+          isPinned: turn.isPinned === true,
+        }),
+        turn: stripUndefined({
+          userMessage: {
+            text: ensureNonEmptyString(turn.userMessage.text, "turn.userMessage.text", 10_000),
+            timestamp: userTimestamp,
+          },
+          modelMessage: {
+            text: ensureNonEmptyString(turn.modelMessage.text, "turn.modelMessage.text", 10_000),
+            timestamp: modelTimestamp,
+          },
+          contextWindowSize,
+        }),
+      },
+    });
   }
 
   async saveAgentMessage(

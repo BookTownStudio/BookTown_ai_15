@@ -1,5 +1,7 @@
+import * as logger from "firebase-functions/logger";
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
+import { getOrCreateAgentContextSnapshot } from "../intelligence/agentContextBuilder";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 
 type AppendMessageMutation = {
@@ -22,7 +24,29 @@ type UpsertSessionMutation = {
   };
 };
 
-type AgentSessionMutation = AppendMessageMutation | UpsertSessionMutation;
+type AppendTurnMutation = {
+  type: "append_turn";
+  session: {
+    agentId?: unknown;
+    title?: unknown;
+    lastMessage?: unknown;
+    timestamp?: unknown;
+    isPinned?: unknown;
+  };
+  turn: {
+    userMessage?: {
+      text?: unknown;
+      timestamp?: unknown;
+    };
+    modelMessage?: {
+      text?: unknown;
+      timestamp?: unknown;
+    };
+    contextWindowSize?: unknown;
+  };
+};
+
+type AgentSessionMutation = AppendMessageMutation | UpsertSessionMutation | AppendTurnMutation;
 
 function readRequiredString(value: unknown, field: string, maxLength: number): string {
   if (typeof value !== "string") {
@@ -41,6 +65,26 @@ function readOptionalString(value: unknown, maxLength: number): string | undefin
   if (typeof value !== "string") return undefined;
   const normalized = value.trim().slice(0, maxLength);
   return normalized.length > 0 ? normalized : undefined;
+}
+
+function readOptionalNonNegativeInteger(
+  value: unknown,
+  field: string,
+  maxValue: number
+): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numeric = Number(value);
+  if (!Number.isInteger(numeric) || numeric < 0 || numeric > maxValue) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${field} must be a non-negative integer less than or equal to ${maxValue}.`
+    );
+  }
+
+  return numeric;
 }
 
 export const mutateAgentSession = onCall({ cors: true }, async (request) => {
@@ -81,6 +125,110 @@ export const mutateAgentSession = onCall({ cors: true }, async (request) => {
     return { ok: true };
   }
 
+  if (mutation.type === "append_turn") {
+    const agentId = readRequiredString(mutation.session?.agentId, "session.agentId", 64);
+    const title = readOptionalString(mutation.session?.title, 180) ?? "Conversation";
+    const userText = readRequiredString(
+      mutation.turn?.userMessage?.text,
+      "turn.userMessage.text",
+      10000
+    );
+    const modelText = readRequiredString(
+      mutation.turn?.modelMessage?.text,
+      "turn.modelMessage.text",
+      10000
+    );
+    const userTimestamp =
+      readOptionalString(mutation.turn?.userMessage?.timestamp, 64) ??
+      new Date().toISOString();
+    const modelTimestamp =
+      readOptionalString(mutation.turn?.modelMessage?.timestamp, 64) ??
+      new Date().toISOString();
+    const sessionTimestamp =
+      readOptionalString(mutation.session?.timestamp, 64) ?? modelTimestamp;
+    const lastMessage =
+      readOptionalString(mutation.session?.lastMessage, 500) ??
+      readOptionalString(modelText, 500) ??
+      readOptionalString(userText, 500) ??
+      "Conversation";
+    const isPinned = mutation.session?.isPinned === true;
+    const contextWindowSize = readOptionalNonNegativeInteger(
+      mutation.turn?.contextWindowSize,
+      "turn.contextWindowSize",
+      50
+    );
+
+    let contextFields: Record<string, unknown> = {
+      contextSource: "intelligence_profile",
+      contextStatus: "unavailable",
+    };
+
+    try {
+      const context = await getOrCreateAgentContextSnapshot(uid);
+      if (context) {
+        contextFields = {
+          contextSource: "intelligence_profile",
+          contextStatus: "ready",
+          contextSchemaVersion: context.schemaVersion,
+          contextProfileVersion: context.profileVersion,
+          contextComputedAt: context.computedAt,
+        };
+      } else {
+        logger.warn("[AI][AGENT_SESSION][CONTEXT_UNAVAILABLE]", {
+          uid,
+          sessionId,
+          agentId,
+        });
+      }
+    } catch (error) {
+      logger.error("[AI][AGENT_SESSION][CONTEXT_LOAD_FAILED]", {
+        uid,
+        sessionId,
+        agentId,
+        error: String(error),
+      });
+    }
+
+    const existing = await sessionRef.get();
+    const batch = db.batch();
+    batch.set(
+      sessionRef,
+      {
+        agentId,
+        title,
+        lastMessage,
+        timestamp: sessionTimestamp,
+        isPinned,
+        sessionContractVersion: 2,
+        sessionAuthority: "backend_mutation",
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...contextFields,
+        ...(typeof contextWindowSize === "number" ? { contextWindowSize } : {}),
+        ...(existing.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
+      },
+      { merge: true }
+    );
+
+    const userMessageRef = sessionRef.collection("messages").doc();
+    batch.set(userMessageRef, {
+      role: "user",
+      text: userText,
+      timestamp: userTimestamp,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    const modelMessageRef = sessionRef.collection("messages").doc();
+    batch.set(modelMessageRef, {
+      role: "model",
+      text: modelText,
+      timestamp: modelTimestamp,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+
+    await batch.commit();
+    return { ok: true };
+  }
+
   if (mutation.type === "upsert_session") {
     const agentId = readOptionalString(mutation.session?.agentId, 64);
     const title = readOptionalString(mutation.session?.title, 180) ?? "Conversation";
@@ -94,6 +242,8 @@ export const mutateAgentSession = onCall({ cors: true }, async (request) => {
         title,
         timestamp,
         isPinned,
+        sessionContractVersion: 2,
+        sessionAuthority: "backend_mutation",
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       };
 

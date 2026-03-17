@@ -82,6 +82,17 @@ export interface ShelfStats {
   posts: number;
 }
 
+export interface AgentTurnPersistenceInput {
+  agentId: string;
+  title?: string;
+  lastMessage?: string;
+  timestamp?: string;
+  isPinned?: boolean;
+  contextWindowSize?: number;
+  userMessage: Omit<ChatMessage, 'id'>;
+  modelMessage: Omit<ChatMessage, 'id'>;
+}
+
 export type FeedRankingMode = 'chronological' | 'relevant';
 
 /* =========================
@@ -211,6 +222,11 @@ export interface UserDataService {
 
   getAgentSessions(uid: string): Promise<AgentSession[]>;
   getChatHistory(uid: string, sessionId: string): Promise<ChatMessage[]>;
+  appendAgentTurn(
+    uid: string,
+    sessionId: string,
+    turn: AgentTurnPersistenceInput
+  ): Promise<void>;
   saveAgentMessage(
     uid: string,
     sessionId: string,

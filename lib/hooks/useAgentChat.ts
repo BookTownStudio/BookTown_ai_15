@@ -48,14 +48,13 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
                     text: agentResponse.responseText,
                     timestamp: new Date().toISOString(),
                 };
-                await dataService.users.saveAgentMessage(uid, sessionId, userMessage);
-                await dataService.users.saveAgentMessage(uid, sessionId, modelMessage);
-
-                await dataService.users.updateAgentSession(uid, sessionId, {
-                    id: sessionId,
+                await dataService.users.appendAgentTurn(uid, sessionId, {
                     agentId,
+                    userMessage,
+                    modelMessage,
                     lastMessage: agentResponse.responseText.substring(0, 50) + '...',
-                    timestamp: new Date().toISOString(),
+                    timestamp: modelMessage.timestamp,
+                    contextWindowSize: context.length,
                 });
 
                 return agentResponse;
@@ -67,13 +66,13 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
                     text: "I'm having trouble connecting to the library archives right now. Please try again in a moment.",
                     timestamp: new Date().toISOString(),
                 };
-                await dataService.users.saveAgentMessage(uid, sessionId, userMessage);
-                await dataService.users.saveAgentMessage(uid, sessionId, errorMessage);
-                await dataService.users.updateAgentSession(uid, sessionId, {
-                    id: sessionId,
+                await dataService.users.appendAgentTurn(uid, sessionId, {
                     agentId,
+                    userMessage,
+                    modelMessage: errorMessage,
                     lastMessage: messageText,
-                    timestamp: new Date().toISOString(),
+                    timestamp: errorMessage.timestamp,
+                    contextWindowSize: context.length,
                 });
                 throw error;
             }
