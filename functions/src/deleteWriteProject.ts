@@ -44,16 +44,24 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
         ? shareData.token.trim()
         : null;
 
-    const editionIds = new Set<string>();
-    const bookIds = new Set<string>();
+    const legacyEditionIds = new Set<string>();
+    const legacyBookIds = new Set<string>();
+    const publishedEditionIds = new Set<string>();
+    const publishedWorkIds = new Set<string>();
 
     for (const publishedDoc of publishedSnap.docs) {
       const data = publishedDoc.data() as Record<string, unknown>;
+      if (typeof data.publishedEditionId === "string" && data.publishedEditionId.trim().length > 0) {
+        publishedEditionIds.add(data.publishedEditionId.trim());
+      }
+      if (typeof data.publishedWorkId === "string" && data.publishedWorkId.trim().length > 0) {
+        publishedWorkIds.add(data.publishedWorkId.trim());
+      }
       if (typeof data.editionId === "string" && data.editionId.trim().length > 0) {
-        editionIds.add(data.editionId.trim());
+        legacyEditionIds.add(data.editionId.trim());
       }
       if (typeof data.bookId === "string" && data.bookId.trim().length > 0) {
-        bookIds.add(data.bookId.trim());
+        legacyBookIds.add(data.bookId.trim());
       }
     }
 
@@ -64,8 +72,10 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
       publishedSnap.size +
       publishOpsSnap.size +
       duplicateOpsSnap.size +
-      editionIds.size +
-      bookIds.size;
+      publishedEditionIds.size +
+      publishedWorkIds.size +
+      legacyEditionIds.size +
+      legacyBookIds.size;
 
     if (docsToDeleteCount > MAX_CASCADE_DELETE_DOCS) {
       throw new HttpsError(
@@ -103,11 +113,19 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
       batch.delete(duplicateOpDoc.ref);
     }
 
-    for (const editionId of editionIds) {
+    for (const publishedEditionId of publishedEditionIds) {
+      batch.delete(db.collection("published_editions").doc(publishedEditionId));
+    }
+
+    for (const publishedWorkId of publishedWorkIds) {
+      batch.delete(db.collection("published_works").doc(publishedWorkId));
+    }
+
+    for (const editionId of legacyEditionIds) {
       batch.delete(db.collection("editions").doc(editionId));
     }
 
-    for (const bookId of bookIds) {
+    for (const bookId of legacyBookIds) {
       const bookRef = db.collection("books").doc(bookId);
       const bookSnap = await bookRef.get();
       if (!bookSnap.exists) {

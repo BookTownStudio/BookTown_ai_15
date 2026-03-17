@@ -1169,26 +1169,35 @@ class FirebaseUserService {
     sessionId: string,
     message: Omit<ChatMessage, "id">
   ): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-
     const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
-    const role = message.role === "model" ? "model" : "user";
-    const text = ensureNonEmptyString(message.text, "text", 10_000);
-    const timestamp =
-      typeof message.timestamp === "string" && message.timestamp.trim()
-        ? message.timestamp
-        : new Date().toISOString();
+    const mutateAgentSession = httpsCallable<
+      {
+        sessionId: string;
+        mutation: {
+          type: "append_message";
+          message: {
+            role: "user" | "model";
+            text: string;
+            timestamp: string;
+          };
+        };
+      },
+      { ok: boolean }
+    >(getFirebaseFunctions(), "mutateAgentSession");
 
-    const messageRef = doc(
-      collection(db, "users", uid, "agent_sessions", normalizedSessionId, "messages")
-    );
-
-    await setDoc(messageRef, {
-      role,
-      text,
-      timestamp,
-      createdAt: serverTimestamp(),
+    await mutateAgentSession({
+      sessionId: normalizedSessionId,
+      mutation: {
+        type: "append_message",
+        message: {
+          role: message.role === "model" ? "model" : "user",
+          text: ensureNonEmptyString(message.text, "text", 10_000),
+          timestamp:
+            typeof message.timestamp === "string" && message.timestamp.trim()
+              ? message.timestamp
+              : new Date().toISOString(),
+        },
+      },
     });
   }
 
@@ -1197,52 +1206,81 @@ class FirebaseUserService {
     sessionId: string,
     data: Partial<AgentSession>
   ): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-
     const normalizedSessionId = ensureNonEmptyString(sessionId, "sessionId", 128);
     const agentId = normalizeOptionalString(data.agentId, 64);
     const title = normalizeOptionalString(data.title, 180);
     const lastMessage = normalizeOptionalString(data.lastMessage, 500);
     const timestamp = normalizeOptionalString(data.timestamp, 64) ?? new Date().toISOString();
 
-    await setDoc(
-      doc(db, "users", uid, "agent_sessions", normalizedSessionId),
-      stripUndefined({
-        agentId,
-        title: title || "Conversation",
-        lastMessage,
-        timestamp,
-        isPinned: data.isPinned === true,
-        updatedAt: serverTimestamp(),
-      }),
-      { merge: true }
-    );
+    const mutateAgentSession = httpsCallable<
+      {
+        sessionId: string;
+        mutation: {
+          type: "upsert_session";
+          session: {
+            agentId?: string;
+            title?: string;
+            lastMessage?: string;
+            timestamp?: string;
+            isPinned?: boolean;
+          };
+        };
+      },
+      { ok: boolean }
+    >(getFirebaseFunctions(), "mutateAgentSession");
+
+    await mutateAgentSession({
+      sessionId: normalizedSessionId,
+      mutation: {
+        type: "upsert_session",
+        session: stripUndefined({
+          agentId,
+          title: title || "Conversation",
+          lastMessage,
+          timestamp,
+          isPinned: data.isPinned === true,
+        }),
+      },
+    });
   }
 
   async createAgentSession(uid: string, session: AgentSession): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-
     const normalizedSessionId = ensureNonEmptyString(session.id, "session.id", 128);
     const agentId = ensureNonEmptyString(session.agentId, "session.agentId", 64);
     const title = normalizeOptionalString(session.title, 180) || "Conversation";
     const lastMessage = normalizeOptionalString(session.lastMessage, 500) || "";
     const timestamp = normalizeOptionalString(session.timestamp, 64) || new Date().toISOString();
 
-    await setDoc(
-      doc(db, "users", uid, "agent_sessions", normalizedSessionId),
+    const mutateAgentSession = httpsCallable<
       {
-        agentId,
-        title,
-        lastMessage,
-        timestamp,
-        isPinned: session.isPinned === true,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        sessionId: string;
+        mutation: {
+          type: "upsert_session";
+          session: {
+            agentId: string;
+            title: string;
+            lastMessage: string;
+            timestamp: string;
+            isPinned: boolean;
+          };
+        };
       },
-      { merge: true }
-    );
+      { ok: boolean }
+    >(getFirebaseFunctions(), "mutateAgentSession");
+
+    await mutateAgentSession({
+      sessionId: normalizedSessionId,
+      mutation: {
+        type: "upsert_session",
+        session: {
+          agentId,
+          title,
+          lastMessage,
+          timestamp,
+          isPinned: session.isPinned === true,
+        },
+      },
+    });
   }
 
   async importGoodreadsData(

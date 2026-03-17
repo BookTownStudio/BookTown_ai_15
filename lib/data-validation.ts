@@ -3,6 +3,7 @@ import {
     Notification, Conversation, DirectMessage, AgentSession, ChatMessage, Review, PostDraft, Author,
     AttachmentV1, AttachmentMetadataV1, AttachmentRef, PostStatus, PostVisibilityScope
 } from '../types/entities.ts';
+import { buildLegacyBookView } from './books/buildLegacyBookView.ts';
 
 export const DEFAULT_POST: Post = {
     id: '',
@@ -146,7 +147,7 @@ export function normalizeList<T>(list: any[] | undefined, normalizer: (item: any
 export function normalizeUser(data: any): User { return { ...data } as User; }
 export function normalizeProject(data: any): Project { return { ...data } as Project; }
 export function normalizeShelf(data: any): Shelf { return { ...data } as Shelf; }
-export function normalizeBook(data: any): Book { return { ...data } as Book; }
+export function normalizeBook(data: any): Book { return buildLegacyBookView(data); }
 export function normalizeQuote(data: any): Quote { return { ...data } as Quote; }
 export function normalizeBookmark(data: any): Bookmark { return { ...data } as Bookmark; }
 export function normalizeVenue(data: any): Venue { return { ...data } as Venue; }

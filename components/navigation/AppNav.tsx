@@ -7,14 +7,17 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { HamburgerIcon } from '../icons/HamburgerIcon.tsx';
 import { BellIcon } from '../icons/BellIcon.tsx';
 import { EmailIcon } from '../icons/EmailIcon.tsx';
+import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
 import { useUnreadNotificationsCount } from '../../lib/hooks/useNotifications.ts';
 
 interface AppNavProps {
     titleEn: string;
     titleAr: string;
+    showBackButton?: boolean;
+    onBack?: () => void;
 }
 
-const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr }) => {
+const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = false, onBack }) => {
   const { isRTL, lang } = useI18n();
   const { openDrawer, navigate, currentView } = useNavigation();
   const { data: unreadCount } = useUnreadNotificationsCount();
@@ -26,9 +29,15 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr }) => {
         <div className={`container mx-auto flex h-20 items-center justify-between px-4 md:px-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
             {/* Left Section */}
             <div>
-                <Button variant="icon" aria-label={lang === 'en' ? 'Open menu' : 'افتح القائمة'} onClick={openDrawer}>
-                    <HamburgerIcon className="h-6 w-6" />
-                </Button>
+                {showBackButton ? (
+                    <Button variant="icon" aria-label={lang === 'en' ? 'Go back' : 'رجوع'} onClick={onBack}>
+                        <ChevronLeftIcon className="h-6 w-6" />
+                    </Button>
+                ) : (
+                    <Button variant="icon" aria-label={lang === 'en' ? 'Open menu' : 'افتح القائمة'} onClick={openDrawer}>
+                        <HamburgerIcon className="h-6 w-6" />
+                    </Button>
+                )}
             </div>
 
             {/* Center Section */}

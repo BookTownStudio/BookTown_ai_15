@@ -18,6 +18,8 @@ type PublishResult = {
   formats: Array<"epub" | "pdf">;
   pageCount: number;
   versionNumber?: number;
+  publishedWorkId: string;
+  publishedEditionId: string;
   bookId: string;
   editionId: string;
 };
@@ -117,6 +119,8 @@ function mapPublishedDocToResult(doc: Record<string, unknown>): PublishResult | 
     typeof doc.title !== "string" ||
     typeof doc.description !== "string" ||
     typeof doc.publishedAt !== "string" ||
+    typeof doc.publishedWorkId !== "string" ||
+    typeof doc.publishedEditionId !== "string" ||
     typeof doc.bookId !== "string" ||
     typeof doc.editionId !== "string"
   ) {
@@ -144,6 +148,8 @@ function mapPublishedDocToResult(doc: Record<string, unknown>): PublishResult | 
       typeof doc.versionNumber === "number" && Number.isFinite(doc.versionNumber)
         ? Math.max(1, Math.floor(doc.versionNumber))
         : undefined,
+    publishedWorkId: doc.publishedWorkId,
+    publishedEditionId: doc.publishedEditionId,
     bookId: doc.bookId,
     editionId: doc.editionId,
   };
@@ -249,9 +255,9 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           : 1;
       const nextRevision = currentRevision + 1;
 
-      const bookId = `write_${uid}_${canonicalProjectId}`;
-      const bookRef = db.collection("books").doc(bookId);
-      const editionRef = db.collection("editions").doc();
+      const publishedWorkId = `write_${uid}_${canonicalProjectId}`;
+      const publishedWorkRef = db.collection("published_works").doc(publishedWorkId);
+      const publishedEditionRef = db.collection("published_editions").doc();
       const publishedRef = userRef.collection("published_books").doc();
 
       const titleAr =
@@ -265,12 +271,13 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       ]);
 
       tx.set(
-        bookRef,
+        publishedWorkRef,
         {
           authorId: uid,
           ownerId: uid,
           projectId: canonicalProjectId,
           source: "write-publish",
+          visibility: "private",
           title: normalizedTitle,
           titleEn: normalizedTitle,
           titleAr,
@@ -291,9 +298,11 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         { merge: true }
       );
 
-      tx.set(editionRef, {
-        editionId: editionRef.id,
-        bookId,
+      tx.set(publishedEditionRef, {
+        editionId: publishedEditionRef.id,
+        publishedEditionId: publishedEditionRef.id,
+        bookId: publishedWorkId,
+        publishedWorkId,
         projectId: canonicalProjectId,
         title: normalizedTitle,
         subtitle: "",
@@ -312,7 +321,7 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         editionFormat: "ebook",
         ebookAvailable: true,
         downloadable: true,
-        source: "booktown",
+        source: "write-publish",
         rawSourceRefs: [`users/${uid}/projects/${canonicalProjectId}`],
         searchTitleNormalized: normalizeSearchText(normalizedTitle),
         searchAuthorNormalized: normalizeSearchText(authorName),
@@ -341,8 +350,10 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         formats: ["epub", "pdf"],
         pageCount: 0,
         versionNumber: nextRevision,
-        bookId,
-        editionId: editionRef.id,
+        publishedWorkId,
+        publishedEditionId: publishedEditionRef.id,
+        bookId: publishedWorkId,
+        editionId: publishedEditionRef.id,
       };
 
       tx.set(publishedRef, {
@@ -356,7 +367,8 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         {
           isPublished: true,
           publishedBookId: publishedRef.id,
-          publishedEditionId: editionRef.id,
+          publishedEditionId: publishedEditionRef.id,
+          publishedWorkId,
           publishedAt: now,
           updatedAt: now,
           revision: nextRevision,
@@ -368,8 +380,10 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         operationId: canonicalOperationId,
         projectId: canonicalProjectId,
         publishedBookId: publishedRef.id,
-        editionId: editionRef.id,
-        bookId,
+        publishedEditionId: publishedEditionRef.id,
+        publishedWorkId,
+        editionId: publishedEditionRef.id,
+        bookId: publishedWorkId,
         result: publishedDoc,
         createdAt: now,
         updatedAt: now,

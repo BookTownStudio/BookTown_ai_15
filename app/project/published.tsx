@@ -5,7 +5,6 @@ import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
-import { ShareIcon } from '../../components/icons/ShareIcon.tsx';
 import { EyeIcon } from '../../components/icons/EyeIcon.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { PublishedBook } from '../../types/entities.ts';
@@ -29,34 +28,12 @@ const ProjectPublishedScreen: React.FC = () => {
     };
 
     const handleRead = () => {
-        if (publishedBook) {
-            // In a real app, you'd navigate to a public reader or the standard reader with the bookId
-            // For now, we simulate by going to the reader mock
-            navigate({ type: 'immersive', id: 'reader', params: { bookId: publishedBook.projectId, from: currentView } });
-        }
-    };
-
-    const handleShare = async () => {
         if (!publishedBook) return;
-
-        const shareData = {
-            title: publishedBook.title,
-            text: `Check out my new book "${publishedBook.title}" on BookTown!`,
-            url: window.location.origin + `/book/${publishedBook.id}`, // Mock URL
-        };
-
-        if (navigator.share) {
-            try {
-                await navigator.share(shareData);
-                showToast(lang === 'en' ? 'Shared successfully!' : 'تمت المشاركة بنجاح!');
-            } catch (err) {
-                console.warn('Share canceled');
-            }
-        } else {
-            // Fallback: Copy to clipboard
-            navigator.clipboard.writeText(shareData.text + ' ' + shareData.url);
-            showToast(lang === 'en' ? 'Link copied to clipboard!' : 'تم نسخ الرابط!');
-        }
+        showToast(
+            lang === 'en'
+                ? 'Published works are isolated from the reader until public read access is wired.'
+                : 'الأعمال المنشورة معزولة عن القارئ حتى يتم ربط الوصول العام للقراءة.'
+        );
     };
 
     if (!publishedBook) {
@@ -86,8 +63,8 @@ const ProjectPublishedScreen: React.FC = () => {
                 
                 <BilingualText role="Body" className="text-center text-white/70 mb-8">
                     {lang === 'en' 
-                        ? 'Your book is now live and available to the world.' 
-                        : 'كتابك متاح الآن للعالم.'}
+                        ? 'Your publication has been saved to your private published works. Public sharing is not available yet.' 
+                        : 'تم حفظ هذا العمل ضمن أعمالك المنشورة الخاصة. المشاركة العامة غير متاحة بعد.'}
                 </BilingualText>
 
                 {/* Book Card Preview */}
@@ -119,16 +96,10 @@ const ProjectPublishedScreen: React.FC = () => {
 
                 {/* Actions */}
                 <div className="w-full space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                        <Button variant="primary" onClick={handleShare} className="!bg-white !text-slate-900 hover:!bg-white/90">
-                            <ShareIcon className="h-5 w-5 mr-2" />
-                            {lang === 'en' ? 'Share' : 'مشاركة'}
-                        </Button>
-                        <Button variant="ghost" onClick={handleRead} className="bg-white/10 hover:bg-white/20 text-white border border-white/10">
-                            <EyeIcon className="h-5 w-5 mr-2" />
-                            {lang === 'en' ? 'Read Now' : 'اقرأ الآن'}
-                        </Button>
-                    </div>
+                    <Button variant="ghost" onClick={handleRead} className="w-full bg-white/10 hover:bg-white/20 text-white border border-white/10">
+                        <EyeIcon className="h-5 w-5 mr-2" />
+                        {lang === 'en' ? 'Reader Unavailable' : 'القارئ غير متاح'}
+                    </Button>
                     <Button variant="ghost" onClick={handleBackToStudio} className="w-full text-slate-400 hover:text-white">
                         {lang === 'en' ? 'Back to Studio' : 'العودة للاستوديو'}
                     </Button>

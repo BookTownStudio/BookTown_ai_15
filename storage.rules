@@ -39,9 +39,9 @@ service firebase.storage {
        ========================= */
     /*
       COVER_STORAGE_CONTRACT_V1
-      - NEVER publicly readable
+      - Publicly readable cover assets
       - Written ONLY by backend (Admin SDK bypasses rules)
-      - Access ONLY via signed URLs
+      - No client writes
     */
     match /books/{bookId}/covers/{allPaths=**} {
   // Covers are publicly readable

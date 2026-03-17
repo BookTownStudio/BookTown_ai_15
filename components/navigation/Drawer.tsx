@@ -10,7 +10,7 @@ import { BookmarkIcon } from '../icons/BookmarkIcon.tsx';
 import { QuoteIcon } from '../icons/QuoteIcon.tsx';
 import { SettingsIcon } from '../icons/SettingsIcon.tsx';
 import { MoonIcon } from '../icons/MoonIcon.tsx';
-import { DrawerScreenName, ImmersiveScreenName } from '../../types/navigation.ts';
+import { ImmersiveScreenName } from '../../types/navigation.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import { useUserProfile } from '../../lib/hooks/useUserProfile.ts';
 import { AuthorsIcon } from '../icons/AuthorsIcon.tsx';
@@ -61,19 +61,18 @@ const Drawer: React.FC = () => {
         }
     };
 
-    const handleNavigate = (id: DrawerScreenName) => {
-        // Authority Decision: Drawer screens are rendered as immersive views
-        navigate({ type: 'immersive', id: id as ImmersiveScreenName });
+    const handleNavigate = (id: ImmersiveScreenName) => {
+        navigate({ type: 'immersive', id });
     };
 
-    const MAIN_ITEMS: { id: DrawerScreenName; en: string; ar: string; icon: React.FC<any>; }[] = [
+    const MAIN_ITEMS: { id: ImmersiveScreenName; en: string; ar: string; icon: React.FC<any>; }[] = [
         { id: 'bookmarks', en: 'Bookmarks', ar: 'العلامات المرجعية', icon: BookmarkIcon },
         { id: 'quotes', en: 'Quotes', ar: 'الاقتباسات', icon: QuoteIcon },
         { id: 'authors', en: 'Authors', ar: 'المؤلفون', icon: AuthorsIcon },
         { id: 'venues', en: 'Venues', ar: 'الأماكن', icon: VenuesIcon },
     ];
 
-    const SETTINGS_ITEMS: { id: DrawerScreenName; en: string; ar: string; icon: React.FC<any>; adminOnly?: boolean }[] = [
+    const SETTINGS_ITEMS: { id: ImmersiveScreenName; en: string; ar: string; icon: React.FC<any>; adminOnly?: boolean }[] = [
         { id: 'settings', en: 'Settings', ar: 'الإعدادات', icon: SettingsIcon },
         { id: 'adminDashboard', en: 'Admin Dashboard', ar: 'لوحة التحكم', icon: AdminIcon, adminOnly: true },
     ];

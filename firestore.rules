@@ -323,11 +323,11 @@ service cloud.firestore {
 
       match /agent_sessions/{sessionId} {
         allow read: if isOwner(uid);
-        allow create, update, delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
 
         match /messages/{messageId} {
           allow read: if isOwner(uid);
-          allow create, update, delete: if isActiveOwner(uid);
+          allow create, update, delete: if false;
         }
       }
 
@@ -470,6 +470,15 @@ service cloud.firestore {
       allow read: if canReadShelfByData(resource.data);
 
       allow create, update, delete: if false;
+
+      match /followers/{followerId} {
+        allow get, list: if canReadShelfByData(get(/databases/$(database)/documents/shelves/$(shelfDocId)).data);
+        allow create: if isActiveOwner(followerId)
+          && canReadShelfByData(get(/databases/$(database)/documents/shelves/$(shelfDocId)).data)
+          && request.resource.data.uid == request.auth.uid;
+        allow update: if false;
+        allow delete: if isActiveOwner(followerId);
+      }
     }
 
     /* =========================
@@ -505,6 +514,14 @@ service cloud.firestore {
     match /user_reviews/{docId} {
       allow get, list: if false;
       allow create, update, delete: if false;
+    }
+
+    match /published_works/{publishedWorkId} {
+      allow read, write: if false;
+    }
+
+    match /published_editions/{publishedEditionId} {
+      allow read, write: if false;
     }
 
     /* =========================

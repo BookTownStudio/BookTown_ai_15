@@ -41,42 +41,109 @@ const decodePathSegment = (value: string): string => {
     }
 };
 
+const encodePathSegment = (value: string): string => encodeURIComponent(value.trim());
+
 function resolveViewFromPath(pathname: string): View {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
     const segments = normalizedPath.split('/').filter(Boolean);
 
+    if (normalizedPath === '/') return { type: 'tab', id: 'home' };
+    if (normalizedPath === '/read') return { type: 'tab', id: 'read' };
+    if (normalizedPath === '/discover') return { type: 'tab', id: 'discover' };
+    if (normalizedPath === '/discover/explore') return { type: 'stack', id: 'discovery' };
+    if (normalizedPath === '/write') return { type: 'tab', id: 'write' };
+    if (normalizedPath === '/social') return { type: 'tab', id: 'social' };
+
     if (segments.length >= 1 && segments[0] === 'admin') {
         if (segments.length >= 2 && segments[1] === 'intelligence') {
-            return {
-                type: 'immersive',
-                id: 'adminIntelligence',
-            };
+            return { type: 'immersive', id: 'adminIntelligence' };
         }
-        return {
-            type: 'immersive',
-            id: 'adminDashboard',
-        };
+        return { type: 'immersive', id: 'adminDashboard' };
+    }
+
+    if (segments.length >= 2 && segments[0] === 'books') {
+        const bookId = decodePathSegment(segments[1]);
+        if (bookId.length > 0) {
+            return { type: 'immersive', id: 'bookDetails', params: { bookId } };
+        }
+    }
+
+    if (segments.length >= 2 && segments[0] === 'authors') {
+        const authorId = decodePathSegment(segments[1]);
+        if (authorId.length > 0) {
+            return { type: 'immersive', id: 'authorDetails', params: { authorId } };
+        }
+    }
+
+    if (segments.length >= 3 && segments[0] === 'quotes') {
+        const ownerId = decodePathSegment(segments[1]);
+        const quoteId = decodePathSegment(segments[2]);
+        if (ownerId.length > 0 && quoteId.length > 0) {
+            return { type: 'immersive', id: 'quoteDetails', params: { ownerId, quoteId } };
+        }
+    }
+
+    if (segments.length >= 1 && segments[0] === 'profile') {
+        const userId = segments.length >= 2 ? decodePathSegment(segments[1]) : '';
+        return userId.length > 0
+            ? { type: 'immersive', id: 'profile', params: { userId } }
+            : { type: 'immersive', id: 'profile' };
+    }
+
+    if (segments.length >= 1 && segments[0] === 'notifications') {
+        return { type: 'immersive', id: 'notificationsFeed' };
+    }
+
+    if (segments.length >= 1 && segments[0] === 'messages') {
+        if (segments.length >= 2) {
+            const conversationId = decodePathSegment(segments[1]);
+            if (conversationId.length > 0) {
+                return { type: 'immersive', id: 'messengerChat', params: { conversationId } };
+            }
+        }
+        return { type: 'immersive', id: 'messengerList' };
     }
 
     if (segments.length >= 2 && segments[0] === 'shelf') {
         const shelfId = decodePathSegment(segments[1]);
         if (shelfId.length > 0) {
-            return {
-                type: 'immersive',
-                id: 'shelfDetails',
-                params: { shelfId },
-            };
+            return { type: 'immersive', id: 'shelfDetails', params: { shelfId } };
         }
     }
 
     if (segments.length >= 2 && segments[0] === 'post') {
         const postId = decodePathSegment(segments[1]);
         if (postId.length > 0) {
-            return {
-                type: 'immersive',
-                id: 'postDiscussion',
-                params: { postId },
-            };
+            return { type: 'immersive', id: 'postDiscussion', params: { postId } };
+        }
+    }
+
+    if (segments.length >= 2 && segments[0] === 'reader') {
+        const bookId = decodePathSegment(segments[1]);
+        if (bookId.length > 0) {
+            return { type: 'immersive', id: 'reader', params: { bookId } };
+        }
+    }
+
+    if (segments.length >= 3 && segments[0] === 'write' && segments[1] === 'editor') {
+        const projectId = decodePathSegment(segments[2]);
+        if (projectId.length > 0) {
+            return { type: 'immersive', id: 'editor', params: { projectId } };
+        }
+    }
+
+    if (segments.length >= 4 && segments[0] === 'write' && segments[1] === 'project') {
+        const projectId = decodePathSegment(segments[2]);
+        const mode = segments[3];
+
+        if (projectId.length > 0 && mode === 'edit') {
+            return { type: 'immersive', id: 'projectEdit', params: { projectId } };
+        }
+        if (projectId.length > 0 && mode === 'publish') {
+            return { type: 'immersive', id: 'projectPublish', params: { projectId } };
+        }
+        if (projectId.length > 0 && mode === 'preview') {
+            return { type: 'immersive', id: 'projectPublish', params: { projectId } };
         }
     }
 
@@ -84,24 +151,90 @@ function resolveViewFromPath(pathname: string): View {
 }
 
 function resolvePathFromView(view: View): string | null {
-    if (view.type === 'immersive' && view.id === 'adminDashboard') {
-        return '/admin';
+    if (view.type === 'tab') {
+        switch (view.id) {
+            case 'home':
+                return '/';
+            case 'read':
+                return '/read';
+            case 'discover':
+                return '/discover';
+            case 'write':
+                return '/write';
+            case 'social':
+                return '/social';
+            default:
+                return '/';
+        }
     }
 
-    if (view.type === 'immersive' && view.id === 'adminIntelligence') {
-        return '/admin/intelligence';
+    if (view.type === 'stack' && view.id === 'discovery') {
+        return '/discover/explore';
     }
 
-    if (view.type === 'immersive' && view.id === 'shelfDetails') {
-        const shelfId =
-            typeof view.params?.shelfId === 'string' ? view.params.shelfId.trim() : '';
-        return shelfId ? `/shelf/${encodeURIComponent(shelfId)}` : '/';
-    }
-
-    if (view.type === 'immersive' && view.id === 'postDiscussion') {
-        const postId =
-            typeof view.params?.postId === 'string' ? view.params.postId.trim() : '';
-        return postId ? `/post/${encodeURIComponent(postId)}` : '/';
+    if (view.type === 'immersive') {
+        switch (view.id) {
+            case 'adminDashboard':
+                return '/admin';
+            case 'adminIntelligence':
+                return '/admin/intelligence';
+            case 'bookDetails': {
+                const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                return bookId ? `/books/${encodePathSegment(bookId)}` : null;
+            }
+            case 'authorDetails': {
+                const authorId = typeof view.params?.authorId === 'string' ? view.params.authorId.trim() : '';
+                return authorId ? `/authors/${encodePathSegment(authorId)}` : null;
+            }
+            case 'quoteDetails': {
+                const ownerId = typeof view.params?.ownerId === 'string' ? view.params.ownerId.trim() : '';
+                const quoteId = typeof view.params?.quoteId === 'string' ? view.params.quoteId.trim() : '';
+                return ownerId && quoteId
+                    ? `/quotes/${encodePathSegment(ownerId)}/${encodePathSegment(quoteId)}`
+                    : null;
+            }
+            case 'profile': {
+                const userId = typeof view.params?.userId === 'string' ? view.params.userId.trim() : '';
+                return userId ? `/profile/${encodePathSegment(userId)}` : '/profile';
+            }
+            case 'notificationsFeed':
+                return '/notifications';
+            case 'messengerList':
+                return '/messages';
+            case 'messengerChat': {
+                const conversationId =
+                    typeof view.params?.conversationId === 'string'
+                        ? view.params.conversationId.trim()
+                        : '';
+                return conversationId ? `/messages/${encodePathSegment(conversationId)}` : '/messages';
+            }
+            case 'shelfDetails': {
+                const shelfId = typeof view.params?.shelfId === 'string' ? view.params.shelfId.trim() : '';
+                return shelfId ? `/shelf/${encodePathSegment(shelfId)}` : '/';
+            }
+            case 'postDiscussion': {
+                const postId = typeof view.params?.postId === 'string' ? view.params.postId.trim() : '';
+                return postId ? `/post/${encodePathSegment(postId)}` : '/';
+            }
+            case 'reader': {
+                const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                return bookId ? `/reader/${encodePathSegment(bookId)}` : null;
+            }
+            case 'editor': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                return projectId ? `/write/editor/${encodePathSegment(projectId)}` : null;
+            }
+            case 'projectEdit': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                return projectId ? `/write/project/${encodePathSegment(projectId)}/edit` : null;
+            }
+            case 'projectPublish': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                return projectId ? `/write/project/${encodePathSegment(projectId)}/publish` : null;
+            }
+            default:
+                return null;
+        }
     }
 
     return null;
@@ -109,8 +242,25 @@ function resolvePathFromView(view: View): string | null {
 
 function isRouteBackedPath(pathname: string): boolean {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
-    return normalizedPath.startsWith('/post/')
+    return normalizedPath === '/'
+        || normalizedPath === '/read'
+        || normalizedPath === '/discover'
+        || normalizedPath === '/discover/explore'
+        || normalizedPath === '/write'
+        || normalizedPath === '/social'
+        || normalizedPath.startsWith('/books/')
+        || normalizedPath.startsWith('/authors/')
+        || normalizedPath.startsWith('/quotes/')
+        || normalizedPath === '/profile'
+        || normalizedPath.startsWith('/profile/')
+        || normalizedPath === '/notifications'
+        || normalizedPath === '/messages'
+        || normalizedPath.startsWith('/messages/')
+        || normalizedPath.startsWith('/post/')
         || normalizedPath.startsWith('/shelf/')
+        || normalizedPath.startsWith('/reader/')
+        || normalizedPath.startsWith('/write/editor/')
+        || normalizedPath.startsWith('/write/project/')
         || normalizedPath === '/admin'
         || normalizedPath.startsWith('/admin/');
 }
@@ -127,27 +277,92 @@ function sanitizeViewForHistory(view: View): View {
     }
 
     if (view.type === 'immersive') {
-        if (view.id === 'postDiscussion') {
-            const postId =
-                typeof view.params?.postId === 'string' ? view.params.postId.trim() : '';
-            return postId
-                ? { type: 'immersive', id: 'postDiscussion', params: { postId } }
-                : { type: 'tab', id: 'home' };
+        switch (view.id) {
+            case 'bookDetails': {
+                const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                return bookId ? { type: 'immersive', id: 'bookDetails', params: { bookId } } : { type: 'tab', id: 'home' };
+            }
+            case 'authorDetails': {
+                const authorId = typeof view.params?.authorId === 'string' ? view.params.authorId.trim() : '';
+                return authorId ? { type: 'immersive', id: 'authorDetails', params: { authorId } } : { type: 'tab', id: 'home' };
+            }
+            case 'quoteDetails': {
+                const quoteId = typeof view.params?.quoteId === 'string' ? view.params.quoteId.trim() : '';
+                const ownerId = typeof view.params?.ownerId === 'string' ? view.params.ownerId.trim() : '';
+                return quoteId && ownerId
+                    ? { type: 'immersive', id: 'quoteDetails', params: { quoteId, ownerId } }
+                    : { type: 'tab', id: 'home' };
+            }
+            case 'postDiscussion': {
+                const postId = typeof view.params?.postId === 'string' ? view.params.postId.trim() : '';
+                return postId ? { type: 'immersive', id: 'postDiscussion', params: { postId } } : { type: 'tab', id: 'home' };
+            }
+            case 'shelfDetails': {
+                const shelfId = typeof view.params?.shelfId === 'string' ? view.params.shelfId.trim() : '';
+                return shelfId ? { type: 'immersive', id: 'shelfDetails', params: { shelfId } } : { type: 'tab', id: 'home' };
+            }
+            case 'profile': {
+                const userId = typeof view.params?.userId === 'string' ? view.params.userId.trim() : '';
+                return userId ? { type: 'immersive', id: 'profile', params: { userId } } : { type: 'immersive', id: 'profile' };
+            }
+            case 'reader': {
+                const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                return bookId ? { type: 'immersive', id: 'reader', params: { bookId } } : { type: 'tab', id: 'home' };
+            }
+            case 'editor':
+            case 'projectEdit':
+            case 'projectPublish': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                return projectId ? { type: 'immersive', id: view.id, params: { projectId } } : { type: 'tab', id: 'write' };
+            }
+            case 'projectPreview': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                const stagedFiles =
+                    view.params?.stagedFiles && typeof view.params.stagedFiles === 'object'
+                        ? view.params.stagedFiles
+                        : null;
+
+                if (!projectId || !stagedFiles) {
+                    return { type: 'tab', id: 'write' };
+                }
+
+                const epubUrl =
+                    typeof (stagedFiles as { epubUrl?: unknown }).epubUrl === 'string'
+                        ? (stagedFiles as { epubUrl: string }).epubUrl.trim()
+                        : '';
+                const pdfUrl =
+                    typeof (stagedFiles as { pdfUrl?: unknown }).pdfUrl === 'string'
+                        ? (stagedFiles as { pdfUrl: string }).pdfUrl.trim()
+                        : '';
+
+                if (!epubUrl && !pdfUrl) {
+                    return { type: 'immersive', id: 'projectPublish', params: { projectId } };
+                }
+
+                return {
+                    type: 'immersive',
+                    id: 'projectPreview',
+                    params: {
+                        projectId,
+                        stagedFiles: {
+                            ...(epubUrl ? { epubUrl } : {}),
+                            ...(pdfUrl ? { pdfUrl } : {}),
+                        },
+                    },
+                };
+            }
+            case 'messengerChat': {
+                const conversationId =
+                    typeof view.params?.conversationId === 'string'
+                        ? view.params.conversationId.trim()
+                        : '';
+                return conversationId
+                    ? { type: 'immersive', id: 'messengerChat', params: { conversationId } }
+                    : { type: 'immersive', id: 'messengerList' };
+            }
+            default:
+                return { type: 'immersive', id: view.id };
         }
-
-        if (view.id === 'shelfDetails') {
-            const shelfId =
-                typeof view.params?.shelfId === 'string' ? view.params.shelfId.trim() : '';
-            return shelfId
-                ? { type: 'immersive', id: 'shelfDetails', params: { shelfId } }
-                : { type: 'tab', id: 'home' };
-        }
-
-        return { type: 'immersive', id: view.id };
-    }
-
-    if (view.type === 'drawer') {
-        return { type: 'drawer', id: view.id };
     }
 
     if (view.type === 'stack') {
@@ -166,7 +381,6 @@ function readHistoryViewState(state: unknown): View | null {
     if (
         maybeView.type !== 'tab' &&
         maybeView.type !== 'immersive' &&
-        maybeView.type !== 'drawer' &&
         maybeView.type !== 'stack'
     ) {
         return null;
@@ -198,11 +412,20 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         const bootView =
             readHistoryViewState(window.history.state) ||
             resolveViewFromPath(window.location.pathname || '/');
+        const normalizedBootPath = resolvePathFromView(bootView);
+        const currentUrlPath = window.location.pathname || '/';
+        const initialPath =
+            normalizedBootPath &&
+            /\/write\/project\/[^/]+\/preview\/?$/.test(currentUrlPath) &&
+            bootView.type === 'immersive' &&
+            bootView.id === 'projectPublish'
+                ? normalizedBootPath
+                : currentUrlPath;
         setCurrentView(bootView);
         window.history.replaceState(
             { view: sanitizeViewForHistory(bootView) },
             '',
-            window.location.pathname + window.location.search + window.location.hash
+            initialPath + window.location.search + window.location.hash
         );
 
         const onPopState = (event: PopStateEvent) => {
@@ -229,13 +452,17 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         if (typeof window !== 'undefined') {
             const nextPath = resolvePathFromView(view);
             const currentPath = window.location.pathname || '/';
-            const shouldResetToRoot = !nextPath && isRouteBackedPath(currentPath);
+            const preserveCurrentPath =
+                !nextPath &&
+                view.type === 'immersive' &&
+                view.id === 'projectPreview';
+            const shouldResetToRoot = !nextPath && !preserveCurrentPath && isRouteBackedPath(currentPath);
 
-            if (nextPath || shouldResetToRoot) {
+            if (nextPath || shouldResetToRoot || preserveCurrentPath) {
                 const currentUrl = currentPath + window.location.search + window.location.hash;
                 const serializedCurrent = sanitizeViewForHistory(currentView);
                 const serializedNext = sanitizeViewForHistory(view);
-                const finalPath = nextPath || '/';
+                const finalPath = nextPath || (preserveCurrentPath ? currentUrl : '/');
 
                 window.history.replaceState({ view: serializedCurrent }, '', currentUrl);
                 if (options?.replace) {
@@ -263,8 +490,8 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     const closeDrawer = useCallback(() => setDrawerOpen(false), []);
     
     const setActiveTab = useCallback((tab: TabName) => {
-        setCurrentView({ type: 'tab', id: tab });
-    }, []);
+        navigate({ type: 'tab', id: tab });
+    }, [navigate]);
 
     const resetTab = useCallback((tab: TabName) => {
         setResetTokens(prev => ({ ...prev, [tab]: prev[tab] + 1 }));

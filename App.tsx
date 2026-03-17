@@ -77,15 +77,28 @@ const TabScreens: React.FC = () => {
     const { currentView } = useNavigation();
     const activeTab = currentView.type === 'tab' ? currentView.id : null;
 
+    const renderActiveTab = () => {
+        switch (activeTab) {
+            case 'home':
+                return <HomeScreen />;
+            case 'read':
+                return <ReadScreen />;
+            case 'discover':
+                return <DiscoverScreen />;
+            case 'write':
+                return <WriteScreen />;
+            case 'social':
+                return <SocialScreen />;
+            default:
+                return null;
+        }
+    };
+
     return (
         <div className="h-full w-full relative">
             <div className="h-full w-full">
-                 <Suspense fallback={<PageLoader />}>
-                    <div style={{ display: activeTab === 'home' ? 'block' : 'none', height: '100%' }}><HomeScreen /></div>
-                    <div style={{ display: activeTab === 'read' ? 'block' : 'none', height: '100%' }}><ReadScreen /></div>
-                    <div style={{ display: activeTab === 'discover' ? 'block' : 'none', height: '100%' }}><DiscoverScreen /></div>
-                    <div style={{ display: activeTab === 'write' ? 'block' : 'none', height: '100%' }}><WriteScreen /></div>
-                    <div style={{ display: activeTab === 'social' ? 'block' : 'none', height: '100%' }}><SocialScreen /></div>
+                <Suspense fallback={<PageLoader />}>
+                    {renderActiveTab()}
                 </Suspense>
             </div>
             {activeTab && <BottomNavBar activeTab={activeTab} />}

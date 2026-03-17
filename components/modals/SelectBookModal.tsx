@@ -15,6 +15,7 @@ import {
   buildBookDetailsParams,
   resolveIngestionSource,
 } from '../../lib/books/searchNavigation.ts';
+import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
@@ -63,22 +64,23 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
     });
   }, [isOpen, isSearching, searchQuery, searchResponse?.results?.length]);
 
-  const mapResultToBook = (result: SearchResultDTO): Book => ({
-    id: result.bookId,
-    authorId: '',
-    titleEn: result.titleEn || result.title,
-    titleAr: result.titleAr || '',
-    authorEn: result.authorEn || '',
-    authorAr: result.authorAr || '',
-    coverUrl: result.coverUrl || '',
-    descriptionEn: result.descriptionEn || result.description || '',
-    descriptionAr: result.descriptionAr || '',
-    genresEn: [],
-    genresAr: [],
-    rating: 0,
-    ratingsCount: 0,
-    isEbookAvailable: result.isEbookAvailable,
-  });
+  const mapResultToBook = (result: SearchResultDTO): Book =>
+    buildLegacyBookView({
+      id: result.bookId,
+      authorId: '',
+      titleEn: result.titleEn || result.title,
+      titleAr: result.titleAr || '',
+      authorEn: result.authorEn || '',
+      authorAr: result.authorAr || '',
+      coverUrl: result.coverUrl || '',
+      descriptionEn: result.descriptionEn || result.description || '',
+      descriptionAr: result.descriptionAr || '',
+      genresEn: [],
+      genresAr: [],
+      rating: 0,
+      ratingsCount: 0,
+      isEbookAvailable: result.isEbookAvailable,
+    });
 
   const resolveCanonicalBookId = async (
     result: SearchResultDTO

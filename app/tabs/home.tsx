@@ -5,10 +5,7 @@ import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import DiscoveryEntryCard from '../../components/content/DiscoveryEntryCard.tsx';
-import QuoteSnippetCard from '../../components/content/QuoteSnippetCard.tsx';
-import { mockQuoteOfTheDay } from '../../data/mocks.ts';
 import { useUserShelves, useShelfEntries } from '../../lib/hooks/useUserShelves.ts';
-import { useQuickRecs } from '../../lib/hooks/useQuickRecs.ts';
 import BookCard from '../../components/content/BookCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
@@ -46,7 +43,6 @@ const HomeScreen: React.FC = () => {
   const { showToast } = useToast();
 
   useUserShelves(); 
-  useQuickRecs();   
 
   /** 
    * 🔒 Mirror Membership Authority
@@ -66,8 +62,6 @@ const HomeScreen: React.FC = () => {
      Collapsible section state
   -------------------------------- */
   const [isContinueOpen, setIsContinueOpen] = useState(true);
-  const [isRecsOpen, setIsRecsOpen] = useState(true);
-  const [isTrendingOpen, setIsTrendingOpen] = useState(true);
 
   /* -------------------------------
      🔒 HOME RESET CONTRACT
@@ -335,40 +329,6 @@ const HomeScreen: React.FC = () => {
                 )}
               </CollapsibleSection>
 
-              {/* ⭐ Recommended */}
-              <CollapsibleSection
-                titleEn="Recommended For You"
-                titleAr="موصى به لك"
-                isOpen={isRecsOpen}
-                onToggle={() => setIsRecsOpen(v => !v)}
-              >
-                <div className="flex gap-4 py-4 overflow-x-auto scrollbar-hide snap-x">
-                  {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="snap-start">
-                      <BookCardSkeleton layout="list" />
-                    </div>
-                  ))}
-                </div>
-              </CollapsibleSection>
-
-              <CollapsibleSection
-                titleEn="Trending & New Releases"
-                titleAr="الرائج والجديد"
-                isOpen={isTrendingOpen}
-                onToggle={() => setIsTrendingOpen(v => !v)}
-              >
-                <div className="flex gap-4 py-4 overflow-x-auto scrollbar-hide snap-x">
-                  {[1, 2, 3, 4].map(i => (
-                    <div key={i} className="snap-start">
-                      <BookCardSkeleton layout="list" />
-                    </div>
-                  ))}
-                </div>
-              </CollapsibleSection>
-
-              <div className="max-w-xl mx-auto opacity-80">
-                <QuoteSnippetCard quote={mockQuoteOfTheDay} />
-              </div>
             </div>
           )}
         </PageTransition>

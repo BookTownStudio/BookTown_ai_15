@@ -1,7 +1,7 @@
 
 import { Book } from '../types/entities.ts';
 import { agentService } from './agentService.ts';
-import { normalizeBook } from '../lib/data-validation.ts';
+import { buildLegacyBookView } from '../lib/books/buildLegacyBookView.ts';
 
 export const fetchBookRecommendations = async (query: string): Promise<Book[]> => {
   try {
@@ -9,8 +9,8 @@ export const fetchBookRecommendations = async (query: string): Promise<Book[]> =
     
     if (!Array.isArray(rawBooks)) return [];
 
-    // Map AI results and pass through authoritative normalizer
-    return rawBooks.map((b: any, index: number) => normalizeBook({
+    // AI output is adapted into the legacy UI book shape explicitly.
+    return rawBooks.map((b: any, index: number) => buildLegacyBookView({
         id: `ai_${Date.now()}_${index}`,
         authorId: 'ai_generated_author', 
         titleEn: b.titleEn || "Unknown Title",

@@ -216,6 +216,7 @@ export interface Author {
     requiresCanonicalization?: boolean;
 }
 
+// Legacy UI-facing book view. Canonical identity remains work/edition based.
 export interface Book {
     id: string;
     authorId: string;
@@ -283,6 +284,8 @@ export interface PublishedBook {
     formats: ('epub' | 'pdf')[];
     pageCount: number;
     versionNumber?: number;
+    publishedWorkId?: string;
+    publishedEditionId?: string;
     bookId?: string;
     editionId?: string;
 }
