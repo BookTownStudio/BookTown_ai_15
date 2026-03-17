@@ -8,6 +8,7 @@ import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useUserShelves } from './useUserShelves.ts';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
+import { buildLegacyBookView } from '../books/buildLegacyBookView.ts';
 
 import {
   addBookToShelf,
@@ -95,11 +96,11 @@ export const useToggleBookOnShelf = () => {
         queryClient.getQueryData(shelvesKey);
 
       const optimisticBook =
-        book || {
+        book || buildLegacyBookView({
           id: bookId,
           titleEn: 'Loading...',
           titleAr: 'جار التحميل...'
-        };
+        });
 
       // ---- Optimistic shelf entries ----
       queryClient.setQueryData(

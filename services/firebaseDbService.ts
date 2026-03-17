@@ -59,6 +59,7 @@ import type { LibrarianRecommendationContext } from "../types/librarian.ts";
 import { normalizeNotification, normalizePost } from "../lib/data-validation.ts";
 import { FirebaseUploadService } from "./firebaseUploadService.ts";
 import { firebaseProjectService } from "./firebaseProjectService.ts";
+import { buildLegacyBookView } from "../lib/books/buildLegacyBookView.ts";
 
 /**
  * 🔒 AUTHORITATIVE Firebase Catalog Service
@@ -683,18 +684,13 @@ const toProfileReview = (source: Record<string, unknown>): Review => {
 
 const toProfileBook = (source: Record<string, unknown>): Book => {
   const id = ensureNonEmptyString(normalizeString(source.id, 128), "id", 128);
-  const titleEn = normalizeString(source.titleEn, 300);
-  const titleAr = normalizeString(source.titleAr, 300);
-  const authorEn = normalizeString(source.authorEn, 300);
-  const authorAr = normalizeString(source.authorAr, 300);
-
-  return {
+  return buildLegacyBookView({
     id,
     authorId: normalizeString(source.authorId, 128) || "author_unknown",
-    titleEn,
-    titleAr,
-    authorEn,
-    authorAr,
+    titleEn: normalizeString(source.titleEn, 300),
+    titleAr: normalizeString(source.titleAr, 300),
+    authorEn: normalizeString(source.authorEn, 300),
+    authorAr: normalizeString(source.authorAr, 300),
     descriptionEn: normalizeString(source.descriptionEn, 5000),
     descriptionAr: normalizeString(source.descriptionAr, 5000),
     coverUrl: normalizeString(source.coverUrl, 2048),
@@ -716,7 +712,7 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
     source.ebookAttachmentId.trim().length > 0
       ? { ebookAttachmentId: source.ebookAttachmentId.trim() }
       : {}),
-  };
+  });
 };
 
 const toShelf = (source: Record<string, unknown>): Shelf => {
@@ -1637,7 +1633,7 @@ class FirebaseShelfService {
           if (entry.snapshot) {
             return {
               ...entry,
-              book: {
+              book: buildLegacyBookView({
                 id: entry.bookId,
                 titleEn: entry.snapshot.titleEn,
                 titleAr: entry.snapshot.titleAr,
@@ -1652,7 +1648,7 @@ class FirebaseShelfService {
                 rating: 0,
                 ratingsCount: 0,
                 isEbookAvailable: false
-              }
+              })
             };
           }
 

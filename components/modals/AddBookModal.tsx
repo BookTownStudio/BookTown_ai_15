@@ -25,6 +25,7 @@ import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
+import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -194,14 +195,15 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
         {
           shelfId: targetShelfId,
           bookId: result.bookId,
-          book: {
+          book: buildLegacyBookView({
             id: result.bookId,
             titleEn: result.titleEn || result.title,
             titleAr: result.titleAr,
             authorEn: result.authorEn,
             authorAr: result.authorAr,
-            coverUrl: result.coverUrl
-          } as any
+            coverUrl: result.coverUrl,
+            isEbookAvailable: result.isEbookAvailable,
+          })
         },
         {
           onSuccess: () => {
@@ -374,39 +376,27 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
         throw new Error('UPLOAD_FAILED');
       }
 
+      const uploadedBookView = buildLegacyBookView({
+        id: uploaded.bookId,
+        titleEn: uploadFile.name.replace(/\.[^.]+$/, ''),
+        titleAr: uploadFile.name.replace(/\.[^.]+$/, ''),
+        authorEn: 'Unknown',
+        authorAr: '',
+        coverUrl: '',
+        isEbookAvailable: true,
+      });
+
       // Use the same shelf mutation pipeline as search-add for parity.
       toggleBook({
         shelfId: targetShelfId,
         bookId: uploaded.bookId,
-        book: {
-          id: uploaded.bookId,
-          titleEn: uploadFile.name.replace(/\.[^.]+$/, ''),
-          titleAr: uploadFile.name.replace(/\.[^.]+$/, ''),
-          authorEn: 'Unknown',
-          authorAr: '',
-          coverUrl: '',
-        } as any,
+        book: uploadedBookView,
       });
 
       if (effectiveUid) {
         queryClient.setQueryData(
           queryKeys.catalog.book(uploaded.bookId) as unknown as any[],
-          {
-            id: uploaded.bookId,
-            authorId: '',
-            titleEn: uploadFile.name.replace(/\.[^.]+$/, ''),
-            titleAr: uploadFile.name.replace(/\.[^.]+$/, ''),
-            authorEn: '',
-            authorAr: '',
-            coverUrl: '',
-            descriptionEn: '',
-            descriptionAr: '',
-            genresEn: [],
-            genresAr: [],
-            rating: 0,
-            ratingsCount: 0,
-            isEbookAvailable: true,
-          } as any
+          uploadedBookView as any
         );
 
         await Promise.all([

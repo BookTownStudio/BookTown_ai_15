@@ -24,6 +24,7 @@ import {
 import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts";
 import { ensureCanonicalAuthor } from "../authors/ensureCanonicalAuthor.ts";
 import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
+import { buildLegacyBookView } from "../books/buildLegacyBookView.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
 import type { BookStats } from "../../services/db.types.ts";
 import type { LibrarianRecommendationContext } from "../../types/librarian.ts";
@@ -122,28 +123,21 @@ function buildAuthorId(authorName: string): string {
 }
 
 function mapBook(data: any, id: string): Book {
-  return {
+  const authorSeed =
+    typeof data.authorEn === "string" && data.authorEn.trim().length > 0
+      ? data.authorEn
+      : typeof data.author === "string"
+        ? data.author
+        : "";
+
+  return buildLegacyBookView({
+    ...data,
     id,
-    titleEn: data.titleEn || data.title || "",
-    titleAr: data.titleAr || "",
-    authorId: data.authorId || buildAuthorId(data.authorEn || data.author || ""),
-    authorEn: data.authorEn || data.author || "",
-    authorAr: data.authorAr || "",
-    descriptionEn: data.descriptionEn || data.description || "",
-    descriptionAr: data.descriptionAr || "",
-    coverUrl: data.coverUrl || data?.cover?.medium || data?.cover?.original || "",
-    publicationDate: data.publicationDate || null,
-    pageCount: data.pageCount || null,
-    rating: data.rating || 0,
-    ratingsCount: data.ratingsCount || 0,
-    isEbookAvailable: Boolean(data.isEbookAvailable || data.hasEbook),
-    ebookAttachmentId:
-      typeof data.ebookAttachmentId === "string" && data.ebookAttachmentId.trim().length > 0
-        ? data.ebookAttachmentId.trim()
-        : undefined,
-    genresEn: Array.isArray(data.categories) ? data.categories : data.genresEn || [],
-    genresAr: Array.isArray(data.genresAr) ? data.genresAr : [],
-  };
+    authorId:
+      typeof data.authorId === "string" && data.authorId.trim().length > 0
+        ? data.authorId.trim()
+        : buildAuthorId(authorSeed),
+  });
 }
 
 function mapAuthor(data: any, id: string): Author {

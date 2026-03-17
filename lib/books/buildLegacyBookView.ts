@@ -2,33 +2,56 @@ import type { Book } from "../../types/entities.ts";
 
 type LegacyBookSeed = Partial<Book> & {
   id?: unknown;
+  bookId?: unknown;
+  title?: unknown;
+  author?: unknown;
+  categories?: unknown;
+  hasEbook?: unknown;
+  cover?: unknown;
 };
+
+function readString(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.filter((item): item is string => typeof item === "string");
+}
 
 export function buildLegacyBookView(seed: LegacyBookSeed): Book {
   const id =
-    typeof seed.id === "string" && seed.id.trim().length > 0
-      ? seed.id.trim()
-      : "unknown_book";
+    readString(seed.id)
+      || readString(seed.bookId)
+      || "unknown_book";
+
+  const titleAlias = readString(seed.title);
+  const authorAlias = readString(seed.author);
+  const categories = readStringArray(seed.categories);
+  const coverRecord =
+    seed.cover && typeof seed.cover === "object" && !Array.isArray(seed.cover)
+      ? (seed.cover as Record<string, unknown>)
+      : null;
 
   const titleEn =
-    typeof seed.titleEn === "string" && seed.titleEn.trim().length > 0
-      ? seed.titleEn.trim()
-      : "Unknown Title";
+    readString(seed.titleEn)
+      || titleAlias
+      || "Unknown Title";
 
   const titleAr =
-    typeof seed.titleAr === "string" && seed.titleAr.trim().length > 0
-      ? seed.titleAr.trim()
-      : titleEn;
+    readString(seed.titleAr)
+      || titleEn;
 
   const authorEn =
-    typeof seed.authorEn === "string" && seed.authorEn.trim().length > 0
-      ? seed.authorEn.trim()
-      : "Unknown Author";
+    readString(seed.authorEn)
+      || authorAlias
+      || "Unknown Author";
 
   const authorAr =
-    typeof seed.authorAr === "string" && seed.authorAr.trim().length > 0
-      ? seed.authorAr.trim()
-      : authorEn;
+    readString(seed.authorAr)
+      || authorEn;
 
   return {
     id,
@@ -41,14 +64,21 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     authorEn,
     authorAr,
     coverUrl:
-      typeof seed.coverUrl === "string" && seed.coverUrl.trim().length > 0
-        ? seed.coverUrl.trim()
-        : "",
+      readString(seed.coverUrl)
+        || readString(coverRecord?.medium)
+        || readString(coverRecord?.large)
+        || readString(coverRecord?.original)
+        || readString(coverRecord?.small)
+        || "",
     descriptionEn:
-      typeof seed.descriptionEn === "string" ? seed.descriptionEn : "",
+      typeof seed.descriptionEn === "string"
+        ? seed.descriptionEn
+        : typeof seed.description === "string"
+          ? seed.description
+          : "",
     descriptionAr:
       typeof seed.descriptionAr === "string" ? seed.descriptionAr : "",
-    genresEn: Array.isArray(seed.genresEn) ? seed.genresEn : [],
+    genresEn: Array.isArray(seed.genresEn) ? seed.genresEn : categories || [],
     genresAr: Array.isArray(seed.genresAr) ? seed.genresAr : [],
     rating:
       typeof seed.rating === "number" && Number.isFinite(seed.rating)
@@ -58,9 +88,9 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
       typeof seed.ratingsCount === "number" && Number.isFinite(seed.ratingsCount)
         ? Math.max(0, Math.trunc(seed.ratingsCount))
         : 0,
-    isEbookAvailable: seed.isEbookAvailable === true,
-    ...(typeof seed.title === "string" && seed.title.trim().length > 0
-      ? { title: seed.title.trim() }
+    isEbookAvailable: seed.isEbookAvailable === true || seed.hasEbook === true,
+    ...(titleAlias
+      ? { title: titleAlias }
       : {}),
     ...(Array.isArray(seed.authors) ? { authors: seed.authors } : {}),
     ...(Array.isArray(seed.bookCovers) ? { bookCovers: seed.bookCovers } : {}),
