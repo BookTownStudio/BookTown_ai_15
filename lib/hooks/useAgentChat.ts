@@ -6,6 +6,19 @@ import { ChatMessage, AgentSession } from '../../types/entities.ts';
 import { callAgent } from '../agents-service.ts';
 import { dataService } from '../../services/dataService.ts';
 
+const AGENT_FAILURE_MESSAGE =
+    "I'm having trouble connecting to the library archives right now. Please try again in a moment.";
+
+type PersistedAgentFailure = Error & {
+    fallbackPersisted?: boolean;
+    fallbackMessage?: string;
+};
+
+const readPersistedAgentFailure = (error: unknown): PersistedAgentFailure | null => {
+    if (!(error instanceof Error)) return null;
+    return error as PersistedAgentFailure;
+};
+
 export const useAgentChat = (agentId?: string, sessionId?: string) => {
     const { user } = useAuth();
     const uid = user?.uid;
@@ -63,7 +76,7 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
 
                 const errorMessage: Omit<ChatMessage, 'id'> = {
                     role: 'model',
-                    text: "I'm having trouble connecting to the library archives right now. Please try again in a moment.",
+                    text: AGENT_FAILURE_MESSAGE,
                     timestamp: new Date().toISOString(),
                 };
                 await dataService.users.appendAgentTurn(uid, sessionId, {
@@ -74,7 +87,11 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
                     timestamp: errorMessage.timestamp,
                     contextWindowSize: context.length,
                 });
-                throw error;
+                const persistedFailure: PersistedAgentFailure =
+                    error instanceof Error ? (error as PersistedAgentFailure) : new Error("Agent response failed");
+                persistedFailure.fallbackPersisted = true;
+                persistedFailure.fallbackMessage = errorMessage.text;
+                throw persistedFailure;
             }
         },
         onMutate: async (messageText: string) => {
@@ -97,21 +114,27 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
             // Return context with the previous messages
             return { previousMessages };
         },
-        onError: (err, newTodo, context: any) => {
-             // On error, append a visible error bubble instead of rolling back the user's message
+        onError: (err) => {
+             // Keep exactly one visible failure message aligned with the persisted turn when available.
+             const persistedFailure = readPersistedAgentFailure(err);
+             const failureText =
+                persistedFailure?.fallbackMessage || AGENT_FAILURE_MESSAGE;
              queryClient.setQueryData<ChatMessage[]>(queryKey, (old) => {
                 const errorMsg: ChatMessage = {
                     id: `error-${Date.now()}`,
                     role: 'model',
-                    text: "I'm having trouble connecting right now. Please try again.",
+                    text: failureText,
                     timestamp: new Date().toISOString(),
                 };
                 return [...(old || []), errorMsg];
             });
         },
-        onSettled: () => {
-            // Always refetch after error or success to ensure data is in sync with server
-            queryClient.invalidateQueries(queryKey);
+        onSettled: (_data, error) => {
+            // Only refetch history when the server owns the final turn to avoid erasing the live fallback path.
+            const persistedFailure = readPersistedAgentFailure(error);
+            if (!error || persistedFailure?.fallbackPersisted) {
+                queryClient.invalidateQueries(queryKey);
+            }
             queryClient.invalidateQueries(['agentSessions', uid]);
         },
     });

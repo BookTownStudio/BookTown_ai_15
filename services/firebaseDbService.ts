@@ -1704,31 +1704,89 @@ class FirebaseShelfService {
       boundedEntries.map((entry) => entry.bookId)
     );
 
+    const buildFallbackShelfBook = (entry: any): Book | null => {
+      if (!entry || typeof entry !== "object") return null;
+
+      const snapshot =
+        entry.snapshot && typeof entry.snapshot === "object" && !Array.isArray(entry.snapshot)
+          ? entry.snapshot
+          : null;
+
+      const titleEn =
+        normalizeString(snapshot?.titleEn, 300)
+        || normalizeString(entry.titleEn, 300)
+        || normalizeString(entry.title, 300);
+      const titleAr =
+        normalizeString(snapshot?.titleAr, 300)
+        || normalizeString(entry.titleAr, 300)
+        || titleEn;
+      const authorEn =
+        normalizeString(snapshot?.authorEn, 300)
+        || normalizeString(snapshot?.bookAuthorEn, 300)
+        || normalizeString(entry.authorEn, 300)
+        || normalizeString(entry.bookAuthorEn, 300)
+        || normalizeString(entry.authorName, 300)
+        || normalizeString(entry.author, 300);
+      const authorAr =
+        normalizeString(snapshot?.authorAr, 300)
+        || normalizeString(snapshot?.bookAuthorAr, 300)
+        || normalizeString(entry.authorAr, 300)
+        || normalizeString(entry.bookAuthorAr, 300)
+        || authorEn;
+      const coverUrl =
+        normalizeString(snapshot?.coverUrl, 2048)
+        || normalizeString(entry.coverUrl, 2048);
+      const hasRenderableFallback =
+        titleEn.length > 0 || titleAr.length > 0 || authorEn.length > 0 || coverUrl.length > 0;
+
+      if (!hasRenderableFallback) {
+        return null;
+      }
+
+      return buildLegacyBookView({
+        id: entry.bookId,
+        titleEn,
+        titleAr,
+        title: normalizeString(entry.title, 300) || undefined,
+        authorId: normalizeString(entry.authorId, 128),
+        authorEn,
+        authorAr,
+        author: normalizeString(entry.author, 300) || normalizeString(entry.authorName, 300) || undefined,
+        coverUrl,
+        descriptionEn: normalizeString(entry.descriptionEn, 5000) || normalizeString(entry.description, 5000),
+        descriptionAr: normalizeString(entry.descriptionAr, 5000),
+        genresEn: Array.isArray(entry.genresEn)
+          ? entry.genresEn.filter((item: unknown): item is string => typeof item === "string")
+          : [],
+        genresAr: Array.isArray(entry.genresAr)
+          ? entry.genresAr.filter((item: unknown): item is string => typeof item === "string")
+          : [],
+        categories: Array.isArray(entry.categories)
+          ? entry.categories.filter((item: unknown): item is string => typeof item === "string")
+          : undefined,
+        rating:
+          typeof entry.rating === "number" && Number.isFinite(entry.rating)
+            ? Math.max(0, entry.rating)
+            : 0,
+        ratingsCount:
+          typeof entry.ratingsCount === "number" && Number.isFinite(entry.ratingsCount)
+            ? Math.max(0, Math.trunc(entry.ratingsCount))
+            : 0,
+        isEbookAvailable: entry.isEbookAvailable === true || entry.hasEbook === true,
+      });
+    };
+
     const hydrated = boundedEntries.map((entry) => {
       const resolvedBook = resolvedBooks.get(entry.bookId);
       if (resolvedBook) {
         return { ...entry, book: resolvedBook };
       }
 
-      if (entry.snapshot) {
+      const fallbackBook = buildFallbackShelfBook(entry);
+      if (fallbackBook) {
         return {
           ...entry,
-          book: buildLegacyBookView({
-            id: entry.bookId,
-            titleEn: entry.snapshot.titleEn,
-            titleAr: entry.snapshot.titleAr,
-            authorId: '',
-            authorEn: '',
-            authorAr: '',
-            coverUrl: entry.snapshot.coverUrl || '',
-            descriptionEn: '',
-            descriptionAr: '',
-            genresEn: [],
-            genresAr: [],
-            rating: 0,
-            ratingsCount: 0,
-            isEbookAvailable: false
-          })
+          book: fallbackBook
         };
       }
 
