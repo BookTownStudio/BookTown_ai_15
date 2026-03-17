@@ -413,7 +413,8 @@ async function isViewerFollowingAuthor(
 async function canViewerAccessPost(
   source: Record<string, unknown>,
   viewerUid: string,
-  moderator: boolean
+  moderator: boolean,
+  knownFollowedAuthorIds?: ReadonlySet<string>
 ): Promise<boolean> {
   const authorId = readTrimmedString(source.authorId, 128);
   if (viewerUid && authorId && viewerUid === authorId) {
@@ -439,6 +440,9 @@ async function canViewerAccessPost(
     if (!viewerUid || !authorId) {
       return false;
     }
+    if (knownFollowedAuthorIds?.has(authorId)) {
+      return true;
+    }
     return isViewerFollowingAuthor(viewerUid, authorId);
   }
 
@@ -449,14 +453,28 @@ async function readPostStatsMap(
   postIds: string[]
 ): Promise<Map<string, Record<string, unknown>>> {
   const uniqueIds = Array.from(new Set(postIds.filter((value) => value.length > 0)));
-  const statsEntries = await Promise.all(
-    uniqueIds.map(async (postId) => {
-      const snap = await db.collection("post_stats").doc(postId).get();
-      return [postId, (snap.data() ?? {}) as Record<string, unknown>] as const;
+  const statsMap = new Map<string, Record<string, unknown>>();
+  const idChunks = chunk(uniqueIds, FOLLOWING_BATCH_SIZE);
+
+  await Promise.all(
+    idChunks.map(async (postIdBatch) => {
+      const snap = await db
+        .collection("post_stats")
+        .where(FieldPath.documentId(), "in", postIdBatch)
+        .get();
+      snap.docs.forEach((docSnap) => {
+        statsMap.set(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>);
+      });
     })
   );
 
-  return new Map<string, Record<string, unknown>>(statsEntries);
+  uniqueIds.forEach((postId) => {
+    if (!statsMap.has(postId)) {
+      statsMap.set(postId, {});
+    }
+  });
+
+  return statsMap;
 }
 
 async function hydratePrimaryEntities(
@@ -464,68 +482,125 @@ async function hydratePrimaryEntities(
   normalizedPosts: NormalizedPost[]
 ): Promise<Map<string, HydratedEntity | null>> {
   const hydratedByPostId = new Map<string, HydratedEntity | null>();
+  const rootEntityRequests = new Map<Exclude<StructuredEntityType, "quote">, Set<string>>([
+    ["book", new Set<string>()],
+    ["author", new Set<string>()],
+    ["shelf", new Set<string>()],
+    ["venue", new Set<string>()],
+  ]);
+  const quoteRequests = new Map<string, { ownerId: string; quoteId: string }>();
+  const postPrimaryKeys = new Map<string, { type: StructuredEntityType; id: string; ownerId?: string }>();
 
+  posts.forEach((post, index) => {
+    const normalized = normalizedPosts[index];
+    const primaryType = normalizeStructuredEntityType(post.raw.primaryEntityType);
+    const primaryId = readTrimmedString(post.raw.primaryEntityId, 256);
+    if (!primaryType || !primaryId) {
+      hydratedByPostId.set(post.id, null);
+      return;
+    }
+
+    if (primaryType === "quote") {
+      const ownerId =
+        normalized.content.attachments.find(
+          (attachment) =>
+            readTrimmedString(attachment.type, 64).toLowerCase() === "quote" &&
+            (
+              readTrimmedString(attachment.entityId, 256) === primaryId ||
+              readTrimmedString(attachment.attachmentId, 256) === primaryId
+            )
+        )?.entityOwnerId || post.authorId;
+
+      const compositeKey = `${ownerId}:${primaryId}`;
+      quoteRequests.set(compositeKey, { ownerId, quoteId: primaryId });
+      postPrimaryKeys.set(post.id, { type: primaryType, id: primaryId, ownerId });
+      return;
+    }
+
+    rootEntityRequests.get(primaryType)?.add(primaryId);
+    postPrimaryKeys.set(post.id, { type: primaryType, id: primaryId });
+  });
+
+  const rootHydrated = new Map<string, HydratedEntity>();
   await Promise.all(
-    posts.map(async (post, index) => {
-      const normalized = normalizedPosts[index];
-      const primaryType = normalizeStructuredEntityType(post.raw.primaryEntityType);
-      const primaryId = readTrimmedString(post.raw.primaryEntityId, 256);
-      if (!primaryType || !primaryId) {
-        hydratedByPostId.set(post.id, null);
-        return;
-      }
-
-      if (primaryType === "quote") {
-        const ownerId =
-          normalized.content.attachments.find(
-            (attachment) =>
-              readTrimmedString(attachment.type, 64).toLowerCase() === "quote" &&
-              (
-                readTrimmedString(attachment.entityId, 256) === primaryId ||
-                readTrimmedString(attachment.attachmentId, 256) === primaryId
-              )
-          )?.entityOwnerId || post.authorId;
-        const quoteSnap = await db
-          .collection("users")
-          .doc(ownerId)
-          .collection("quotes")
-          .doc(primaryId)
-          .get();
-        hydratedByPostId.set(
-          post.id,
-          quoteSnap.exists
-            ? {
-                type: "quote",
-                id: primaryId,
-                ownerId,
-                data: (quoteSnap.data() ?? {}) as Record<string, unknown>,
-              }
-            : null
-        );
-        return;
-      }
-
+    Array.from(rootEntityRequests.entries()).map(async ([entityType, ids]) => {
+      if (ids.size === 0) return;
       const collectionName =
-        primaryType === "book"
+        entityType === "book"
           ? "books"
-          : primaryType === "author"
+          : entityType === "author"
             ? "authors"
-            : primaryType === "shelf"
+            : entityType === "shelf"
               ? "shelves"
               : "venues";
-      const snap = await db.collection(collectionName).doc(primaryId).get();
-      hydratedByPostId.set(
-        post.id,
-        snap.exists
-          ? {
-              type: primaryType,
-              id: primaryId,
-              data: (snap.data() ?? {}) as Record<string, unknown>,
-            }
-          : null
+
+      await Promise.all(
+        chunk(Array.from(ids), FOLLOWING_BATCH_SIZE).map(async (idBatch) => {
+          const snap = await db
+            .collection(collectionName)
+            .where(FieldPath.documentId(), "in", idBatch)
+            .get();
+
+          snap.docs.forEach((docSnap) => {
+            rootHydrated.set(`${entityType}:${docSnap.id}`, {
+              type: entityType,
+              id: docSnap.id,
+              data: (docSnap.data() ?? {}) as Record<string, unknown>,
+            });
+          });
+        })
       );
     })
   );
+
+  const quoteHydrated = new Map<string, HydratedEntity>();
+  const uniqueQuoteIds = Array.from(
+    new Set(Array.from(quoteRequests.values()).map((request) => request.quoteId))
+  );
+
+  await Promise.all(
+    chunk(uniqueQuoteIds, FOLLOWING_BATCH_SIZE).map(async (quoteIdBatch) => {
+      if (quoteIdBatch.length === 0) return;
+      const snap = await db
+        .collectionGroup("quotes")
+        .where(FieldPath.documentId(), "in", quoteIdBatch)
+        .get();
+
+      snap.docs.forEach((docSnap) => {
+        const ownerId = docSnap.ref.parent.parent?.id;
+        if (!ownerId) return;
+        const compositeKey = `${ownerId}:${docSnap.id}`;
+        if (!quoteRequests.has(compositeKey)) return;
+        quoteHydrated.set(compositeKey, {
+          type: "quote",
+          id: docSnap.id,
+          ownerId,
+          data: (docSnap.data() ?? {}) as Record<string, unknown>,
+        });
+      });
+    })
+  );
+
+  posts.forEach((post) => {
+    const primary = postPrimaryKeys.get(post.id);
+    if (!primary) {
+      hydratedByPostId.set(post.id, null);
+      return;
+    }
+
+    if (primary.type === "quote") {
+      hydratedByPostId.set(
+        post.id,
+        quoteHydrated.get(`${primary.ownerId}:${primary.id}`) ?? null
+      );
+      return;
+    }
+
+    hydratedByPostId.set(
+      post.id,
+      rootHydrated.get(`${primary.type}:${primary.id}`) ?? null
+    );
+  });
 
   return hydratedByPostId;
 }
@@ -610,6 +685,7 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
     if (authorIds.length === 0) {
       return { posts: [] as NormalizedPost[] };
     }
+    const followedAuthorIds = new Set(authorIds);
 
     const authorChunks = chunk(authorIds, FOLLOWING_BATCH_SIZE);
     const perBatchLimit = Math.max(
@@ -642,7 +718,7 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
       for (const docSnap of snap.docs) {
         const raw = (docSnap.data() ?? {}) as Record<string, unknown>;
         if (isDeletedPost(raw)) continue;
-        if (!(await canViewerAccessPost(raw, viewerUid, false))) continue;
+        if (!(await canViewerAccessPost(raw, viewerUid, false, followedAuthorIds))) continue;
 
         const normalizedCandidate = normalizePostDoc(docSnap.id, raw);
         if (!matchesFeedFilters(normalizedCandidate, filters)) continue;

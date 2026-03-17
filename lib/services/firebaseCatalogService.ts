@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   endAt,
   getDoc,
   getDocs,
@@ -33,6 +34,7 @@ const AUTHOR_SEARCH_LIMIT = 24;
 const AUTHOR_BOOKS_LIMIT = 60;
 const RELATED_BOOKS_LIMIT = 12;
 const TRENDING_BOOKS_LIMIT = 20;
+const BOOK_LOOKUP_BATCH_SIZE = 10;
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const missingInternalCoverPathCache = new Set<string>();
 const loggedMissingInternalCoverPathCache = new Set<string>();
@@ -120,6 +122,14 @@ function buildAuthorId(authorName: string): string {
   const normalized = normalizeSearchText(authorName).replace(/\s+/g, "_");
   if (!normalized) return "author_unknown";
   return `author_${normalized}`;
+}
+
+function chunkValues<T>(values: readonly T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    out.push(values.slice(index, index + size));
+  }
+  return out;
 }
 
 function mapBook(data: any, id: string): Book {
@@ -432,6 +442,60 @@ export const firebaseCatalogService = {
       }
       throw err;
     }
+  },
+
+  async getBooksByIds(bookIds: string[]): Promise<Map<string, Book>> {
+    const uniqueIds = Array.from(
+      new Set(
+        bookIds
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+
+    const booksById = new Map<string, Book>();
+    if (uniqueIds.length === 0) {
+      return booksById;
+    }
+
+    const db = getDbOrThrow();
+    const idBatches = chunkValues(uniqueIds, BOOK_LOOKUP_BATCH_SIZE);
+
+    await Promise.all(
+      idBatches.map(async (ids) => {
+        try {
+          const snap = await getDocs(
+            query(collection(db, "books"), where(documentId(), "in", ids))
+          );
+
+          const mappedEntries = await Promise.all(
+            snap.docs.map(async (docSnap) => {
+              const raw = docSnap.data();
+              const mapped = mapBook(raw, docSnap.id);
+              const resolvedCoverUrl = await resolveCoverUrl(raw);
+              return [docSnap.id, { ...mapped, coverUrl: resolvedCoverUrl }] as const;
+            })
+          );
+
+          mappedEntries.forEach(([id, book]) => booksById.set(id, book));
+        } catch {
+          await Promise.all(
+            ids.map(async (id) => {
+              if (booksById.has(id)) return;
+              try {
+                const book = await this.getBook(id);
+                booksById.set(id, book);
+              } catch {
+                // Leave unresolved IDs to caller fallback paths.
+              }
+            })
+          );
+        }
+      })
+    );
+
+    return booksById;
   },
 
   async createBook(book: Book): Promise<void> {

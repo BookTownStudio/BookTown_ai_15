@@ -1624,39 +1624,41 @@ class FirebaseShelfService {
       return boundedEntries;
     }
 
-    const hydrated = await Promise.all(
-      boundedEntries.map(async (entry) => {
-        try {
-          const book = await firebaseCatalogService.getBook(entry.bookId);
-          return { ...entry, book };
-        } catch (err) {
-          if (entry.snapshot) {
-            return {
-              ...entry,
-              book: buildLegacyBookView({
-                id: entry.bookId,
-                titleEn: entry.snapshot.titleEn,
-                titleAr: entry.snapshot.titleAr,
-                authorId: '',
-                authorEn: '',
-                authorAr: '',
-                coverUrl: entry.snapshot.coverUrl || '',
-                descriptionEn: '',
-                descriptionAr: '',
-                genresEn: [],
-                genresAr: [],
-                rating: 0,
-                ratingsCount: 0,
-                isEbookAvailable: false
-              })
-            };
-          }
-
-          console.warn("[SHELF][HYDRATION_FAILED]", entry.bookId, err);
-          return { ...entry, book: null };
-        }
-      })
+    const resolvedBooks = await firebaseCatalogService.getBooksByIds(
+      boundedEntries.map((entry) => entry.bookId)
     );
+
+    const hydrated = boundedEntries.map((entry) => {
+      const resolvedBook = resolvedBooks.get(entry.bookId);
+      if (resolvedBook) {
+        return { ...entry, book: resolvedBook };
+      }
+
+      if (entry.snapshot) {
+        return {
+          ...entry,
+          book: buildLegacyBookView({
+            id: entry.bookId,
+            titleEn: entry.snapshot.titleEn,
+            titleAr: entry.snapshot.titleAr,
+            authorId: '',
+            authorEn: '',
+            authorAr: '',
+            coverUrl: entry.snapshot.coverUrl || '',
+            descriptionEn: '',
+            descriptionAr: '',
+            genresEn: [],
+            genresAr: [],
+            rating: 0,
+            ratingsCount: 0,
+            isEbookAvailable: false
+          })
+        };
+      }
+
+      console.warn("[SHELF][HYDRATION_FAILED]", entry.bookId, "BOOK_NOT_READY");
+      return { ...entry, book: null };
+    });
 
     return hydrated;
   }
