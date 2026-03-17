@@ -91,6 +91,11 @@ function buildHighlightId(anchor: string, page: number): string {
   return `hl_${page}_${Math.abs(hash).toString(36)}`;
 }
 
+function clampReaderPage(page: number, totalPages: number): number {
+  const safeTotal = Math.max(1, Math.trunc(totalPages));
+  return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
+}
+
 const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
@@ -149,6 +154,26 @@ const ReaderScreen: React.FC = () => {
     () => Boolean(offlineRecord && isOfflineValid(offlineRecord)),
     [offlineRecord]
   );
+  const manifestEstimatedPageCount = useMemo(() => {
+    if (
+      !readerManifest ||
+      typeof readerManifest.estimatedPageCount !== 'number' ||
+      !Number.isFinite(readerManifest.estimatedPageCount) ||
+      readerManifest.estimatedPageCount <= 0
+    ) {
+      return null;
+    }
+
+    return Math.trunc(readerManifest.estimatedPageCount);
+  }, [readerManifest]);
+  const shouldUseManifestContinuityEstimate = useMemo(
+    () =>
+      Boolean(
+        manifestEstimatedPageCount &&
+        readerManifest?.locationMap?.checkpointUnit === 'page'
+      ),
+    [manifestEstimatedPageCount, readerManifest?.locationMap?.checkpointUnit]
+  );
 
   const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
     setCurrentPage(nextPage);
@@ -199,8 +224,16 @@ const ReaderScreen: React.FC = () => {
         typeof offlineRecord.lastKnownPage === 'number' && offlineRecord.lastKnownPage > 0
           ? Math.trunc(offlineRecord.lastKnownPage)
           : 1;
-      setCurrentPage(resumePage);
-      setTotalPages(1);
+      const nextPage =
+        shouldUseManifestContinuityEstimate && manifestEstimatedPageCount
+          ? clampReaderPage(resumePage, manifestEstimatedPageCount)
+          : resumePage;
+      setCurrentPage(nextPage);
+      setTotalPages(
+        shouldUseManifestContinuityEstimate && manifestEstimatedPageCount
+          ? manifestEstimatedPageCount
+          : 1
+      );
       setRenderError(null);
       return;
     }
@@ -212,10 +245,25 @@ const ReaderScreen: React.FC = () => {
       readerSession.resumePage > 0
         ? Math.trunc(readerSession.resumePage)
         : 1;
-    setCurrentPage(resumePage);
-    setTotalPages(1);
+    const nextPage =
+      shouldUseManifestContinuityEstimate && manifestEstimatedPageCount
+        ? clampReaderPage(resumePage, manifestEstimatedPageCount)
+        : resumePage;
+    setCurrentPage(nextPage);
+    setTotalPages(
+      shouldUseManifestContinuityEstimate && manifestEstimatedPageCount
+        ? manifestEstimatedPageCount
+        : 1
+    );
     setRenderError(null);
-  }, [hasOfflineCopy, isOffline, offlineRecord, readerSession]);
+  }, [
+    hasOfflineCopy,
+    isOffline,
+    manifestEstimatedPageCount,
+    offlineRecord,
+    readerSession,
+    shouldUseManifestContinuityEstimate,
+  ]);
 
   useEffect(() => {
     setBookmarkOverrides({});
@@ -721,10 +769,24 @@ const ReaderScreen: React.FC = () => {
   }
 
   const activeReaderUrl = offlineObjectUrl || readerSession?.signedUrl || null;
-  const initialReaderPage =
-    hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
-      ? Math.max(1, Math.trunc(offlineRecord.lastKnownPage))
-      : readerSession?.resumePage || 1;
+  const initialReaderPage = useMemo(() => {
+    const rawPage =
+      hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
+        ? Math.max(1, Math.trunc(offlineRecord.lastKnownPage))
+        : readerSession?.resumePage || 1;
+
+    if (!shouldUseManifestContinuityEstimate || !manifestEstimatedPageCount) {
+      return rawPage;
+    }
+
+    return clampReaderPage(rawPage, manifestEstimatedPageCount);
+  }, [
+    hasOfflineCopy,
+    manifestEstimatedPageCount,
+    offlineRecord?.lastKnownPage,
+    readerSession?.resumePage,
+    shouldUseManifestContinuityEstimate,
+  ]);
 
   if (!book || !activeReaderUrl) {
     return (

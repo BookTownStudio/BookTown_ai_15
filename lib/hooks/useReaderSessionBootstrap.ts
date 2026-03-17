@@ -28,6 +28,75 @@ function normalizeEnvelope<T>(value: unknown): T {
   return (payload?.success === true ? payload.data : payload) as T;
 }
 
+function validateReaderSession(value: ReaderSessionSnapshot): ReaderSessionSnapshot {
+  if (
+    !value ||
+    typeof value.signedUrl !== 'string' ||
+    value.signedUrl.trim().length === 0
+  ) {
+    throw new Error('Invalid reader session payload.');
+  }
+
+  return value;
+}
+
+function normalizeReaderManifest(value: unknown): ReaderManifestSnapshot | null {
+  const manifest = value as Partial<ReaderManifestSnapshot> | null;
+  if (!manifest || typeof manifest !== 'object') return null;
+  if (typeof manifest.bookId !== 'string' || manifest.bookId.trim().length === 0) return null;
+  if (typeof manifest.version !== 'number' || !Number.isFinite(manifest.version) || manifest.version <= 0) {
+    return null;
+  }
+  if (typeof manifest.pipelineVersion !== 'string' || manifest.pipelineVersion.trim().length === 0) {
+    return null;
+  }
+  if (manifest.format !== 'pdf' && manifest.format !== 'epub' && manifest.format !== 'unknown') {
+    return null;
+  }
+  if (
+    !manifest.locationMap ||
+    manifest.locationMap.version !== 'v1' ||
+    (manifest.locationMap.mode !== 'page' && manifest.locationMap.mode !== 'logical') ||
+    (manifest.locationMap.checkpointUnit !== 'page' && manifest.locationMap.checkpointUnit !== 'spine_item')
+  ) {
+    return null;
+  }
+  if (
+    !manifest.searchIndex ||
+    (manifest.searchIndex.status !== 'pending' && manifest.searchIndex.status !== 'ready') ||
+    typeof manifest.searchIndex.docPath !== 'string'
+  ) {
+    return null;
+  }
+  if (
+    !manifest.highlightAnchors ||
+    (manifest.highlightAnchors.status !== 'pending' && manifest.highlightAnchors.status !== 'ready') ||
+    typeof manifest.highlightAnchors.docPath !== 'string'
+  ) {
+    return null;
+  }
+
+  return {
+    bookId: manifest.bookId,
+    version: Math.trunc(manifest.version),
+    pipelineVersion: manifest.pipelineVersion,
+    format: manifest.format,
+    estimatedPageCount:
+      typeof manifest.estimatedPageCount === 'number' &&
+      Number.isFinite(manifest.estimatedPageCount) &&
+      manifest.estimatedPageCount > 0
+        ? Math.trunc(manifest.estimatedPageCount)
+        : null,
+    locationMap: manifest.locationMap,
+    searchIndex: manifest.searchIndex,
+    highlightAnchors: manifest.highlightAnchors,
+    generatedAtMs:
+      typeof manifest.generatedAtMs === 'number' && Number.isFinite(manifest.generatedAtMs)
+        ? Math.trunc(manifest.generatedAtMs)
+        : Date.now(),
+  };
+}
+
 export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstrapState {
   const [session, setSession] = useState<ReaderSessionSnapshot | null>(null);
   const [manifest, setManifest] = useState<ReaderManifestSnapshot | null>(null);
@@ -51,22 +120,33 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
       getFunctions(),
       'getOrCreateReadingSession'
     );
+    const manifestFn = httpsCallable<{ bookId: string }, ReaderManifestSnapshot>(
+      getFunctions(),
+      'getReaderManifest'
+    );
 
-    sessionFn({ bookId })
-      .then((sessionRes) => {
+    Promise.allSettled([
+      sessionFn({ bookId }),
+      manifestFn({ bookId }),
+    ])
+      .then(([sessionResult, manifestResult]) => {
         if (!active) return;
-        const nextSession = normalizeEnvelope<ReaderSessionSnapshot>(sessionRes.data);
-
-        if (
-          !nextSession ||
-          typeof nextSession.signedUrl !== 'string' ||
-          nextSession.signedUrl.trim().length === 0
-        ) {
-          throw new Error('Invalid reader session payload.');
+        if (sessionResult.status === 'rejected') {
+          throw sessionResult.reason;
         }
 
+        const nextSession = validateReaderSession(
+          normalizeEnvelope<ReaderSessionSnapshot>(sessionResult.value.data)
+        );
+        const nextManifest =
+          manifestResult.status === 'fulfilled'
+            ? normalizeReaderManifest(
+                normalizeEnvelope<ReaderManifestSnapshot>(manifestResult.value.data)
+              )
+            : null;
+
         setSession(nextSession);
-        setManifest(null);
+        setManifest(nextManifest);
       })
       .catch((err: any) => {
         if (!active) return;
