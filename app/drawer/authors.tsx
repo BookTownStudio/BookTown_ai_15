@@ -8,6 +8,7 @@ import InputField from '../../components/ui/InputField.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { useSearchUserAuthors } from '../../lib/hooks/useSearchUserAuthors.ts';
 import AuthorCardMini from '../../components/content/AuthorCardMini.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 const AuthorsScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -71,7 +72,7 @@ const AuthorsScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Authors" titleAr="المؤلفون" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-20 pb-8">
-                <div className="container mx-auto px-4 md:px-8 h-full">
+                <LiteraryShell className="h-full">
                     <div className="mb-4">
                         <InputField 
                             id="author-search"
@@ -83,7 +84,7 @@ const AuthorsScreen: React.FC = () => {
                         />
                     </div>
                     {renderContent()}
-                </div>
+                </LiteraryShell>
             </main>
         </div>
     );

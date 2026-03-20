@@ -12,6 +12,7 @@ import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
 import { XIcon } from '../../components/icons/XIcon.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 const FEEDBACK_TYPES: { id: FeedbackType; en: string; ar: string }[] = [
     { id: 'action-required', en: 'Action Required', ar: 'يتطلب إجراء' },
@@ -75,7 +76,7 @@ const FeedbackScreen: React.FC = () => {
             <div className="h-screen flex flex-col">
                 <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
                 <main className="flex-grow overflow-y-auto pt-24 pb-8 flex items-center justify-center">
-                    <div className="container mx-auto px-4 md:px-8 text-center">
+                    <LiteraryShell className="text-center">
                         <CheckCircleIcon className="h-16 w-16 text-accent mx-auto mb-4" />
                         <BilingualText role="H1" className="!text-2xl">
                             {lang === 'en' ? 'Thank You!' : 'شكراً لك!'}
@@ -86,7 +87,7 @@ const FeedbackScreen: React.FC = () => {
                         <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="mt-8">
                              {lang === 'en' ? 'Submit another response' : 'إرسال رد آخر'}
                         </Button>
-                    </div>
+                    </LiteraryShell>
                 </main>
             </div>
         )
@@ -96,72 +97,74 @@ const FeedbackScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-24 pb-8">
-                <form onSubmit={handleSubmit} className="container mx-auto px-4 md:px-8 space-y-6">
-                    <div>
-                        <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-2 block">
-                            {lang === 'en' ? 'Type of Feedback' : 'نوع الملاحظات'}
-                        </BilingualText>
-                        <div className="grid grid-cols-2 gap-2">
-                            {FEEDBACK_TYPES.map(type => (
-                                <button
-                                    key={type.id}
-                                    type="button"
-                                    onClick={() => setFeedbackType(type.id)}
-                                    className={`px-3 py-2 text-sm font-semibold rounded-lg border-2 transition-colors ${
-                                        feedbackType === type.id
-                                            ? 'bg-accent/20 border-accent text-accent'
-                                            : 'bg-black/5 dark:bg-black/20 border-transparent text-slate-600 dark:text-white/70 hover:bg-black/10 dark:hover:bg-black/30'
-                                    }`}
-                                >
-                                    {lang === 'en' ? type.en : type.ar}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-
-                    <div>
-                         <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-1 block">
-                            {lang === 'en' ? 'Details' : 'التفاصيل'}
-                        </BilingualText>
-                        <textarea
-                            value={text}
-                            onChange={(e) => setText(e.target.value)}
-                            required
-                            rows={6}
-                            placeholder={lang === 'en' ? 'Please provide as much detail as possible...' : 'يرجى تقديم أكبر قدر ممكن من التفاصيل...'}
-                            className="w-full bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 rounded-md px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-200 resize-y"
-                        />
-                    </div>
-                    
-                    <div>
-                        <Button type="button" variant="ghost" onClick={handleAttachImage} disabled={attachments.length >= 3}>
-                            <MediaIcon className="h-5 w-5 mr-2" />
-                            {lang === 'en' ? 'Attach Image' : 'إرفاق صورة'} ({attachments.length}/3)
-                        </Button>
-                        <div className="mt-2 flex items-center gap-2">
-                            {attachments.map((src, index) => (
-                                <div key={index} className="relative">
-                                    <img src={src} alt="attachment preview" className="h-16 w-16 rounded-md object-cover" />
-                                    <button type="button" onClick={() => handleRemoveAttachment(index)} className="absolute -top-1 -right-1 bg-slate-800 rounded-full p-0.5 text-white">
-                                        <XIcon className="h-3 w-3" />
+                <LiteraryShell>
+                    <form onSubmit={handleSubmit} className="space-y-6">
+                        <div>
+                            <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-2 block">
+                                {lang === 'en' ? 'Type of Feedback' : 'نوع الملاحظات'}
+                            </BilingualText>
+                            <div className="grid grid-cols-2 gap-2">
+                                {FEEDBACK_TYPES.map(type => (
+                                    <button
+                                        key={type.id}
+                                        type="button"
+                                        onClick={() => setFeedbackType(type.id)}
+                                        className={`px-3 py-2 text-sm font-semibold rounded-lg border-2 transition-colors ${
+                                            feedbackType === type.id
+                                                ? 'bg-accent/20 border-accent text-accent'
+                                                : 'bg-black/5 dark:bg-black/20 border-transparent text-slate-600 dark:text-white/70 hover:bg-black/10 dark:hover:bg-black/30'
+                                        }`}
+                                    >
+                                        {lang === 'en' ? type.en : type.ar}
                                     </button>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
 
-                    <InputField
-                        id="email"
-                        label={lang === 'en' ? 'Email (Optional)' : 'البريد الإلكتروني (اختياري)'}
-                        type="email"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                    />
-                    
-                    <Button type="submit" className="w-full" disabled={isSubmitting || !text.trim()}>
-                        {isSubmitting ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
-                    </Button>
-                </form>
+                        <div>
+                             <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-1 block">
+                                {lang === 'en' ? 'Details' : 'التفاصيل'}
+                            </BilingualText>
+                            <textarea
+                                value={text}
+                                onChange={(e) => setText(e.target.value)}
+                                required
+                                rows={6}
+                                placeholder={lang === 'en' ? 'Please provide as much detail as possible...' : 'يرجى تقديم أكبر قدر ممكن من التفاصيل...'}
+                                className="w-full bg-black/5 dark:bg-black/20 border border-black/10 dark:border-white/10 rounded-md px-3 py-2 text-slate-900 dark:text-white placeholder:text-slate-400 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent transition-all duration-200 resize-y"
+                            />
+                        </div>
+                        
+                        <div>
+                            <Button type="button" variant="ghost" onClick={handleAttachImage} disabled={attachments.length >= 3}>
+                                <MediaIcon className="h-5 w-5 mr-2" />
+                                {lang === 'en' ? 'Attach Image' : 'إرفاق صورة'} ({attachments.length}/3)
+                            </Button>
+                            <div className="mt-2 flex items-center gap-2">
+                                {attachments.map((src, index) => (
+                                    <div key={index} className="relative">
+                                        <img src={src} alt="attachment preview" className="h-16 w-16 rounded-md object-cover" />
+                                        <button type="button" onClick={() => handleRemoveAttachment(index)} className="absolute -top-1 -right-1 bg-slate-800 rounded-full p-0.5 text-white">
+                                            <XIcon className="h-3 w-3" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+
+                        <InputField
+                            id="email"
+                            label={lang === 'en' ? 'Email (Optional)' : 'البريد الإلكتروني (اختياري)'}
+                            type="email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                        />
+                        
+                        <Button type="submit" className="w-full" disabled={isSubmitting || !text.trim()}>
+                            {isSubmitting ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
+                        </Button>
+                    </form>
+                </LiteraryShell>
             </main>
         </div>
     );

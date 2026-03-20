@@ -32,6 +32,7 @@ import {
     WriteDraftSnapshot,
 } from '../../lib/editor/writeLocalDrafts.ts';
 import { Project, WriteContentDoc } from '../../types/entities.ts';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 type EditorSnapshot = WriteDraftSnapshot;
 type HistoryState = { present: EditorSnapshot };
@@ -836,7 +837,7 @@ const EditorScreen: React.FC = () => {
     return (
         <div className="h-screen w-full flex flex-col bg-white dark:bg-slate-900">
             <header className="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-                <div className="container mx-auto flex h-16 items-center justify-between px-4 md:px-8">
+                <LiteraryShell className="flex h-16 items-center justify-between">
                     <Button variant="ghost" onClick={() => void handleBack()}>
                         <ChevronLeftIcon className="h-6 w-6" />
                     </Button>
@@ -875,7 +876,7 @@ const EditorScreen: React.FC = () => {
                             <BrainIcon className="h-6 w-6 text-accent" />
                         </Button>
                     </div>
-                </div>
+                </LiteraryShell>
             </header>
 
             {recoveryBanner && (
@@ -922,7 +923,7 @@ const EditorScreen: React.FC = () => {
                     isVisible={!isFocusMode}
                 />
 
-                <div className="flex-grow container mx-auto px-4 md:px-8 py-4 relative min-h-0">
+                <LiteraryShell className="flex-grow py-4 relative min-h-0">
                     <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
                         {!isFocusMode && (
                             <aside className="hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]">
@@ -965,7 +966,7 @@ const EditorScreen: React.FC = () => {
                             />
                         </div>
                     </div>
-                </div>
+                </LiteraryShell>
             </div>
 
             <Modal isOpen={isMentorOpen} onClose={() => setIsMentorOpen(false)}>

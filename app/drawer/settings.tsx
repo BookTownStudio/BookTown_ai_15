@@ -28,6 +28,7 @@ import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
 import { AdminIcon } from '../../components/icons/AdminIcon.tsx';
 import { BellIcon } from '../../components/icons/BellIcon.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 const SettingsSection: React.FC<{ title: string, children: React.ReactNode }> = ({ title, children }) => (
     <div className="mb-8">
@@ -142,7 +143,7 @@ const SettingsScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Settings" titleAr="الإعدادات" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-24 pb-8">
-                <div className="container mx-auto px-4 md:px-8">
+                <LiteraryShell>
                 
                     <SettingsSection title={lang === 'en' ? 'Notifications' : 'الإشعارات'}>
                         <SettingsItem 
@@ -259,7 +260,7 @@ const SettingsScreen: React.FC = () => {
                             onClick={() => navigate({ type: 'immersive', id: 'goodreadsImport', params: { from: currentView } })}
                         />
                     </SettingsSection>
-                </div>
+                </LiteraryShell>
             </main>
         </div>
     );

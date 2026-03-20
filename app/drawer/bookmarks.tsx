@@ -8,6 +8,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { BookmarkType } from '../../types/entities.ts';
 import BookmarkItem from '../../components/content/BookmarkItem.tsx';
 import ErrorState from '../../components/ui/ErrorState.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 type BookmarkFilter = BookmarkType | 'all';
 
@@ -93,7 +94,7 @@ const BookmarksScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Bookmarks" titleAr="العلامات المرجعية" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-20">
-                <div className="container mx-auto px-4 md:px-8">
+                <LiteraryShell>
                     <div className="mb-4 overflow-x-auto scrollbar-hide border-b border-white/10">
                         <div className="flex items-center">
                             {TABS.map(tab => (
@@ -108,7 +109,7 @@ const BookmarksScreen: React.FC = () => {
                         </div>
                     </div>
                     {renderContent()}
-                </div>
+                </LiteraryShell>
             </main>
         </div>
     );

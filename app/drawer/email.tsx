@@ -3,6 +3,7 @@ import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 const EmailScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -13,11 +14,11 @@ const EmailScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Email Preferences" titleAr="تفضيلات البريد" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-24 pb-8">
-                <div className="container mx-auto px-4 md:px-8 text-center">
+                <LiteraryShell className="text-center">
                     <BilingualText role="Body" className="text-white/60">
                         {lang === 'en' ? 'Manage your email preferences here.' : 'إدارة تفضيلات البريد الإلكتروني الخاصة بك هنا.'}
                     </BilingualText>
-                </div>
+                </LiteraryShell>
             </main>
         </div>
     );

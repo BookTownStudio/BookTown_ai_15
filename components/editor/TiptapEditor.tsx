@@ -166,7 +166,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
             attributes: {
                 spellcheck: 'true',
                 class: cn(
-                    'prose prose-lg dark:prose-invert max-w-none focus:outline-none min-h-[60vh] pb-32 transition-all duration-500 ease-in-out',
+                    'mx-auto w-full max-w-[780px] prose prose-lg dark:prose-invert focus:outline-none min-h-[60vh] pb-32 transition-all duration-500 ease-in-out',
                     isRTL ? 'text-right' : 'text-left',
                     isFocusMode ? 'prose-xl leading-relaxed' : ''
                 ),

@@ -7,6 +7,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { useAuthorDetails } from '../../lib/hooks/useAuthorDetails.ts';
 import { useBooksByAuthor } from '../../lib/hooks/useBooksByAuthor.ts';
 import BookCard from '../../components/content/BookCard.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 const BooksScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -69,7 +70,7 @@ const BooksScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Books" titleAr="الكتب" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-20 pb-8">
-                <div className="container mx-auto px-4 md:px-8 h-full">
+                <LiteraryShell className="h-full">
                     {author && (
                         <BilingualText role="Body" className="mb-4 text-slate-400 dark:text-white/60">
                             {lang === 'en' ? 'All works by: ' : 'جميع أعمال: '}
@@ -77,7 +78,7 @@ const BooksScreen: React.FC = () => {
                         </BilingualText>
                     )}
                     {renderContent()}
-                </div>
+                </LiteraryShell>
             </main>
         </div>
     );
