@@ -1,5 +1,5 @@
 import { devLog } from '../../lib/logging/devLog';
-import React, { useEffect, useReducer, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useReducer, useState, useRef, useCallback, useMemo } from 'react';
 import { Editor } from '@tiptap/react';
 import { useDebounce } from 'use-debounce';
 import { useNavigation } from '../../store/navigation.tsx';
@@ -18,7 +18,7 @@ import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
-import OutlinePanel from '../../components/editor/OutlinePanel.tsx';
+import OutlinePanel, { OutlinePanelItem } from '../../components/editor/OutlinePanel.tsx';
 import TiptapEditor, { EditorChangePayload, EditorOutlineItem } from '../../components/editor/TiptapEditor.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
@@ -769,7 +769,7 @@ const EditorScreen: React.FC = () => {
         dispatch({ type: 'SET', payload: nextSnapshot });
     };
 
-    const handleOutlineSelect = useCallback((item: EditorOutlineItem) => {
+    const handleOutlineSelect = useCallback((item: OutlinePanelItem) => {
         if (!editor || !editorScrollRef.current) return;
 
         const targetPos = Math.max(1, item.pos + 1);
@@ -794,6 +794,59 @@ const EditorScreen: React.FC = () => {
             }
         });
     }, [editor]);
+
+    const structuredOutline = useMemo<OutlinePanelItem[]>(() => {
+        if (!editor) {
+            return [];
+        }
+
+        const items: OutlinePanelItem[] = [];
+        let chapterNumber = 0;
+
+        editor.state.doc.descendants((node, pos) => {
+            if (node.type.name === 'horizontalRule') {
+                chapterNumber += 1;
+                items.push({
+                    id: `chapter_${chapterNumber}_${pos}`,
+                    kind: 'chapter',
+                    label: `Chapter ${chapterNumber}`,
+                    pos,
+                });
+                return true;
+            }
+
+            if (node.type.name !== 'heading') {
+                return true;
+            }
+
+            const headline = (node.textContent || '').trim();
+            if (!headline) {
+                return true;
+            }
+
+            if (chapterNumber === 0) {
+                chapterNumber = 1;
+                items.push({
+                    id: `chapter_${chapterNumber}_opening`,
+                    kind: 'chapter',
+                    label: `Chapter ${chapterNumber}`,
+                    pos,
+                });
+            }
+
+            items.push({
+                id: `headline_${pos}`,
+                kind: 'headline',
+                label: headline,
+                pos,
+                dir: node.attrs.dir === 'rtl' || node.attrs.dir === 'ltr' ? node.attrs.dir : undefined,
+            });
+
+            return true;
+        });
+
+        return items;
+    }, [editor, outline, present.contentDoc]);
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const nextSnapshot = { ...presentRef.current };
@@ -956,7 +1009,7 @@ const EditorScreen: React.FC = () => {
                         <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
                             {!isFocusMode && (
                                 <OutlinePanel
-                                    items={outline}
+                                    items={structuredOutline}
                                     onSelectItem={handleOutlineSelect}
                                     titleLabel={lang === 'en' ? 'Outline' : 'المخطط'}
                                     emptyLabel={lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}

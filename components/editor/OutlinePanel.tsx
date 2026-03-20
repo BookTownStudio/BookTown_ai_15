@@ -1,11 +1,19 @@
 import React from 'react';
 import { cn } from '../../lib/utils.ts';
 import BilingualText from '../ui/BilingualText.tsx';
-import type { EditorOutlineItem } from './TiptapEditor.tsx';
+import type { WriteDirection } from '../../types/entities.ts';
+
+export interface OutlinePanelItem {
+    id: string;
+    kind: 'chapter' | 'headline';
+    label: string;
+    pos: number;
+    dir?: WriteDirection;
+}
 
 interface OutlinePanelProps {
-    items: EditorOutlineItem[];
-    onSelectItem: (item: EditorOutlineItem) => void;
+    items: OutlinePanelItem[];
+    onSelectItem: (item: OutlinePanelItem) => void;
     emptyLabel: string;
     titleLabel: string;
 }
@@ -33,13 +41,13 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
                             type="button"
                             onClick={() => onSelectItem(item)}
                             className={cn(
-                                'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 text-slate-200 transition-colors',
-                                item.level === 2 && 'pl-4 text-slate-300',
-                                item.level === 3 && 'pl-6 text-slate-400'
+                                'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 transition-colors',
+                                item.kind === 'chapter' && 'font-semibold text-white',
+                                item.kind === 'headline' && 'pl-4 text-slate-300'
                             )}
                             dir={item.dir}
                         >
-                            {item.text}
+                            {item.kind === 'headline' ? `\u2014 ${item.label}` : item.label}
                         </button>
                     ))}
                 </div>

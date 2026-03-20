@@ -183,8 +183,8 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 .tiptap p { margin-bottom: 1.25em; line-height: 1.8; color: #cbd5e1; }
                 .tiptap p[lang='ar'] {
                     font-family: 'Noto Naskh Arabic', 'Amiri', serif;
-                    font-size: 1.15em;
-                    line-height: 2.05;
+                    font-size: 1.18em;
+                    line-height: 2.1;
                 }
                 .tiptap h1[lang='ar'],
                 .tiptap h2[lang='ar'] {

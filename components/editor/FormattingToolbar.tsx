@@ -51,9 +51,8 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
     const ActiveClass = "bg-slate-200 dark:bg-white/10 text-primary dark:text-accent shadow-inner";
     const DropdownItemClass = "w-full text-left px-4 py-2 text-sm hover:bg-slate-100 dark:hover:bg-white/10 transition-colors flex items-center gap-3 first:rounded-t-lg last:rounded-b-lg";
     const getActiveStyleLabel = () => {
-        if (editor.isActive('heading', { level: 1 })) return 'H1';
-        if (editor.isActive('heading', { level: 2 })) return 'H2';
-        return 'Style';
+        if (editor.isActive('heading')) return 'Headline';
+        return 'Paragraph';
     };
 
     return (
@@ -73,10 +72,9 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                         <ChevronDownIcon className="h-3 w-3 opacity-50" />
                     </button>
                     {activeMenu === 'style' && (
-                        <div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
+                        <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
                             <button onClick={() => { editor.chain().focus().setParagraph().run(); setActiveMenu(null); }} className={DropdownItemClass}>Paragraph</button>
-                            <button onClick={() => { editor.chain().focus().toggleHeading({ level: 1 }).run(); setActiveMenu(null); }} className={cn(DropdownItemClass, "font-bold")}>Heading 1</button>
-                            <button onClick={() => { editor.chain().focus().toggleHeading({ level: 2 }).run(); setActiveMenu(null); }} className={cn(DropdownItemClass, "font-semibold")}>Heading 2</button>
+                            <button onClick={() => { editor.chain().focus().setHeading({ level: 2 }).run(); setActiveMenu(null); }} className={cn(DropdownItemClass, "font-semibold")}>Headline</button>
                         </div>
                     )}
                 </div>
