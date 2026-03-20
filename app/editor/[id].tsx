@@ -923,50 +923,53 @@ const EditorScreen: React.FC = () => {
                     isVisible={!isFocusMode}
                 />
 
-                <LiteraryShell className="flex-grow py-4 relative min-h-0">
-                    <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
-                        {!isFocusMode && (
-                            <aside className="hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]">
-                                <BilingualText role="Caption" className="text-slate-400 uppercase tracking-wider mb-3 block">
-                                    {lang === 'en' ? 'Outline' : 'المخطط'}
-                                </BilingualText>
-                                {outline.length === 0 ? (
-                                    <BilingualText className="text-slate-500 text-sm">
-                                        {lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
+                <div className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
+                    <LiteraryShell className="relative min-h-full py-4">
+                        <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
+                            {!isFocusMode && (
+                                <aside className="hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]">
+                                    <BilingualText role="Caption" className="text-slate-400 uppercase tracking-wider mb-3 block">
+                                        {lang === 'en' ? 'Outline' : 'المخطط'}
                                     </BilingualText>
-                                ) : (
-                                    <div className="space-y-1">
-                                        {outline.map((item) => (
-                                            <button
-                                                key={item.id}
-                                                onClick={() => editor?.chain().focus().setTextSelection(item.pos + 1).run()}
-                                                className={cn(
-                                                    'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 text-slate-200',
-                                                    item.level === 2 && 'pl-4 text-slate-300',
-                                                    item.level === 3 && 'pl-6 text-slate-400'
-                                                )}
-                                                dir={item.dir}
-                                            >
-                                                {item.text}
-                                            </button>
-                                        ))}
-                                    </div>
-                                )}
-                            </aside>
-                        )}
+                                    {outline.length === 0 ? (
+                                        <BilingualText className="text-slate-500 text-sm">
+                                            {lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
+                                        </BilingualText>
+                                    ) : (
+                                        <div className="space-y-1">
+                                            {outline.map((item) => (
+                                                <button
+                                                    key={item.id}
+                                                    onClick={() => editor?.chain().focus().setTextSelection(item.pos + 1).run()}
+                                                    className={cn(
+                                                        'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 text-slate-200',
+                                                        item.level === 2 && 'pl-4 text-slate-300',
+                                                        item.level === 3 && 'pl-6 text-slate-400'
+                                                    )}
+                                                    dir={item.dir}
+                                                >
+                                                    {item.text}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </aside>
+                            )}
 
-                        <div className="min-h-0">
-                            <TiptapEditor
-                                content={present.content}
-                                contentDoc={present.contentDoc}
-                                onChange={handleEditorChange}
-                                onEditorReady={setEditor}
-                                isFocusMode={isFocusMode}
-                                langHint={lang === 'ar' ? 'ar' : 'en'}
-                            />
+                            <div className="min-h-0">
+                                <TiptapEditor
+                                    content={present.content}
+                                    contentDoc={present.contentDoc}
+                                    onChange={handleEditorChange}
+                                    onEditorReady={setEditor}
+                                    isFocusMode={isFocusMode}
+                                    langHint={lang === 'ar' ? 'ar' : 'en'}
+                                />
+                            </div>
                         </div>
-                    </div>
-                </LiteraryShell>
+                        <div className="h-40 md:h-56" aria-hidden="true" />
+                    </LiteraryShell>
+                </div>
             </div>
 
             <Modal isOpen={isMentorOpen} onClose={() => setIsMentorOpen(false)}>

@@ -1,13 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useCallback } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
 import Underline from '@tiptap/extension-underline';
 import { useI18n } from '../../store/i18n.tsx';
-import { BoldIcon } from '../icons/BoldIcon.tsx';
-import { ItalicIcon } from '../icons/ItalicIcon.tsx';
 import { cn } from '../../lib/utils.ts';
-import { motion, AnimatePresence } from 'framer-motion';
 import { WriteContentDoc, WriteDirection } from '../../types/entities.ts';
 import {
     applyAutoLanguageForBlocks,
@@ -19,10 +16,6 @@ import {
     toTiptapDocInput,
     toWriteContentDoc,
 } from '../../lib/editor/writeDocument.ts';
-
-const UnderlineIcon = (props: any) => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}><path d="M6 4v6a6 6 0 0 0 12 0V4"/><line x1="4" x2="20" y1="20" y2="20"/></svg>
-);
 
 export interface EditorOutlineItem {
     id: string;
@@ -65,7 +58,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     langHint = 'en',
 }) => {
     const { isRTL } = useI18n();
-    const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
     const buildOutline = useCallback((editorInstance: Editor): EditorOutlineItem[] => {
         const items: EditorOutlineItem[] = [];
@@ -109,21 +101,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         });
     }, [buildOutline, onChange]);
 
-    const updateMenuPosition = (editorInstance: Editor) => {
-        if (editorInstance.state.selection.empty) {
-            setMenuPosition(null);
-            return;
-        }
-
-        const { from, to } = editorInstance.state.selection;
-        const startPos = editorInstance.view.coordsAtPos(from);
-        const endPos = editorInstance.view.coordsAtPos(to);
-        const left = (startPos.left + endPos.right) / 2;
-        const top = startPos.top - 50;
-
-        setMenuPosition({ top, left });
-    };
-
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -149,10 +126,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
             }
 
             emitEditorPayload(editorInstance);
-            updateMenuPosition(editorInstance);
-        },
-        onSelectionUpdate: ({ editor: editorInstance }) => {
-            updateMenuPosition(editorInstance);
         },
         onCreate: ({ editor: editorInstance }) => {
             applyAutoLanguageForBlocks(editorInstance, langHint);
@@ -195,44 +168,6 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
 
     return (
         <div className="w-full h-full relative group">
-            <AnimatePresence>
-                {editor && menuPosition && (
-                    <motion.div
-                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                        transition={{ duration: 0.2 }}
-                        style={{
-                            position: 'fixed',
-                            top: menuPosition.top,
-                            left: menuPosition.left,
-                            transform: 'translateX(-50%)',
-                            zIndex: 50,
-                        }}
-                        className="flex bg-slate-800 text-white rounded-lg shadow-xl border border-white/10 overflow-hidden"
-                    >
-                        <button
-                            onClick={() => editor.chain().focus().toggleBold().run()}
-                            className={`p-2 hover:bg-white/10 transition-colors ${editor.isActive('bold') ? 'text-accent bg-white/10' : ''}`}
-                        >
-                            <BoldIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={() => editor.chain().focus().toggleItalic().run()}
-                            className={`p-2 hover:bg-white/10 transition-colors ${editor.isActive('italic') ? 'text-accent bg-white/10' : ''}`}
-                        >
-                            <ItalicIcon className="h-4 w-4" />
-                        </button>
-                        <button
-                            onClick={() => editor.chain().focus().toggleUnderline().run()}
-                            className={`p-2 hover:bg-white/10 transition-colors ${editor.isActive('underline') ? 'text-accent bg-white/10' : ''}`}
-                        >
-                            <UnderlineIcon className="h-4 w-4" />
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
-
             <EditorContent editor={editor} className="h-full" />
 
             <style>{`
