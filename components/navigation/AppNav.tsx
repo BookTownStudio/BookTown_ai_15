@@ -26,9 +26,9 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-        <div className={`mx-auto flex h-20 w-full max-w-[920px] items-center justify-between px-4 md:px-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className={`mx-auto flex h-20 w-full max-w-[920px] items-center justify-between px-4 md:px-6 lg:grid lg:grid-cols-[1fr_auto_1fr] ${isRTL ? 'flex-row-reverse' : ''}`}>
             {/* Left Section */}
-            <div>
+            <div className={isRTL ? 'lg:justify-self-end' : 'lg:justify-self-start'}>
                 {showBackButton ? (
                     <Button variant="icon" aria-label={lang === 'en' ? 'Go back' : 'رجوع'} onClick={onBack}>
                         <ChevronLeftIcon className="h-6 w-6" />
@@ -41,14 +41,14 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
             </div>
 
             {/* Center Section */}
-            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 lg:static lg:left-auto lg:top-auto lg:translate-x-0 lg:translate-y-0 lg:justify-self-center">
                 <BilingualText role="H1" className="text-xl">
                     {lang === 'en' ? titleEn : titleAr}
                 </BilingualText>
             </div>
 
             {/* Right Section */}
-            <div className={`flex items-center gap-0.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
+            <div className={`flex items-center gap-0.5 ${isRTL ? 'flex-row-reverse lg:justify-self-start' : 'lg:justify-self-end'}`}>
                 <div className="relative">
                     <Button 
                         variant="icon" 
