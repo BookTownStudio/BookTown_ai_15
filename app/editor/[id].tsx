@@ -18,6 +18,7 @@ import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
+import OutlinePanel from '../../components/editor/OutlinePanel.tsx';
 import TiptapEditor, { EditorChangePayload, EditorOutlineItem } from '../../components/editor/TiptapEditor.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
@@ -186,6 +187,7 @@ const EditorScreen: React.FC = () => {
     const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
     const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
     const latestAvailableDraftRef = useRef<WriteDraftRecord | null>(null);
+    const editorScrollRef = useRef<HTMLDivElement | null>(null);
 
     const [debouncedContent] = useDebounce(present.content, 2000);
     const [debouncedTitleEn] = useDebounce(present.titleEn, 2000);
@@ -767,6 +769,32 @@ const EditorScreen: React.FC = () => {
         dispatch({ type: 'SET', payload: nextSnapshot });
     };
 
+    const handleOutlineSelect = useCallback((item: EditorOutlineItem) => {
+        if (!editor || !editorScrollRef.current) return;
+
+        const targetPos = Math.max(1, item.pos + 1);
+        editor.chain().focus().setTextSelection(targetPos).run();
+
+        requestAnimationFrame(() => {
+            const scrollContainer = editorScrollRef.current;
+            if (!scrollContainer) return;
+
+            try {
+                const coords = editor.view.coordsAtPos(targetPos);
+                const containerRect = scrollContainer.getBoundingClientRect();
+                const topPadding = 20;
+                const nextTop = scrollContainer.scrollTop + coords.top - containerRect.top - topPadding;
+
+                scrollContainer.scrollTo({
+                    top: Math.max(0, nextTop),
+                    behavior: 'smooth',
+                });
+            } catch (error) {
+                devLog('Outline navigation failed to resolve editor coordinates', error);
+            }
+        });
+    }, [editor]);
+
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const nextSnapshot = { ...presentRef.current };
         const newTitle = e.target.value;
@@ -923,37 +951,16 @@ const EditorScreen: React.FC = () => {
                     isVisible={!isFocusMode}
                 />
 
-                <div className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
+                <div ref={editorScrollRef} className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
                     <LiteraryShell className="relative min-h-full py-4">
                         <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
                             {!isFocusMode && (
-                                <aside className="hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]">
-                                    <BilingualText role="Caption" className="text-slate-400 uppercase tracking-wider mb-3 block">
-                                        {lang === 'en' ? 'Outline' : 'المخطط'}
-                                    </BilingualText>
-                                    {outline.length === 0 ? (
-                                        <BilingualText className="text-slate-500 text-sm">
-                                            {lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
-                                        </BilingualText>
-                                    ) : (
-                                        <div className="space-y-1">
-                                            {outline.map((item) => (
-                                                <button
-                                                    key={item.id}
-                                                    onClick={() => editor?.chain().focus().setTextSelection(item.pos + 1).run()}
-                                                    className={cn(
-                                                        'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 text-slate-200',
-                                                        item.level === 2 && 'pl-4 text-slate-300',
-                                                        item.level === 3 && 'pl-6 text-slate-400'
-                                                    )}
-                                                    dir={item.dir}
-                                                >
-                                                    {item.text}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
-                                </aside>
+                                <OutlinePanel
+                                    items={outline}
+                                    onSelectItem={handleOutlineSelect}
+                                    titleLabel={lang === 'en' ? 'Outline' : 'المخطط'}
+                                    emptyLabel={lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
+                                />
                             )}
 
                             <div className="min-h-0">
