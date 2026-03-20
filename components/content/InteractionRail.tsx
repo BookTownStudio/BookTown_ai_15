@@ -17,6 +17,7 @@ interface InteractionRailProps {
     post: Post | null;
     onOpenDiscussion: () => void;
     onNewPost?: () => void;
+    desktopShellMaxWidth?: number;
 }
 
 const ActionButton: React.FC<{ 
@@ -59,10 +60,19 @@ const ActionButton: React.FC<{
     </button>
 );
 
-const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussion, onNewPost }) => {
+const InteractionRail: React.FC<InteractionRailProps> = ({
+    post,
+    onOpenDiscussion,
+    onNewPost,
+    desktopShellMaxWidth = 1040,
+}) => {
     const { lang } = useI18n();
     const { user } = useAuth();
     const [isCollapsed, setIsCollapsed] = useState(false);
+    const attachedRight = useMemo(
+        () => `max(0.75rem, calc((100vw - min(100vw, ${desktopShellMaxWidth}px)) / 2 + 0.75rem))`,
+        [desktopShellMaxWidth]
+    );
 
     // Authority: Consolidate all engagement for this postId
     const { 
@@ -152,9 +162,10 @@ const InteractionRail: React.FC<InteractionRailProps> = ({ post, onOpenDiscussio
     return (
         <div
             className={cn(
-                "fixed right-3 md:right-4 z-40 flex flex-col items-center",
+                "fixed z-40 flex flex-col items-center",
                 "bottom-[calc(var(--bottom-nav-height,66px)+12px)]"
             )}
+            style={{ right: attachedRight }}
         >
             <div
                 className={cn(

@@ -26,7 +26,7 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-        <div className={`container mx-auto flex h-20 items-center justify-between px-4 md:px-8 ${isRTL ? 'flex-row-reverse' : ''}`}>
+        <div className={`mx-auto flex h-20 w-full max-w-[920px] items-center justify-between px-4 md:px-6 ${isRTL ? 'flex-row-reverse' : ''}`}>
             {/* Left Section */}
             <div>
                 {showBackButton ? (

@@ -106,7 +106,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
             )}
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-            <div className="mx-auto flex h-[66px] w-full items-center justify-around px-4">
+            <div className="mx-auto flex h-[66px] w-full max-w-[920px] items-center justify-around px-4 md:px-6">
                 {TABS.map((tab) => {
                     const isActive = activeTab === tab.id;
                     return (

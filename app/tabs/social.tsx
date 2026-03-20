@@ -35,6 +35,7 @@ const TextIcon = (props: any) => (
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
+    const socialShellClassName = 'mx-auto w-full max-w-[1040px]';
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 
@@ -261,7 +262,7 @@ const SocialScreen: React.FC = () => {
         }
 
         return (
-            <>
+            <div className={socialShellClassName}>
                 {posts.map((post, index) => {
                     const isLastElement = posts.length === index + 1;
                     return (
@@ -283,7 +284,7 @@ const SocialScreen: React.FC = () => {
                         </div>
                     );
                 })}
-            </>
+            </div>
         );
     }
 
@@ -391,101 +392,103 @@ const SocialScreen: React.FC = () => {
     return (
         <>
             <header className="fixed top-0 left-0 right-0 z-30 pt-[max(2px,env(safe-area-inset-top))] transition-all duration-300">
-                <div
-                    className="w-full flex h-14 items-center justify-center relative"
-                    style={{
-                        paddingLeft: 'max(12px, env(safe-area-inset-left))',
-                        paddingRight: 'max(12px, env(safe-area-inset-right))'
-                    }}
-                >
-                    {isSearchOpen ? (
-                        <div className="w-full max-w-[42rem] flex items-center gap-2 animate-fade-in-up">
-                            <div className="flex-grow relative group">
-                                <input 
-                                    ref={searchInputRef}
-                                    type="text" 
-                                    className="w-full bg-white/10 border border-white/15 rounded-2xl py-2 pl-10 pr-11 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
-                                    placeholder={lang === 'en' ? "Search..." : "بحث..."}
-                                    value={searchQuery}
-                                    onChange={(e) => setSearchQuery(e.target.value)}
-                                />
-                                <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-white/50 group-focus-within:text-accent transition-colors" />
-                                <button 
-                                    onClick={handleCloseSearch} 
-                                    className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                                >
-                                    <XCircleIcon className="h-4.5 w-4.5" />
-                                </button>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="flex items-center justify-center animate-fade-in-up w-full">
-                            <div className="flex items-center gap-2.5">
-                                <button 
-                                    onClick={() => setIsSearchOpen(true)}
-                                    className="p-1.5 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
-                                >
-                                    <SearchIcon className="h-4 w-4" />
-                                </button>
-
-                                <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-sm border border-white/10" role="tablist">
-                                    {TABS.map(tab => (
-                                        <button
-                                            key={tab.id}
-                                            onClick={() => handleScopeChange(tab.id)}
-                                            className={cn(
-                                            "whitespace-nowrap rounded-full py-1.5 px-3.5 text-[12px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
-                                                scope === tab.id
-                                                    ? 'bg-white text-slate-900 shadow'
-                                                    : 'text-white/70 hover:bg-white/20 hover:text-white'
-                                            )}
-                                            role="tab"
-                                            aria-selected={scope === tab.id}
-                                        >
-                                            {lang === 'en' ? tab.en : tab.ar}
-                                        </button>
-                                    ))}
-                                    <button
-                                        onClick={() => setMoreFiltersOpen(prev => !prev)}
-                                        className={cn(
-                                            "rounded-full p-1 text-sm font-medium transition-colors relative",
-                                            filters.length > 0
-                                                ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
-                                                : 'text-white/70 hover:bg-white/20 hover:text-white'
-                                        )}
+                <div className={socialShellClassName}>
+                    <div
+                        className="w-full flex h-14 items-center justify-center relative"
+                        style={{
+                            paddingLeft: 'max(12px, env(safe-area-inset-left))',
+                            paddingRight: 'max(12px, env(safe-area-inset-right))'
+                        }}
+                    >
+                        {isSearchOpen ? (
+                            <div className="w-full max-w-[42rem] flex items-center gap-2 animate-fade-in-up">
+                                <div className="flex-grow relative group">
+                                    <input 
+                                        ref={searchInputRef}
+                                        type="text" 
+                                        className="w-full bg-white/10 border border-white/15 rounded-2xl py-2 pl-10 pr-11 text-white placeholder-white/50 focus:outline-none focus:ring-2 focus:ring-accent focus:bg-white/20 transition-all backdrop-blur-md"
+                                        placeholder={lang === 'en' ? "Search..." : "بحث..."}
+                                        value={searchQuery}
+                                        onChange={(e) => setSearchQuery(e.target.value)}
+                                    />
+                                    <SearchIcon className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4.5 w-4.5 text-white/50 group-focus-within:text-accent transition-colors" />
+                                    <button 
+                                        onClick={handleCloseSearch} 
+                                        className="absolute right-1.5 top-1/2 -translate-y-1/2 p-1.5 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-colors"
                                     >
-                                        <VerticalEllipsisIcon className="h-4 w-4" />
-                                        {filters.length > 0 && (
-                                            <div className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full animate-pulse shadow-sm" />
-                                        )}
+                                        <XCircleIcon className="h-4.5 w-4.5" />
                                     </button>
-                                    
-                                    {isMoreFiltersOpen && (
-                                         <div className="absolute top-full right-0 mt-2 z-10 w-48">
-                                            <GlassCard className="!p-2 !bg-slate-800 shadow-xl">
-                                                <ul className="space-y-1">
-                                                    {SECONDARY_FILTERS.map(filter => (
-                                                        <li key={filter.id}>
-                                                            <button 
-                                                                onClick={() => handleFilterToggle(filter.id)} 
-                                                                className={cn(
-                                                                    "w-full text-left flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors",
-                                                                    filters.includes(filter.id) ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'
-                                                                )}
-                                                            >
-                                                                <filter.icon className="h-5 w-5" />
-                                                                {lang === 'en' ? filter.en : filter.ar}
-                                                            </button>
-                                                        </li>
-                                                    ))}
-                                                </ul>
-                                            </GlassCard>
-                                        </div>
-                                    )}
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        ) : (
+                            <div className="flex items-center justify-center animate-fade-in-up w-full">
+                                <div className="flex items-center gap-2.5">
+                                    <button 
+                                        onClick={() => setIsSearchOpen(true)}
+                                        className="p-1.5 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
+                                    >
+                                        <SearchIcon className="h-4 w-4" />
+                                    </button>
+
+                                    <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-sm border border-white/10" role="tablist">
+                                        {TABS.map(tab => (
+                                            <button
+                                                key={tab.id}
+                                                onClick={() => handleScopeChange(tab.id)}
+                                                className={cn(
+                                                "whitespace-nowrap rounded-full py-1.5 px-3.5 text-[12px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
+                                                    scope === tab.id
+                                                        ? 'bg-white text-slate-900 shadow'
+                                                        : 'text-white/70 hover:bg-white/20 hover:text-white'
+                                                )}
+                                                role="tab"
+                                                aria-selected={scope === tab.id}
+                                            >
+                                                {lang === 'en' ? tab.en : tab.ar}
+                                            </button>
+                                        ))}
+                                        <button
+                                            onClick={() => setMoreFiltersOpen(prev => !prev)}
+                                            className={cn(
+                                                "rounded-full p-1 text-sm font-medium transition-colors relative",
+                                                filters.length > 0
+                                                    ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
+                                                    : 'text-white/70 hover:bg-white/20 hover:text-white'
+                                            )}
+                                        >
+                                            <VerticalEllipsisIcon className="h-4 w-4" />
+                                            {filters.length > 0 && (
+                                                <div className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full animate-pulse shadow-sm" />
+                                            )}
+                                        </button>
+                                        
+                                        {isMoreFiltersOpen && (
+                                             <div className="absolute top-full right-0 mt-2 z-10 w-48">
+                                                <GlassCard className="!p-2 !bg-slate-800 shadow-xl">
+                                                    <ul className="space-y-1">
+                                                        {SECONDARY_FILTERS.map(filter => (
+                                                            <li key={filter.id}>
+                                                                <button 
+                                                                    onClick={() => handleFilterToggle(filter.id)} 
+                                                                    className={cn(
+                                                                        "w-full text-left flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors",
+                                                                        filters.includes(filter.id) ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'
+                                                                    )}
+                                                                >
+                                                                    <filter.icon className="h-5 w-5" />
+                                                                    {lang === 'en' ? filter.en : filter.ar}
+                                                                </button>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </GlassCard>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </header>
 
@@ -496,6 +499,7 @@ const SocialScreen: React.FC = () => {
                     post={activePost || null} 
                     onOpenDiscussion={() => activePost && handleOpenThread(activePost)} 
                     onNewPost={handleNewPost}
+                    desktopShellMaxWidth={1040}
                 />
             )}
 
