@@ -181,10 +181,22 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 .tiptap h1 { font-size: 2.25em; font-weight: 800; margin-top: 1.5em; margin-bottom: 0.5em; color: white; line-height: 1.2; }
                 .tiptap h2 { font-size: 1.75em; font-weight: 700; margin-top: 1.5em; margin-bottom: 0.5em; color: #e2e8f0; line-height: 1.3; }
                 .tiptap p { margin-bottom: 1.25em; line-height: 1.8; color: #cbd5e1; }
-                .tiptap [lang='ar'] {
+                .tiptap p[lang='ar'] {
                     font-family: 'Noto Naskh Arabic', 'Amiri', serif;
                     font-size: 1.08em;
                     line-height: 2;
+                }
+                .tiptap h1[lang='ar'],
+                .tiptap h2[lang='ar'] {
+                    font-family: 'Noto Naskh Arabic', 'Amiri', serif;
+                }
+                .tiptap h1[lang='ar'] {
+                    font-size: 2.25em;
+                    line-height: 1.25;
+                }
+                .tiptap h2[lang='ar'] {
+                    font-size: 1.75em;
+                    line-height: 1.35;
                 }
                 .tiptap [dir='rtl'] {
                     text-align: right;
