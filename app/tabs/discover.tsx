@@ -17,6 +17,7 @@ import { useAgentChat, useAgentSessions, useTogglePinSession } from '../../lib/h
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { PinIcon } from '../../components/icons/PinIcon.tsx'; // You might need to create this or reuse an icon
 import PageShell from '../../components/layout/PageShell.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import MiniBookCard from '../../components/books/MiniBookCard.tsx';
@@ -680,7 +681,7 @@ const DiscoverScreen: React.FC = () => {
                     <HistoryView onClose={() => setShowHistory(false)} onSelectSession={handleResumeSession} />
                 )}
                 
-                <div className="container mx-auto px-4 md:px-8 py-6">
+                <LiteraryShell className="py-6">
                      <div className="flex items-center justify-center gap-3 mb-8 h-10">
                         <button 
                             onClick={() => setShowHistory(true)}
@@ -704,7 +705,7 @@ const DiscoverScreen: React.FC = () => {
                             />
                         ))}
                     </div>
-                </div>
+                </LiteraryShell>
             </main>
         </PageShell>
     );

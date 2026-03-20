@@ -18,6 +18,7 @@ import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
 import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
 import PageTransition from '../../components/ui/PageTransition.tsx';
 import PageShell from '../../components/layout/PageShell.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useToast } from '../../store/toast.tsx';
 import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
@@ -237,101 +238,103 @@ const HomeScreen: React.FC = () => {
       <AppNav titleEn="BookTown" titleAr="بوكتاون" />
 
       <main className="flex-grow pt-24 pb-20">
-        <PageTransition className="container px-4 md:px-6">
-          <HomeSearchBar
-            value={searchQuery}
-            onChange={val => {
-              setSearchQuery(val);
-              setIsSearching(val.length > 0);
-            }}
-            onFocus={() => setIsSearching(true)}
-            onClear={() => {
-              setSearchQuery('');
-              setIsSearching(false);
-            }}
-            onMicClick={() => setIsMicModalOpen(true)}
-            onCameraClick={() => setIsCameraOpen(true)}
-          />
+        <LiteraryShell>
+          <PageTransition className="w-full">
+            <HomeSearchBar
+              value={searchQuery}
+              onChange={val => {
+                setSearchQuery(val);
+                setIsSearching(val.length > 0);
+              }}
+              onFocus={() => setIsSearching(true)}
+              onClear={() => {
+                setSearchQuery('');
+                setIsSearching(false);
+              }}
+              onMicClick={() => setIsMicModalOpen(true)}
+              onCameraClick={() => setIsCameraOpen(true)}
+            />
 
-          {isSearching ? (
-            <div className="animate-fade-in">
-              <div className="mt-4 flex items-center justify-start">
-                <button
-                  onClick={() => setEbookOnly(v => !v)}
-                  className={cn(
-                    "px-4 py-2 rounded-full border text-sm font-semibold transition-all active:scale-95 shadow-sm",
-                    ebookOnly
-                      ? "bg-primary text-white border-primary"
-                      : "bg-white/5 text-slate-500 border-black/10 dark:border-white/10"
-                  )}
-                >
-                  {lang === 'en' ? 'Ebooks' : 'كتب إلكترونية'}
-                </button>
-              </div>
-              {renderSearchResults()}
-            </div>
-          ) : (
-            <div className="space-y-12 mt-8">
-              <DiscoveryEntryCard
-                onClick={() => navigate({ type: 'stack', id: 'discovery' })}
-              />
-
-              {/* 📖 Continue Reading (Mirror of currently-reading shelf) */}
-              <CollapsibleSection
-                titleEn="Continue Reading"
-                titleAr="أكمل القراءة"
-                isOpen={isContinueOpen}
-                onToggle={() => setIsContinueOpen(v => !v)}
-              >
-                {isProgressLoading ? (
-                  <div className="flex gap-4 py-4 overflow-hidden">
-                    {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
-                  </div>
-                ) : continueReadingItems.length > 0 ? (
-                  <motion.div
-                    className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
-                    variants={staggerContainer}
-                    initial="hidden"
-                    animate="show"
+            {isSearching ? (
+              <div className="animate-fade-in">
+                <div className="mt-4 flex items-center justify-start">
+                  <button
+                    onClick={() => setEbookOnly(v => !v)}
+                    className={cn(
+                      "px-4 py-2 rounded-full border text-sm font-semibold transition-all active:scale-95 shadow-sm",
+                      ebookOnly
+                        ? "bg-primary text-white border-primary"
+                        : "bg-white/5 text-slate-500 border-black/10 dark:border-white/10"
+                    )}
                   >
-                    {continueReadingItems.map(item => (
-                      <motion.div
-                        key={item.bookId}
-                        variants={listItemVariants}
-                        className="cursor-pointer snap-start"
-                        onClick={() =>
-                          navigate({
-                            type: 'immersive',
-                            id: 'reader',
-                            params: {
-                              bookId: item.bookId,
-                              from: currentView
-                            }
-                          })
-                        }
-                      >
-                        <BookCard
-                          bookId={item.bookId}
-                          layout="list"
-                          progress={Math.round(item.progress * 100)}
-                        />
-                      </motion.div>
-                    ))}
-                  </motion.div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
-                    <span className="text-sm italic text-slate-500 text-center">
-                      {lang === 'en'
-                        ? 'Your active books will appear here.'
-                        : 'ستظهر كتبك النشطة هنا.'}
-                    </span>
-                  </div>
-                )}
-              </CollapsibleSection>
+                    {lang === 'en' ? 'Ebooks' : 'كتب إلكترونية'}
+                  </button>
+                </div>
+                {renderSearchResults()}
+              </div>
+            ) : (
+              <div className="space-y-12 mt-8">
+                <DiscoveryEntryCard
+                  onClick={() => navigate({ type: 'stack', id: 'discovery' })}
+                />
 
-            </div>
-          )}
-        </PageTransition>
+                {/* 📖 Continue Reading (Mirror of currently-reading shelf) */}
+                <CollapsibleSection
+                  titleEn="Continue Reading"
+                  titleAr="أكمل القراءة"
+                  isOpen={isContinueOpen}
+                  onToggle={() => setIsContinueOpen(v => !v)}
+                >
+                  {isProgressLoading ? (
+                    <div className="flex gap-4 py-4 overflow-hidden">
+                      {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
+                    </div>
+                  ) : continueReadingItems.length > 0 ? (
+                    <motion.div
+                      className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
+                      variants={staggerContainer}
+                      initial="hidden"
+                      animate="show"
+                    >
+                      {continueReadingItems.map(item => (
+                        <motion.div
+                          key={item.bookId}
+                          variants={listItemVariants}
+                          className="cursor-pointer snap-start"
+                          onClick={() =>
+                            navigate({
+                              type: 'immersive',
+                              id: 'reader',
+                              params: {
+                                bookId: item.bookId,
+                                from: currentView
+                              }
+                            })
+                          }
+                        >
+                          <BookCard
+                            bookId={item.bookId}
+                            layout="list"
+                            progress={Math.round(item.progress * 100)}
+                          />
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
+                      <span className="text-sm italic text-slate-500 text-center">
+                        {lang === 'en'
+                          ? 'Your active books will appear here.'
+                          : 'ستظهر كتبك النشطة هنا.'}
+                      </span>
+                    </div>
+                  )}
+                </CollapsibleSection>
+
+              </div>
+            )}
+          </PageTransition>
+        </LiteraryShell>
       </main>
 
       {isCameraOpen && (

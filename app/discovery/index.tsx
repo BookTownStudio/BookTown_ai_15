@@ -2,6 +2,7 @@
 
 import React, { useCallback } from "react";
 import PageShell from "../../components/layout/PageShell.tsx";
+import LiteraryShell from "../../components/layout/LiteraryShell.tsx";
 import AppNav from "../../components/navigation/AppNav.tsx";
 import { useI18n } from "../../store/i18n.tsx";
 import { useNavigation } from "../../store/navigation.tsx";
@@ -80,39 +81,41 @@ const DiscoveryScreen: React.FC = () => {
         onBack={() => navigate({ type: "tab", id: "home" })}
       />
 
-      <main className="container px-4 pt-24 pb-20 space-y-6">
-        {STATIC_DIRECTIONS.map(direction => (
-          <button
-            key={direction.id}
-            type="button"
-            onClick={() => handleDirectionClick(direction.query)}
-            className="
-              w-full text-left
-              p-6 rounded-2xl
-              border border-black/5 dark:border-white/10
-              bg-white/5 backdrop-blur-sm
-              transition hover:bg-white/10
-              focus:outline-none focus:ring-2 focus:ring-primary
-            "
-            aria-label={
-              lang === "en"
-                ? `Explore ${direction.titleEn}`
-                : `استكشف ${direction.titleAr}`
-            }
-          >
-            <h3 className="text-lg font-semibold mb-2">
-              {lang === "en"
-                ? direction.titleEn
-                : direction.titleAr}
-            </h3>
+      <main className="pt-24 pb-20">
+        <LiteraryShell className="space-y-6">
+          {STATIC_DIRECTIONS.map(direction => (
+            <button
+              key={direction.id}
+              type="button"
+              onClick={() => handleDirectionClick(direction.query)}
+              className="
+                w-full text-left
+                p-6 rounded-2xl
+                border border-black/5 dark:border-white/10
+                bg-white/5 backdrop-blur-sm
+                transition hover:bg-white/10
+                focus:outline-none focus:ring-2 focus:ring-primary
+              "
+              aria-label={
+                lang === "en"
+                  ? `Explore ${direction.titleEn}`
+                  : `استكشف ${direction.titleAr}`
+              }
+            >
+              <h3 className="text-lg font-semibold mb-2">
+                {lang === "en"
+                  ? direction.titleEn
+                  : direction.titleAr}
+              </h3>
 
-            <p className="text-sm opacity-70">
-              {lang === "en"
-                ? direction.subtitleEn
-                : direction.subtitleAr}
-            </p>
-          </button>
-        ))}
+              <p className="text-sm opacity-70">
+                {lang === "en"
+                  ? direction.subtitleEn
+                  : direction.subtitleAr}
+              </p>
+            </button>
+          ))}
+        </LiteraryShell>
       </main>
     </PageShell>
   );

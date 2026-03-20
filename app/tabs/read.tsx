@@ -24,6 +24,7 @@ import { useDeleteShelf } from '../../lib/hooks/useDeleteShelf.ts';
 import Button from '../../components/ui/Button.tsx';
 import { useRecommendedShelves } from '../../lib/hooks/useRecommendedShelves.ts';
 import PageShell from '../../components/layout/PageShell.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useUserStats } from '../../lib/hooks/useUserStats.ts';
 
 const SYSTEM_ORDER = ['currently-reading', 'want-to-read', 'finished'];
@@ -175,7 +176,7 @@ const ReadScreen: React.FC = () => {
         ref={mainContentRef}
         className="flex-grow overflow-y-auto pt-24 pb-32"
       >
-        <div className="container mx-auto px-4 md:px-8">
+        <LiteraryShell>
           <header className="mb-8 flex items-center justify-between">
             <div>
               <BilingualText role="H1" className="!text-3xl font-bold">
@@ -247,7 +248,7 @@ const ReadScreen: React.FC = () => {
               ))}
             </div>
           )}
-        </div>
+        </LiteraryShell>
       </main>
 
       <AddBookModal

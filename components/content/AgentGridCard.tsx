@@ -21,7 +21,7 @@ const AgentGridCard: React.FC<AgentGridCardProps> = ({ agent, onClick }) => {
             onClick={onClick}
             className={`text-left w-full group relative focus:outline-none focus:ring-2 focus:ring-accent rounded-card ${agent.isPremium ? 'opacity-70' : ''}`}
         >
-            <GlassCard className={`!p-4 aspect-square flex flex-col items-center justify-center text-center transition-all duration-300 bg-white/10 dark:bg-white/5 border border-black/5 dark:border-white/10 shadow-sm ${agent.isPremium ? '' : 'group-hover:bg-white/20 dark:group-hover:bg-white/10'}`}>
+            <GlassCard className={`!p-4 aspect-square lg:aspect-[16/10] flex flex-col items-center justify-center text-center transition-all duration-300 bg-white/10 dark:bg-white/5 border border-black/5 dark:border-white/10 shadow-sm ${agent.isPremium ? '' : 'group-hover:bg-white/20 dark:group-hover:bg-white/10'}`}>
                 {agent.isPremium && (
                     <div className="absolute top-3 right-3 bg-amber-500/20 p-1.5 rounded-full">
                          <LockIcon className="h-4 w-4 text-amber-400" />

@@ -17,6 +17,7 @@ import { useCreateProjectShareLink, useDeleteProject, useDuplicateProject, useUp
 import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal.tsx';
 import { Project } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
+import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 
 interface TemplatesPanelTriggerProps {
     isOpen: boolean;
@@ -310,7 +311,7 @@ const WriteScreen: React.FC = () => {
                 )}
                 <AppNav titleEn="Write" titleAr="اكتب" />
                 <main className="flex-grow overflow-y-auto pt-20 pb-32">
-                    <div className="container mx-auto px-4 md:px-8 py-6">
+                    <LiteraryShell className="py-6">
                         <div className="flex justify-between items-center mb-8">
                             <BilingualText role="H1" className="!text-3xl !font-bold">
                                 {lang === 'en' ? 'Your Projects' : 'مشاريعك'}
@@ -329,7 +330,7 @@ const WriteScreen: React.FC = () => {
                         <div className="mb-6">
                             {renderContent()}
                         </div>
-                    </div>
+                    </LiteraryShell>
                 </main>
                 <TemplatesPanelTrigger 
                     isOpen={isPanelOpen}
