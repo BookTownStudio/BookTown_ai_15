@@ -268,6 +268,7 @@ const EditorScreen: React.FC = () => {
     const [dictationSessionLanguage, setDictationSessionLanguage] = useState<string | null>(null);
 
     const mentor = mockAgents.find(a => a.id === 'mentor');
+    const manuscriptLaneClassName = 'max-w-[780px]';
 
     const [state, dispatch] = useReducer(historyReducer, { present: EMPTY_SNAPSHOT });
     const { present } = state;
@@ -1309,6 +1310,7 @@ const EditorScreen: React.FC = () => {
                     onToggleVoice={toggleVoice}
                     isRecording={dictationPhase !== 'idle'}
                     isVisible={!isFocusMode || dictationPhase !== 'idle'}
+                    innerClassName={manuscriptLaneClassName}
                     dictationStatusLabel={getDictationStatusLabel(dictationPhase, lang)}
                     dictationElapsedMs={dictationElapsedMs}
                     dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
