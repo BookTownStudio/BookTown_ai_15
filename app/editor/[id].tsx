@@ -20,7 +20,7 @@ import { ViewListIcon } from '../../components/icons/ViewListIcon.tsx';
 import { XIcon } from '../../components/icons/XIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
 import OutlinePanel, { OutlinePanelItem } from '../../components/editor/OutlinePanel.tsx';
-import TiptapEditor, { EditorChangePayload, EditorOutlineItem } from '../../components/editor/TiptapEditor.tsx';
+import TiptapEditor, { EditorChangePayload } from '../../components/editor/TiptapEditor.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
@@ -187,6 +187,57 @@ function normalizeDictationTranscript(transcript: string): string {
     return normalized ? `${normalized} ` : '';
 }
 
+function getOutlineItemDirection(node: { attrs?: Record<string, unknown> }): 'rtl' | 'ltr' | undefined {
+    const dir = node.attrs?.dir;
+    return dir === 'rtl' || dir === 'ltr' ? dir : undefined;
+}
+
+function buildCanonicalOutlineItems(editor: Editor): OutlinePanelItem[] {
+    const items: OutlinePanelItem[] = [];
+    let awaitingStructuralHeading = false;
+    let hasStructuralUnits = false;
+
+    editor.state.doc.descendants((node, pos) => {
+        if (node.type.name === 'horizontalRule') {
+            awaitingStructuralHeading = true;
+            hasStructuralUnits = true;
+            return true;
+        }
+
+        if (node.type.name !== 'heading') {
+            return true;
+        }
+
+        const label = (node.textContent || '').trim();
+        if (!label) {
+            return true;
+        }
+
+        if (awaitingStructuralHeading) {
+            items.push({
+                id: `unit_${pos}_${label.slice(0, 24)}`,
+                kind: 'chapter',
+                label,
+                pos,
+                dir: getOutlineItemDirection(node),
+            });
+            awaitingStructuralHeading = false;
+            return true;
+        }
+
+        items.push({
+            id: `heading_${pos}_${label.slice(0, 24)}`,
+            kind: hasStructuralUnits ? 'headline' : 'chapter',
+            label,
+            pos,
+            dir: getOutlineItemDirection(node),
+        });
+        return true;
+    });
+
+    return items;
+}
+
 function getDictationStatusLabel(phase: DictationPhase, lang: string): string {
     if (lang === 'ar') {
         if (phase === 'starting') return 'بدء الإملاء';
@@ -264,7 +315,6 @@ const EditorScreen: React.FC = () => {
     const [hasInteractedWithTitle, setHasInteractedWithTitle] = useState(false);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [isMobileOutlineOpen, setIsMobileOutlineOpen] = useState(false);
-    const [outline, setOutline] = useState<EditorOutlineItem[]>([]);
     const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBanner>(null);
     const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
     const [dictationStartedAt, setDictationStartedAt] = useState<number | null>(null);
@@ -325,7 +375,6 @@ const EditorScreen: React.FC = () => {
         setAuthorityStatus(isNewRoute ? 'ephemeral' : 'persistent');
         setIsSaving(false);
         setSaveIssue('none');
-        setOutline([]);
         setIsMobileOutlineOpen(false);
         setRecoveryBanner(null);
         dictationSessionRef.current?.dispose();
@@ -953,7 +1002,6 @@ const EditorScreen: React.FC = () => {
             hasLocalEditsRef.current = true;
         }
 
-        setOutline(payload.outline);
         dispatch({ type: 'SET', payload: nextSnapshot });
     };
 
@@ -984,70 +1032,13 @@ const EditorScreen: React.FC = () => {
         setIsMobileOutlineOpen(false);
     }, [editor]);
 
-    const structuredOutline = useMemo<OutlinePanelItem[]>(() => {
+    const outlineItems = useMemo<OutlinePanelItem[]>(() => {
         if (!editor) {
             return [];
         }
 
-        const items: OutlinePanelItem[] = [];
-        let chapterNumber = 0;
-
-        editor.state.doc.descendants((node, pos) => {
-            if (node.type.name === 'horizontalRule') {
-                chapterNumber += 1;
-                items.push({
-                    id: `chapter_${chapterNumber}_${pos}`,
-                    kind: 'chapter',
-                    label: `Chapter ${chapterNumber}`,
-                    pos,
-                });
-                return true;
-            }
-
-            if (node.type.name !== 'heading') {
-                return true;
-            }
-
-            const headline = (node.textContent || '').trim();
-            if (!headline) {
-                return true;
-            }
-
-            if (chapterNumber === 0) {
-                chapterNumber = 1;
-                items.push({
-                    id: `chapter_${chapterNumber}_opening`,
-                    kind: 'chapter',
-                    label: `Chapter ${chapterNumber}`,
-                    pos,
-                });
-            }
-
-            items.push({
-                id: `headline_${pos}`,
-                kind: 'headline',
-                label: headline,
-                pos,
-                dir: node.attrs.dir === 'rtl' || node.attrs.dir === 'ltr' ? node.attrs.dir : undefined,
-            });
-
-            return true;
-        });
-
-        return items;
-    }, [editor, outline, present.contentDoc]);
-
-    const mobileOutlineItems = useMemo<OutlinePanelItem[]>(
-        () =>
-            outline.map((item) => ({
-                id: item.id,
-                kind: 'headline' as const,
-                label: item.text,
-                pos: item.pos,
-                dir: item.dir,
-            })),
-        [outline]
-    );
+        return buildCanonicalOutlineItems(editor);
+    }, [editor, present.contentDoc, present.content]);
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const nextSnapshot = { ...presentRef.current };
@@ -1386,10 +1377,10 @@ const EditorScreen: React.FC = () => {
                             </div>
                             <OutlinePanel
                                 variant="sheet"
-                                items={mobileOutlineItems}
+                                items={outlineItems}
                                 onSelectItem={handleOutlineSelect}
-                                titleLabel={lang === 'en' ? 'Headings' : 'العناوين'}
-                                emptyLabel={lang === 'en' ? 'Add real headings to build your outline.' : 'أضف عناوين حقيقية لبناء المخطط.'}
+                                titleLabel={lang === 'en' ? 'Outline' : 'المخطط'}
+                                emptyLabel={lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
                             />
                         </div>
                     </div>
@@ -1400,7 +1391,7 @@ const EditorScreen: React.FC = () => {
                         <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
                             {!isFocusMode && (
                                 <OutlinePanel
-                                    items={structuredOutline}
+                                    items={outlineItems}
                                     onSelectItem={handleOutlineSelect}
                                     titleLabel={lang === 'en' ? 'Outline' : 'المخطط'}
                                     emptyLabel={lang === 'en' ? 'Add headings to build your outline.' : 'أضف عناوين لبناء المخطط.'}
