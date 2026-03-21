@@ -7,6 +7,7 @@ import { MemoirIcon } from '../../components/icons/MemoirIcon.tsx';
 import { JournalIcon } from '../../components/icons/JournalIcon.tsx';
 import { PoetryIcon } from '../../components/icons/PoetryIcon.tsx';
 import { ScreenplayIcon } from '../../components/icons/ScreenplayIcon.tsx';
+import { createChapterBlockHtml, createChapterBlockNodes } from '../editor/chapterNodes.ts';
 
 type WorkType = Project['workType'];
 type Locale = 'en' | 'ar';
@@ -16,6 +17,7 @@ type SectionCopy = {
     titleAr: string;
     bodyEn: string[];
     bodyAr: string[];
+    chapter?: boolean;
 };
 
 type TemplateSeedDefinition = Omit<Template, 'boilerplateContent' | 'contentDoc'> & {
@@ -101,6 +103,13 @@ function buildStructuredStarter(sections: SectionCopy[], locale: Locale): Pick<S
     sections.forEach((section) => {
         const title = lang === 'ar' ? section.titleAr : section.titleEn;
         const paragraphs = lang === 'ar' ? section.bodyAr : section.bodyEn;
+
+        if (section.chapter) {
+            contentNodes.push(...createChapterBlockNodes({ title, lang, dir, paragraphs }));
+            htmlParts.push(createChapterBlockHtml({ title, lang, dir, paragraphs }));
+            plainTextParts.push(title, ...paragraphs);
+            return;
+        }
 
         contentNodes.push(createHeadingNode(title, lang, dir));
         htmlParts.push(`<h2 lang="${lang}" dir="${dir}">${escapeHtml(title)}</h2>`);
@@ -198,40 +207,46 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: NovelIcon,
         sections: [
             {
-                titleEn: 'Beginning',
-                titleAr: 'البداية',
+                titleEn: 'Chapter 1 — Beginning',
+                titleAr: 'الفصل 1 — البداية',
                 bodyEn: ['Introduce the world as it is and let the reader feel the ordinary rhythm before it starts to shift.'],
                 bodyAr: ['عرّف العالم كما هو ودَع القارئ يشعر بإيقاعه المعتاد قبل أن يبدأ التحوّل.'],
+                chapter: true,
             },
             {
-                titleEn: 'Change Appears',
-                titleAr: 'ظهور التغيير',
+                titleEn: 'Chapter 2 — Change Appears',
+                titleAr: 'الفصل 2 — ظهور التغيير',
                 bodyEn: ['Let the first disturbance arrive in a way that cannot be dismissed or quietly put aside.'],
                 bodyAr: ['دَع الاضطراب الأول يصل بطريقة لا يمكن تجاهلها أو تجاوزها بهدوء.'],
+                chapter: true,
             },
             {
-                titleEn: 'Crossing Forward',
-                titleAr: 'العبور إلى الأمام',
+                titleEn: 'Chapter 3 — Crossing Forward',
+                titleAr: 'الفصل 3 — العبور إلى الأمام',
                 bodyEn: ['Move the protagonist past the point where returning to the old arrangement is no longer possible.'],
                 bodyAr: ['ادفع الشخصية إلى ما بعد النقطة التي يصبح فيها الرجوع إلى الترتيب القديم غير ممكن.'],
+                chapter: true,
             },
             {
-                titleEn: 'Conflict Deepens',
-                titleAr: 'تعميق الصراع',
+                titleEn: 'Chapter 4 — Conflict Deepens',
+                titleAr: 'الفصل 4 — تعميق الصراع',
                 bodyEn: ['Increase pressure, sharpen desire, and let every choice cost more than the one before it.'],
                 bodyAr: ['صعّد الضغط وحدّد الرغبة بوضوح واجعل كل اختيار أثقل كلفة من الذي سبقه.'],
+                chapter: true,
             },
             {
-                titleEn: 'Crisis',
-                titleAr: 'الأزمة',
+                titleEn: 'Chapter 5 — Crisis',
+                titleAr: 'الفصل 5 — الأزمة',
                 bodyEn: ['Bring the story to its most exposed point, where the character must act without certainty.'],
                 bodyAr: ['أوصل القصة إلى أشد لحظاتها انكشافاً حيث تضطر الشخصية إلى الفعل بلا يقين.'],
+                chapter: true,
             },
             {
-                titleEn: 'Return Changed',
-                titleAr: 'العودة متغيّرة',
+                titleEn: 'Chapter 6 — Return Changed',
+                titleAr: 'الفصل 6 — العودة متغيّرة',
                 bodyEn: ['Return the character to the world with visible change and a cost the reader can still feel.'],
                 bodyAr: ['أعِد الشخصية إلى العالم وهي متغيرة بوضوح ومعها ثمن ما زال القارئ يشعر به.'],
+                chapter: true,
             },
         ],
     },
@@ -245,22 +260,25 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: ShortStoryIcon,
         sections: [
             {
-                titleEn: 'Opening',
-                titleAr: 'الافتتاح',
+                titleEn: 'Part 1 — Opening',
+                titleAr: 'الجزء 1 — الافتتاح',
                 bodyEn: ['Begin inside motion, voice, or tension so the reader enters the scene already leaning forward.'],
                 bodyAr: ['ابدأ من داخل حركة أو صوت أو توتر حتى يدخل القارئ المشهد وهو منجذب إليه.'],
+                chapter: true,
             },
             {
-                titleEn: 'Shift',
-                titleAr: 'التحول',
+                titleEn: 'Part 2 — Shift',
+                titleAr: 'الجزء 2 — التحول',
                 bodyEn: ['Deliver the turn that changes how the moment, character, or conflict is understood.'],
                 bodyAr: ['قدّم التحول الذي يغيّر فهم اللحظة أو الشخصية أو الصراع.'],
+                chapter: true,
             },
             {
-                titleEn: 'Ending',
-                titleAr: 'النهاية',
+                titleEn: 'Part 3 — Ending',
+                titleAr: 'الجزء 3 — النهاية',
                 bodyEn: ['End on the line, image, or action that keeps resonating after the page is done.'],
                 bodyAr: ['اختم بالسطر أو الصورة أو الفعل الذي يستمر صداه بعد انتهاء الصفحة.'],
+                chapter: true,
             },
         ],
     },
@@ -274,22 +292,25 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: MemoirIcon,
         sections: [
             {
-                titleEn: 'The Moment',
-                titleAr: 'اللحظة',
+                titleEn: 'Chapter 1 — The Moment',
+                titleAr: 'الفصل 1 — اللحظة',
                 bodyEn: ['Start with the lived moment that still carries heat, texture, and consequence in memory.'],
                 bodyAr: ['ابدأ من اللحظة المعيشة التي ما زالت تحتفظ بحرارتها وملمسها وأثرها في الذاكرة.'],
+                chapter: true,
             },
             {
-                titleEn: 'What It Changed',
-                titleAr: 'ما الذي غيّرته',
+                titleEn: 'Chapter 2 — What Changed',
+                titleAr: 'الفصل 2 — ما الذي تغيّر',
                 bodyEn: ['Name the inner and outer change that followed, and let reflection deepen rather than explain away the event.'],
                 bodyAr: ['سمِّ التغير الداخلي والخارجي الذي تبعها ودع التأمل يعمّق الحدث بدل أن يفسّره بعيداً عنه.'],
+                chapter: true,
             },
             {
-                titleEn: 'What Remains',
-                titleAr: 'ما الذي بقي',
+                titleEn: 'Chapter 3 — What Remains',
+                titleAr: 'الفصل 3 — ما الذي بقي',
                 bodyEn: ['Close with what still lives in you now, and why that memory remains active rather than finished.'],
                 bodyAr: ['اختم بما لا يزال حياً فيك الآن ولماذا بقيت تلك الذاكرة فعالة لا منتهية.'],
+                chapter: true,
             },
         ],
     },
@@ -303,22 +324,25 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: JournalIcon,
         sections: [
             {
-                titleEn: 'Today',
-                titleAr: 'اليوم',
+                titleEn: 'Entry 1 — Today',
+                titleAr: 'المدخل 1 — اليوم',
                 bodyEn: ['Record what happened in the plain shape it arrived, without forcing meaning before it is ready.'],
                 bodyAr: ['دوّن ما حدث بصورته المباشرة كما وصل، من دون فرض معنى قبل أن ينضج.'],
+                chapter: true,
             },
             {
-                titleEn: 'What Stayed',
-                titleAr: 'ما الذي بقي',
+                titleEn: 'Entry 2 — What Stayed',
+                titleAr: 'المدخل 2 — ما الذي بقي',
                 bodyEn: ['Notice what stayed with you after the day moved on: a feeling, a sentence, a silence, a surprise.'],
                 bodyAr: ['لاحظ ما الذي بقي معك بعد انقضاء اليوم: شعور أو جملة أو صمت أو مفاجأة.'],
+                chapter: true,
             },
             {
-                titleEn: 'What I Carry Forward',
-                titleAr: 'ما الذي أحمله معي',
+                titleEn: 'Entry 3 — What I Carry Forward',
+                titleAr: 'المدخل 3 — ما الذي أحمله معي',
                 bodyEn: ['Name the one thing you want to carry into tomorrow with more attention or tenderness.'],
                 bodyAr: ['سمِّ الشيء الواحد الذي تريد أن تحمله إلى الغد بمزيد من الانتباه أو اللطف.'],
+                chapter: true,
             },
         ],
     },
@@ -332,10 +356,25 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: PoetryIcon,
         sections: [
             {
-                titleEn: 'Untitled',
-                titleAr: 'بلا عنوان',
+                titleEn: 'Poem 1',
+                titleAr: 'قصيدة 1',
                 bodyEn: ['Start with the first image, line, or rhythm that feels truer than explanation.'],
                 bodyAr: ['ابدأ بالصورة أو السطر أو الإيقاع الذي يبدو أصدق من الشرح.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Poem 2',
+                titleAr: 'قصيدة 2',
+                bodyEn: ['Let the next poem begin from a distinct image, pressure, or music of its own.'],
+                bodyAr: ['دع القصيدة التالية تبدأ من صورة أو توتر أو موسيقى تخصها وحدها.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Poem 3',
+                titleAr: 'قصيدة 3',
+                bodyEn: ['Open a third poem from a fresh line that shifts the emotional weather of the page.'],
+                bodyAr: ['افتح قصيدة ثالثة من سطر جديد يغيّر مناخ الصفحة العاطفي.'],
+                chapter: true,
             },
         ],
     },
@@ -349,28 +388,32 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         icon: ScreenplayIcon,
         sections: [
             {
-                titleEn: 'Opening Scene',
-                titleAr: 'المشهد الافتتاحي',
+                titleEn: 'Scene 1 — Opening Scene',
+                titleAr: 'المشهد 1 — المشهد الافتتاحي',
                 bodyEn: ['Place the viewer inside the first visible situation and let the scene announce tone through action.'],
                 bodyAr: ['ضع المشاهد داخل الحالة المرئية الأولى ودع المشهد يعلن نبرته من خلال الفعل.'],
+                chapter: true,
             },
             {
-                titleEn: 'First Turn',
-                titleAr: 'التحول الأول',
+                titleEn: 'Scene 2 — First Turn',
+                titleAr: 'المشهد 2 — التحول الأول',
                 bodyEn: ['Introduce the shift that sends the story into motion and changes what the next scene must do.'],
                 bodyAr: ['قدّم التحول الذي يطلق القصة ويغيّر ما يجب على المشهد التالي أن يفعله.'],
+                chapter: true,
             },
             {
-                titleEn: 'Confrontation',
-                titleAr: 'المواجهة',
+                titleEn: 'Scene 3 — Confrontation',
+                titleAr: 'المشهد 3 — المواجهة',
                 bodyEn: ['Stage the confrontation where intent, obstacle, and consequence can all be seen at once.'],
                 bodyAr: ['ابنِ المواجهة التي يمكن أن تُرى فيها النية والعائق والنتيجة في آن واحد.'],
+                chapter: true,
             },
             {
-                titleEn: 'Final Scene',
-                titleAr: 'المشهد الأخير',
+                titleEn: 'Scene 4 — Final Scene',
+                titleAr: 'المشهد 4 — المشهد الأخير',
                 bodyEn: ['End with the final scene that leaves the audience with an image stronger than explanation.'],
                 bodyAr: ['اختم بالمشهد الأخير الذي يترك الجمهور مع صورة أقوى من الشرح.'],
+                chapter: true,
             },
         ],
     },

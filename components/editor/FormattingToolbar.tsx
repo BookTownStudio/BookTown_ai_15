@@ -11,6 +11,7 @@ import { cn } from '../../lib/utils.ts';
 import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import LiteraryShell from '../layout/LiteraryShell.tsx';
+import { createChapterBlockNodes } from '../../lib/editor/chapterNodes.ts';
 
 // Simple Justify Icon for the alignment dropdown
 const AlignJustifyIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -78,6 +79,18 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
     const getActiveStyleLabel = () => {
         if (editor.isActive('heading')) return 'Headline';
         return 'Paragraph';
+    };
+
+    const getNextChapterTitle = () => {
+        let chapterCount = 0;
+        editor.state.doc.descendants((node) => {
+            if (node.type.name === 'horizontalRule') {
+                chapterCount += 1;
+            }
+            return true;
+        });
+
+        return `Chapter ${chapterCount + 1}`;
     };
 
     return (
@@ -168,7 +181,19 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                                         </div>
 
                                         <button
-                                            onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                                            onClick={() =>
+                                                editor
+                                                    .chain()
+                                                    .focus()
+                                                    .insertContent(
+                                                        createChapterBlockNodes({
+                                                            title: getNextChapterTitle(),
+                                                            lang: lang === 'ar' ? 'ar' : 'en',
+                                                            dir: lang === 'ar' ? 'rtl' : 'ltr',
+                                                        })
+                                                    )
+                                                    .run()
+                                            }
                                             className={cn(
                                                 "w-8 h-8 flex items-center justify-center rounded-full border border-slate-300 dark:border-white/30 transition-all text-primary dark:text-accent hover:bg-black/5 dark:hover:bg-white/10"
                                             )}
