@@ -1311,6 +1311,7 @@ const EditorScreen: React.FC = () => {
                     isRecording={dictationPhase !== 'idle'}
                     isVisible={!isFocusMode || dictationPhase !== 'idle'}
                     innerClassName={manuscriptLaneClassName}
+                    alignToEditorColumn={!isFocusMode}
                     dictationStatusLabel={getDictationStatusLabel(dictationPhase, lang)}
                     dictationElapsedMs={dictationElapsedMs}
                     dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
