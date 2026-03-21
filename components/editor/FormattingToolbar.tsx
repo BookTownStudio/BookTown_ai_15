@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils.ts';
 import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import LiteraryShell from '../layout/LiteraryShell.tsx';
-import { createChapterBlockNodes } from '../../lib/editor/chapterNodes.ts';
+import { createChapterBlockNodes, getChapterBlockParagraphSelectionOffset } from '../../lib/editor/chapterNodes.ts';
 
 // Simple Justify Icon for the alignment dropdown
 const AlignJustifyIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -91,6 +91,28 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
         });
 
         return `Chapter ${chapterCount + 1}`;
+    };
+
+    const insertChapterBlock = () => {
+        const insertFrom = editor.state.selection.from;
+        const chapterNodes = createChapterBlockNodes({
+            title: getNextChapterTitle(),
+            lang: lang === 'ar' ? 'ar' : 'en',
+            dir: lang === 'ar' ? 'rtl' : 'ltr',
+        });
+
+        const inserted = editor
+            .chain()
+            .focus()
+            .insertContent(chapterNodes)
+            .run();
+
+        if (!inserted) {
+            return;
+        }
+
+        const paragraphSelection = insertFrom + getChapterBlockParagraphSelectionOffset(chapterNodes);
+        editor.chain().focus().setTextSelection(paragraphSelection).run();
     };
 
     return (
@@ -181,19 +203,7 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                                         </div>
 
                                         <button
-                                            onClick={() =>
-                                                editor
-                                                    .chain()
-                                                    .focus()
-                                                    .insertContent(
-                                                        createChapterBlockNodes({
-                                                            title: getNextChapterTitle(),
-                                                            lang: lang === 'ar' ? 'ar' : 'en',
-                                                            dir: lang === 'ar' ? 'rtl' : 'ltr',
-                                                        })
-                                                    )
-                                                    .run()
-                                            }
+                                            onClick={insertChapterBlock}
                                             className={cn(
                                                 "w-8 h-8 flex items-center justify-center rounded-full border border-slate-300 dark:border-white/30 transition-all text-primary dark:text-accent hover:bg-black/5 dark:hover:bg-white/10"
                                             )}

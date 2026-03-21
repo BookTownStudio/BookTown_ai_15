@@ -144,7 +144,7 @@ const ProjectEditScreen: React.FC = () => {
 
                     <ProjectTypeDropdown
                         id="projectType"
-                        label={lang === 'en' ? 'Project Type' : 'نوع المشروع'}
+                        label={lang === 'en' ? 'Status' : 'الحالة'}
                         value={formData.projectType}
                         onChange={handleProjectTypeChange}
                     />

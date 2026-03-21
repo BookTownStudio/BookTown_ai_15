@@ -83,6 +83,28 @@ export function createChapterBlockNodes({
   ];
 }
 
+function getWriteContentNodeSize(node: WriteContentNode): number {
+  if (node.type === 'text') {
+    return typeof node.text === 'string' ? node.text.length : 0;
+  }
+
+  const childSize = Array.isArray(node.content)
+    ? node.content.reduce((total, child) => total + getWriteContentNodeSize(child as WriteContentNode), 0)
+    : 0;
+
+  if (node.type === 'horizontalRule') {
+    return 1;
+  }
+
+  return childSize + 2;
+}
+
+export function getChapterBlockParagraphSelectionOffset(nodes: WriteContentNode[]): number {
+  const separatorSize = nodes[0] ? getWriteContentNodeSize(nodes[0]) : 0;
+  const headingSize = nodes[1] ? getWriteContentNodeSize(nodes[1]) : 0;
+  return separatorSize + headingSize + 1;
+}
+
 export function createChapterBlockHtml({
   title,
   lang,

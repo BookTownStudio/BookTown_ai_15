@@ -6,6 +6,18 @@ import { dataService } from '../../services/dataService.ts';
 import { Project, PublishedBook } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
 
+function insertProjectIntoProjectsCache(
+    queryClient: ReturnType<typeof useQueryClient>,
+    uid: string,
+    project: Project
+) {
+    queryClient.setQueryData(queryKeys.user.projects(uid) as unknown as any[], (old: Project[] | undefined) => {
+        const existing = Array.isArray(old) ? old : [];
+        const withoutDuplicate = existing.filter((item) => item.id !== project.id);
+        return [project, ...withoutDuplicate];
+    });
+}
+
 export const useCreateProject = () => {
     const queryClient = useQueryClient();
     const { user } = useAuth();
@@ -19,6 +31,7 @@ export const useCreateProject = () => {
         },
         onSuccess: (data) => {
             if (uid && data.id) {
+                insertProjectIntoProjectsCache(queryClient, uid, data);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
@@ -70,7 +83,10 @@ export const useDuplicateProject = () => {
             if (!uid) throw new Error("Unauthenticated duplicate attempt blocked.");
             return dataService.projects.duplicateProject(uid, projectId);
         },
-        onSuccess: () => {
+        onSuccess: (data) => {
+             if (uid && data.id) {
+                insertProjectIntoProjectsCache(queryClient, uid, data);
+             }
              // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
              queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
         },
