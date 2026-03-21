@@ -8,6 +8,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import ProjectCard from '../../components/content/ProjectCard.tsx';
 import TemplateCard from '../../components/content/TemplateCard.tsx';
+import FloatingActionPanel from '../../components/ui/FloatingActionPanel.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { TemplatesIcon } from '../../components/icons/TemplatesIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
@@ -19,6 +20,120 @@ import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
 import { createBlankProjectSeed, createProjectSeedFromTemplate, writeTemplates } from '../../lib/templates/writeTemplates.ts';
 
+interface TemplatesPanelTriggerProps {
+    isOpen: boolean;
+    onOpen: () => void;
+    onClose: () => void;
+    pendingCreationKey: string | null;
+    onSelectTemplate: (templateId: string) => void;
+}
+
+const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
+    isOpen,
+    onOpen,
+    onClose,
+    pendingCreationKey,
+    onSelectTemplate,
+}) => {
+    const { lang } = useI18n();
+    const [currentPage, setCurrentPage] = useState(0);
+    const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+    const chunk = <T,>(items: T[], size: number): T[][] =>
+        Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
+            items.slice(index * size, index * size + size)
+        );
+
+    const templatePages = chunk(writeTemplates, 4);
+
+    const handleScroll = useCallback(() => {
+        if (!scrollContainerRef.current) {
+            return;
+        }
+
+        const { scrollLeft, clientWidth } = scrollContainerRef.current;
+        const nextPage = Math.round(scrollLeft / clientWidth);
+        if (nextPage !== currentPage) {
+            setCurrentPage(nextPage);
+        }
+    }, [currentPage]);
+
+    useEffect(() => {
+        if (!isOpen) {
+            setCurrentPage(0);
+            if (scrollContainerRef.current) {
+                scrollContainerRef.current.scrollTo({ left: 0, behavior: 'instant' as ScrollBehavior });
+            }
+        }
+    }, [isOpen]);
+
+    return (
+        <>
+            <div
+                className="fixed bottom-[72px] left-0 right-0 z-20 flex justify-center pointer-events-none"
+                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
+                <button
+                    onClick={onOpen}
+                    className="flex items-center gap-2 rounded-full border border-black/5 bg-gray-100/80 px-6 py-3 text-slate-800 shadow-xl shadow-primary/10 backdrop-blur-md transition-all duration-300 ease-in-out hover:-translate-y-1 hover:scale-105 hover:shadow-2xl hover:shadow-primary/20 active:scale-100 pointer-events-auto dark:border-white/10 dark:bg-slate-800/80 dark:text-white dark:shadow-black/40"
+                    aria-label={lang === 'en' ? 'Open Templates' : 'فتح القوالب'}
+                >
+                    <TemplatesIcon className="h-5 w-5 text-accent" />
+                    <BilingualText className="font-bold text-lg">
+                        {lang === 'en' ? 'Templates' : 'القوالب'}
+                    </BilingualText>
+                </button>
+            </div>
+
+            <FloatingActionPanel isOpen={isOpen} onClose={onClose}>
+                <div>
+                    <div
+                        ref={scrollContainerRef}
+                        onScroll={handleScroll}
+                        className="flex overflow-x-auto snap-x snap-mandatory gap-0"
+                    >
+                        {templatePages.map((page, pageIndex) => (
+                            <div
+                                key={pageIndex}
+                                className="w-full flex-shrink-0 snap-start grid grid-cols-2 gap-4 p-1"
+                            >
+                                {page.map((template) => (
+                                    <div
+                                        key={template.id}
+                                        className={template.id === 'article-blog' ? 'col-span-2' : ''}
+                                    >
+                                        <TemplateCard
+                                            title={lang === 'en' ? template.titleEn : template.titleAr}
+                                            description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
+                                            icon={template.icon}
+                                            featured={template.id === 'article-blog'}
+                                            disabled={pendingCreationKey !== null}
+                                            onClick={() => {
+                                                onClose();
+                                                onSelectTemplate(template.id);
+                                            }}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        ))}
+                    </div>
+
+                    {templatePages.length > 1 ? (
+                        <div className="mt-4 flex items-center justify-center gap-2">
+                            {templatePages.map((_, index) => (
+                                <div
+                                    key={index}
+                                    className={`h-2 w-2 rounded-full transition-colors ${currentPage === index ? 'bg-accent' : 'bg-slate-500/50'}`}
+                                />
+                            ))}
+                        </div>
+                    ) : null}
+                </div>
+            </FloatingActionPanel>
+        </>
+    );
+};
 
 const WriteScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -26,6 +141,7 @@ const WriteScreen: React.FC = () => {
     const { data: projects, isLoading, isError, error } = useUserProjects();
     const { navigate, currentView, resetTokens } = useNavigation();
     const isInitialMount = useRef(true);
+    const [isPanelOpen, setPanelOpen] = useState(false);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null);
     const [activeMenuDirection, setActiveMenuDirection] = useState<'up' | 'down'>('down');
@@ -85,6 +201,7 @@ const WriteScreen: React.FC = () => {
         } else {
             // A non-zero token indicates a reset has been triggered.
             if (resetTokens.write > 0) {
+                setPanelOpen(false);
                 closeActiveMenu();
             }
         }
@@ -346,39 +463,15 @@ const WriteScreen: React.FC = () => {
                         <div className="mb-6">
                             {renderContent()}
                         </div>
-
-                        <section className="border-t border-black/10 dark:border-white/10 pt-8">
-                            <div className="mb-5 flex items-center gap-3">
-                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/12 text-accent">
-                                    <TemplatesIcon className="h-5 w-5" />
-                                </div>
-                                <div>
-                                    <BilingualText role="H1" className="!text-xl !font-semibold">
-                                        {lang === 'en' ? 'Templates' : 'القوالب'}
-                                    </BilingualText>
-                                    <BilingualText role="Caption" className="text-slate-500 dark:text-white/60">
-                                        {lang === 'en' ? 'Guided starts for articles, books, and journals.' : 'بدايات موجهة للمقالات والكتب واليوميات.'}
-                                    </BilingualText>
-                                </div>
-                            </div>
-
-                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-                                {writeTemplates.map((template, index) => (
-                                    <div key={template.id} className={index === 0 ? 'md:col-span-2 xl:col-span-2' : ''}>
-                                        <TemplateCard
-                                            title={lang === 'en' ? template.titleEn : template.titleAr}
-                                            description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
-                                            icon={template.icon}
-                                            featured={index === 0}
-                                            disabled={pendingCreationKey !== null}
-                                            onClick={() => handleTemplateSelect(template.id)}
-                                        />
-                                    </div>
-                                ))}
-                            </div>
-                        </section>
                     </LiteraryShell>
                 </main>
+                <TemplatesPanelTrigger
+                    isOpen={isPanelOpen}
+                    onOpen={() => setPanelOpen(true)}
+                    onClose={() => setPanelOpen(false)}
+                    pendingCreationKey={pendingCreationKey}
+                    onSelectTemplate={handleTemplateSelect}
+                />
             </div>
             <ConfirmDeleteModal
                 isOpen={!!projectToDelete}

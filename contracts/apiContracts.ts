@@ -492,6 +492,12 @@ const writeProjectStatusSchema = z.enum([
   "Final",
 ]);
 
+const writeProjectWorkTypeSchema = z.enum([
+  "book",
+  "article",
+  "journal",
+]);
+
 const writeMarkSchema = z
   .object({
     type: z.enum(["bold", "italic", "underline"]),
@@ -544,6 +550,7 @@ const writeProjectUpdatesSchema = z
     contentDoc: writeContentDocSchema.optional(),
     wordCount: z.number().int().nonnegative().optional(),
     status: writeProjectStatusSchema.optional(),
+    workType: writeProjectWorkTypeSchema.optional(),
     typeEn: z.string().min(1).max(80).optional(),
     typeAr: z.string().min(1).max(80).optional(),
     coverUrl: z.string().url().max(2048).optional(),
@@ -2182,6 +2189,7 @@ export const apiContracts = {
               contentDoc: writeContentDocSchema.optional(),
               wordCount: z.number().int().nonnegative().optional(),
               status: writeProjectStatusSchema.optional(),
+              workType: writeProjectWorkTypeSchema.optional(),
               typeEn: z.string().min(1).max(80).optional(),
               typeAr: z.string().min(1).max(80).optional(),
             })
@@ -2202,6 +2210,7 @@ export const apiContracts = {
           contentDoc: writeContentDocSchema.optional(),
           wordCount: z.number().int().nonnegative(),
           status: writeProjectStatusSchema,
+          workType: writeProjectWorkTypeSchema,
           typeEn: z.string().min(1),
           typeAr: z.string().min(1),
           isPublished: z.boolean(),
@@ -2277,6 +2286,7 @@ export const apiContracts = {
           contentDoc: writeContentDocSchema.optional(),
           wordCount: z.number().int().nonnegative(),
           status: writeProjectStatusSchema,
+          workType: writeProjectWorkTypeSchema,
           typeEn: z.string().min(1),
           typeAr: z.string().min(1),
           coverUrl: z.string().url().max(2048).optional(),
