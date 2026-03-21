@@ -1,166 +1,191 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
-import { useConfirmPublish } from '../../lib/hooks/useProjectMutations.ts';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
-import BilingualText from '../../components/ui/BilingualText.tsx';
-import Button from '../../components/ui/Button.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
-import { parseContent } from '../../lib/publishing/contentParser.ts';
-import { extractChapters } from '../../lib/publishing/parseChapters.ts';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
-import { useToast } from '../../store/toast.tsx';
+import { useProjectReleasePreview } from '../../lib/hooks/useProjectReleasePreview.ts';
+
+type PreviewBlockNode = {
+    type: 'paragraph' | 'heading' | 'blockquote' | 'bulletList' | 'orderedList' | 'listItem' | 'text';
+    attrs?: {
+        level?: 1 | 2 | 3;
+        lang?: string;
+        dir?: 'ltr' | 'rtl';
+    };
+    text?: string;
+    marks?: Array<{ type: 'bold' | 'italic' | 'underline' }>;
+    content?: PreviewBlockNode[];
+};
+
+const renderInlineNodes = (nodes: PreviewBlockNode[]): React.ReactNode =>
+    nodes.map((node, index) => {
+        if (node.type !== 'text') {
+            return <React.Fragment key={index}>{Array.isArray(node.content) ? renderInlineNodes(node.content) : null}</React.Fragment>;
+        }
+
+        let content: React.ReactNode = node.text ?? '';
+        for (const mark of node.marks ?? []) {
+            if (mark.type === 'bold') content = <strong>{content}</strong>;
+            if (mark.type === 'italic') content = <em>{content}</em>;
+            if (mark.type === 'underline') content = <u>{content}</u>;
+        }
+        return <React.Fragment key={index}>{content}</React.Fragment>;
+    });
+
+const renderBlocks = (nodes: PreviewBlockNode[]): React.ReactNode =>
+    nodes.map((node, index) => {
+        const commonProps = {
+            key: index,
+            lang: node.attrs?.lang,
+            dir: node.attrs?.dir,
+        };
+
+        switch (node.type) {
+            case 'paragraph':
+                return <p {...commonProps} className="mb-5 leading-8 text-[1.03rem] text-slate-800">{renderInlineNodes(node.content ?? [])}</p>;
+            case 'heading': {
+                const level = node.attrs?.level === 3 ? 'h3' : 'h2';
+                if (level === 'h3') {
+                    return <h3 {...commonProps} className="mt-8 mb-3 text-xl font-semibold text-slate-900">{renderInlineNodes(node.content ?? [])}</h3>;
+                }
+                return <h2 {...commonProps} className="mt-10 mb-4 text-2xl font-semibold text-slate-900">{renderInlineNodes(node.content ?? [])}</h2>;
+            }
+            case 'blockquote':
+                return <blockquote {...commonProps} className="mb-5 border-l-4 border-amber-700/30 pl-4 italic text-slate-700">{renderBlocks(node.content ?? [])}</blockquote>;
+            case 'bulletList':
+                return <ul {...commonProps} className="mb-5 list-disc pl-6 text-slate-800">{renderBlocks(node.content ?? [])}</ul>;
+            case 'orderedList':
+                return <ol {...commonProps} className="mb-5 list-decimal pl-6 text-slate-800">{renderBlocks(node.content ?? [])}</ol>;
+            case 'listItem': {
+                const hasBlockChildren = (node.content ?? []).some((child) => child.type !== 'text');
+                return <li {...commonProps} className="mb-2">{hasBlockChildren ? renderBlocks(node.content ?? []) : renderInlineNodes(node.content ?? [])}</li>;
+            }
+            case 'text':
+                return <React.Fragment key={index}>{renderInlineNodes([node])}</React.Fragment>;
+            default:
+                return null;
+        }
+    });
 
 const ProjectPreviewScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
-    const { showToast } = useToast();
 
-    const projectId = currentView.type === 'immersive' ? currentView.params?.projectId : undefined;
-    const stagedFiles = currentView.type === 'immersive' ? currentView.params?.stagedFiles : undefined;
+    const releaseId = currentView.type === 'immersive' ? currentView.params?.releaseId : undefined;
+    const previewType = currentView.type === 'immersive' ? currentView.params?.previewType as 'blog' | 'ebook' | undefined : undefined;
+    const from = currentView.type === 'immersive' ? currentView.params?.from : undefined;
 
-    const { data: project, isLoading: isLoadingProject } = useProjectDetails(projectId);
-    const { mutate: confirmPublish, isLoading: isPublishing } = useConfirmPublish();
+    const { data: preview, isLoading } = useProjectReleasePreview(releaseId, previewType);
 
-    const [activeFormat, setActiveFormat] = useState<'html' | 'pdf'>('html');
+    const handleBack = () => navigate(from ?? { type: 'tab', id: 'write' });
 
-    const handleBack = () => navigate({ type: 'tab', id: 'write' });
-    const handleEdit = () => navigate({ type: 'immersive', id: 'editor', params: { projectId, from: currentView } });
+    if (isLoading) {
+        return <div className="h-screen flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
+    }
 
-    if (isLoadingProject) return <div className="h-screen flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
-    if (!project || !stagedFiles) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Preview unavailable</div>;
+    if (!preview || !previewType) {
+        return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Preview unavailable</div>;
+    }
 
-    const bookContent = parseContent(project.content, project.titleEn, 'Author'); // Parsing for preview render
-    const chapters = extractChapters(bookContent);
-
-    const handleConfirm = () => {
-        if (!projectId) return;
-        confirmPublish({
-            projectId,
-            metadata: {
-                title: lang === 'en' ? project.titleEn : project.titleAr,
-                description: 'Published via BookTown',
-                coverUrl: project.coverUrl
-            },
-            files: stagedFiles
-        }, {
-            onSuccess: (publishedBook) => {
-                showToast(lang === 'en' ? "Book published successfully!" : "تم نشر الكتاب بنجاح!");
-                // Redirect to success screen
-                navigate({
-                    type: 'immersive',
-                    id: 'projectPublished',
-                    params: {
-                        publishedBook
-                    }
-                });
-            },
-            onError: () => {
-                showToast(lang === 'en' ? "Publishing failed." : "فشل النشر.");
-            }
-        });
-    };
+    const isBlogPreview = preview.previewType === 'blog';
 
     return (
         <div className="h-screen flex flex-col bg-slate-900">
-            <ScreenHeader titleEn="Preview Book" titleAr="معاينة الكتاب" onBack={handleBack} />
-            
-            <main className="flex-grow overflow-hidden flex flex-col md:flex-row pt-20">
-                {/* Sidebar: Metadata & Actions */}
-                <div className="w-full md:w-80 flex-shrink-0 bg-slate-800/50 border-r border-white/10 overflow-y-auto p-6 flex flex-col gap-6">
-                    {/* Cover */}
-                    <div className="w-full aspect-[2/3] bg-slate-700 rounded-lg shadow-xl overflow-hidden relative group">
-                        {project.coverUrl ? (
-                            <img src={project.coverUrl} alt="Cover" className="w-full h-full object-cover" />
-                        ) : (
-                            <div className="flex items-center justify-center h-full"><BookIcon className="h-12 w-12 text-slate-500"/></div>
-                        )}
-                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                            <Button variant="ghost" className="!text-white border border-white/30" onClick={() => navigate({ type: 'immersive', id: 'projectEdit', params: { projectId, from: currentView } })}>Change Cover</Button>
-                        </div>
-                    </div>
+            <ScreenHeader
+                titleEn={isBlogPreview ? 'Preview Blog' : 'Preview Ebook'}
+                titleAr={isBlogPreview ? 'معاينة المقال' : 'معاينة الكتاب الإلكتروني'}
+                onBack={handleBack}
+            />
 
-                    {/* Meta */}
-                    <div>
-                        <BilingualText role="H1" className="!text-xl leading-tight mb-1">
-                            {lang === 'en' ? project.titleEn : project.titleAr}
-                        </BilingualText>
-                        <BilingualText className="text-accent text-sm mb-4">
-                            {lang === 'en' ? project.typeEn : project.typeAr}
-                        </BilingualText>
-                        
-                        <div className="space-y-2">
-                            <div className="flex justify-between text-sm text-slate-400">
-                                <span>Chapters</span>
-                                <span className="text-white">{chapters.length}</span>
+            <main className="flex-grow overflow-y-auto pt-20">
+                <div className="min-h-full bg-[#1e242c] px-4 py-6 md:px-10 md:py-10">
+                    <div className="mx-auto max-w-5xl">
+                        <div className="mb-6 flex items-center justify-between rounded-2xl border border-white/10 bg-slate-800/70 px-5 py-4 text-sm text-slate-300">
+                            <div className="font-medium text-white">
+                                {isBlogPreview
+                                    ? (lang === 'en' ? 'Blog Preview' : 'معاينة المقال')
+                                    : (lang === 'en' ? 'Ebook Preview' : 'معاينة الكتاب الإلكتروني')}
                             </div>
-                            <div className="flex justify-between text-sm text-slate-400">
-                                <span>Word Count</span>
-                                <span className="text-white">{project.wordCount.toLocaleString()}</span>
+                            <div className="flex items-center gap-4 text-xs uppercase tracking-[0.2em] text-slate-400">
+                                <span>{preview.language}</span>
+                                <span>{preview.wordCount.toLocaleString()} words</span>
+                                {isBlogPreview ? <span>{preview.estimatedReadingMinutes} min read</span> : <span>{preview.frontmatter.unitCount} units</span>}
                             </div>
                         </div>
-                    </div>
 
-                    {/* Table of Contents */}
-                    <div className="flex-grow">
-                        <BilingualText role="Caption" className="uppercase tracking-wider mb-2">Table of Contents</BilingualText>
-                        <div className="space-y-1">
-                            {chapters.map((chapter) => (
-                                <div key={chapter.id} className="p-2 rounded hover:bg-white/5 text-sm text-slate-300 truncate cursor-default">
-                                    {chapter.title}
+                        {isBlogPreview ? (
+                            <article className="mx-auto max-w-3xl overflow-hidden rounded-[28px] bg-[#f7f1e4] shadow-2xl">
+                                {preview.coverUrl ? (
+                                    <img src={preview.coverUrl} alt={preview.title} className="h-64 w-full object-cover md:h-80" />
+                                ) : (
+                                    <div className="flex h-48 w-full items-center justify-center bg-[#e7decd]">
+                                        <BookIcon className="h-12 w-12 text-[#9d8f78]" />
+                                    </div>
+                                )}
+                                <div className="px-6 py-8 md:px-12 md:py-12">
+                                    <div className="mb-4 text-xs font-medium uppercase tracking-[0.28em] text-slate-500">
+                                        Blog longform
+                                    </div>
+                                    <h1 className="mb-4 text-4xl font-semibold leading-tight text-slate-950">
+                                        {preview.title}
+                                    </h1>
+                                    <div className="mb-8 flex flex-wrap items-center gap-4 text-sm text-slate-500">
+                                        <span>{preview.frontmatter.author}</span>
+                                        <span>{preview.estimatedReadingMinutes} min read</span>
+                                    </div>
+                                    {preview.excerpt ? (
+                                        <p className="mb-10 border-l-4 border-amber-800/30 pl-4 text-lg italic leading-8 text-slate-700">
+                                            {preview.excerpt}
+                                        </p>
+                                    ) : null}
+                                    <div className="font-serif">
+                                        {preview.normalizedContent.units.map((unit) => (
+                                            <section key={unit.index} className="mb-12">
+                                                <h2 className="mb-5 text-2xl font-semibold text-slate-950">{unit.title}</h2>
+                                                {renderBlocks(unit.content as PreviewBlockNode[])}
+                                            </section>
+                                        ))}
+                                    </div>
                                 </div>
-                            ))}
-                        </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="space-y-3 pt-4 border-t border-white/10">
-                        <Button 
-                            variant="primary" 
-                            className="w-full !h-12 !text-lg !bg-green-600 hover:!bg-green-500" 
-                            onClick={handleConfirm}
-                            disabled={isPublishing}
-                        >
-                            {isPublishing ? <LoadingSpinner /> : (lang === 'en' ? 'Confirm Publish' : 'تأكيد النشر')}
-                        </Button>
-                        <Button variant="ghost" className="w-full" onClick={handleEdit}>
-                            {lang === 'en' ? 'Return to Editor' : 'العودة للمحرر'}
-                        </Button>
-                    </div>
-                </div>
-
-                {/* Main Preview Area */}
-                <div className="flex-grow bg-slate-900 relative flex flex-col">
-                    {/* Format Toggle */}
-                    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-slate-800 rounded-full p-1 border border-white/10 shadow-lg flex">
-                        <button 
-                            onClick={() => setActiveFormat('html')}
-                            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeFormat === 'html' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}
-                        >
-                            Reader View
-                        </button>
-                        <button 
-                            onClick={() => setActiveFormat('pdf')}
-                            className={`px-4 py-1.5 rounded-full text-sm font-medium transition-colors ${activeFormat === 'pdf' ? 'bg-primary text-white' : 'text-slate-400 hover:text-white'}`}
-                        >
-                            PDF Preview
-                        </button>
-                    </div>
-
-                    <div className="flex-grow p-4 md:p-12 overflow-y-auto flex justify-center bg-[#1E242C]"> 
-                        {activeFormat === 'pdf' ? (
-                            <iframe 
-                                src={stagedFiles.pdfUrl} 
-                                className="w-full h-full max-w-4xl shadow-2xl rounded-sm bg-white"
-                                title="PDF Preview"
-                            />
+                            </article>
                         ) : (
-                            <div className="w-full max-w-2xl bg-[#FBF6E8] text-slate-900 p-8 md:p-16 shadow-2xl min-h-full font-serif leading-loose">
-                                {/* Simulating Page 1 */}
-                                <h1 className="text-4xl font-bold text-center mb-12">{bookContent.title}</h1>
-                                <div className="text-lg" dangerouslySetInnerHTML={{ __html: bookContent.chapters[0]?.content || "<p>No content</p>" }} />
+                            <div className="mx-auto flex max-w-5xl flex-col gap-6 md:flex-row">
+                                <aside className="w-full rounded-2xl border border-white/10 bg-slate-800/60 p-5 md:w-72 md:flex-shrink-0">
+                                    <div className="mb-5 aspect-[2/3] overflow-hidden rounded-xl bg-slate-700">
+                                        {preview.coverUrl ? (
+                                            <img src={preview.coverUrl} alt={preview.title} className="h-full w-full object-cover" />
+                                        ) : (
+                                            <div className="flex h-full w-full items-center justify-center">
+                                                <BookIcon className="h-12 w-12 text-slate-500" />
+                                            </div>
+                                        )}
+                                    </div>
+                                    <h1 className="mb-2 text-xl font-semibold text-white">{preview.title}</h1>
+                                    <div className="mb-6 text-sm text-slate-400">{preview.frontmatter.author}</div>
+                                    <div className="space-y-2 text-sm text-slate-300">
+                                        <div className="flex justify-between"><span>Language</span><span>{preview.frontmatter.language}</span></div>
+                                        <div className="flex justify-between"><span>Units</span><span>{preview.frontmatter.unitCount}</span></div>
+                                        <div className="flex justify-between"><span>Words</span><span>{preview.wordCount.toLocaleString()}</span></div>
+                                    </div>
+                                </aside>
+
+                                <div className="min-h-[70vh] flex-1 rounded-[28px] bg-[#fbf6e8] px-8 py-10 shadow-2xl md:px-14 md:py-16">
+                                    <div className="mb-12 text-center">
+                                        <div className="mb-3 text-xs uppercase tracking-[0.28em] text-slate-500">Ebook frontmatter</div>
+                                        <h1 className="mb-3 text-4xl font-semibold text-slate-950">{preview.title}</h1>
+                                        <p className="text-base text-slate-600">{preview.frontmatter.author}</p>
+                                    </div>
+                                    <div className="font-serif">
+                                        {preview.normalizedContent.units.map((unit) => (
+                                            <section key={unit.index} className="mb-14">
+                                                <h2 className="mb-6 text-3xl font-semibold text-slate-950">{unit.title}</h2>
+                                                {renderBlocks(unit.content as PreviewBlockNode[])}
+                                            </section>
+                                        ))}
+                                    </div>
+                                </div>
                             </div>
                         )}
                     </div>

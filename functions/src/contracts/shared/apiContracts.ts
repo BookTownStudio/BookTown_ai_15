@@ -542,6 +542,61 @@ const writeContentDocSchema = z
   })
   .strict();
 
+const normalizedManuscriptBlockSchema: z.ZodTypeAny = z.lazy(() =>
+  z
+    .object({
+      type: z.enum([
+        "paragraph",
+        "heading",
+        "blockquote",
+        "bulletList",
+        "orderedList",
+        "listItem",
+        "text",
+      ]),
+      attrs: z
+        .object({
+          level: z.number().int().min(1).max(3).optional(),
+          lang: z.string().min(2).max(12).optional(),
+          dir: z.enum(["ltr", "rtl"]).optional(),
+          langManual: z.boolean().optional(),
+        })
+        .strict()
+        .optional(),
+      text: z.string().max(20_000).optional(),
+      marks: z
+        .array(
+          z
+            .object({
+              type: z.enum(["bold", "italic", "underline"]),
+            })
+            .strict()
+        )
+        .max(8)
+        .optional(),
+      content: z.array(normalizedManuscriptBlockSchema).max(2000).optional(),
+    })
+    .strict()
+);
+
+const normalizedManuscriptSchema = z
+  .object({
+    units: z
+      .array(
+        z
+          .object({
+            index: z.number().int().positive(),
+            title: z.string().min(1).max(240),
+            type: z.enum(["chapter", "section"]),
+            content: z.array(normalizedManuscriptBlockSchema).max(5000),
+          })
+          .strict()
+      )
+      .min(1)
+      .max(1000),
+  })
+  .strict();
+
 const writeProjectUpdatesSchema = z
   .object({
     titleEn: z.string().min(1).max(180).optional(),
@@ -2346,6 +2401,142 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
+    createProjectRelease: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+          publishKind: z.enum(["ebook_epub", "blog"]),
+        })
+        .strict(),
+      z
+        .object({
+          releaseId: z.string().min(1),
+          version: z.number().int().positive(),
+          normalizedContent: normalizedManuscriptSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    generateProjectReleaseEpub: defineContract(
+      z
+        .object({
+          releaseId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          releaseId: z.string().min(1),
+          projectId: z.string().min(1),
+          epubStoragePath: z.string().min(1),
+          attachmentId: z.string().min(1),
+          binaryStatus: z.literal("ready"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    bridgeReleaseToCanonicalBook: defineContract(
+      z
+        .object({
+          releaseId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          attachmentId: z.string().min(1),
+          currentReleaseId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    bridgeReleaseToLongformPublication: defineContract(
+      z
+        .object({
+          releaseId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          publicationId: z.string().min(1),
+          projectId: z.string().min(1),
+          currentReleaseId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    getProjectReleasePreview: defineContract(
+      z
+        .object({
+          releaseId: z.string().min(1),
+          previewType: z.enum(["blog", "ebook"]),
+        })
+        .strict(),
+      z
+        .object({
+          releaseId: z.string().min(1),
+          previewType: z.enum(["blog", "ebook"]),
+          title: z.string().min(1),
+          language: z.string().min(1),
+          coverUrl: z.string().max(2048).optional(),
+          excerpt: z.string(),
+          wordCount: z.number().int().nonnegative(),
+          estimatedReadingMinutes: z.number().int().positive(),
+          normalizedContent: normalizedManuscriptSchema,
+          frontmatter: z
+            .object({
+              author: z.string().min(1),
+              language: z.string().min(1),
+              unitCount: z.number().int().positive(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    getLongformPublication: defineContract(
+      z
+        .object({
+          publicationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          publicationId: z.string().min(1),
+          title: z.string().min(1),
+          coverUrl: z.string().max(2048).optional(),
+          excerpt: z.string(),
+          estimatedReadingMinutes: z.number().int().positive(),
+          normalizedContent: normalizedManuscriptSchema,
+          ownerUid: z.string().min(1),
+          language: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["app/publication-reader.tsx"],
       }
     ),
 

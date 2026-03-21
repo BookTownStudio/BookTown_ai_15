@@ -43,9 +43,10 @@ const decodePathSegment = (value: string): string => {
 
 const encodePathSegment = (value: string): string => encodeURIComponent(value.trim());
 
-function resolveViewFromPath(pathname: string): View {
+function resolveViewFromPath(pathname: string, search = ''): View {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
     const segments = normalizedPath.split('/').filter(Boolean);
+    const searchParams = new URLSearchParams(search);
 
     if (normalizedPath === '/') return { type: 'tab', id: 'home' };
     if (normalizedPath === '/read') return { type: 'tab', id: 'read' };
@@ -125,6 +126,13 @@ function resolveViewFromPath(pathname: string): View {
         }
     }
 
+    if (segments.length >= 3 && segments[0] === 'read' && segments[1] === 'publication') {
+        const publicationId = decodePathSegment(segments[2]);
+        if (publicationId.length > 0) {
+            return { type: 'immersive', id: 'publicationReader', params: { publicationId } };
+        }
+    }
+
     if (segments.length >= 3 && segments[0] === 'write' && segments[1] === 'editor') {
         const projectId = decodePathSegment(segments[2]);
         if (projectId.length > 0) {
@@ -140,10 +148,62 @@ function resolveViewFromPath(pathname: string): View {
             return { type: 'immersive', id: 'projectEdit', params: { projectId } };
         }
         if (projectId.length > 0 && mode === 'publish') {
-            return { type: 'immersive', id: 'projectPublish', params: { projectId } };
+            const releaseId = searchParams.get('releaseId')?.trim() ?? '';
+            const targetRaw = searchParams.get('target')?.trim();
+            const publishTarget =
+                targetRaw === 'blog' || targetRaw === 'ebook'
+                    ? targetRaw
+                    : undefined;
+
+            return {
+                type: 'immersive',
+                id: 'projectPublish',
+                params: {
+                    projectId,
+                    ...(releaseId ? { releaseId } : {}),
+                    ...(publishTarget ? { publishTarget } : {}),
+                },
+            };
         }
         if (projectId.length > 0 && mode === 'preview') {
-            return { type: 'immersive', id: 'projectPublish', params: { projectId } };
+            const releaseId = searchParams.get('releaseId')?.trim() ?? '';
+            const previewTypeRaw = searchParams.get('previewType')?.trim();
+            const previewType =
+                previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
+                    ? previewTypeRaw
+                    : undefined;
+
+            return {
+                type: 'immersive',
+                id: 'projectPreview',
+                params: {
+                    projectId,
+                    ...(releaseId ? { releaseId } : {}),
+                    ...(previewType ? { previewType } : {}),
+                },
+            };
+        }
+        if (projectId.length > 0 && mode === 'published') {
+            const releaseId = searchParams.get('releaseId')?.trim() ?? '';
+            const targetRaw = searchParams.get('target')?.trim();
+            const publishTarget =
+                targetRaw === 'blog' || targetRaw === 'ebook'
+                    ? targetRaw
+                    : undefined;
+            const bookId = searchParams.get('bookId')?.trim() ?? '';
+            const publicationId = searchParams.get('publicationId')?.trim() ?? '';
+
+            return {
+                type: 'immersive',
+                id: 'projectPublished',
+                params: {
+                    projectId,
+                    ...(releaseId ? { releaseId } : {}),
+                    ...(publishTarget ? { publishTarget } : {}),
+                    ...(bookId ? { bookId } : {}),
+                    ...(publicationId ? { publicationId } : {}),
+                },
+            };
         }
     }
 
@@ -220,6 +280,13 @@ function resolvePathFromView(view: View): string | null {
                 const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
                 return bookId ? `/reader/${encodePathSegment(bookId)}` : null;
             }
+            case 'publicationReader': {
+                const publicationId =
+                    typeof view.params?.publicationId === 'string'
+                        ? view.params.publicationId.trim()
+                        : '';
+                return publicationId ? `/read/publication/${encodePathSegment(publicationId)}` : null;
+            }
             case 'editor': {
                 const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
                 return projectId ? `/write/editor/${encodePathSegment(projectId)}` : null;
@@ -230,7 +297,72 @@ function resolvePathFromView(view: View): string | null {
             }
             case 'projectPublish': {
                 const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
-                return projectId ? `/write/project/${encodePathSegment(projectId)}/publish` : null;
+                if (!projectId) return null;
+
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const targetRaw =
+                    typeof view.params?.publishTarget === 'string' ? view.params.publishTarget.trim() : '';
+                const publishTarget =
+                    targetRaw === 'blog' || targetRaw === 'ebook'
+                        ? targetRaw
+                        : '';
+
+                const query = new URLSearchParams();
+                if (releaseId) query.set('releaseId', releaseId);
+                if (publishTarget) query.set('target', publishTarget);
+
+                const basePath = `/write/project/${encodePathSegment(projectId)}/publish`;
+                const queryString = query.toString();
+                return queryString ? `${basePath}?${queryString}` : basePath;
+            }
+            case 'projectPreview': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                if (!projectId) return null;
+
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const previewTypeRaw =
+                    typeof view.params?.previewType === 'string' ? view.params.previewType.trim() : '';
+                const previewType =
+                    previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
+                        ? previewTypeRaw
+                        : '';
+
+                const query = new URLSearchParams();
+                if (releaseId) query.set('releaseId', releaseId);
+                if (previewType) query.set('previewType', previewType);
+
+                const basePath = `/write/project/${encodePathSegment(projectId)}/preview`;
+                const queryString = query.toString();
+                return queryString ? `${basePath}?${queryString}` : basePath;
+            }
+            case 'projectPublished': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                if (!projectId) return null;
+
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const targetRaw =
+                    typeof view.params?.publishTarget === 'string' ? view.params.publishTarget.trim() : '';
+                const publishTarget =
+                    targetRaw === 'blog' || targetRaw === 'ebook'
+                        ? targetRaw
+                        : '';
+                const bookId =
+                    typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                const publicationId =
+                    typeof view.params?.publicationId === 'string' ? view.params.publicationId.trim() : '';
+
+                const query = new URLSearchParams();
+                if (releaseId) query.set('releaseId', releaseId);
+                if (publishTarget) query.set('target', publishTarget);
+                if (bookId) query.set('bookId', bookId);
+                if (publicationId) query.set('publicationId', publicationId);
+
+                const basePath = `/write/project/${encodePathSegment(projectId)}/published`;
+                const queryString = query.toString();
+                return queryString ? `${basePath}?${queryString}` : basePath;
             }
             default:
                 return null;
@@ -259,6 +391,7 @@ function isRouteBackedPath(pathname: string): boolean {
         || normalizedPath.startsWith('/post/')
         || normalizedPath.startsWith('/shelf/')
         || normalizedPath.startsWith('/reader/')
+        || normalizedPath.startsWith('/read/publication/')
         || normalizedPath.startsWith('/write/editor/')
         || normalizedPath.startsWith('/write/project/')
         || normalizedPath === '/admin'
@@ -309,34 +442,58 @@ function sanitizeViewForHistory(view: View): View {
                 const bookId = typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
                 return bookId ? { type: 'immersive', id: 'reader', params: { bookId } } : { type: 'tab', id: 'home' };
             }
+            case 'publicationReader': {
+                const publicationId =
+                    typeof view.params?.publicationId === 'string'
+                        ? view.params.publicationId.trim()
+                        : '';
+                return publicationId
+                    ? { type: 'immersive', id: 'publicationReader', params: { publicationId } }
+                    : { type: 'tab', id: 'read' };
+            }
             case 'editor':
-            case 'projectEdit':
-            case 'projectPublish': {
+            case 'projectEdit': {
                 const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
                 return projectId ? { type: 'immersive', id: view.id, params: { projectId } } : { type: 'tab', id: 'write' };
             }
-            case 'projectPreview': {
+            case 'projectPublish': {
                 const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
-                const stagedFiles =
-                    view.params?.stagedFiles && typeof view.params.stagedFiles === 'object'
-                        ? view.params.stagedFiles
-                        : null;
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const targetRaw =
+                    typeof view.params?.publishTarget === 'string' ? view.params.publishTarget.trim() : '';
+                const publishTarget =
+                    targetRaw === 'blog' || targetRaw === 'ebook'
+                        ? targetRaw
+                        : '';
 
-                if (!projectId || !stagedFiles) {
+                if (!projectId) {
                     return { type: 'tab', id: 'write' };
                 }
 
-                const epubUrl =
-                    typeof (stagedFiles as { epubUrl?: unknown }).epubUrl === 'string'
-                        ? (stagedFiles as { epubUrl: string }).epubUrl.trim()
-                        : '';
-                const pdfUrl =
-                    typeof (stagedFiles as { pdfUrl?: unknown }).pdfUrl === 'string'
-                        ? (stagedFiles as { pdfUrl: string }).pdfUrl.trim()
+                return {
+                    type: 'immersive',
+                    id: 'projectPublish',
+                    params: {
+                        projectId,
+                        ...(releaseId ? { releaseId } : {}),
+                        ...(publishTarget ? { publishTarget } : {}),
+                    },
+                };
+            }
+            case 'projectPreview': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const previewTypeRaw =
+                    typeof view.params?.previewType === 'string' ? view.params.previewType.trim() : '';
+                const previewType =
+                    previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
+                        ? previewTypeRaw
                         : '';
 
-                if (!epubUrl && !pdfUrl) {
-                    return { type: 'immersive', id: 'projectPublish', params: { projectId } };
+                if (!projectId || !releaseId || !previewType) {
+                    return { type: 'tab', id: 'write' };
                 }
 
                 return {
@@ -344,10 +501,45 @@ function sanitizeViewForHistory(view: View): View {
                     id: 'projectPreview',
                     params: {
                         projectId,
-                        stagedFiles: {
-                            ...(epubUrl ? { epubUrl } : {}),
-                            ...(pdfUrl ? { pdfUrl } : {}),
-                        },
+                        releaseId,
+                        previewType,
+                    },
+                };
+            }
+            case 'projectPublished': {
+                const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';
+                const releaseId =
+                    typeof view.params?.releaseId === 'string' ? view.params.releaseId.trim() : '';
+                const targetRaw =
+                    typeof view.params?.publishTarget === 'string' ? view.params.publishTarget.trim() : '';
+                const publishTarget =
+                    targetRaw === 'blog' || targetRaw === 'ebook'
+                        ? targetRaw
+                        : '';
+                const bookId =
+                    typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
+                const publicationId =
+                    typeof view.params?.publicationId === 'string' ? view.params.publicationId.trim() : '';
+                const title =
+                    typeof view.params?.title === 'string' ? view.params.title.trim() : '';
+                const coverUrl =
+                    typeof view.params?.coverUrl === 'string' ? view.params.coverUrl.trim() : '';
+
+                if (!projectId || !releaseId || !publishTarget) {
+                    return { type: 'tab', id: 'write' };
+                }
+
+                return {
+                    type: 'immersive',
+                    id: 'projectPublished',
+                    params: {
+                        projectId,
+                        releaseId,
+                        publishTarget,
+                        ...(bookId ? { bookId } : {}),
+                        ...(publicationId ? { publicationId } : {}),
+                        ...(title ? { title } : {}),
+                        ...(coverUrl ? { coverUrl } : {}),
                     },
                 };
             }
@@ -397,7 +589,7 @@ function resolveInitialViewFromPath(): View {
     if (typeof window === 'undefined') {
         return { type: 'tab', id: 'home' };
     }
-    return resolveViewFromPath(window.location.pathname || '/');
+    return resolveViewFromPath(window.location.pathname || '/', window.location.search || '');
 }
 
 export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children }) => {
@@ -411,7 +603,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
 
         const bootView =
             readHistoryViewState(window.history.state) ||
-            resolveViewFromPath(window.location.pathname || '/');
+            resolveViewFromPath(window.location.pathname || '/', window.location.search || '');
         const normalizedBootPath = resolvePathFromView(bootView);
         const currentUrlPath = window.location.pathname || '/';
         const initialPath =
@@ -431,7 +623,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         const onPopState = (event: PopStateEvent) => {
             const fromState =
                 readHistoryViewState(event.state) ||
-                resolveViewFromPath(window.location.pathname || '/');
+                resolveViewFromPath(window.location.pathname || '/', window.location.search || '');
             setCurrentView(fromState);
             setDrawerOpen(false);
             if (

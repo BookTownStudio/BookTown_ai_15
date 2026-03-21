@@ -83,6 +83,12 @@ import { deleteWriteProject as deleteWriteProjectRaw } from "./deleteWriteProjec
 import { updateWriteProject as updateWriteProjectRaw } from "./updateWriteProject";
 import { duplicateWriteProject as duplicateWriteProjectRaw } from "./duplicateWriteProject";
 import { publishWriteProject as publishWriteProjectRaw } from "./publishWriteProject";
+import { createProjectRelease as createProjectReleaseRaw } from "./createProjectRelease";
+import { generateProjectReleaseEpub as generateProjectReleaseEpubRaw } from "./generateProjectReleaseEpub";
+import { bridgeReleaseToCanonicalBook as bridgeReleaseToCanonicalBookRaw } from "./bridgeReleaseToCanonicalBook";
+import { bridgeReleaseToLongformPublication as bridgeReleaseToLongformPublicationRaw } from "./bridgeReleaseToLongformPublication";
+import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getProjectReleasePreview";
+import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
 import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
 import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
 import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
@@ -613,6 +619,30 @@ export const duplicateWriteProject = wrapCallableV2(
 export const publishWriteProject = wrapCallableV2(
   "publishWriteProject",
   publishWriteProjectRaw
+);
+export const createProjectRelease = wrapCallableV2(
+  "createProjectRelease",
+  createProjectReleaseRaw
+);
+export const generateProjectReleaseEpub = wrapCallableV2(
+  "generateProjectReleaseEpub",
+  generateProjectReleaseEpubRaw
+);
+export const bridgeReleaseToCanonicalBook = wrapCallableV2(
+  "bridgeReleaseToCanonicalBook",
+  bridgeReleaseToCanonicalBookRaw
+);
+export const bridgeReleaseToLongformPublication = wrapCallableV2(
+  "bridgeReleaseToLongformPublication",
+  bridgeReleaseToLongformPublicationRaw
+);
+export const getProjectReleasePreview = wrapCallableV2(
+  "getProjectReleasePreview",
+  getProjectReleasePreviewRaw
+);
+export const getLongformPublication = wrapCallableV2(
+  "getLongformPublication",
+  getLongformPublicationRaw
 );
 export const createWriteProjectShareLink = wrapCallableV2(
   "createWriteProjectShareLink",

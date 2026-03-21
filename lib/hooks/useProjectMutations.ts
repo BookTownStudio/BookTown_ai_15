@@ -5,6 +5,11 @@ import { WriteRepository } from '../../services/writeRepository.ts';
 import { dataService } from '../../services/dataService.ts';
 import { Project, PublishedBook } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
+import type {
+    CanonicalBookPublishResult,
+    LongformPublicationPublishResult,
+    ProjectReleaseRecord,
+} from '../../services/firebaseProjectService.ts';
 
 function insertProjectIntoProjectsCache(
     queryClient: ReturnType<typeof useQueryClient>,
@@ -204,5 +209,65 @@ export const useConfirmPublish = () => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
         }
+    });
+};
+
+interface CreateProjectReleaseVariables {
+    projectId: string;
+    publishKind: 'ebook_epub' | 'blog';
+}
+
+export const useCreateProjectRelease = () => {
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation<ProjectReleaseRecord, CreateProjectReleaseVariables>({
+        mutationFn: async ({ projectId, publishKind }) => {
+            if (!uid) throw new Error("Unauthenticated release creation attempt blocked.");
+            return dataService.projects.createProjectRelease(projectId, publishKind);
+        },
+    });
+};
+
+type PublishReleaseVariables = {
+    releaseId: string;
+    target: 'blog' | 'ebook';
+    projectId: string;
+};
+
+type PublishReleaseResult =
+    | ({ target: 'blog' } & LongformPublicationPublishResult)
+    | ({ target: 'ebook' } & CanonicalBookPublishResult);
+
+export const usePublishProjectRelease = () => {
+    const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation<PublishReleaseResult, PublishReleaseVariables>({
+        mutationFn: async ({ releaseId, target }) => {
+            if (!uid) throw new Error("Unauthenticated publish attempt blocked.");
+
+            if (target === 'blog') {
+                const result = await dataService.projects.bridgeReleaseToLongformPublication(releaseId);
+                return {
+                    target,
+                    ...result,
+                };
+            }
+
+            await dataService.projects.generateProjectReleaseEpub(releaseId);
+            const result = await dataService.projects.bridgeReleaseToCanonicalBook(releaseId);
+            return {
+                target,
+                ...result,
+            };
+        },
+        onSuccess: (_data, vars) => {
+            if (uid) {
+                queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+                queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
+            }
+        },
     });
 };

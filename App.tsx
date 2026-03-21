@@ -33,6 +33,7 @@ const PostTextOverlayScreen = lazy(() => import('./app/social/post-text-overlay.
 const VenueDetailsScreen = lazy(() => import('./app/venue-details.tsx'));
 const EditorScreen = lazy(() => import('./app/editor/[id].tsx'));
 const ReaderScreen = lazy(() => import('./app/reader.tsx'));
+const PublicationReaderScreen = lazy(() => import('./app/publication-reader.tsx'));
 const PostComposerScreen = lazy(() => import('./app/immersive/post-composer.tsx'));
 const DiscoveryFlowScreen = lazy(() => import('./app/discovery/flow.tsx'));
 const ProfileScreen = lazy(() => import('./app/drawer/profile.tsx'));
@@ -122,6 +123,7 @@ const ImmersiveScreens: React.FC = () => {
         case 'venueDetails': return <VenueDetailsScreen />;
         case 'editor': return <EditorScreen />;
         case 'reader': return <ReaderScreen />;
+        case 'publicationReader': return <PublicationReaderScreen />;
         case 'postComposer': return <PostComposerScreen />;
         case 'discoveryFlow': return <DiscoveryFlowScreen />;
         case 'profile': return <ProfileScreen />;

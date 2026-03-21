@@ -1,0 +1,371 @@
+import { onCall, HttpsError } from "firebase-functions/v2/https";
+import { FieldValue } from "firebase-admin/firestore";
+import * as logger from "firebase-functions/logger";
+import { admin } from "./firebaseAdmin";
+import type {
+  NormalizedBlockNode,
+  NormalizedManuscript,
+} from "./publishing/normalizeProjectManuscript";
+import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
+import { assertActiveAuthenticatedUser } from "./shared/auth";
+
+type ReadyRelease = {
+  releaseId: string;
+  ownerUid: string;
+  projectId: string;
+  attachmentId: string;
+  epubStoragePath: string;
+  normalizedContent: NormalizedManuscript;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function asNonEmptyString(value: unknown, max = 512): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, max);
+}
+
+function normalizeReleaseId(value: unknown): string {
+  const releaseId = asNonEmptyString(value, 256);
+  if (!releaseId) {
+    throw new HttpsError("invalid-argument", "A valid releaseId is required.");
+  }
+  return releaseId;
+}
+
+function deriveBookId(ownerUid: string, projectId: string): string {
+  return `write_${ownerUid}_${projectId}`;
+}
+
+function normalizeCoverUrl(value: unknown): string | undefined {
+  if (typeof value !== "string" || !value.trim()) return undefined;
+  try {
+    const parsed = new URL(value.trim());
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return undefined;
+    }
+    return parsed.toString().slice(0, 2048);
+  } catch {
+    return undefined;
+  }
+}
+
+function extractNodeText(node: NormalizedBlockNode): string {
+  const ownText = typeof node.text === "string" ? node.text : "";
+  const childText = Array.isArray(node.content)
+    ? node.content.map((entry) => extractNodeText(entry)).join(" ")
+    : "";
+  return `${ownText} ${childText}`.replace(/\s+/g, " ").trim();
+}
+
+function truncateCleanly(value: string, limit: number): string {
+  const trimmed = value.trim();
+  if (trimmed.length <= limit) return trimmed;
+  const slice = trimmed.slice(0, limit + 1);
+  const lastBoundary = Math.max(slice.lastIndexOf(" "), slice.lastIndexOf("\n"));
+  const cropped = (
+    lastBoundary >= Math.floor(limit * 0.6)
+      ? slice.slice(0, lastBoundary)
+      : slice.slice(0, limit)
+  ).trim();
+  return cropped.replace(/[.,;:!?-]+$/g, "").trim();
+}
+
+function deriveSynopsis(normalizedContent: NormalizedManuscript): string {
+  for (const unit of normalizedContent.units) {
+    for (const block of unit.content) {
+      if (block.type === "heading") {
+        continue;
+      }
+      const text = extractNodeText(block);
+      if (text) {
+        return truncateCleanly(text, 180);
+      }
+    }
+  }
+  return "";
+}
+
+function containsArabic(value: string): boolean {
+  return /[\u0600-\u06FF]/.test(value);
+}
+
+function deriveLanguage(params: {
+  normalizedContent: NormalizedManuscript;
+  project: Record<string, unknown>;
+}): string {
+  for (const unit of params.normalizedContent.units) {
+    for (const block of unit.content) {
+      const lang = asNonEmptyString(block.attrs?.lang, 12).toLowerCase();
+      if (lang === "ar" || lang === "en") {
+        return lang;
+      }
+    }
+  }
+
+  const titleEn = asNonEmptyString(params.project.titleEn, 180);
+  const titleAr = asNonEmptyString(params.project.titleAr, 180);
+  if (titleAr && !titleEn) return "ar";
+  if (titleEn) return "en";
+  return containsArabic(titleAr) ? "ar" : "en";
+}
+
+function deriveProjectTitle(project: Record<string, unknown>, normalizedContent: NormalizedManuscript): string {
+  const titleEn = asNonEmptyString(project.titleEn, 180);
+  const titleAr = asNonEmptyString(project.titleAr, 180);
+  const title = asNonEmptyString(project.title, 180);
+  return titleEn || titleAr || title || normalizedContent.units[0]?.title || "Untitled";
+}
+
+function deriveAuthorName(profile: Record<string, unknown> | null, ownerUid: string): string {
+  if (!profile) return "BookTown Author";
+  return (
+    asNonEmptyString(profile.name, 180) ||
+    asNonEmptyString(profile.displayName, 180) ||
+    asNonEmptyString(profile.handle, 180) ||
+    ownerUid
+  );
+}
+
+function assertNormalizedContent(value: unknown): NormalizedManuscript {
+  const record = asRecord(value);
+  const units = Array.isArray(record?.units) ? record.units : null;
+  if (!units || units.length === 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release normalizedContent is missing or empty."
+    );
+  }
+  return record as unknown as NormalizedManuscript;
+}
+
+function assertReadyRelease(releaseId: string, release: Record<string, unknown>, callerUid: string): ReadyRelease {
+  const ownerUid = asNonEmptyString(release.ownerUid, 256);
+  const projectId = asNonEmptyString(release.projectId, 256);
+  const attachmentId = asNonEmptyString(release.attachmentId, 256);
+  const epubStoragePath = asNonEmptyString(release.epubStoragePath, 2048);
+  const binaryStatus = asNonEmptyString(release.binaryStatus, 32);
+
+  if (!ownerUid || !projectId) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release is missing required project linkage."
+    );
+  }
+  if (ownerUid !== callerUid) {
+    throw new HttpsError("permission-denied", "Release ownership mismatch.");
+  }
+  if (binaryStatus !== "ready") {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release binary is not ready."
+    );
+  }
+  if (!attachmentId || !epubStoragePath) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release binary trace is incomplete."
+    );
+  }
+
+  return {
+    releaseId,
+    ownerUid,
+    projectId,
+    attachmentId,
+    epubStoragePath,
+    normalizedContent: assertNormalizedContent(release.normalizedContent),
+  };
+}
+
+export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (request) => {
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  const releaseId = normalizeReleaseId((request.data as { releaseId?: unknown }).releaseId);
+  const db = admin.firestore();
+  const releaseRef = db.collection("project_releases").doc(releaseId);
+
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const releaseSnap = await tx.get(releaseRef);
+      if (!releaseSnap.exists) {
+        throw new HttpsError("not-found", "Release not found.");
+      }
+
+      const release = assertReadyRelease(
+        releaseId,
+        (releaseSnap.data() ?? {}) as Record<string, unknown>,
+        caller.uid
+      );
+
+      const attachmentRef = db.collection("attachments").doc(release.attachmentId);
+      const projectRef = db
+        .collection("users")
+        .doc(release.ownerUid)
+        .collection("projects")
+        .doc(release.projectId);
+      const ownerRef = db.collection("users").doc(release.ownerUid);
+      const bookId = deriveBookId(release.ownerUid, release.projectId);
+      const bookRef = db.collection("books").doc(bookId);
+
+      const [attachmentSnap, projectSnap, ownerSnap, bookSnap] = await Promise.all([
+        tx.get(attachmentRef),
+        tx.get(projectRef),
+        tx.get(ownerRef),
+        tx.get(bookRef),
+      ]);
+
+      if (!attachmentSnap.exists) {
+        throw new HttpsError("failed-precondition", "Release attachment is missing.");
+      }
+      if (!projectSnap.exists) {
+        throw new HttpsError("failed-precondition", "Source project metadata is missing.");
+      }
+
+      const attachment = (attachmentSnap.data() ?? {}) as Record<string, unknown>;
+      if (
+        asNonEmptyString(attachment.parentType, 64) !== "project_releases" ||
+        asNonEmptyString(attachment.parentId, 256) !== releaseId ||
+        asNonEmptyString(attachment.storagePath, 2048) !== release.epubStoragePath ||
+        asNonEmptyString(attachment.id, 256) !== release.attachmentId
+      ) {
+        throw new HttpsError("failed-precondition", "Release attachment mismatch.");
+      }
+
+      const project = (projectSnap.data() ?? {}) as Record<string, unknown>;
+      const ownerProfile = ownerSnap.exists
+        ? ((ownerSnap.data() ?? {}) as Record<string, unknown>)
+        : null;
+      const title = deriveProjectTitle(project, release.normalizedContent);
+      const synopsis = deriveSynopsis(release.normalizedContent);
+      const authorName = deriveAuthorName(ownerProfile, release.ownerUid);
+      const language = deriveLanguage({
+        normalizedContent: release.normalizedContent,
+        project,
+      });
+      const titleEn = asNonEmptyString(project.titleEn, 180) || title;
+      const titleAr = asNonEmptyString(project.titleAr, 180) || "";
+      const normalizedTitle = normalizeSearchText(titleEn || titleAr || title);
+      const normalizedAuthor = normalizeSearchText(authorName);
+      const searchFields = buildSearchFieldsFromTextParts([
+        title,
+        titleEn,
+        titleAr,
+        authorName,
+      ]);
+      const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedTitle || normalizeSearchText(title)}`;
+      const coverUrl = normalizeCoverUrl(project.coverUrl);
+      const now = FieldValue.serverTimestamp();
+
+      tx.set(
+        attachmentRef,
+        {
+          visibility: "public",
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
+      if (!bookSnap.exists) {
+        tx.set(
+          bookRef,
+          {
+            id: bookId,
+            bookId,
+            projectId: release.projectId,
+            ownerId: release.ownerUid,
+            ownerUid: release.ownerUid,
+            author: authorName,
+            authorEn: authorName,
+            authorAr: authorName,
+            authors: [authorName],
+            ownerDisplayName: authorName,
+            source: "write_release",
+            sourcePriority: "canonical",
+            bookType: "authored_native",
+            title,
+            titleEn,
+            titleAr,
+            synopsis,
+            description: synopsis,
+            descriptionEn: synopsis,
+            descriptionAr: synopsis,
+            language,
+            ebookAttachmentId: release.attachmentId,
+            currentReleaseId: releaseId,
+            normalizedTitle,
+            authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
+            searchableTitleAuthor: `${normalizedTitle} ${normalizedAuthor}`.trim(),
+            search: {
+              tokens: searchFields.tokens,
+            },
+            canonicalKey,
+            hasEbook: true,
+            downloadable: true,
+            isEbookAvailable: true,
+            visibility: "public",
+            createdAt: now,
+            updatedAt: now,
+            ...(coverUrl
+              ? {
+                  coverUrl,
+                  cover: {
+                    original: coverUrl,
+                    medium: coverUrl,
+                    large: coverUrl,
+                    small: coverUrl,
+                  },
+                }
+              : {}),
+          },
+          { merge: true }
+        );
+      } else {
+        const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
+        const existingOwnerUid = asNonEmptyString(existingBook.ownerUid, 256);
+        if (existingOwnerUid && existingOwnerUid !== release.ownerUid) {
+          throw new HttpsError("failed-precondition", "Canonical book ownership mismatch.");
+        }
+
+        tx.set(
+          bookRef,
+          {
+            ebookAttachmentId: release.attachmentId,
+            currentReleaseId: releaseId,
+            updatedAt: now,
+          },
+          { merge: true }
+        );
+      }
+
+      return {
+        bookId,
+        attachmentId: release.attachmentId,
+        currentReleaseId: releaseId,
+      };
+    });
+
+    logger.info("[PUBLISH][CANONICAL_BOOK_BOUND]", {
+      releaseId,
+      bookId: result.bookId,
+      attachmentId: result.attachmentId,
+      currentReleaseId: result.currentReleaseId,
+    });
+
+    return result;
+  } catch (error) {
+    logger.error("[PUBLISH][CANONICAL_BOOK_BIND_FAILED]", {
+      releaseId,
+      ownerUid: caller.uid,
+      error,
+    });
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "Failed to bind release to canonical book.");
+  }
+});

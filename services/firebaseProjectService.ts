@@ -29,6 +29,58 @@ type SuccessEnvelope<T> = {
 
 type ProjectStatus = "Idea" | "Draft" | "Revision" | "Final";
 type WriteUpdateResult = { projectId: string; revision: number; updatedAt: string };
+export type ProjectReleasePreview = {
+  releaseId: string;
+  previewType: "blog" | "ebook";
+  title: string;
+  language: string;
+  coverUrl?: string;
+  excerpt: string;
+  wordCount: number;
+  estimatedReadingMinutes: number;
+  normalizedContent: {
+    units: Array<{
+      index: number;
+      title: string;
+      type: "chapter" | "section";
+      content: Array<Record<string, unknown>>;
+    }>;
+  };
+  frontmatter: {
+    author: string;
+    language: string;
+    unitCount: number;
+  };
+};
+export type ProjectReleaseRecord = {
+  releaseId: string;
+  version: number;
+  normalizedContent: {
+    units: Array<{
+      index: number;
+      title: string;
+      type: "chapter" | "section";
+      content: Array<Record<string, unknown>>;
+    }>;
+  };
+};
+export type ProjectReleaseEpubResult = {
+  releaseId: string;
+  projectId: string;
+  epubStoragePath: string;
+  attachmentId: string;
+  binaryStatus: "ready";
+};
+export type CanonicalBookPublishResult = {
+  bookId: string;
+  attachmentId: string;
+  currentReleaseId: string;
+};
+export type LongformPublicationPublishResult = {
+  publicationId: string;
+  projectId: string;
+  currentReleaseId: string;
+};
 type WriteShareLinkResult = {
   projectId: string;
   token: string;
@@ -448,6 +500,65 @@ export const firebaseProjectService: ProjectDataService = {
         coverUrl,
       },
       files,
+    });
+  },
+
+  async createProjectRelease(
+    projectId: string,
+    publishKind: "ebook_epub" | "blog"
+  ): Promise<ProjectReleaseRecord> {
+    return callEndpoint<
+      { projectId: string; publishKind: "ebook_epub" | "blog" },
+      ProjectReleaseRecord
+    >("createProjectRelease", {
+      projectId,
+      publishKind,
+    });
+  },
+
+  async generateProjectReleaseEpub(
+    releaseId: string
+  ): Promise<ProjectReleaseEpubResult> {
+    return callEndpoint<
+      { releaseId: string },
+      ProjectReleaseEpubResult
+    >("generateProjectReleaseEpub", {
+      releaseId,
+    });
+  },
+
+  async bridgeReleaseToCanonicalBook(
+    releaseId: string
+  ): Promise<CanonicalBookPublishResult> {
+    return callEndpoint<
+      { releaseId: string },
+      CanonicalBookPublishResult
+    >("bridgeReleaseToCanonicalBook", {
+      releaseId,
+    });
+  },
+
+  async bridgeReleaseToLongformPublication(
+    releaseId: string
+  ): Promise<LongformPublicationPublishResult> {
+    return callEndpoint<
+      { releaseId: string },
+      LongformPublicationPublishResult
+    >("bridgeReleaseToLongformPublication", {
+      releaseId,
+    });
+  },
+
+  async getReleasePreview(
+    releaseId: string,
+    previewType: "blog" | "ebook"
+  ): Promise<ProjectReleasePreview> {
+    return callEndpoint<
+      { releaseId: string; previewType: "blog" | "ebook" },
+      ProjectReleasePreview
+    >("getProjectReleasePreview", {
+      releaseId,
+      previewType,
     });
   },
 };

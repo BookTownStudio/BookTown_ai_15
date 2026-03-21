@@ -77,6 +77,24 @@ export interface BookStats {
   averageRating: number;
 }
 
+export interface LongformPublicationRecord {
+  publicationId: string;
+  title: string;
+  coverUrl?: string;
+  excerpt: string;
+  estimatedReadingMinutes: number;
+  normalizedContent: {
+    units: Array<{
+      index: number;
+      title: string;
+      type: "chapter" | "section";
+      content: Array<Record<string, unknown>>;
+    }>;
+  };
+  ownerUid: string;
+  language: string;
+}
+
 export interface ShelfStats {
   followers: number;
   posts: number;
@@ -291,6 +309,75 @@ export interface ProjectDataService {
     metadata: { title: string; description: string; coverUrl?: string },
     files: { epubUrl: string; pdfUrl: string }
   ): Promise<PublishedBook>;
+
+  createProjectRelease(
+    projectId: string,
+    publishKind: "ebook_epub" | "blog"
+  ): Promise<{
+    releaseId: string;
+    version: number;
+    normalizedContent: {
+      units: Array<{
+        index: number;
+        title: string;
+        type: "chapter" | "section";
+        content: Array<Record<string, unknown>>;
+      }>;
+    };
+  }>;
+
+  generateProjectReleaseEpub(
+    releaseId: string
+  ): Promise<{
+    releaseId: string;
+    projectId: string;
+    epubStoragePath: string;
+    attachmentId: string;
+    binaryStatus: "ready";
+  }>;
+
+  bridgeReleaseToCanonicalBook(
+    releaseId: string
+  ): Promise<{
+    bookId: string;
+    attachmentId: string;
+    currentReleaseId: string;
+  }>;
+
+  bridgeReleaseToLongformPublication(
+    releaseId: string
+  ): Promise<{
+    publicationId: string;
+    projectId: string;
+    currentReleaseId: string;
+  }>;
+
+  getReleasePreview(
+    releaseId: string,
+    previewType: "blog" | "ebook"
+  ): Promise<{
+    releaseId: string;
+    previewType: "blog" | "ebook";
+    title: string;
+    language: string;
+    coverUrl?: string;
+    excerpt: string;
+    wordCount: number;
+    estimatedReadingMinutes: number;
+    normalizedContent: {
+      units: Array<{
+        index: number;
+        title: string;
+        type: "chapter" | "section";
+        content: Array<Record<string, unknown>>;
+      }>;
+    };
+    frontmatter: {
+      author: string;
+      language: string;
+      unitCount: number;
+    };
+  }>;
 }
 
 /* =========================
@@ -339,6 +426,7 @@ export interface ShelfDataService {
 export interface CatalogDataService {
   getBook(bookId: string): Promise<Book | null>;
   createBook(book: Book): Promise<void>;
+  getLongformPublication(publicationId: string): Promise<LongformPublicationRecord>;
 
   ingestBook(params: {
     providerExternalId?: string;

@@ -68,6 +68,13 @@ export const queryKeys = {
     project: (uid: string | null | undefined, projectId: string | undefined) =>
       [...sessionRoot(uid), 'user', 'project', safe({ projectId })] as const,
 
+    projectReleasePreview: (
+      uid: string | null | undefined,
+      releaseId: string | undefined,
+      previewType: "blog" | "ebook" | undefined
+    ) =>
+      [...sessionRoot(uid), 'user', 'projectReleasePreview', safe({ releaseId, previewType })] as const,
+
     quotes: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'quotes'] as const,
 
@@ -98,6 +105,9 @@ export const queryKeys = {
 
     book: (id: string | undefined) =>
       ['catalog', 'book', safe({ id })] as const,
+
+    publication: (publicationId: string | undefined) =>
+      ['catalog', 'publication', safe({ publicationId })] as const,
 
     author: (id: string | undefined) =>
       ['catalog', 'author', safe({ id })] as const,

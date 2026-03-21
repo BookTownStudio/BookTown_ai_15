@@ -27,7 +27,7 @@ import { ensureCanonicalAuthor } from "../authors/ensureCanonicalAuthor.ts";
 import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
 import { buildLegacyBookView } from "../books/buildLegacyBookView.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
-import type { BookStats } from "../../services/db.types.ts";
+import type { BookStats, LongformPublicationRecord } from "../../services/db.types.ts";
 import type { LibrarianRecommendationContext } from "../../types/librarian.ts";
 
 const AUTHOR_SEARCH_LIMIT = 24;
@@ -442,6 +442,22 @@ export const firebaseCatalogService = {
       }
       throw err;
     }
+  },
+
+  async getLongformPublication(
+    publicationId: string
+  ): Promise<LongformPublicationRecord> {
+    const normalizedPublicationId = String(publicationId || "").trim();
+    if (!normalizedPublicationId) {
+      throw new Error("PUBLICATION_ID_MISSING");
+    }
+
+    return callEndpoint<{ publicationId: string }, LongformPublicationRecord>(
+      "getLongformPublication",
+      {
+        publicationId: normalizedPublicationId,
+      }
+    );
   },
 
   async getBooksByIds(bookIds: string[]): Promise<Map<string, Book>> {
