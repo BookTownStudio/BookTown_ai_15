@@ -11,6 +11,10 @@ import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { UploadIcon } from '../../components/icons/UploadIcon.tsx';
 import { useMediaUpload } from '../../lib/hooks/useMediaUpload.ts';
+import ProjectTypeDropdown, {
+    getProjectTypeOption,
+    type ProjectTypeValue,
+} from '../../components/write/ProjectTypeDropdown.tsx';
 
 const ProjectEditScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -24,7 +28,7 @@ const ProjectEditScreen: React.FC = () => {
     const [formData, setFormData] = useState({
         titleEn: '',
         titleAr: '',
-        typeEn: '',
+        projectType: 'Draft' as ProjectTypeValue,
         content: '', 
         coverUrl: ''
     });
@@ -36,7 +40,7 @@ const ProjectEditScreen: React.FC = () => {
             setFormData({
                 titleEn: project.titleEn,
                 titleAr: project.titleAr,
-                typeEn: project.typeEn,
+                projectType: getProjectTypeOption(project.status || project.typeEn).value,
                 content: project.content,
                 coverUrl: project.coverUrl || ''
             });
@@ -51,6 +55,10 @@ const ProjectEditScreen: React.FC = () => {
         setFormData(prev => ({ ...prev, [e.target.id]: e.target.value }));
     };
 
+    const handleProjectTypeChange = (projectType: ProjectTypeValue) => {
+        setFormData(prev => ({ ...prev, projectType }));
+    };
+
     const handleImageUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file && projectId) {
@@ -63,12 +71,15 @@ const ProjectEditScreen: React.FC = () => {
 
     const handleSave = () => {
         if (!projectId) return;
+        const selectedType = getProjectTypeOption(formData.projectType);
         updateProject({
             projectId,
             updates: {
                 titleEn: formData.titleEn,
                 titleAr: formData.titleAr,
-                typeEn: formData.typeEn,
+                typeEn: selectedType.labelEn,
+                typeAr: selectedType.labelAr,
+                status: selectedType.value,
                 coverUrl: formData.coverUrl,
             }
         }, {
@@ -131,12 +142,11 @@ const ProjectEditScreen: React.FC = () => {
                         onChange={handleChange} 
                     />
 
-                    <InputField 
-                        id="typeEn" 
-                        label={lang === 'en' ? 'Project Type' : 'نوع المشروع'} 
-                        value={formData.typeEn} 
-                        onChange={handleChange} 
-                        placeholder="Novel, Short Story, etc."
+                    <ProjectTypeDropdown
+                        id="projectType"
+                        label={lang === 'en' ? 'Project Type' : 'نوع المشروع'}
+                        value={formData.projectType}
+                        onChange={handleProjectTypeChange}
                     />
 
                     <div className="pt-4">

@@ -101,6 +101,13 @@ const SEARCH_STOPWORDS = new Set([
   "the",
   "to",
   "with",
+  "في",
+  "من",
+  "على",
+  "الى",
+  "إلى",
+  "عن",
+  "مع",
 ]);
 
 const DERIVATIVE_TITLE_KEYWORDS = new Set([
@@ -457,6 +464,7 @@ function computeRank(
   params: {
     title: string;
     authors: string[];
+    synopsis?: string;
     isbn13?: string;
     isbn10?: string;
     queryIntent: QueryIntent;
@@ -469,6 +477,7 @@ function computeRank(
 } {
   const titleNorm = normalizeSearchText(params.title);
   const authorNorm = normalizeSearchText((params.authors || []).join(" "));
+  const synopsisNorm = normalizeSearchText(params.synopsis || "");
 
   const queryIsbn = parseIsbnQuery(queryNorm);
   const isIsbnExact =
@@ -484,28 +493,37 @@ function computeRank(
 
   const titleTokenSet = new Set(tokenize(titleNorm));
   const authorTokenSet = new Set(tokenize(authorNorm));
+  const synopsisTokenSet = new Set(tokenize(synopsisNorm));
 
   let titleHits = 0;
   let authorHits = 0;
+  let synopsisHits = 0;
   let matchedTokenCount = 0;
 
   for (const token of queryTokens) {
     const matchedInTitle = titleTokenSet.has(token);
     const matchedInAuthor = authorTokenSet.has(token);
+    const matchedInSynopsis = synopsisTokenSet.has(token);
     if (matchedInTitle) titleHits += 1;
     if (matchedInAuthor) authorHits += 1;
+    if (matchedInSynopsis) synopsisHits += 1;
     if (matchedInTitle || matchedInAuthor) matchedTokenCount += 1;
   }
 
   const tokenCount = Math.max(queryTokens.length, 1);
   const titleCoverage = titleHits / tokenCount;
   const authorCoverage = authorHits / tokenCount;
+  const synopsisCoverage = synopsisHits / tokenCount;
   const tokenCoverageRatio = matchedTokenCount / tokenCount;
 
   const titleTokens = tokenize(titleNorm);
   const adjacencyBonus = computeAdjacencyBonus(queryTokens, titleTokens);
   const titlePrefix = queryNorm.length > 1 && titleNorm.startsWith(queryNorm);
   const authorPrefix = queryNorm.length > 1 && authorNorm.startsWith(queryNorm);
+  const synopsisExact = synopsisNorm.length > 0 && synopsisNorm === queryNorm;
+  const synopsisSignal =
+    (synopsisExact ? 0.08 : 0) +
+    Math.min(0.05, synopsisCoverage * 0.05);
   const tierSubScore = computeTierSubScore({
     titlePrefix,
     authorPrefix,
@@ -530,6 +548,7 @@ function computeRank(
   if (authorExact) confidence += 0.22;
   confidence += Math.min(0.2, titleCoverage * 0.2);
   confidence += Math.min(0.15, authorCoverage * 0.15);
+  confidence += synopsisSignal;
   if (titlePrefix || authorPrefix) confidence += 0.08;
 
   confidence = Math.min(1, confidence);
@@ -547,7 +566,7 @@ function computeRank(
     return {
       confidence: Math.max(confidence, 0.75),
       rankTier: 2,
-      computedScore: tierSubScore,
+      computedScore: tierSubScore + synopsisSignal,
       tokenCoverageRatio,
     };
   }
@@ -555,7 +574,7 @@ function computeRank(
   return {
     confidence,
     rankTier: 3,
-    computedScore: tierSubScore,
+    computedScore: tierSubScore + synopsisSignal,
     tokenCoverageRatio,
   };
 }
@@ -620,6 +639,11 @@ function mapCanonicalBook(
   const rank = computeRank(queryNorm, queryTokens, {
     title,
     authors,
+    synopsis:
+      asNonEmptyString(data.description) ||
+      asNonEmptyString(data.descriptionEn) ||
+      asNonEmptyString(data.synopsis) ||
+      "",
     isbn13,
     isbn10,
     queryIntent,
@@ -642,6 +666,7 @@ function mapCanonicalBook(
   const description =
     asNonEmptyString(data.description) ||
     asNonEmptyString(data.descriptionEn) ||
+    asNonEmptyString(data.synopsis) ||
     "";
 
   const canonicalKey =

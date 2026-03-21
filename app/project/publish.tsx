@@ -17,6 +17,7 @@ import { generatePdfBlob } from '../../lib/publishing/pdfGenerator.ts';
 import { useUserProfile } from '../../lib/hooks/useUserProfile.ts';
 import { useAuth } from '../../lib/auth.tsx';
 import { useToast } from '../../store/toast.tsx';
+import { extractProjectSynopsis } from '../../lib/projects/projectSummary.ts';
 
 const ProjectPublishScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -107,8 +108,10 @@ const ProjectPublishScreen: React.FC = () => {
     if (isLoading) return <div className="h-screen flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
     if (!project) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Project not found</div>;
 
-    // FIX: Using new RegExp to avoid "missing /" SyntaxError on literal with angle brackets
-    const plainTextSummary = project.content ? project.content.replace(new RegExp('<[^>]*>?', 'gm'), '').substring(0, 150) : '';
+    const synopsis = extractProjectSynopsis({
+        contentDoc: project.contentDoc,
+        html: project.content,
+    });
 
     return (
         <div className="h-screen flex flex-col bg-slate-900">
@@ -135,7 +138,7 @@ const ProjectPublishScreen: React.FC = () => {
                             <GlassCard className="!p-4 bg-white/5">
                                 <BilingualText role="Caption" className="uppercase tracking-wider mb-2 text-slate-400">Synopsis</BilingualText>
                                 <p className="text-white/80 italic">
-                                    {plainTextSummary}...
+                                    {synopsis || (lang === 'en' ? 'No synopsis available yet.' : 'لا يوجد ملخص متاح بعد.')}
                                 </p>
                             </GlassCard>
                         </div>

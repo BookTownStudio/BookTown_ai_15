@@ -134,20 +134,53 @@ const WriteScreen: React.FC = () => {
     const isInitialMount = useRef(true);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null);
+    const [activeMenuDirection, setActiveMenuDirection] = useState<'up' | 'down'>('down');
+    const [pendingDuplicateProjectId, setPendingDuplicateProjectId] = useState<string | null>(null);
+    const menuTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
     const { mutate: deleteProject, isLoading: isDeleting } = useDeleteProject();
     const { mutate: duplicateProject } = useDuplicateProject();
     const { mutate: updateProject } = useUpdateProject();
     const { mutate: createShareLink } = useCreateProjectShareLink();
 
+    const closeActiveMenu = useCallback((options?: { restoreFocus?: boolean }) => {
+        const activeId = activeMenuProjectId;
+        setActiveMenuProjectId(null);
+
+        if (options?.restoreFocus && activeId) {
+            requestAnimationFrame(() => {
+                menuTriggerRefs.current[activeId]?.focus();
+            });
+        }
+    }, [activeMenuProjectId]);
+
+    const computeMenuDirection = useCallback((projectId: string) => {
+        const trigger = menuTriggerRefs.current[projectId];
+        if (!trigger || typeof window === 'undefined') {
+            return 'down';
+        }
+
+        const triggerRect = trigger.getBoundingClientRect();
+        const estimatedMenuHeight = 248;
+        const viewportMargin = 16;
+        const spaceBelow = window.innerHeight - triggerRect.bottom;
+        const spaceAbove = triggerRect.top;
+
+        if (spaceBelow < estimatedMenuHeight + viewportMargin && spaceAbove > spaceBelow) {
+            return 'up';
+        }
+
+        return 'down';
+    }, []);
+
     // When the user navigates away from the write tab, close any open project menus.
     useEffect(() => {
         if (currentView.type !== 'tab' || currentView.id !== 'write') {
             if (activeMenuProjectId) {
-                setActiveMenuProjectId(null);
+                closeActiveMenu();
             }
         }
-    }, [currentView, activeMenuProjectId]);
+    }, [closeActiveMenu, currentView, activeMenuProjectId]);
 
     // Tab Reset Effect
     useEffect(() => {
@@ -157,12 +190,57 @@ const WriteScreen: React.FC = () => {
             // A non-zero token indicates a reset has been triggered.
             if (resetTokens.write > 0) {
                 setPanelOpen(false); // Close the panel on tab reset
+                closeActiveMenu();
             }
         }
-    }, [resetTokens.write]);
+    }, [closeActiveMenu, resetTokens.write]);
+
+    useEffect(() => {
+        if (!activeMenuProjectId) {
+            return;
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                closeActiveMenu({ restoreFocus: true });
+            }
+        };
+
+        const syncDirection = () => {
+            setActiveMenuDirection(computeMenuDirection(activeMenuProjectId));
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('resize', syncDirection);
+        window.addEventListener('scroll', syncDirection, true);
+        syncDirection();
+
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('resize', syncDirection);
+            window.removeEventListener('scroll', syncDirection, true);
+        };
+    }, [activeMenuProjectId, closeActiveMenu, computeMenuDirection]);
+
+    const registerMenuTrigger = useCallback((projectId: string, node: HTMLButtonElement | null) => {
+        if (node) {
+            menuTriggerRefs.current[projectId] = node;
+            return;
+        }
+
+        delete menuTriggerRefs.current[projectId];
+    }, []);
 
     const handleToggleMenu = (projectId: string) => {
-        setActiveMenuProjectId(currentId => (currentId === projectId ? null : projectId));
+        setActiveMenuProjectId(currentId => {
+            if (currentId === projectId) {
+                return null;
+            }
+
+            setActiveMenuDirection(computeMenuDirection(projectId));
+            return projectId;
+        });
     };
 
     const handleNewProject = () => {
@@ -171,7 +249,7 @@ const WriteScreen: React.FC = () => {
 
     // Updated: Navigate to Metadata Editor
     const handleEdit = (project: Project) => {
-        setActiveMenuProjectId(null);
+        closeActiveMenu();
         navigate({ type: 'immersive', id: 'projectEdit', params: { projectId: project.id, from: currentView } });
     };
     
@@ -181,7 +259,7 @@ const WriteScreen: React.FC = () => {
     };
 
     const handleDelete = (project: Project) => {
-        setActiveMenuProjectId(null);
+        closeActiveMenu();
         setProjectToDelete(project);
     };
     
@@ -194,7 +272,7 @@ const WriteScreen: React.FC = () => {
     };
 
     const handleShare = (project: Project) => {
-        setActiveMenuProjectId(null);
+        closeActiveMenu();
         createShareLink(project.id, {
             onSuccess: async (share) => {
                 const shareData = {
@@ -229,13 +307,26 @@ const WriteScreen: React.FC = () => {
 
     // Updated: Navigate to Publish Screen
     const handlePublish = (project: Project) => {
-        setActiveMenuProjectId(null);
+        closeActiveMenu();
+        if (project.isPublished) {
+            showToast(lang === 'en' ? 'This project is already published.' : 'تم نشر هذا المشروع بالفعل.');
+            return;
+        }
         navigate({ type: 'immersive', id: 'projectPublish', params: { projectId: project.id, from: currentView } });
     };
 
     const handleDuplicate = (projectId: string) => {
-        setActiveMenuProjectId(null);
-        duplicateProject(projectId);
+        if (pendingDuplicateProjectId === projectId) {
+            return;
+        }
+
+        closeActiveMenu();
+        setPendingDuplicateProjectId(projectId);
+        duplicateProject(projectId, {
+            onSettled: () => {
+                setPendingDuplicateProjectId(currentId => (currentId === projectId ? null : currentId));
+            },
+        });
     };
 
     const handleStatusChange = (project: Project, newStatus: Project['status']) => {
@@ -286,6 +377,7 @@ const WriteScreen: React.FC = () => {
                         key={project.id}
                         project={project}
                         isMenuOpen={activeMenuProjectId === project.id}
+                        menuDirection={activeMenuProjectId === project.id ? activeMenuDirection : 'down'}
                         onToggleMenu={() => handleToggleMenu(project.id)}
                         onEdit={() => handleEdit(project)}
                         onDelete={() => handleDelete(project)}
@@ -294,6 +386,8 @@ const WriteScreen: React.FC = () => {
                         onPublish={() => handlePublish(project)}
                         onStatusChange={(status) => handleStatusChange(project, status)}
                         onPress={() => handleOpenEditor(project)}
+                        isDuplicatePending={pendingDuplicateProjectId === project.id}
+                        onMenuTriggerRef={(node) => registerMenuTrigger(project.id, node)}
                     />
                 ))}
             </div>
@@ -306,7 +400,10 @@ const WriteScreen: React.FC = () => {
                 {activeMenuProjectId && (
                     <div
                         className="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm"
-                        onClick={(e) => { e.stopPropagation(); setActiveMenuProjectId(null); }}
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            closeActiveMenu({ restoreFocus: true });
+                        }}
                     />
                 )}
                 <AppNav titleEn="Write" titleAr="اكتب" />

@@ -3,7 +3,6 @@ import React, { useRef, useEffect, useState } from 'react';
 import BilingualText from '../ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { Project } from '../../types/entities.ts';
-import Button from '../ui/Button.tsx';
 import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
 import { EditIcon } from '../icons/EditIcon.tsx';
 import { TrashIcon } from '../icons/TrashIcon.tsx';
@@ -16,6 +15,7 @@ import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 interface ProjectCardProps {
     project: Project;
     isMenuOpen: boolean;
+    menuDirection: 'up' | 'down';
     onToggleMenu: () => void;
     onEdit: () => void;
     onDelete: () => void;
@@ -24,6 +24,8 @@ interface ProjectCardProps {
     onPublish: () => void;
     onStatusChange: (status: Project['status']) => void;
     onPress: () => void;
+    isDuplicatePending?: boolean;
+    onMenuTriggerRef?: (node: HTMLButtonElement | null) => void;
 }
 
 // Color mapping for the "spine" and badges based on status
@@ -37,6 +39,7 @@ const statusColors: Record<Project['status'], { border: string; badge: string; t
 const ProjectCard: React.FC<ProjectCardProps> = ({ 
     project, 
     isMenuOpen, 
+    menuDirection,
     onToggleMenu, 
     onEdit, 
     onDelete, 
@@ -44,19 +47,24 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
     onShare, 
     onPublish,
     onStatusChange,
-    onPress
+    onPress,
+    isDuplicatePending = false,
+    onMenuTriggerRef,
 }) => {
-    const { lang, isRTL } = useI18n();
-    const menuRef = useRef<HTMLDivElement>(null);
+    const { lang } = useI18n();
     const statusRef = useRef<HTMLDivElement>(null);
     const [isStatusMenuOpen, setIsStatusMenuOpen] = useState(false);
 
-    const menuItems = [
+    const primaryMenuItems = [
         { label: 'Edit Info', action: onEdit, icon: EditIcon },
         { label: 'Share', action: onShare, icon: ShareIcon },
-        { label: 'Duplicate', action: onDuplicate, icon: DuplicateIcon },
-        { label: 'Publish', action: onPublish, icon: UploadIcon },
-        { label: 'Delete', action: onDelete, icon: TrashIcon, isDestructive: true },
+        { label: 'Duplicate', action: onDuplicate, icon: DuplicateIcon, disabled: isDuplicatePending },
+        {
+            label: project.isPublished ? 'Published' : 'Publish',
+            action: onPublish,
+            icon: UploadIcon,
+            disabled: project.isPublished,
+        },
     ];
 
     const styles = statusColors[project.status] || statusColors['Idea'];
@@ -64,19 +72,15 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
 
     const possibleStatuses: Project['status'][] = ['Idea', 'Draft', 'Revision', 'Final'];
 
-    // Handle clicking outside to close menus
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
-            if (isMenuOpen && menuRef.current && !menuRef.current.contains(event.target as Node)) {
-                onToggleMenu();
-            }
             if (isStatusMenuOpen && statusRef.current && !statusRef.current.contains(event.target as Node)) {
                 setIsStatusMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, [isMenuOpen, onToggleMenu, isStatusMenuOpen]);
+    }, [isStatusMenuOpen]);
 
     const handleStatusClick = (e: React.MouseEvent) => {
         e.stopPropagation();
@@ -126,37 +130,48 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
                         </div>
 
                         {/* Menu Trigger */}
-                        <div className="relative flex-shrink-0 -mr-1" ref={menuRef}>
-                            <Button 
-                                variant="icon" 
+                        <div className="relative flex-shrink-0 -mr-1">
+                            <button
+                                ref={onMenuTriggerRef}
                                 onClick={(e) => { e.stopPropagation(); onToggleMenu(); }} 
                                 className={cn(
                                     "h-8 w-8 min-h-0 min-w-0 p-0 rounded-full text-slate-300 hover:text-white hover:bg-white/10 transition-all flex items-center justify-center",
                                     isMenuOpen && "bg-white/10 text-white"
                                 )}
                                 aria-label="Options"
+                                aria-expanded={isMenuOpen}
+                                aria-haspopup="menu"
                             >
                                 <VerticalEllipsisIcon className="h-5 w-5" />
-                            </Button>
+                            </button>
 
                             {/* Dropdown Menu */}
                             {isMenuOpen && (
-                                <div className={`absolute top-full right-0 mt-1 w-48 z-50`}>
-                                    <div className="bg-[#2A303C] border border-white/10 rounded-lg shadow-xl overflow-hidden p-1">
-                                        <ul className="space-y-0.5">
-                                            {menuItems.map(item => (
+                                <div className={cn(
+                                    "absolute right-0 z-50 w-48 max-w-[calc(100vw-2rem)]",
+                                    menuDirection === 'up' ? "bottom-full mb-1" : "top-full mt-1"
+                                )}>
+                                    <div className="bg-[#2A303C] border border-white/10 rounded-lg shadow-xl overflow-hidden p-1 max-h-[calc(100vh-2rem)] overflow-y-auto">
+                                        <ul className="space-y-0.5" role="menu" aria-label="Project actions">
+                                            {primaryMenuItems.map(item => (
                                                 <li key={item.label}>
                                                     <button
+                                                        type="button"
                                                         className={cn(
                                                             "w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors text-left",
-                                                            item.isDestructive 
-                                                                ? "text-red-400 hover:bg-red-500/10" 
+                                                            item.disabled
+                                                                ? "cursor-not-allowed text-slate-500"
                                                                 : "text-slate-200 hover:bg-white/10"
                                                         )}
                                                         onClick={(e) => {
                                                             e.stopPropagation();
+                                                            if (item.disabled) {
+                                                                return;
+                                                            }
                                                             item.action();
                                                         }}
+                                                        disabled={item.disabled}
+                                                        role="menuitem"
                                                     >
                                                         <item.icon className="h-4 w-4 opacity-70" />
                                                         {item.label}
@@ -164,6 +179,19 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
                                                 </li>
                                             ))}
                                         </ul>
+                                        <div className="my-1 h-px bg-white/10" />
+                                        <button
+                                            type="button"
+                                            className="w-full flex items-center gap-3 px-3 py-2 text-sm rounded-md transition-colors text-left text-red-400 hover:bg-red-500/10"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onDelete();
+                                            }}
+                                            role="menuitem"
+                                        >
+                                            <TrashIcon className="h-4 w-4 opacity-70" />
+                                            Delete
+                                        </button>
                                     </div>
                                 </div>
                             )}
