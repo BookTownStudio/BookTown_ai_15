@@ -23,6 +23,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
       contentDoc?: unknown;
       wordCount?: unknown;
       status?: unknown;
+      workType?: unknown;
       typeEn?: unknown;
       typeAr?: unknown;
     };
@@ -74,6 +75,13 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     return "Draft";
   };
 
+  const normalizeWorkType = (value: unknown): "book" | "article" | "journal" => {
+    if (value === "article" || value === "journal" || value === "book") {
+      return value;
+    }
+    return "book";
+  };
+
   // 4. Construct Canonical Payload (Enforcement Model)
   // Ensures server-side control over timestamps and core fields
   const now = admin.firestore.Timestamp.now();
@@ -97,6 +105,7 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     
     // Lifecycle Metadata
     status: normalizeStatus(project.status),
+    workType: normalizeWorkType(project.workType),
     typeEn: normalizeString(project.typeEn, "Draft", 80),
     typeAr: normalizeString(project.typeAr, "مسودة", 80),
     isPublished: false,

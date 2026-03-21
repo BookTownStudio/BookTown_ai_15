@@ -7,10 +7,8 @@ import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import ProjectCard from '../../components/content/ProjectCard.tsx';
-import FloatingActionPanel from '../../components/ui/FloatingActionPanel.tsx';
 import TemplateCard from '../../components/content/TemplateCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { mockTemplates } from '../../data/mocks.ts';
 import { TemplatesIcon } from '../../components/icons/TemplatesIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { useCreateProjectShareLink, useDeleteProject, useDuplicateProject, useUpdateProject } from '../../lib/hooks/useProjectMutations.ts';
@@ -18,111 +16,8 @@ import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal.tsx';
 import { Project } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
-
-interface TemplatesPanelTriggerProps {
-    isOpen: boolean;
-    onOpen: () => void;
-    onClose: () => void;
-}
-
-const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({ isOpen, onOpen, onClose }) => {
-    const { lang } = useI18n();
-    const { navigate, currentView } = useNavigation();
-    const [currentPage, setCurrentPage] = useState(0);
-    const scrollContainerRef = useRef<HTMLDivElement>(null);
-
-    const handleTemplateSelect = (templateId: string) => {
-        onClose();
-        navigate({ 
-            type: 'immersive', 
-            id: 'editor', 
-            params: { projectId: 'new', templateId: templateId, from: currentView } 
-        });
-    };
-
-     // Helper to chunk the array
-    const chunk = <T,>(arr: T[], size: number): T[][] =>
-        Array.from({ length: Math.ceil(arr.length / size) }, (v, i) =>
-            arr.slice(i * size, i * size + size)
-        );
-
-    const templatePages = chunk(mockTemplates, 4);
-    const totalPages = templatePages.length;
-
-    const handleScroll = useCallback(() => {
-        if (scrollContainerRef.current) {
-            const { scrollLeft, clientWidth } = scrollContainerRef.current;
-            const page = Math.round(scrollLeft / clientWidth);
-            if (page !== currentPage) {
-                setCurrentPage(page);
-            }
-        }
-    }, [currentPage]);
-
-
-    return (
-        <>
-            <div
-                className="fixed bottom-[72px] left-0 right-0 z-20 flex justify-center pointer-events-none"
-                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
-            >
-                <button
-                    onClick={onOpen}
-                    className="
-                        flex items-center gap-2 px-6 py-3
-                        bg-gray-100/80 dark:bg-slate-800/80 backdrop-blur-md 
-                        shadow-xl shadow-primary/10 dark:shadow-black/40 
-                        border border-black/5 dark:border-white/10 
-                        text-slate-800 dark:text-white 
-                        pointer-events-auto 
-                        transition-all duration-300 ease-in-out
-                        hover:-translate-y-1 hover:scale-105 hover:shadow-2xl hover:shadow-primary/20
-                        active:scale-100
-                        rounded-full"
-                    aria-label={lang === 'en' ? 'Open Templates' : 'فتح القوالب'}
-                >
-                    <TemplatesIcon className="h-5 w-5 text-accent" />
-                    <BilingualText className="font-bold text-lg">
-                        {lang === 'en' ? 'Templates' : 'القوالب'}
-                    </BilingualText>
-                </button>
-            </div>
-            <FloatingActionPanel isOpen={isOpen} onClose={onClose}>
-                 <div>
-                    <div 
-                        ref={scrollContainerRef} 
-                        onScroll={handleScroll}
-                        className="flex overflow-x-auto snap-x snap-mandatory scrollbar-hide"
-                    >
-                        {templatePages.map((page, pageIndex) => (
-                            <div key={pageIndex} className="w-full flex-shrink-0 snap-start grid grid-cols-2 gap-4 p-1">
-                                {page.map(template => (
-                                    <TemplateCard
-                                        key={template.id}
-                                        title={lang === 'en' ? template.titleEn : template.titleAr}
-                                        description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
-                                        icon={template.icon}
-                                        onClick={() => handleTemplateSelect(template.id)}
-                                    />
-                                ))}
-                            </div>
-                        ))}
-                    </div>
-                    {totalPages > 1 && (
-                        <div className="flex justify-center items-center gap-2 mt-4">
-                            {Array.from({ length: totalPages }).map((_, index) => (
-                                <div
-                                    key={index}
-                                    className={`h-2 w-2 rounded-full transition-colors ${currentPage === index ? 'bg-accent' : 'bg-slate-500/50'}`}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
-            </FloatingActionPanel>
-        </>
-    );
-};
+import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
+import { createBlankProjectSeed, createProjectSeedFromTemplate, writeTemplates } from '../../lib/templates/writeTemplates.ts';
 
 
 const WriteScreen: React.FC = () => {
@@ -130,18 +25,19 @@ const WriteScreen: React.FC = () => {
     const { showToast } = useToast();
     const { data: projects, isLoading, isError, error } = useUserProjects();
     const { navigate, currentView, resetTokens } = useNavigation();
-    const [isPanelOpen, setPanelOpen] = useState(false);
     const isInitialMount = useRef(true);
     const [projectToDelete, setProjectToDelete] = useState<Project | null>(null);
     const [activeMenuProjectId, setActiveMenuProjectId] = useState<string | null>(null);
     const [activeMenuDirection, setActiveMenuDirection] = useState<'up' | 'down'>('down');
     const [pendingDuplicateProjectId, setPendingDuplicateProjectId] = useState<string | null>(null);
+    const [pendingCreationKey, setPendingCreationKey] = useState<string | null>(null);
     const menuTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
 
     const { mutate: deleteProject, isLoading: isDeleting } = useDeleteProject();
     const { mutate: duplicateProject } = useDuplicateProject();
     const { mutate: updateProject } = useUpdateProject();
     const { mutate: createShareLink } = useCreateProjectShareLink();
+    const { mutate: createProject } = useCreateProject();
 
     const closeActiveMenu = useCallback((options?: { restoreFocus?: boolean }) => {
         const activeId = activeMenuProjectId;
@@ -189,7 +85,6 @@ const WriteScreen: React.FC = () => {
         } else {
             // A non-zero token indicates a reset has been triggered.
             if (resetTokens.write > 0) {
-                setPanelOpen(false); // Close the panel on tab reset
                 closeActiveMenu();
             }
         }
@@ -243,8 +138,31 @@ const WriteScreen: React.FC = () => {
         });
     };
 
+    const handleCreateProject = useCallback((creationKey: string, projectSeed: Omit<Project, 'id' | 'updatedAt' | 'createdAt'>) => {
+        if (pendingCreationKey) {
+            return;
+        }
+
+        setPendingCreationKey(creationKey);
+        createProject(projectSeed, {
+            onSuccess: (createdProject) => {
+                setPendingCreationKey(null);
+                navigate({ type: 'immersive', id: 'editor', params: { projectId: createdProject.id, from: currentView } });
+            },
+            onError: (creationError) => {
+                console.error('[WRITE][CREATE_PROJECT_FAILED]', creationError);
+                setPendingCreationKey(null);
+                showToast(lang === 'en' ? 'Failed to create project.' : 'فشل إنشاء المشروع.');
+            },
+        });
+    }, [createProject, currentView, lang, navigate, pendingCreationKey, showToast]);
+
     const handleNewProject = () => {
-        navigate({ type: 'immersive', id: 'editor', params: { projectId: 'new', from: currentView } });
+        handleCreateProject('blank', createBlankProjectSeed('book', lang === 'ar' ? 'ar' : 'en'));
+    };
+
+    const handleTemplateSelect = (templateId: string) => {
+        handleCreateProject(templateId, createProjectSeedFromTemplate(templateId, lang === 'ar' ? 'ar' : 'en'));
     };
 
     // Updated: Navigate to Metadata Editor
@@ -364,7 +282,7 @@ const WriteScreen: React.FC = () => {
                         {lang === 'en' ? 'Your canvas is empty.' : 'لوحتك فارغة.'}
                     </BilingualText>
                     <BilingualText className="mt-2">
-                        {lang === 'en' ? 'Start a new project from a template or a blank page.' : 'ابدأ مشروعًا جديدًا من قالب أو صفحة فارغة.'}
+                        {lang === 'en' ? 'Start a new book or pick a guided template below.' : 'ابدأ كتاباً جديداً أو اختر قالباً موجهاً في الأسفل.'}
                     </BilingualText>
                 </div>
             );
@@ -417,23 +335,50 @@ const WriteScreen: React.FC = () => {
                                 variant="primary" 
                                 size="icon"
                                 onClick={handleNewProject} 
+                                disabled={pendingCreationKey !== null}
                                 className="!rounded-lg h-12 w-12 shadow-lg"
                                 aria-label={lang === 'en' ? 'New Project' : 'مشروع جديد'}
                             >
-                                <PlusIcon className="h-6 w-6" />
+                                {pendingCreationKey === 'blank' ? <LoadingSpinner /> : <PlusIcon className="h-6 w-6" />}
                             </Button>
                         </div>
                         
                         <div className="mb-6">
                             {renderContent()}
                         </div>
+
+                        <section className="border-t border-black/10 dark:border-white/10 pt-8">
+                            <div className="mb-5 flex items-center gap-3">
+                                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-accent/12 text-accent">
+                                    <TemplatesIcon className="h-5 w-5" />
+                                </div>
+                                <div>
+                                    <BilingualText role="H1" className="!text-xl !font-semibold">
+                                        {lang === 'en' ? 'Templates' : 'القوالب'}
+                                    </BilingualText>
+                                    <BilingualText role="Caption" className="text-slate-500 dark:text-white/60">
+                                        {lang === 'en' ? 'Guided starts for articles, books, and journals.' : 'بدايات موجهة للمقالات والكتب واليوميات.'}
+                                    </BilingualText>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+                                {writeTemplates.map((template, index) => (
+                                    <div key={template.id} className={index === 0 ? 'md:col-span-2 xl:col-span-2' : ''}>
+                                        <TemplateCard
+                                            title={lang === 'en' ? template.titleEn : template.titleAr}
+                                            description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
+                                            icon={template.icon}
+                                            featured={index === 0}
+                                            disabled={pendingCreationKey !== null}
+                                            onClick={() => handleTemplateSelect(template.id)}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
                     </LiteraryShell>
                 </main>
-                <TemplatesPanelTrigger 
-                    isOpen={isPanelOpen}
-                    onOpen={() => setPanelOpen(true)}
-                    onClose={() => setPanelOpen(false)}
-                />
             </div>
             <ConfirmDeleteModal
                 isOpen={!!projectToDelete}
@@ -446,28 +391,5 @@ const WriteScreen: React.FC = () => {
         </>
     );
 };
-
-// Add scroll snap helper styles
-const style = document.createElement('style');
-style.innerHTML = `
-.scrollbar-hide::-webkit-scrollbar {
-    display: none;
-}
-.scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-}
-.snap-x {
-    scroll-snap-type: x;
-}
-.snap-mandatory {
-    scroll-snap-stop: always;
-    scroll-snap-type: x mandatory;
-}
-.snap-start {
-    scroll-snap-align: start;
-}
-`;
-document.head.appendChild(style);
 
 export default WriteScreen;

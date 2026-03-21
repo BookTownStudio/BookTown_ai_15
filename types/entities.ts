@@ -355,6 +355,7 @@ export interface Project {
     title?: string;
     titleEn: string;
     titleAr: string;
+    workType: 'book' | 'article' | 'journal';
     typeEn: string;
     typeAr: string;
     status: 'Idea' | 'Draft' | 'Revision' | 'Final';
@@ -605,12 +606,15 @@ export interface QuickRecommendations {
 
 export interface Template {
     id: string;
+    workType: 'book' | 'article' | 'journal';
     titleEn: string;
     titleAr: string;
     descriptionEn: string;
     descriptionAr: string;
     icon: React.FC<React.SVGProps<SVGSVGElement>>;
     boilerplateContent: string;
+    contentDoc?: WriteContentDoc;
+    featured?: boolean;
 }
 
 export interface BookFlowItem {

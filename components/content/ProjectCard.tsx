@@ -11,6 +11,7 @@ import { ShareIcon } from '../icons/ShareIcon.tsx';
 import { UploadIcon } from '../icons/UploadIcon.tsx';
 import { cn } from '../../lib/utils.ts';
 import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
+import { getWorkTypeLabel } from '../../lib/templates/writeTemplates.ts';
 
 interface ProjectCardProps {
     project: Project;
@@ -69,6 +70,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
 
     const styles = statusColors[project.status] || statusColors['Idea'];
     const wordCountLabel = lang === 'en' ? 'words' : 'كلمة';
+    const workTypeLabel = getWorkTypeLabel(project.workType, lang === 'ar' ? 'ar' : 'en');
 
     const possibleStatuses: Project['status'][] = ['Idea', 'Draft', 'Revision', 'Final'];
 
@@ -125,7 +127,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
                                 {lang === 'en' ? project.titleEn : project.titleAr}
                             </BilingualText>
                             <BilingualText role="Caption" className="text-slate-400 text-[11px] mt-0.5 truncate uppercase tracking-wider">
-                                {lang === 'en' ? project.typeEn : project.typeAr}
+                                {workTypeLabel}
                             </BilingualText>
                         </div>
 

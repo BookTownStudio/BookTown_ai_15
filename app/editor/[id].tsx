@@ -16,13 +16,15 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Modal from '../../components/ui/Modal.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
+import { ViewListIcon } from '../../components/icons/ViewListIcon.tsx';
+import { XIcon } from '../../components/icons/XIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
 import OutlinePanel, { OutlinePanelItem } from '../../components/editor/OutlinePanel.tsx';
 import TiptapEditor, { EditorChangePayload, EditorOutlineItem } from '../../components/editor/TiptapEditor.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
-import { mockAgents, mockTemplates } from '../../data/mocks.ts';
+import { mockAgents } from '../../data/mocks.ts';
 import { cn } from '../../lib/utils.ts';
 import { countWordsScriptAware } from '../../lib/editor/writeDocument.ts';
 import {
@@ -42,6 +44,7 @@ import {
     type BrowserSpeechSession,
     type BrowserSpeechSupportInfo,
 } from '../../lib/speech/browserSpeechDictation.ts';
+import { createBlankProjectSeed, createProjectSeedFromTemplate, getWriteTemplate } from '../../lib/templates/writeTemplates.ts';
 
 type EditorSnapshot = WriteDraftSnapshot;
 type HistoryState = { present: EditorSnapshot };
@@ -260,6 +263,7 @@ const EditorScreen: React.FC = () => {
     const [isMentorOpen, setIsMentorOpen] = useState(false);
     const [hasInteractedWithTitle, setHasInteractedWithTitle] = useState(false);
     const [isFocusMode, setIsFocusMode] = useState(false);
+    const [isMobileOutlineOpen, setIsMobileOutlineOpen] = useState(false);
     const [outline, setOutline] = useState<EditorOutlineItem[]>([]);
     const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBanner>(null);
     const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
@@ -322,6 +326,7 @@ const EditorScreen: React.FC = () => {
         setIsSaving(false);
         setSaveIssue('none');
         setOutline([]);
+        setIsMobileOutlineOpen(false);
         setRecoveryBanner(null);
         dictationSessionRef.current?.dispose();
         dictationSessionRef.current = null;
@@ -358,6 +363,24 @@ const EditorScreen: React.FC = () => {
             dictationAnchorRef.current = null;
         };
     }, []);
+
+    useEffect(() => {
+        if (!isMobileOutlineOpen) {
+            return;
+        }
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                setIsMobileOutlineOpen(false);
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            document.removeEventListener('keydown', handleKeyDown);
+        };
+    }, [isMobileOutlineOpen]);
 
     useEffect(() => {
         if (!editor) {
@@ -608,16 +631,16 @@ const EditorScreen: React.FC = () => {
         }
 
         if (isNewRoute) {
-            const template = templateId ? mockTemplates.find(t => t.id === templateId) : null;
-            const initContent = template?.boilerplateContent || '<p></p>';
-            const initTitleEn = template?.titleEn || 'Untitled Project';
-            const initTitleAr = template?.titleAr || 'مشروع غير معنون';
+            const template = getWriteTemplate(templateId);
+            const starter = template
+                ? createProjectSeedFromTemplate(template.id, lang === 'ar' ? 'ar' : 'en')
+                : createBlankProjectSeed('book', lang === 'ar' ? 'ar' : 'en');
             const baseSnapshot: EditorSnapshot = {
-                content: initContent,
-                contentDoc: undefined,
-                wordCount: countWordsScriptAware(stripHtml(initContent)),
-                titleEn: initTitleEn,
-                titleAr: initTitleAr,
+                content: starter.content,
+                contentDoc: starter.contentDoc,
+                wordCount: starter.wordCount ?? countWordsScriptAware(stripHtml(starter.content)),
+                titleEn: starter.titleEn,
+                titleAr: starter.titleAr,
             };
 
             lastConfirmedSnapshotRef.current = baseSnapshot;
@@ -660,7 +683,7 @@ const EditorScreen: React.FC = () => {
             hasHydratedRef.current = true;
             setAuthorityStatus('persistent');
         }
-    }, [hydrateFromRecoveryDraft, isNewRoute, project, scopeId, templateId, uid]);
+    }, [hydrateFromRecoveryDraft, isNewRoute, lang, project, scopeId, templateId, uid]);
 
     useEffect(() => {
         const shouldMaterialize =
@@ -682,6 +705,7 @@ const EditorScreen: React.FC = () => {
         createProject(
             {
                 ...initialSnapshot,
+                workType: templateId ? (getWriteTemplate(templateId)?.workType ?? 'book') : 'book',
                 typeEn: 'Draft',
                 typeAr: 'مسودة',
                 status: 'Draft',
@@ -715,7 +739,7 @@ const EditorScreen: React.FC = () => {
                 }
             }
         );
-    }, [authorityStatus, createProject, currentView.params, isNewRoute, isOffline, lang, navigate, persistLocalDraft, scopeId, showToast, uid]);
+    }, [authorityStatus, createProject, currentView.params, isNewRoute, isOffline, lang, navigate, persistLocalDraft, scopeId, showToast, templateId, uid]);
 
     useEffect(() => {
         const canAutosave =
@@ -957,6 +981,7 @@ const EditorScreen: React.FC = () => {
                 devLog('Outline navigation failed to resolve editor coordinates', error);
             }
         });
+        setIsMobileOutlineOpen(false);
     }, [editor]);
 
     const structuredOutline = useMemo<OutlinePanelItem[]>(() => {
@@ -1011,6 +1036,18 @@ const EditorScreen: React.FC = () => {
 
         return items;
     }, [editor, outline, present.contentDoc]);
+
+    const mobileOutlineItems = useMemo<OutlinePanelItem[]>(
+        () =>
+            outline.map((item) => ({
+                id: item.id,
+                kind: 'headline' as const,
+                label: item.text,
+                pos: item.pos,
+                dir: item.dir,
+            })),
+        [outline]
+    );
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const nextSnapshot = { ...presentRef.current };
@@ -1257,9 +1294,17 @@ const EditorScreen: React.FC = () => {
                         <Button
                             variant="ghost"
                             onClick={() => setIsFocusMode(prev => !prev)}
-                            className="text-xs px-3 py-1"
+                            className="hidden lg:inline-flex text-xs px-3 py-1"
                         >
                             {isFocusMode ? (lang === 'en' ? 'Exit Focus' : 'إنهاء التركيز') : (lang === 'en' ? 'Focus' : 'تركيز')}
+                        </Button>
+                        <Button
+                            variant="ghost"
+                            onClick={() => setIsMobileOutlineOpen(true)}
+                            className="lg:hidden"
+                            aria-label={lang === 'en' ? 'Open outline' : 'فتح المخطط'}
+                        >
+                            <ViewListIcon className="h-5 w-5" />
                         </Button>
                         <Button variant="ghost" onClick={() => setIsMentorOpen(true)}>
                             <BrainIcon className="h-6 w-6 text-accent" />
@@ -1316,6 +1361,39 @@ const EditorScreen: React.FC = () => {
                     dictationElapsedMs={dictationElapsedMs}
                     dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
                 />
+
+                {isMobileOutlineOpen ? (
+                    <div className="fixed inset-0 z-40 lg:hidden">
+                        <button
+                            type="button"
+                            className="absolute inset-0 bg-black/45 backdrop-blur-sm"
+                            onClick={() => setIsMobileOutlineOpen(false)}
+                            aria-label={lang === 'en' ? 'Close outline' : 'إغلاق المخطط'}
+                        />
+                        <div className="absolute inset-x-0 bottom-0 rounded-t-[28px] border border-white/10 bg-slate-950/96 px-4 pb-[calc(env(safe-area-inset-bottom)+1rem)] pt-4 shadow-2xl">
+                            <div className="mx-auto mb-4 h-1.5 w-14 rounded-full bg-white/15" aria-hidden="true" />
+                            <div className="mb-4 flex items-center justify-between">
+                                <BilingualText role="H1" className="!text-lg !font-semibold">
+                                    {lang === 'en' ? 'Outline' : 'المخطط'}
+                                </BilingualText>
+                                <Button
+                                    variant="ghost"
+                                    onClick={() => setIsMobileOutlineOpen(false)}
+                                    className="!h-10 !w-10 !rounded-full !p-0"
+                                >
+                                    <XIcon className="h-4 w-4" />
+                                </Button>
+                            </div>
+                            <OutlinePanel
+                                variant="sheet"
+                                items={mobileOutlineItems}
+                                onSelectItem={handleOutlineSelect}
+                                titleLabel={lang === 'en' ? 'Headings' : 'العناوين'}
+                                emptyLabel={lang === 'en' ? 'Add real headings to build your outline.' : 'أضف عناوين حقيقية لبناء المخطط.'}
+                            />
+                        </div>
+                    </div>
+                ) : null}
 
                 <div ref={editorScrollRef} className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
                     <LiteraryShell className="relative min-h-full py-4">

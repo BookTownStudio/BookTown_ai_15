@@ -39,6 +39,13 @@ function normalizeContentDoc(value: unknown): Record<string, unknown> | null {
   return JSON.parse(serialized) as Record<string, unknown>;
 }
 
+function normalizeWorkType(value: unknown): "book" | "article" | "journal" {
+  if (value === "article" || value === "journal" || value === "book") {
+    return value;
+  }
+  return "book";
+}
+
 /**
  * duplicateWriteProject
  * Deterministic duplicate with operation-level idempotency.
@@ -103,6 +110,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
             ? Math.max(0, Math.floor(source.wordCount))
             : 0,
         status: normalizeStatus(source.status),
+        workType: normalizeWorkType(source.workType),
         typeEn: normalizeString(source.typeEn, "Draft", 80),
         typeAr: normalizeString(source.typeAr, "مسودة", 80),
         coverUrl: normalizeCoverUrl(source.coverUrl),
@@ -152,6 +160,7 @@ export const duplicateWriteProject = onCall({ cors: true }, async (request) => {
           ? Math.max(0, Math.floor(result.data.wordCount))
           : 0,
       status: normalizeStatus(result.data.status),
+      workType: normalizeWorkType(result.data.workType),
       typeEn: normalizeString(result.data.typeEn, "Draft", 80),
       typeAr: normalizeString(result.data.typeAr, "مسودة", 80),
       isPublished: false,

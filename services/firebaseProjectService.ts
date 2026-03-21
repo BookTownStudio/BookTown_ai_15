@@ -81,6 +81,10 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
     title: typeof payload.title === "string" ? payload.title : titleEn,
     titleEn,
     titleAr,
+    workType:
+      payload.workType === "article" || payload.workType === "journal" || payload.workType === "book"
+        ? payload.workType
+        : "book",
     typeEn: typeof payload.typeEn === "string" && payload.typeEn.trim() ? payload.typeEn.trim() : "Draft",
     typeAr: typeof payload.typeAr === "string" && payload.typeAr.trim() ? payload.typeAr.trim() : "مسودة",
     status: normalizeStatus(payload.status),
@@ -266,13 +270,14 @@ export const firebaseProjectService: ProjectDataService = {
     uid: string,
     project: Omit<Project, "id" | "updatedAt" | "createdAt">
   ): Promise<Project> {
-    const payload = {
+  const payload = {
       titleEn: normalizeBoundedString(project.titleEn, "Untitled Project", 180),
       titleAr: normalizeBoundedString(project.titleAr, "مشروع غير معنون", 180),
       content: typeof project.content === "string" ? project.content.slice(0, 2_000_000) : "",
       contentDoc: sanitizeContentDoc(project.contentDoc),
       wordCount: typeof project.wordCount === "number" ? Math.max(0, Math.floor(project.wordCount)) : 0,
       status: normalizeStatus(project.status),
+      workType: project.workType === "article" || project.workType === "journal" ? project.workType : "book",
       typeEn: normalizeBoundedString(project.typeEn, "Draft", 80),
       typeAr: normalizeBoundedString(project.typeAr, "مسودة", 80),
     };
@@ -284,6 +289,7 @@ export const firebaseProjectService: ProjectDataService = {
         title?: string;
         titleEn: string;
         titleAr: string;
+        workType: "book" | "article" | "journal";
         typeEn: string;
         typeAr: string;
         status: ProjectStatus;

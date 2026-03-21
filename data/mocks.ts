@@ -709,10 +709,10 @@ export const mockUserQuotes: Quote[] = [
 
 // --- PROJECTS ---
 export const mockProjects: Project[] = [
-    { id: 'proj1', titleEn: 'Starfall', titleAr: 'سقوط النجم', typeEn: 'Novel', typeAr: 'رواية', status: 'Draft', wordCount: 25430, updatedAt: '2023-10-25T14:00:00Z', content: 'The night was cold on Kepler-186f...', isPublished: false },
-    { id: 'proj2', titleEn: 'The Last Coffee Shop', titleAr: 'المقهى الأخير', typeEn: 'Short Story', typeAr: 'قصة قصيرة', status: 'Revision', wordCount: 5200, updatedAt: '2023-10-22T11:00:00Z', content: 'It was the last coffee shop at the end of the world.', isPublished: true },
-    { id: 'proj3', titleEn: 'Echoes in the Void', titleAr: 'أصداء في الفراغ', typeEn: 'Poetry Collection', typeAr: 'مجموعة شعرية', status: 'Idea', wordCount: 500, updatedAt: '2023-11-05T10:00:00Z', content: '# Starlight\n\nA single point of light...\n', isPublished: false },
-    { id: 'proj4', titleEn: 'My Journey Through Books', titleAr: 'رحلتي عبر الكتب', typeEn: 'Memoir Outline', typeAr: 'مخطط مذكرات', status: 'Idea', wordCount: 1200, updatedAt: '2023-11-03T18:00:00Z', content: '## Chapter 1: The First Spark\n\n- The book that started it all...', isPublished: false },
+    { id: 'proj1', titleEn: 'Starfall', titleAr: 'سقوط النجم', workType: 'book', typeEn: 'Novel', typeAr: 'رواية', status: 'Draft', wordCount: 25430, updatedAt: '2023-10-25T14:00:00Z', content: 'The night was cold on Kepler-186f...', isPublished: false },
+    { id: 'proj2', titleEn: 'The Last Coffee Shop', titleAr: 'المقهى الأخير', workType: 'book', typeEn: 'Short Story', typeAr: 'قصة قصيرة', status: 'Revision', wordCount: 5200, updatedAt: '2023-10-22T11:00:00Z', content: 'It was the last coffee shop at the end of the world.', isPublished: true },
+    { id: 'proj3', titleEn: 'Echoes in the Void', titleAr: 'أصداء في الفراغ', workType: 'book', typeEn: 'Poetry Collection', typeAr: 'مجموعة شعرية', status: 'Idea', wordCount: 500, updatedAt: '2023-11-05T10:00:00Z', content: '# Starlight\n\nA single point of light...\n', isPublished: false },
+    { id: 'proj4', titleEn: 'My Journey Through Books', titleAr: 'رحلتي عبر الكتب', workType: 'book', typeEn: 'Memoir Outline', typeAr: 'مخطط مذكرات', status: 'Idea', wordCount: 1200, updatedAt: '2023-11-03T18:00:00Z', content: '## Chapter 1: The First Spark\n\n- The book that started it all...', isPublished: false },
 ];
 
 // --- POSTS ---
@@ -1372,6 +1372,7 @@ export const mockAgents: Agent[] = [
 export const mockTemplates: Template[] = [
     {
         id: 'novel-outline',
+        workType: 'book',
         titleEn: 'Novel Outline',
         titleAr: 'مخطط رواية',
         descriptionEn: 'Structure your epic.',
@@ -1381,6 +1382,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'short-story-arc',
+        workType: 'book',
         titleEn: 'Short Story Arc',
         titleAr: 'قوس القصة القصيرة',
         descriptionEn: 'A simple three-act structure.',
@@ -1390,6 +1392,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'academic-essay',
+        workType: 'article',
         titleEn: 'Academic Essay',
         titleAr: 'مقالة أكاديمية',
         descriptionEn: 'For research papers.',
@@ -1399,6 +1402,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'journal-entry',
+        workType: 'journal',
         titleEn: 'Journal Entry',
         titleAr: 'إدخال يوميات',
         descriptionEn: 'Reflect on your day.',
@@ -1408,6 +1412,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'memoir',
+        workType: 'book',
         titleEn: 'Memoir',
         titleAr: 'مذكرات',
         descriptionEn: 'Share your life story.',
@@ -1417,6 +1422,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'poetry',
+        workType: 'book',
         titleEn: 'Poetry',
         titleAr: 'شعر',
         descriptionEn: 'Express with verse.',
@@ -1426,6 +1432,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'book-review',
+        workType: 'article',
         titleEn: 'Book Review',
         titleAr: 'مراجعة كتاب',
         descriptionEn: 'Critique a recent read.',
@@ -1435,6 +1442,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'screenplay',
+        workType: 'book',
         titleEn: 'Screenplay',
         titleAr: 'سيناريو',
         descriptionEn: 'Write for the screen.',
@@ -1444,6 +1452,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'research-paper',
+        workType: 'article',
         titleEn: 'Research Paper',
         titleAr: 'ورقة بحثية',
         descriptionEn: 'For scholarly articles.',
@@ -1453,6 +1462,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'blog-post',
+        workType: 'article',
         titleEn: 'Blog Post',
         titleAr: 'تدوينة',
         descriptionEn: 'Share your thoughts online.',
@@ -1462,6 +1472,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'play-script',
+        workType: 'book',
         titleEn: 'Play Script',
         titleAr: 'نص مسرحي',
         descriptionEn: 'For the stage.',
@@ -1471,6 +1482,7 @@ export const mockTemplates: Template[] = [
     },
     {
         id: 'character-profile',
+        workType: 'book',
         titleEn: 'Character Profile',
         titleAr: 'ملف شخصية',
         descriptionEn: 'Flesh out your characters.',

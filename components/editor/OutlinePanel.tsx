@@ -16,6 +16,7 @@ interface OutlinePanelProps {
     onSelectItem: (item: OutlinePanelItem) => void;
     emptyLabel: string;
     titleLabel: string;
+    variant?: 'desktop' | 'sheet';
 }
 
 const OutlinePanel: React.FC<OutlinePanelProps> = ({
@@ -23,9 +24,18 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
     onSelectItem,
     emptyLabel,
     titleLabel,
+    variant = 'desktop',
 }) => {
+    const isSheet = variant === 'sheet';
+
     return (
-        <aside className="hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]">
+        <aside
+            className={cn(
+                isSheet
+                    ? 'border-0 bg-transparent p-0 overflow-y-auto'
+                    : 'hidden lg:block border border-white/10 rounded-xl bg-black/10 p-3 overflow-y-auto max-h-[calc(100vh-220px)]'
+            )}
+        >
             <BilingualText role="Caption" className="text-slate-400 uppercase tracking-wider mb-3 block">
                 {titleLabel}
             </BilingualText>
@@ -43,7 +53,8 @@ const OutlinePanel: React.FC<OutlinePanelProps> = ({
                             className={cn(
                                 'w-full text-left rounded px-2 py-1.5 text-sm hover:bg-white/10 transition-colors',
                                 item.kind === 'chapter' && 'font-semibold text-white',
-                                item.kind === 'headline' && 'pl-4 text-slate-300'
+                                item.kind === 'headline' && 'pl-4 text-slate-300',
+                                isSheet && 'py-2.5'
                             )}
                             dir={item.dir}
                         >
