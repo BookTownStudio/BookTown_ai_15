@@ -95,18 +95,15 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
                         {templatePages.map((page, pageIndex) => (
                             <div
                                 key={pageIndex}
-                                className="w-full flex-shrink-0 snap-start grid grid-cols-2 gap-4 p-1"
+                                className="w-full flex-shrink-0 snap-start grid grid-cols-2 grid-rows-2 auto-rows-fr gap-4 p-1"
                             >
                                 {page.map((template) => (
-                                    <div
-                                        key={template.id}
-                                        className={template.id === 'article-blog' ? 'col-span-2' : ''}
-                                    >
+                                    <div key={template.id} className="h-full">
                                         <TemplateCard
                                             title={lang === 'en' ? template.titleEn : template.titleAr}
                                             description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
                                             icon={template.icon}
-                                            featured={template.id === 'article-blog'}
+                                            tagLabel={template.id === 'article-blog' ? (lang === 'en' ? 'Guided start' : 'بداية موجهة') : undefined}
                                             disabled={pendingCreationKey !== null}
                                             onClick={() => {
                                                 onClose();

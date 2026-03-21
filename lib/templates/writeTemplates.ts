@@ -7,6 +7,7 @@ import { MemoirIcon } from '../../components/icons/MemoirIcon.tsx';
 import { JournalIcon } from '../../components/icons/JournalIcon.tsx';
 import { PoetryIcon } from '../../components/icons/PoetryIcon.tsx';
 import { ScreenplayIcon } from '../../components/icons/ScreenplayIcon.tsx';
+import { ResearchPaperIcon } from '../../components/icons/ResearchPaperIcon.tsx';
 import { createChapterBlockHtml, createChapterBlockNodes } from '../editor/chapterNodes.ts';
 
 type WorkType = Project['workType'];
@@ -169,7 +170,6 @@ const templateDefinitions: TemplateSeedDefinition[] = [
         descriptionEn: 'A guided long-form article with a clear reading arc.',
         descriptionAr: 'مقال طويل موجه ببنية قراءة واضحة.',
         icon: BlogPostIcon,
-        featured: true,
         sections: [
             {
                 titleEn: 'Introduction',
@@ -413,6 +413,59 @@ const templateDefinitions: TemplateSeedDefinition[] = [
                 titleAr: 'المشهد 4 — المشهد الأخير',
                 bodyEn: ['End with the final scene that leaves the audience with an image stronger than explanation.'],
                 bodyAr: ['اختم بالمشهد الأخير الذي يترك الجمهور مع صورة أقوى من الشرح.'],
+                chapter: true,
+            },
+        ],
+    },
+    {
+        id: 'factual',
+        workType: 'book',
+        titleEn: 'Factual',
+        titleAr: 'واقعي',
+        descriptionEn: 'Structured factual writing for ideas, arguments, or explanation.',
+        descriptionAr: 'كتابة واقعية منظمة للأفكار أو الحجج أو الشرح.',
+        icon: ResearchPaperIcon,
+        sections: [
+            {
+                titleEn: 'Chapter 1 — Core Question',
+                titleAr: 'الفصل 1 — السؤال المركزي',
+                bodyEn: ['State the main idea clearly and define what this work is trying to explain, examine, or establish.'],
+                bodyAr: ['صِغ الفكرة الأساسية بوضوح وحدد ما الذي يحاول هذا العمل أن يشرحه أو يفحصه أو يثبته.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Chapter 2 — Context',
+                titleAr: 'الفصل 2 — السياق',
+                bodyEn: ['Establish the necessary background so the reader understands why this subject matters.'],
+                bodyAr: ['ضع الخلفية اللازمة حتى يفهم القارئ لماذا يهم هذا الموضوع.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Chapter 3 — Framework',
+                titleAr: 'الفصل 3 — الإطار',
+                bodyEn: ['Lay out the key concepts, distinctions, or model that will guide the rest of the work.'],
+                bodyAr: ['اعرض المفاهيم أو الفروق أو النموذج الذي سيقود بقية العمل.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Chapter 4 — Evidence',
+                titleAr: 'الفصل 4 — الشواهد',
+                bodyEn: ['Present concrete material, examples, cases, or observations that support the argument.'],
+                bodyAr: ['قدّم مواد ملموسة أو أمثلة أو حالات أو ملاحظات تدعم الحجة.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Chapter 5 — Tension or Counterpoint',
+                titleAr: 'الفصل 5 — التوتر أو المقابلة',
+                bodyEn: ['Address complexity, objections, contradictions, or alternative interpretations.'],
+                bodyAr: ['عالج التعقيد أو الاعتراضات أو التناقضات أو القراءات البديلة.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Chapter 6 — Conclusion',
+                titleAr: 'الفصل 6 — الخلاصة',
+                bodyEn: ['Resolve the inquiry with clarity, showing what has been established and what remains open.'],
+                bodyAr: ['اختم مسار البحث بوضوح مبيّناً ما الذي تم تثبيته وما الذي بقي مفتوحاً.'],
                 chapter: true,
             },
         ],
