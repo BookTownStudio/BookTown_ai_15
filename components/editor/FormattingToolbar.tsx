@@ -23,17 +23,31 @@ interface FormattingToolbarProps {
     onToggleVoice: () => void;
     isRecording: boolean;
     isVisible: boolean;
+    dictationStatusLabel?: string;
+    dictationElapsedMs?: number;
+    dictationLanguageLabel?: string;
 }
 
 const FormattingToolbar: React.FC<FormattingToolbarProps> = ({ 
     editor,
     onToggleVoice, 
     isRecording,
-    isVisible
+    isVisible,
+    dictationStatusLabel,
+    dictationElapsedMs = 0,
+    dictationLanguageLabel,
 }) => {
     const { lang } = useI18n();
     const [activeMenu, setActiveMenu] = useState<'style' | 'align' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
+    const isDictationActive = isRecording;
+
+    const formatElapsed = (elapsedMs: number): string => {
+        const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    };
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
@@ -44,6 +58,12 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
         if (activeMenu) document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [activeMenu]);
+
+    useEffect(() => {
+        if (isDictationActive) {
+            setActiveMenu(null);
+        }
+    }, [isDictationActive]);
 
     if (!editor) return null;
 
@@ -60,82 +80,109 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
             "sticky top-16 z-30 transition-all duration-300 ease-in-out border-b border-slate-200 dark:border-white/5 bg-slate-50/95 dark:bg-slate-900/40 backdrop-blur-md h-12 flex items-center justify-center",
             isVisible ? "translate-y-0 opacity-100" : "-translate-y-full opacity-0 pointer-events-none"
         )}>
-            <div className="container mx-auto px-4 flex items-center justify-center gap-2 relative" ref={menuRef}>
-                
-                {/* 1. Style Dropdown */}
-                <div className="relative">
-                    <button
-                        onClick={() => setActiveMenu(activeMenu === 'style' ? null : 'style')}
-                        className={cn(ButtonClass, (editor.isActive('heading') || editor.isActive('paragraph')) && "text-slate-900 dark:text-white")}
-                    >
-                        <span className="text-xs font-bold">{getActiveStyleLabel()}</span>
-                        <ChevronDownIcon className="h-3 w-3 opacity-50" />
-                    </button>
-                    {activeMenu === 'style' && (
-                        <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
-                            <button onClick={() => { editor.chain().focus().setParagraph().run(); setActiveMenu(null); }} className={DropdownItemClass}>Paragraph</button>
-                            <button onClick={() => { editor.chain().focus().setHeading({ level: 2 }).run(); setActiveMenu(null); }} className={cn(DropdownItemClass, "font-semibold")}>Headline</button>
+            <div className="container mx-auto px-4 flex items-center justify-between gap-4 relative" ref={menuRef}>
+                <div className="min-w-0 flex-1">
+                    {isDictationActive ? (
+                        <div className="flex items-center gap-3 text-slate-600 dark:text-slate-300">
+                            <span className="text-[10px] font-semibold uppercase tracking-[0.22em] text-red-500">
+                                {dictationStatusLabel || (lang === 'en' ? 'Listening' : 'جاري الإملاء')}
+                            </span>
+                            <span className="text-xs tabular-nums font-medium">
+                                {formatElapsed(dictationElapsedMs)}
+                            </span>
+                            {dictationLanguageLabel ? (
+                                <span className="rounded-full border border-red-200/70 bg-red-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-red-600 dark:border-red-400/30 dark:bg-red-500/10 dark:text-red-200">
+                                    {dictationLanguageLabel}
+                                </span>
+                            ) : null}
+                            <div className="flex items-end gap-1 h-5" aria-hidden="true">
+                                {[0.6, 0.95, 0.7, 1].map((scale, index) => (
+                                    <span
+                                        key={index}
+                                        className="w-1 rounded-full bg-red-400/80 animate-pulse"
+                                        style={{
+                                            height: `${Math.round(10 + (index % 2 === 0 ? 4 : 8))}px`,
+                                            animationDuration: `${900 + index * 140}ms`,
+                                            transform: `scaleY(${scale})`,
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 transition-opacity">
+                            <div className="relative">
+                                <button
+                                    onClick={() => setActiveMenu(activeMenu === 'style' ? null : 'style')}
+                                    className={cn(ButtonClass, (editor.isActive('heading') || editor.isActive('paragraph')) && "text-slate-900 dark:text-white")}
+                                >
+                                    <span className="text-xs font-bold">{getActiveStyleLabel()}</span>
+                                    <ChevronDownIcon className="h-3 w-3 opacity-50" />
+                                </button>
+                                {activeMenu === 'style' && (
+                                    <div className="absolute top-full left-0 mt-1 w-36 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
+                                        <button onClick={() => { editor.chain().focus().setParagraph().run(); setActiveMenu(null); }} className={DropdownItemClass}>Paragraph</button>
+                                        <button onClick={() => { editor.chain().focus().setHeading({ level: 2 }).run(); setActiveMenu(null); }} className={cn(DropdownItemClass, "font-semibold")}>Headline</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => editor.chain().focus().toggleBold().run()}
+                                className={cn(ButtonClass, editor.isActive('bold') && ActiveClass, "font-black text-base w-8")}
+                            >
+                                B
+                            </button>
+
+                            <button
+                                onClick={() => editor.chain().focus().toggleItalic().run()}
+                                className={cn(ButtonClass, editor.isActive('italic') && ActiveClass, "italic font-serif text-base w-8")}
+                            >
+                                I
+                            </button>
+
+                            <div className="relative">
+                                <button
+                                    onClick={() => setActiveMenu(activeMenu === 'align' ? null : 'align')}
+                                    className={cn(ButtonClass, "w-8")}
+                                >
+                                    <AlignLeftIcon className="h-4 w-4" />
+                                </button>
+                                {activeMenu === 'align' && (
+                                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
+                                        <button onClick={() => { devLog('Align Left'); setActiveMenu(null); }} className={DropdownItemClass}><AlignLeftIcon className="h-4 w-4"/> Left</button>
+                                        <button onClick={() => { devLog('Align Center'); setActiveMenu(null); }} className={DropdownItemClass}><AlignCenterIcon className="h-4 w-4"/> Center</button>
+                                        <button onClick={() => { devLog('Align Right'); setActiveMenu(null); }} className={DropdownItemClass}><AlignRightIcon className="h-4 w-4"/> Right</button>
+                                        <button onClick={() => { devLog('Align Justify'); setActiveMenu(null); }} className={DropdownItemClass}><AlignJustifyIcon className="h-4 w-4"/> Justify</button>
+                                    </div>
+                                )}
+                            </div>
+
+                            <button
+                                onClick={() => editor.chain().focus().setHorizontalRule().run()}
+                                className={cn(
+                                    "w-8 h-8 flex items-center justify-center rounded-full border border-slate-300 dark:border-white/30 transition-all text-primary dark:text-accent hover:bg-black/5 dark:hover:bg-white/10"
+                                )}
+                                title={lang === 'en' ? "Create Chapter" : "إنشاء فصل"}
+                            >
+                                <PlusIcon className="h-4 w-4" />
+                            </button>
                         </div>
                     )}
                 </div>
 
-                {/* 2. Inline Formatting: Bold (B) */}
-                <button
-                    onClick={() => editor.chain().focus().toggleBold().run()}
-                    className={cn(ButtonClass, editor.isActive('bold') && ActiveClass, "font-black text-base w-8")}
-                >
-                    B
-                </button>
-
-                {/* 3. Inline Formatting: Italic (I) */}
-                <button
-                    onClick={() => editor.chain().focus().toggleItalic().run()}
-                    className={cn(ButtonClass, editor.isActive('italic') && ActiveClass, "italic font-serif text-base w-8")}
-                >
-                    I
-                </button>
-
-                {/* 4. Alignment Dropdown */}
-                <div className="relative">
-                    <button
-                        onClick={() => setActiveMenu(activeMenu === 'align' ? null : 'align')}
-                        className={cn(ButtonClass, "w-8")}
-                    >
-                        <AlignLeftIcon className="h-4 w-4" />
-                    </button>
-                    {activeMenu === 'align' && (
-                        <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 w-40 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-white/10 z-50 overflow-hidden">
-                            <button onClick={() => { devLog('Align Left'); setActiveMenu(null); }} className={DropdownItemClass}><AlignLeftIcon className="h-4 w-4"/> Left</button>
-                            <button onClick={() => { devLog('Align Center'); setActiveMenu(null); }} className={DropdownItemClass}><AlignCenterIcon className="h-4 w-4"/> Center</button>
-                            <button onClick={() => { devLog('Align Right'); setActiveMenu(null); }} className={DropdownItemClass}><AlignRightIcon className="h-4 w-4"/> Right</button>
-                            <button onClick={() => { devLog('Align Justify'); setActiveMenu(null); }} className={DropdownItemClass}><AlignJustifyIcon className="h-4 w-4"/> Justify</button>
-                        </div>
-                    )}
-                </div>
-
-                {/* 5. Create Chapter (+) - Standard thin white circle style */}
-                <button
-                    onClick={() => editor.chain().focus().setHorizontalRule().run()}
-                    className={cn(
-                        "w-8 h-8 flex items-center justify-center rounded-full border border-slate-300 dark:border-white/30 transition-all text-primary dark:text-accent hover:bg-black/5 dark:hover:bg-white/10"
-                    )}
-                    title={lang === 'en' ? "Create Chapter" : "إنشاء فصل"}
-                >
-                    <PlusIcon className="h-4 w-4" />
-                </button>
-
-                {/* 6. Voice Dictation - Moved to far right with extra distance */}
                 <button 
                     onClick={onToggleVoice}
                     className={cn(
-                        "ml-6 w-8 h-8 flex items-center justify-center rounded-full transition-all text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20", 
-                        isRecording && "text-red-500 bg-red-500/10 hover:bg-red-500/20"
+                        "flex items-center justify-center rounded-full transition-all duration-200",
+                        isDictationActive
+                            ? "h-11 w-11 bg-red-500 text-white shadow-lg shadow-red-500/25 hover:bg-red-400"
+                            : "h-8 w-8 text-slate-500 dark:text-slate-400 bg-black/5 dark:bg-white/10 hover:bg-black/10 dark:hover:bg-white/20"
                     )}
-                    aria-label="Dictation"
+                    aria-label={isDictationActive ? (lang === 'en' ? 'Stop dictation' : 'إيقاف الإملاء') : (lang === 'en' ? 'Start dictation' : 'بدء الإملاء')}
                 >
-                    <MicIcon className={cn("h-4 w-4", isRecording && "animate-pulse")} />
+                    <MicIcon className={cn("transition-all duration-200", isDictationActive ? "h-5 w-5" : "h-4 w-4")} />
                 </button>
-
             </div>
         </div>
     );

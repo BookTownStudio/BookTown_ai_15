@@ -14,7 +14,6 @@ import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Modal from '../../components/ui/Modal.tsx';
-import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { BrainIcon } from '../../components/icons/BrainIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
@@ -34,6 +33,15 @@ import {
 } from '../../lib/editor/writeLocalDrafts.ts';
 import { Project, WriteContentDoc } from '../../types/entities.ts';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
+import { allowNextMediaRequest } from '../../lib/media/MediaGuard.ts';
+import {
+    createBrowserSpeechSession,
+    getBrowserSpeechSupportInfo,
+    isBrowserSpeechRecognitionSupported,
+    type BrowserSpeechDictationErrorCode,
+    type BrowserSpeechSession,
+    type BrowserSpeechSupportInfo,
+} from '../../lib/speech/browserSpeechDictation.ts';
 
 type EditorSnapshot = WriteDraftSnapshot;
 type HistoryState = { present: EditorSnapshot };
@@ -41,10 +49,17 @@ type HistoryAction = { type: 'SET', payload: EditorSnapshot };
 
 type AuthorityStatus = 'ephemeral' | 'materializing' | 'persistent' | 'error';
 type SaveIndicator = 'local-only' | 'unsaved' | 'saving' | 'saved' | 'offline' | 'conflict' | 'error';
+type DictationPhase = 'idle' | 'starting' | 'listening' | 'stopping';
 type RecoveryBanner =
     | { mode: 'recovered'; draft: WriteDraftRecord }
     | { mode: 'available'; draft: WriteDraftRecord }
     | null;
+type DictationAnchor = {
+    from: number;
+    to: number;
+    nextPos: number;
+    replaceSelection: boolean;
+};
 
 const EMPTY_SNAPSHOT: EditorSnapshot = {
     titleEn: '',
@@ -150,6 +165,81 @@ function getIndicatorLabel(indicator: SaveIndicator, lang: string): string {
     return 'Sync issue';
 }
 
+function resolveDictationLanguage(editor: Editor | null, fallbackLang: string): string {
+    const activeBlockLang = editor?.state.selection.$from.parent?.attrs?.lang;
+    if (typeof activeBlockLang === 'string') {
+        if (activeBlockLang.toLowerCase().startsWith('ar')) {
+            return 'ar-SA';
+        }
+        if (activeBlockLang.toLowerCase().startsWith('en')) {
+            return 'en-US';
+        }
+    }
+
+    return fallbackLang === 'ar' ? 'ar-SA' : 'en-US';
+}
+
+function normalizeDictationTranscript(transcript: string): string {
+    const normalized = transcript.replace(/\s+/g, ' ').trim();
+    return normalized ? `${normalized} ` : '';
+}
+
+function getDictationStatusLabel(phase: DictationPhase, lang: string): string {
+    if (lang === 'ar') {
+        if (phase === 'starting') return 'بدء الإملاء';
+        if (phase === 'stopping') return 'إيقاف الإملاء';
+        return 'جاري الإملاء';
+    }
+
+    if (phase === 'starting') return 'Starting';
+    if (phase === 'stopping') return 'Stopping';
+    return 'Dictating';
+}
+
+function getDictationErrorMessage(code: BrowserSpeechDictationErrorCode, lang: string): string {
+    if (lang === 'ar') {
+        if (code === 'unsupported') return 'الإملاء الصوتي غير مدعوم في هذا المتصفح.';
+        if (code === 'permission_denied') return 'تم رفض إذن الميكروفون.';
+        if (code === 'audio_capture') return 'الميكروفون غير متاح على هذا الجهاز.';
+        if (code === 'network') return 'حدث خطأ في الشبكة أثناء الإملاء.';
+        if (code === 'no_speech') return 'لم يتم التقاط أي كلام. حاول مرة أخرى.';
+        return 'توقف الإملاء بسبب خطأ غير متوقع.';
+    }
+
+    if (code === 'unsupported') return 'Dictation is not supported in this browser.';
+    if (code === 'permission_denied') return 'Microphone permission was denied.';
+    if (code === 'audio_capture') return 'No microphone is available on this device.';
+    if (code === 'network') return 'A network error interrupted dictation.';
+    if (code === 'no_speech') return 'No speech was detected. Try again.';
+    return 'Dictation stopped because of an unexpected error.';
+}
+
+function getDictationLanguageLabel(language: string | null, lang: string): string | undefined {
+    if (!language) {
+        return undefined;
+    }
+
+    const isArabic = language.toLowerCase().startsWith('ar');
+    if (lang === 'ar') {
+        return isArabic ? 'العربية' : 'الإنجليزية';
+    }
+
+    return isArabic ? 'Arabic' : 'English';
+}
+
+function getLimitedDictationModeMessage(info: BrowserSpeechSupportInfo, lang: string): string {
+    const isTabletOrPhone = info.platform === 'ipad' || info.platform === 'iphone';
+    if (lang === 'ar') {
+        return isTabletOrPhone
+            ? 'الإملاء متاح بوضع محدود على هذا الجهاز. أبقِ اللغة الحالية ثابتة أثناء الجلسة.'
+            : 'الإملاء يعمل بوضع متصفح محدود. أبقِ اللغة الحالية ثابتة أثناء الجلسة.';
+    }
+
+    return isTabletOrPhone
+        ? 'Dictation is running in limited mode on this device. Keep the current language locked for this session.'
+        : 'Dictation is running in limited browser mode. Keep the current language locked for this session.';
+}
+
 const EditorScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
@@ -168,11 +258,14 @@ const EditorScreen: React.FC = () => {
     const [isSaving, setIsSaving] = useState(false);
     const [saveIssue, setSaveIssue] = useState<'none' | 'offline' | 'conflict' | 'error'>('none');
     const [isMentorOpen, setIsMentorOpen] = useState(false);
-    const [isMicModalOpen, setIsMicModalOpen] = useState(false);
     const [hasInteractedWithTitle, setHasInteractedWithTitle] = useState(false);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [outline, setOutline] = useState<EditorOutlineItem[]>([]);
     const [recoveryBanner, setRecoveryBanner] = useState<RecoveryBanner>(null);
+    const [dictationPhase, setDictationPhase] = useState<DictationPhase>('idle');
+    const [dictationStartedAt, setDictationStartedAt] = useState<number | null>(null);
+    const [dictationElapsedMs, setDictationElapsedMs] = useState(0);
+    const [dictationSessionLanguage, setDictationSessionLanguage] = useState<string | null>(null);
 
     const mentor = mockAgents.find(a => a.id === 'mentor');
 
@@ -188,6 +281,12 @@ const EditorScreen: React.FC = () => {
     const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
     const latestAvailableDraftRef = useRef<WriteDraftRecord | null>(null);
     const editorScrollRef = useRef<HTMLDivElement | null>(null);
+    const dictationSessionRef = useRef<BrowserSpeechSession | null>(null);
+    const dictationAnchorRef = useRef<DictationAnchor | null>(null);
+    const dictationStopRequestedRef = useRef(false);
+    const dictationLastErrorRef = useRef<BrowserSpeechDictationErrorCode | null>(null);
+    const suppressDictationAnchorMappingRef = useRef(false);
+    const dictationLimitedModeNoticeRef = useRef(false);
 
     const [debouncedContent] = useDebounce(present.content, 2000);
     const [debouncedTitleEn] = useDebounce(present.titleEn, 2000);
@@ -223,8 +322,68 @@ const EditorScreen: React.FC = () => {
         setSaveIssue('none');
         setOutline([]);
         setRecoveryBanner(null);
+        dictationSessionRef.current?.dispose();
+        dictationSessionRef.current = null;
+        dictationAnchorRef.current = null;
+        dictationStopRequestedRef.current = false;
+        dictationLastErrorRef.current = null;
+        suppressDictationAnchorMappingRef.current = false;
+        setDictationPhase('idle');
+        setDictationStartedAt(null);
+        setDictationElapsedMs(0);
+        setDictationSessionLanguage(null);
         dispatch({ type: 'SET', payload: EMPTY_SNAPSHOT });
     }, [isNewRoute, scopeId]);
+
+    useEffect(() => {
+        if (dictationPhase === 'idle' || !dictationStartedAt) {
+            setDictationElapsedMs(0);
+            return;
+        }
+
+        const updateElapsed = () => {
+            setDictationElapsedMs(Date.now() - dictationStartedAt);
+        };
+
+        updateElapsed();
+        const interval = window.setInterval(updateElapsed, 1000);
+        return () => window.clearInterval(interval);
+    }, [dictationPhase, dictationStartedAt]);
+
+    useEffect(() => {
+        return () => {
+            dictationSessionRef.current?.dispose();
+            dictationSessionRef.current = null;
+            dictationAnchorRef.current = null;
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!editor) {
+            return;
+        }
+
+        const handleTransaction = ({ transaction }: { transaction: any }) => {
+            const anchor = dictationAnchorRef.current;
+            if (!anchor || !transaction?.docChanged) {
+                return;
+            }
+
+            if (suppressDictationAnchorMappingRef.current) {
+                suppressDictationAnchorMappingRef.current = false;
+                return;
+            }
+
+            anchor.from = transaction.mapping.map(anchor.from, -1);
+            anchor.to = transaction.mapping.map(anchor.to, 1);
+            anchor.nextPos = transaction.mapping.map(anchor.nextPos, 1);
+        };
+
+        editor.on('transaction', handleTransaction);
+        return () => {
+            editor.off('transaction', handleTransaction);
+        };
+    }, [editor]);
 
     useEffect(() => {
         if (!isNewRoute && projectId && projectId !== 'new') {
@@ -742,6 +901,10 @@ const EditorScreen: React.FC = () => {
     }, [authorityStatus, hasDirtyChanges, isOffline, persistLocalDraft, saveIssue, uid]);
 
     const handleBack = async () => {
+        if (dictationPhase !== 'idle') {
+            teardownDictationSession('idle');
+        }
+
         const canExit = await flushBeforeExit();
         if (!canExit) {
             return;
@@ -886,14 +1049,158 @@ const EditorScreen: React.FC = () => {
         showToast(lang === 'en' ? 'Local draft restored.' : 'تمت استعادة المسودة المحلية.');
     };
 
-    const toggleVoice = () => setIsMicModalOpen(true);
+    const teardownDictationSession = useCallback((phase: DictationPhase = 'idle') => {
+        dictationSessionRef.current?.dispose();
+        dictationSessionRef.current = null;
+        dictationAnchorRef.current = null;
+        dictationStopRequestedRef.current = false;
+        suppressDictationAnchorMappingRef.current = false;
+        setDictationPhase(phase);
+        setDictationStartedAt(null);
+        setDictationElapsedMs(0);
+        setDictationSessionLanguage(null);
+    }, []);
 
-    const handleVoiceResult = (text: string) => {
-        if (text && editor) {
-            editor.commands.insertContent(text + ' ');
+    const insertDictationTranscript = useCallback((transcript: string) => {
+        if (!editor) {
+            return;
         }
-        setIsMicModalOpen(false);
-    };
+
+        const chunk = normalizeDictationTranscript(transcript);
+        if (!chunk) {
+            return;
+        }
+
+        const anchor = dictationAnchorRef.current;
+        if (!anchor) {
+            return;
+        }
+
+        suppressDictationAnchorMappingRef.current = true;
+
+        if (anchor.replaceSelection) {
+            const insertFrom = Math.max(1, anchor.from);
+            const insertTo = Math.max(insertFrom, anchor.to);
+            const inserted = editor.commands.insertContentAt({ from: insertFrom, to: insertTo }, chunk);
+            if (!inserted) {
+                suppressDictationAnchorMappingRef.current = false;
+                return;
+            }
+            anchor.replaceSelection = false;
+            anchor.from = insertFrom;
+            anchor.to = insertFrom + chunk.length;
+            anchor.nextPos = anchor.to;
+            return;
+        }
+
+        const insertAt = Math.max(1, anchor.nextPos);
+        const inserted = editor.commands.insertContentAt(insertAt, chunk);
+        if (!inserted) {
+            suppressDictationAnchorMappingRef.current = false;
+            return;
+        }
+
+        anchor.from = insertAt + chunk.length;
+        anchor.to = anchor.from;
+        anchor.nextPos = anchor.from;
+    }, [editor]);
+
+    const stopDictation = useCallback(() => {
+        const session = dictationSessionRef.current;
+        if (!session || dictationPhase === 'idle' || dictationPhase === 'stopping') {
+            return;
+        }
+
+        dictationStopRequestedRef.current = true;
+        setDictationPhase('stopping');
+        session.stop();
+    }, [dictationPhase]);
+
+    const startDictation = useCallback(() => {
+        if (!editor) {
+            return;
+        }
+
+        if (dictationSessionRef.current || dictationPhase !== 'idle') {
+            return;
+        }
+
+        const supportInfo = getBrowserSpeechSupportInfo();
+
+        if (!isBrowserSpeechRecognitionSupported() || supportInfo.level === 'unsupported') {
+            const code: BrowserSpeechDictationErrorCode = 'unsupported';
+            dictationLastErrorRef.current = code;
+            showToast(getDictationErrorMessage(code, lang));
+            return;
+        }
+
+        const selection = editor.state.selection;
+        dictationAnchorRef.current = {
+            from: selection.from,
+            to: selection.to,
+            nextPos: selection.from,
+            replaceSelection: selection.from !== selection.to,
+        };
+        dictationStopRequestedRef.current = false;
+        dictationLastErrorRef.current = null;
+        setDictationPhase('starting');
+        setDictationStartedAt(null);
+        setDictationElapsedMs(0);
+        const language = resolveDictationLanguage(editor, lang);
+        setDictationSessionLanguage(language);
+
+        try {
+            allowNextMediaRequest();
+            devLog('[WRITE][DICTATION_SUPPORT]', supportInfo);
+            if (supportInfo.level === 'limited' && !dictationLimitedModeNoticeRef.current) {
+                dictationLimitedModeNoticeRef.current = true;
+                showToast(getLimitedDictationModeMessage(supportInfo, lang));
+            }
+            const session = createBrowserSpeechSession(language, {
+                onStart: () => {
+                    setDictationStartedAt(Date.now());
+                    setDictationPhase('listening');
+                },
+                onFinalTranscript: (transcript) => {
+                    insertDictationTranscript(transcript);
+                },
+                onError: (code) => {
+                    if (code === 'aborted' && dictationStopRequestedRef.current) {
+                        return;
+                    }
+                    dictationLastErrorRef.current = code;
+                    showToast(getDictationErrorMessage(code, lang));
+                },
+                onEnd: ({ userInitiated }) => {
+                    const errorCode = dictationLastErrorRef.current;
+                    const stopRequested = dictationStopRequestedRef.current;
+                    teardownDictationSession('idle');
+                    dictationLastErrorRef.current = null;
+
+                    if (!userInitiated && !stopRequested && !errorCode) {
+                        showToast(lang === 'en' ? 'Dictation stopped unexpectedly.' : 'توقف الإملاء بشكل غير متوقع.');
+                    }
+                },
+            });
+
+            dictationSessionRef.current = session;
+            session.start();
+        } catch (error) {
+            console.error('[WRITE][DICTATION_START_FAILED]', error);
+            dictationLastErrorRef.current = 'unknown';
+            teardownDictationSession('idle');
+            showToast(getDictationErrorMessage('unknown', lang));
+        }
+    }, [dictationPhase, editor, insertDictationTranscript, lang, showToast, teardownDictationSession]);
+
+    const toggleVoice = useCallback(() => {
+        if (dictationPhase === 'idle') {
+            startDictation();
+            return;
+        }
+
+        stopDictation();
+    }, [dictationPhase, startDictation, stopDictation]);
 
     if (isFetchError) {
         return (
@@ -1000,8 +1307,11 @@ const EditorScreen: React.FC = () => {
                 <FormattingToolbar
                     editor={editor}
                     onToggleVoice={toggleVoice}
-                    isRecording={false}
-                    isVisible={!isFocusMode}
+                    isRecording={dictationPhase !== 'idle'}
+                    isVisible={!isFocusMode || dictationPhase !== 'idle'}
+                    dictationStatusLabel={getDictationStatusLabel(dictationPhase, lang)}
+                    dictationElapsedMs={dictationElapsedMs}
+                    dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
                 />
 
                 <div ref={editorScrollRef} className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
@@ -1052,14 +1362,6 @@ const EditorScreen: React.FC = () => {
                     </Button>
                 </div>
             </Modal>
-
-            {isMicModalOpen && (
-                <VoiceSearchModal
-                    isOpen={isMicModalOpen}
-                    onClose={() => setIsMicModalOpen(false)}
-                    onResult={handleVoiceResult}
-                />
-            )}
         </div>
     );
 };
