@@ -20,6 +20,7 @@ import {
 
 import {
   getFirebaseDb,
+  getFirebaseFunctions,
   getFirebaseStorage,
 } from "../firebase.ts";
 import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts";
@@ -455,6 +456,10 @@ export const firebaseCatalogService = {
     if (!normalizedPublicationId) {
       throw new Error("PUBLICATION_ID_MISSING");
     }
+
+    const functions = getFirebaseFunctions();
+    console.log("CALLING_GET_LONGFORM_PUBLICATION", normalizedPublicationId);
+    console.log("FUNCTIONS_REGION", functions.app.options.projectId);
 
     return callEndpoint<{ publicationId: string }, LongformPublicationRecord>(
       "getLongformPublication",
