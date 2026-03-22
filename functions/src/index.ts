@@ -120,6 +120,7 @@ import { aiDiscoverAgentCallable as aiDiscoverAgentCallableRaw } from "./ai/disc
 import { mutateAgentSession as mutateAgentSessionRaw } from "./agents/mutateAgentSession";
 import { api as apiRaw } from "./api";
 import { sitemap as sitemapRaw } from "./ssr/sitemap";
+import { sitemapPublications as sitemapPublicationsRaw } from "./ssr/sitemapPublications";
 import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
 import { duplicateShelf as duplicateShelfRaw } from "./shelves/duplicateShelf";
 import { addBookToShelf as addBookToShelfRaw } from "./shelves/addBookToShelf";
@@ -727,6 +728,7 @@ export { scheduledIntelligenceDriftMonitor } from "./intelligence/driftMonitor";
 
 // SSR
 export const sitemap = sitemapRaw;
+export const sitemapPublications = sitemapPublicationsRaw;
 export const ssrPublicPage = ssrPublicPageRaw;
 
 // Triggers

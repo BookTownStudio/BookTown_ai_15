@@ -1,0 +1,37 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="100" y1="40" x2="1080" y2="590" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#201A15"/>
+      <stop offset="0.45" stop-color="#6A513C"/>
+      <stop offset="1" stop-color="#E1CCAB"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(214 116) rotate(33.425) scale(490.774 350.466)">
+      <stop stop-color="#F5E6CA" stop-opacity="0.52"/>
+      <stop offset="1" stop-color="#F5E6CA" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panel" x1="246" y1="174" x2="969" y2="515" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F4ECDE" stop-opacity="0.96"/>
+      <stop offset="1" stop-color="#E9DBC2" stop-opacity="0.9"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" rx="28" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="28" fill="url(#glow)"/>
+  <circle cx="1064" cy="128" r="160" fill="#D8B98C" fill-opacity="0.14"/>
+  <circle cx="1018" cy="510" r="210" fill="#0C0A08" fill-opacity="0.16"/>
+  <rect x="78" y="74" width="1044" height="482" rx="30" fill="#0F0C09" fill-opacity="0.12" stroke="white" stroke-opacity="0.08"/>
+  <rect x="132" y="130" width="936" height="370" rx="28" fill="url(#panel)"/>
+  <path d="M216 220C216 205.641 227.641 194 242 194H440C454.359 194 466 205.641 466 220V410C466 424.359 454.359 436 440 436H242C227.641 436 216 424.359 216 410V220Z" fill="#DDC8A9"/>
+  <path d="M256 236C256 228.268 262.268 222 270 222H425C432.732 222 439 228.268 439 236V394C439 401.732 432.732 408 425 408H270C262.268 408 256 401.732 256 394V236Z" fill="#F6EFE2"/>
+  <path d="M298 262H396" stroke="#8B6C4E" stroke-width="8" stroke-linecap="round"/>
+  <path d="M286 296H408" stroke="#A78A69" stroke-width="8" stroke-linecap="round"/>
+  <path d="M286 330H408" stroke="#A78A69" stroke-width="8" stroke-linecap="round"/>
+  <path d="M286 364H372" stroke="#A78A69" stroke-width="8" stroke-linecap="round"/>
+  <path d="M564 214H977" stroke="#8D775D" stroke-width="12" stroke-linecap="round"/>
+  <path d="M564 268H949" stroke="#B29A7F" stroke-width="12" stroke-linecap="round"/>
+  <path d="M564 322H933" stroke="#B29A7F" stroke-width="12" stroke-linecap="round"/>
+  <path d="M564 376H882" stroke="#B29A7F" stroke-width="12" stroke-linecap="round"/>
+  <rect x="564" y="432" width="154" height="18" rx="9" fill="#8D775D" fill-opacity="0.38"/>
+  <text x="136" y="96" fill="#F5E7CD" font-family="Georgia, 'Times New Roman', serif" font-size="28" letter-spacing="7">BOOKTOWN</text>
+  <text x="136" y="584" fill="#F0E2C6" font-family="Georgia, 'Times New Roman', serif" font-size="54" font-weight="700">Publication</text>
+  <text x="136" y="617" fill="#E1D0B1" font-family="Georgia, 'Times New Roman', serif" font-size="24" letter-spacing="1.2">A reading-first longform experience inside BookTown</text>
+</svg>

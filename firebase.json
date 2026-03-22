@@ -124,6 +124,10 @@
         "function": "sitemap"
       },
       {
+        "source": "/sitemap-publications.xml",
+        "function": "sitemapPublications"
+      },
+      {
         "source": "/api/**",
         "run": {
           "serviceId": "api",

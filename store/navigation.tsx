@@ -1,5 +1,6 @@
 import React, { createContext, useState, useContext, useMemo, ReactNode, useCallback, useEffect } from 'react';
 import { View, TabName, NavigationParams } from '../types/navigation.ts';
+import { buildPublicationSlugPath, extractPublicationIdFromSlugSegment } from '../lib/publications/publicationUrl.ts';
 
 const initialResetTokens: Record<TabName, number> = {
     home: 0,
@@ -123,6 +124,20 @@ function resolveViewFromPath(pathname: string, search = ''): View {
         const bookId = decodePathSegment(segments[1]);
         if (bookId.length > 0) {
             return { type: 'immersive', id: 'reader', params: { bookId } };
+        }
+    }
+
+    if (segments.length >= 2 && segments[0] === 'blog') {
+        const publicationId = extractPublicationIdFromSlugSegment(segments[1]);
+        if (publicationId.length > 0) {
+            return { type: 'immersive', id: 'publicationReader', params: { publicationId } };
+        }
+    }
+
+    if (segments.length >= 2 && segments[0] === 'publication') {
+        const publicationId = decodePathSegment(segments[1]);
+        if (publicationId.length > 0) {
+            return { type: 'immersive', id: 'publicationReader', params: { publicationId } };
         }
     }
 
@@ -285,7 +300,14 @@ function resolvePathFromView(view: View): string | null {
                     typeof view.params?.publicationId === 'string'
                         ? view.params.publicationId.trim()
                         : '';
-                return publicationId ? `/read/publication/${encodePathSegment(publicationId)}` : null;
+                const title =
+                    typeof view.params?.title === 'string'
+                        ? view.params.title.trim()
+                        : '';
+                if (!publicationId) return null;
+                return title
+                    ? buildPublicationSlugPath(title, publicationId)
+                    : `/read/publication/${encodePathSegment(publicationId)}`;
             }
             case 'editor': {
                 const projectId = typeof view.params?.projectId === 'string' ? view.params.projectId.trim() : '';

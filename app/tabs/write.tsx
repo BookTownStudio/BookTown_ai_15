@@ -285,12 +285,13 @@ const WriteScreen: React.FC = () => {
         handleCreateProject(templateId, createProjectSeedFromTemplate(templateId, lang === 'ar' ? 'ar' : 'en'));
     };
 
-    const handleOpenPublication = useCallback((publicationId: string) => {
+    const handleOpenPublication = useCallback((publicationId: string, title?: string) => {
         navigate({
             type: 'immersive',
             id: 'publicationReader',
             params: {
                 publicationId,
+                ...(title ? { title } : {}),
                 from: currentView,
             },
         });
@@ -473,7 +474,7 @@ const WriteScreen: React.FC = () => {
                     <PublicationCard
                         key={publication.publicationId}
                         publication={publication}
-                        onPress={() => handleOpenPublication(publication.publicationId)}
+                        onPress={() => handleOpenPublication(publication.publicationId, publication.title)}
                     />
                 ))}
             </div>

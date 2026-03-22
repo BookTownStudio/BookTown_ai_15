@@ -56,6 +56,7 @@ const ProjectPublishedScreen: React.FC = () => {
                 id: 'publicationReader',
                 params: {
                     publicationId,
+                    title,
                     from: currentView,
                 },
             });

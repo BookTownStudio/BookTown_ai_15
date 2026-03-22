@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+
+Disallow: /api/
+Disallow: /write/
+Disallow: /reader/
+Disallow: /messages/
+
+Sitemap: /sitemap.xml
