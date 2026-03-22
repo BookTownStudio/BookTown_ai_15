@@ -57,11 +57,19 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       throw new HttpsError("not-found", "Publication not found.");
     }
 
+    console.log("STEP_DOC_FOUND");
+    console.log(
+      "STEP_RAW_DATA",
+      JSON.stringify(publicationSnap.data() ?? {}, null, 2)
+    );
     console.log("STEP_1_DOC_EXISTS");
 
     const publication = (publicationSnap.data() ?? {}) as Record<string, unknown>;
+    console.log("STEP_BEFORE_TITLE");
     console.log("STEP_2_TITLE", publication.title);
+    console.log("STEP_BEFORE_AUTHOR");
     console.log("STEP_3_AUTHOR", publication.authorDisplayName);
+    console.log("STEP_BEFORE_NORMALIZED");
     console.log(
       "STEP_4_NORMALIZED_CONTENT_PRESENT",
       !!publication.normalizedContent
