@@ -458,10 +458,6 @@ export const firebaseCatalogService = {
       throw new Error("PUBLICATION_ID_MISSING");
     }
 
-    const functions = getFirebaseFunctions();
-    console.log("CALLING_GET_LONGFORM_PUBLICATION", normalizedPublicationId);
-    console.log("FUNCTIONS_REGION", functions.app.options.projectId);
-
     return callEndpoint<{ publicationId: string }, LongformPublicationRecord>(
       "getLongformPublication",
       {

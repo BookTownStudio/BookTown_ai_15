@@ -36,9 +36,6 @@ const ProjectPublishedScreen: React.FC = () => {
         ? currentView.params.coverUrl
         : undefined;
 
-    console.log('OPEN_PUBLICATION_ID', publicationId);
-    console.log('FULL_PUBLISH_RESULT', currentView.type === 'immersive' ? currentView.params : null);
-
     useEffect(() => {
         setAnimate(true);
     }, []);

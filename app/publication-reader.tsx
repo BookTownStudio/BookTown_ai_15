@@ -16,10 +16,6 @@ const PublicationReaderScreen: React.FC = () => {
             : '';
     const from = currentView.type === 'immersive' ? currentView.params?.from : undefined;
 
-    console.log('PROFILE_GATE_PUBLICATION', publicationId);
-    console.log('PROFILE_GATE_PROFILE_STATE', undefined);
-    console.log('PROFILE_GATE_BEFORE_LONGFORM');
-
     const {
         data: publication,
         isLoading,
@@ -27,10 +23,6 @@ const PublicationReaderScreen: React.FC = () => {
         error,
         refetch,
     } = useLongformPublication(publicationId);
-
-    console.log('READER_PUBLICATION_DOC', publication);
-    console.log('READER_PUBLICATION_TYPE', publication?.publicationType);
-    console.log('READER_BEFORE_LONGFORM_BRANCH');
 
     const handleBack = () => navigate(from ?? { type: 'tab', id: 'read' });
 
