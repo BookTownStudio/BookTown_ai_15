@@ -80,6 +80,7 @@ export interface BookStats {
 export interface LongformPublicationRecord {
   publicationId: string;
   title: string;
+  author: string;
   coverUrl?: string;
   excerpt: string;
   estimatedReadingMinutes: number;
@@ -387,6 +388,13 @@ export interface ProjectDataService {
       language: string;
       unitCount: number;
     };
+  }>;
+
+  getProjectReleaseEbookPreviewSession(
+    releaseId: string
+  ): Promise<{
+    signedUrl: string;
+    format: "epub";
   }>;
 }
 

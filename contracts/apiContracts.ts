@@ -2516,6 +2516,24 @@ export const apiContracts = {
       }
     ),
 
+    getProjectReleaseEbookPreviewSession: defineContract(
+      z
+        .object({
+          releaseId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          signedUrl: z.string().url().min(1),
+          format: z.literal("epub"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["app/project/preview.tsx"],
+      }
+    ),
+
     getLongformPublication: defineContract(
       z
         .object({
@@ -2526,6 +2544,7 @@ export const apiContracts = {
         .object({
           publicationId: z.string().min(1),
           title: z.string().min(1),
+          author: z.string().min(1),
           coverUrl: z.string().max(2048).optional(),
           excerpt: z.string(),
           estimatedReadingMinutes: z.number().int().positive(),

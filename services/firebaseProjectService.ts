@@ -71,6 +71,10 @@ export type ProjectReleaseEpubResult = {
   attachmentId: string;
   binaryStatus: "ready";
 };
+export type ProjectReleaseEbookPreviewSession = {
+  signedUrl: string;
+  format: "epub";
+};
 export type CanonicalBookPublishResult = {
   bookId: string;
   attachmentId: string;
@@ -559,6 +563,17 @@ export const firebaseProjectService: ProjectDataService = {
     >("getProjectReleasePreview", {
       releaseId,
       previewType,
+    });
+  },
+
+  async getProjectReleaseEbookPreviewSession(
+    releaseId: string
+  ): Promise<ProjectReleaseEbookPreviewSession> {
+    return callEndpoint<
+      { releaseId: string },
+      ProjectReleaseEbookPreviewSession
+    >("getProjectReleaseEbookPreviewSession", {
+      releaseId,
     });
   },
 };

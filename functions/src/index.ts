@@ -88,6 +88,7 @@ import { generateProjectReleaseEpub as generateProjectReleaseEpubRaw } from "./g
 import { bridgeReleaseToCanonicalBook as bridgeReleaseToCanonicalBookRaw } from "./bridgeReleaseToCanonicalBook";
 import { bridgeReleaseToLongformPublication as bridgeReleaseToLongformPublicationRaw } from "./bridgeReleaseToLongformPublication";
 import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getProjectReleasePreview";
+import { getProjectReleaseEbookPreviewSession as getProjectReleaseEbookPreviewSessionRaw } from "./getProjectReleaseEbookPreviewSession";
 import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
 import { listOwnLongformPublications as listOwnLongformPublicationsRaw } from "./listOwnLongformPublications";
 import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
@@ -640,6 +641,10 @@ export const bridgeReleaseToLongformPublication = wrapCallableV2(
 export const getProjectReleasePreview = wrapCallableV2(
   "getProjectReleasePreview",
   getProjectReleasePreviewRaw
+);
+export const getProjectReleaseEbookPreviewSession = wrapCallableV2(
+  "getProjectReleaseEbookPreviewSession",
+  getProjectReleaseEbookPreviewSessionRaw
 );
 export const getLongformPublication = wrapCallableV2(
   "getLongformPublication",
