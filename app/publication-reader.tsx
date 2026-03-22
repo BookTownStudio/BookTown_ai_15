@@ -16,6 +16,10 @@ const PublicationReaderScreen: React.FC = () => {
             : '';
     const from = currentView.type === 'immersive' ? currentView.params?.from : undefined;
 
+    console.log('PROFILE_GATE_PUBLICATION', publicationId);
+    console.log('PROFILE_GATE_PROFILE_STATE', undefined);
+    console.log('PROFILE_GATE_BEFORE_LONGFORM');
+
     const {
         data: publication,
         isLoading,
