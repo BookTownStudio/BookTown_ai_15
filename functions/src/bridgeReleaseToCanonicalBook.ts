@@ -233,6 +233,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
 
       const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
       const existingEdition = (editionSnap.data() ?? {}) as Record<string, unknown>;
+      const isNewCanonicalBook = !bookSnap.exists;
       const rightsMode = normalizeBookRightsMode(existingBook.rightsMode || existingEdition.rightsMode);
       const title = release.title;
       const synopsis = deriveSynopsis(release.normalizedContent);
@@ -243,6 +244,11 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         ownerUid: release.ownerUid,
         authorDisplayName: authorName,
         language,
+        currentBook: {
+          bookId,
+          title,
+        },
+        isNewCanonicalBook,
       });
       const titleEn = language === "ar" ? "" : title;
       const titleAr = language === "ar" ? title : "";
