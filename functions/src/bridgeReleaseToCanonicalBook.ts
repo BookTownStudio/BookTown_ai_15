@@ -16,6 +16,10 @@ type ReadyRelease = {
   attachmentId: string;
   epubStoragePath: string;
   normalizedContent: NormalizedManuscript;
+  title: string;
+  authorDisplayName: string;
+  language: string;
+  coverUrl?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -91,47 +95,6 @@ function deriveSynopsis(normalizedContent: NormalizedManuscript): string {
   return "";
 }
 
-function containsArabic(value: string): boolean {
-  return /[\u0600-\u06FF]/.test(value);
-}
-
-function deriveLanguage(params: {
-  normalizedContent: NormalizedManuscript;
-  project: Record<string, unknown>;
-}): string {
-  for (const unit of params.normalizedContent.units) {
-    for (const block of unit.content) {
-      const lang = asNonEmptyString(block.attrs?.lang, 12).toLowerCase();
-      if (lang === "ar" || lang === "en") {
-        return lang;
-      }
-    }
-  }
-
-  const titleEn = asNonEmptyString(params.project.titleEn, 180);
-  const titleAr = asNonEmptyString(params.project.titleAr, 180);
-  if (titleAr && !titleEn) return "ar";
-  if (titleEn) return "en";
-  return containsArabic(titleAr) ? "ar" : "en";
-}
-
-function deriveProjectTitle(project: Record<string, unknown>, normalizedContent: NormalizedManuscript): string {
-  const titleEn = asNonEmptyString(project.titleEn, 180);
-  const titleAr = asNonEmptyString(project.titleAr, 180);
-  const title = asNonEmptyString(project.title, 180);
-  return titleEn || titleAr || title || normalizedContent.units[0]?.title || "Untitled";
-}
-
-function deriveAuthorName(profile: Record<string, unknown> | null, ownerUid: string): string {
-  if (!profile) return "BookTown Author";
-  return (
-    asNonEmptyString(profile.name, 180) ||
-    asNonEmptyString(profile.displayName, 180) ||
-    asNonEmptyString(profile.handle, 180) ||
-    ownerUid
-  );
-}
-
 function assertNormalizedContent(value: unknown): NormalizedManuscript {
   const record = asRecord(value);
   const units = Array.isArray(record?.units) ? record.units : null;
@@ -150,6 +113,9 @@ function assertReadyRelease(releaseId: string, release: Record<string, unknown>,
   const attachmentId = asNonEmptyString(release.attachmentId, 256);
   const epubStoragePath = asNonEmptyString(release.epubStoragePath, 2048);
   const binaryStatus = asNonEmptyString(release.binaryStatus, 32);
+  const title = asNonEmptyString(release.title, 180);
+  const authorDisplayName = asNonEmptyString(release.authorDisplayName, 180);
+  const language = asNonEmptyString(release.language, 12).toLowerCase();
 
   if (!ownerUid || !projectId) {
     throw new HttpsError(
@@ -172,6 +138,24 @@ function assertReadyRelease(releaseId: string, release: Record<string, unknown>,
       "Release binary trace is incomplete."
     );
   }
+  if (!title) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release title is missing."
+    );
+  }
+  if (!authorDisplayName) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release authorDisplayName is missing."
+    );
+  }
+  if (!language) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release language is missing."
+    );
+  }
 
   return {
     releaseId,
@@ -180,6 +164,10 @@ function assertReadyRelease(releaseId: string, release: Record<string, unknown>,
     attachmentId,
     epubStoragePath,
     normalizedContent: assertNormalizedContent(release.normalizedContent),
+    title,
+    authorDisplayName,
+    language,
+    coverUrl: normalizeCoverUrl(release.coverUrl),
   };
 }
 
@@ -203,27 +191,16 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       );
 
       const attachmentRef = db.collection("attachments").doc(release.attachmentId);
-      const projectRef = db
-        .collection("users")
-        .doc(release.ownerUid)
-        .collection("projects")
-        .doc(release.projectId);
-      const ownerRef = db.collection("users").doc(release.ownerUid);
       const bookId = deriveBookId(release.ownerUid, release.projectId);
       const bookRef = db.collection("books").doc(bookId);
 
-      const [attachmentSnap, projectSnap, ownerSnap, bookSnap] = await Promise.all([
+      const [attachmentSnap, bookSnap] = await Promise.all([
         tx.get(attachmentRef),
-        tx.get(projectRef),
-        tx.get(ownerRef),
         tx.get(bookRef),
       ]);
 
       if (!attachmentSnap.exists) {
         throw new HttpsError("failed-precondition", "Release attachment is missing.");
-      }
-      if (!projectSnap.exists) {
-        throw new HttpsError("failed-precondition", "Source project metadata is missing.");
       }
 
       const attachment = (attachmentSnap.data() ?? {}) as Record<string, unknown>;
@@ -236,19 +213,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         throw new HttpsError("failed-precondition", "Release attachment mismatch.");
       }
 
-      const project = (projectSnap.data() ?? {}) as Record<string, unknown>;
-      const ownerProfile = ownerSnap.exists
-        ? ((ownerSnap.data() ?? {}) as Record<string, unknown>)
-        : null;
-      const title = deriveProjectTitle(project, release.normalizedContent);
+      const title = release.title;
       const synopsis = deriveSynopsis(release.normalizedContent);
-      const authorName = deriveAuthorName(ownerProfile, release.ownerUid);
-      const language = deriveLanguage({
-        normalizedContent: release.normalizedContent,
-        project,
-      });
-      const titleEn = asNonEmptyString(project.titleEn, 180) || title;
-      const titleAr = asNonEmptyString(project.titleAr, 180) || "";
+      const authorName = release.authorDisplayName;
+      const language = release.language;
+      const titleEn = language === "ar" ? "" : title;
+      const titleAr = language === "ar" ? title : "";
       const normalizedTitle = normalizeSearchText(titleEn || titleAr || title);
       const normalizedAuthor = normalizeSearchText(authorName);
       const searchFields = buildSearchFieldsFromTextParts([
@@ -258,7 +228,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         authorName,
       ]);
       const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedTitle || normalizeSearchText(title)}`;
-      const coverUrl = normalizeCoverUrl(project.coverUrl);
+      const coverUrl = release.coverUrl;
       const now = FieldValue.serverTimestamp();
 
       tx.set(
@@ -279,10 +249,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             projectId: release.projectId,
             ownerId: release.ownerUid,
             ownerUid: release.ownerUid,
+            authorId: release.ownerUid,
             author: authorName,
             authorEn: authorName,
             authorAr: authorName,
             authors: [authorName],
+            authorDisplayName: authorName,
             ownerDisplayName: authorName,
             source: "write_release",
             sourcePriority: "canonical",
@@ -334,8 +306,44 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         tx.set(
           bookRef,
           {
+            authorId: release.ownerUid,
+            author: authorName,
+            authorEn: authorName,
+            authorAr: authorName,
+            authors: [authorName],
+            authorDisplayName: authorName,
+            ownerDisplayName: authorName,
+            title,
+            titleEn,
+            titleAr,
+            synopsis,
+            description: synopsis,
+            descriptionEn: synopsis,
+            descriptionAr: synopsis,
+            language,
             ebookAttachmentId: release.attachmentId,
             currentReleaseId: releaseId,
+            normalizedTitle,
+            authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
+            searchableTitleAuthor: `${normalizedTitle} ${normalizedAuthor}`.trim(),
+            search: {
+              tokens: searchFields.tokens,
+            },
+            canonicalKey,
+            ...(coverUrl
+              ? {
+                  coverUrl,
+                  cover: {
+                    original: coverUrl,
+                    medium: coverUrl,
+                    large: coverUrl,
+                    small: coverUrl,
+                  },
+                }
+              : {
+                  coverUrl: FieldValue.delete(),
+                  cover: FieldValue.delete(),
+                }),
             updatedAt: now,
           },
           { merge: true }

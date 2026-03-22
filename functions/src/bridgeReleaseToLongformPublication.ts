@@ -18,6 +18,10 @@ type ReadyLongformRelease = {
   ownerUid: string;
   projectId: string;
   normalizedContent: NormalizedManuscript;
+  title: string;
+  authorDisplayName: string;
+  language: string;
+  coverUrl?: string;
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -78,33 +82,6 @@ export function slugifyTitle(title: string): string {
   return normalized.slice(0, 120) || "publication";
 }
 
-function deriveLanguage(params: {
-  normalizedContent: NormalizedManuscript;
-  project: Record<string, unknown>;
-}): string {
-  return deriveLanguageFromNormalizedContent({
-    normalizedContent: params.normalizedContent,
-    titleEn: asNonEmptyString(params.project.titleEn, 180),
-    titleAr: asNonEmptyString(params.project.titleAr, 180),
-  });
-}
-
-function deriveRequiredTitle(project: Record<string, unknown>): string {
-  const title =
-    asNonEmptyString(project.titleEn, 180) ||
-    asNonEmptyString(project.titleAr, 180) ||
-    asNonEmptyString(project.title, 180);
-
-  if (!title) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Project title is required for longform publication."
-    );
-  }
-
-  return title;
-}
-
 function assertReadyLongformRelease(
   releaseId: string,
   release: Record<string, unknown>,
@@ -112,6 +89,15 @@ function assertReadyLongformRelease(
 ): ReadyLongformRelease {
   const ownerUid = asNonEmptyString(release.ownerUid, 256);
   const projectId = asNonEmptyString(release.projectId, 256);
+  const title = asNonEmptyString(release.title, 180);
+  const authorDisplayName = asNonEmptyString(release.authorDisplayName, 180);
+  const language =
+    asNonEmptyString(release.language, 12).toLowerCase() ||
+    deriveLanguageFromNormalizedContent({
+      normalizedContent: assertNormalizedContent(release.normalizedContent),
+      titleEn: title,
+      titleAr: "",
+    });
 
   if (!ownerUid || !projectId) {
     throw new HttpsError(
@@ -131,11 +117,29 @@ function assertReadyLongformRelease(
     );
   }
 
+  if (!title) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release title is missing."
+    );
+  }
+
+  if (!authorDisplayName) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Release authorDisplayName is missing."
+    );
+  }
+
   return {
     releaseId,
     ownerUid,
     projectId,
     normalizedContent: assertNormalizedContent(release.normalizedContent),
+    title,
+    authorDisplayName,
+    language,
+    coverUrl: normalizeCoverUrl(release.coverUrl),
   };
 }
 
@@ -162,24 +166,9 @@ export const bridgeReleaseToLongformPublication = onCall(
           caller.uid
         );
 
-        const projectRef = db
-          .collection("users")
-          .doc(release.ownerUid)
-          .collection("projects")
-          .doc(release.projectId);
-        const projectSnap = await tx.get(projectRef);
-
-        if (!projectSnap.exists) {
-          throw new HttpsError("failed-precondition", "Source project metadata is missing.");
-        }
-
-        const project = (projectSnap.data() ?? {}) as Record<string, unknown>;
-        const title = deriveRequiredTitle(project);
-        const language = deriveLanguage({
-          normalizedContent: release.normalizedContent,
-          project,
-        });
-        const coverUrl = normalizeCoverUrl(project.coverUrl);
+        const title = release.title;
+        const language = release.language;
+        const coverUrl = release.coverUrl;
         const excerpt = deriveExcerpt(release.normalizedContent);
         const wordCount = deriveWordCount(release.normalizedContent);
         const estimatedReadingMinutes = deriveEstimatedReadingMinutes(wordCount);
@@ -206,6 +195,8 @@ export const bridgeReleaseToLongformPublication = onCall(
               publicationId: publicationRef.id,
               projectId: release.projectId,
               ownerUid: release.ownerUid,
+              authorId: release.ownerUid,
+              authorDisplayName: release.authorDisplayName,
               title,
               slug,
               excerpt,
@@ -251,6 +242,8 @@ export const bridgeReleaseToLongformPublication = onCall(
           tx.set(
             publicationRef,
             {
+              authorId: release.ownerUid,
+              authorDisplayName: release.authorDisplayName,
               title,
               slug: nextSlug,
               excerpt,
@@ -263,7 +256,7 @@ export const bridgeReleaseToLongformPublication = onCall(
               wordCount,
               estimatedReadingMinutes,
               lastPublishedAt: now,
-              ...(coverUrl ? { coverUrl } : {}),
+              ...(coverUrl ? { coverUrl } : { coverUrl: FieldValue.delete() }),
               updatedAt: now,
             },
             { merge: true }

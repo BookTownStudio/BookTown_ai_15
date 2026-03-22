@@ -28,19 +28,6 @@ function normalizePublicationId(value: unknown): string {
   return publicationId;
 }
 
-function deriveAuthorDisplayName(
-  profile: Record<string, unknown> | null,
-  ownerUid: string
-): string {
-  if (!profile) return ownerUid;
-  return (
-    asNonEmptyString(profile.name, 180) ||
-    asNonEmptyString(profile.displayName, 180) ||
-    asNonEmptyString(profile.handle, 180) ||
-    ownerUid
-  );
-}
-
 function assertNormalizedContent(value: unknown): NormalizedManuscript {
   const record = asRecord(value);
   const units = Array.isArray(record?.units) ? record.units : null;
@@ -112,15 +99,11 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
         titleEn: title,
         titleAr: "",
       });
-    const ownerProfileSnap = ownerUid
-      ? await admin.firestore().collection("users").doc(ownerUid).get()
-      : null;
-    const author = deriveAuthorDisplayName(
-      ownerProfileSnap?.exists
-        ? (ownerProfileSnap.data() ?? {}) as Record<string, unknown>
-        : null,
-      ownerUid || caller.uid
-    );
+    const author =
+      asNonEmptyString(publication.authorDisplayName, 180) ||
+      asNonEmptyString(publication.ownerDisplayName, 180) ||
+      ownerUid ||
+      caller.uid;
 
     logger.info("[PUBLICATION][READ_LOADED]", {
       publicationId,
