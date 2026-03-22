@@ -174,13 +174,6 @@ export const bridgeReleaseToLongformPublication = onCall(
         const wordCount = deriveWordCount(release.normalizedContent);
         const estimatedReadingMinutes = deriveEstimatedReadingMinutes(wordCount);
         const slug = slugifyTitle(title);
-        const canonicalAuthor = await materializeAuthoredCanonicalAuthor({
-          tx,
-          ownerUid: release.ownerUid,
-          authorDisplayName: release.authorDisplayName,
-          language,
-        });
-
         const existingSnap = await tx.get(
           db
             .collection("longform_publications")
@@ -189,6 +182,12 @@ export const bridgeReleaseToLongformPublication = onCall(
             .where("publicationType", "==", "blog_longform")
             .limit(1)
         );
+        const canonicalAuthor = await materializeAuthoredCanonicalAuthor({
+          tx,
+          ownerUid: release.ownerUid,
+          authorDisplayName: release.authorDisplayName,
+          language,
+        });
 
         const now = FieldValue.serverTimestamp();
         const publicationRef = existingSnap.empty
