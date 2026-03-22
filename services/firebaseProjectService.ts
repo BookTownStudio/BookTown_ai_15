@@ -77,6 +77,7 @@ export type ProjectReleaseEbookPreviewSession = {
 };
 export type CanonicalBookPublishResult = {
   bookId: string;
+  editionId: string;
   attachmentId: string;
   currentReleaseId: string;
 };
@@ -84,6 +85,12 @@ export type LongformPublicationPublishResult = {
   publicationId: string;
   projectId: string;
   currentReleaseId: string;
+};
+export type PublishedBookRightsResult = {
+  bookId: string;
+  rightsMode: "public_free" | "private" | "paid" | "premium_only";
+  visibility: "public" | "private";
+  attachmentVisibility: "public" | "restricted" | "private";
 };
 type WriteShareLinkResult = {
   projectId: string;
@@ -550,6 +557,19 @@ export const firebaseProjectService: ProjectDataService = {
       LongformPublicationPublishResult
     >("bridgeReleaseToLongformPublication", {
       releaseId,
+    });
+  },
+
+  async updatePublishedBookRights(
+    bookId: string,
+    rightsMode: PublishedBookRightsResult["rightsMode"]
+  ): Promise<PublishedBookRightsResult> {
+    return callEndpoint<
+      { bookId: string; rightsMode: PublishedBookRightsResult["rightsMode"] },
+      PublishedBookRightsResult
+    >("updatePublishedBookRights", {
+      bookId,
+      rightsMode,
     });
   },
 

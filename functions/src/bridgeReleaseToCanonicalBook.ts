@@ -8,6 +8,12 @@ import type {
 } from "./publishing/normalizeProjectManuscript";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
+import {
+  attachmentVisibilityForRightsMode,
+  bookVisibilityForRightsMode,
+  normalizeBookRightsMode,
+} from "./rights/bookRights";
 
 type ReadyRelease = {
   releaseId: string;
@@ -44,6 +50,10 @@ function normalizeReleaseId(value: unknown): string {
 
 function deriveBookId(ownerUid: string, projectId: string): string {
   return `write_${ownerUid}_${projectId}`;
+}
+
+function deriveEditionId(ownerUid: string, projectId: string): string {
+  return `edition_write_${ownerUid}_${projectId}`;
 }
 
 function normalizeCoverUrl(value: unknown): string | undefined {
@@ -192,11 +202,14 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
 
       const attachmentRef = db.collection("attachments").doc(release.attachmentId);
       const bookId = deriveBookId(release.ownerUid, release.projectId);
+      const editionId = deriveEditionId(release.ownerUid, release.projectId);
       const bookRef = db.collection("books").doc(bookId);
+      const editionRef = db.collection("editions").doc(editionId);
 
-      const [attachmentSnap, bookSnap] = await Promise.all([
+      const [attachmentSnap, bookSnap, editionSnap] = await Promise.all([
         tx.get(attachmentRef),
         tx.get(bookRef),
+        tx.get(editionRef),
       ]);
 
       if (!attachmentSnap.exists) {
@@ -204,19 +217,33 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       }
 
       const attachment = (attachmentSnap.data() ?? {}) as Record<string, unknown>;
+      const attachmentParentType = asNonEmptyString(attachment.parentType, 64);
+      const attachmentParentId = asNonEmptyString(attachment.parentId, 256);
+      const attachmentReleaseId = asNonEmptyString(attachment.releaseId, 256);
       if (
-        asNonEmptyString(attachment.parentType, 64) !== "project_releases" ||
-        asNonEmptyString(attachment.parentId, 256) !== releaseId ||
+        !(
+          (attachmentParentType === "project_releases" && attachmentParentId === releaseId) ||
+          (attachmentParentType === "editions" && attachmentReleaseId === releaseId)
+        ) ||
         asNonEmptyString(attachment.storagePath, 2048) !== release.epubStoragePath ||
         asNonEmptyString(attachment.id, 256) !== release.attachmentId
       ) {
         throw new HttpsError("failed-precondition", "Release attachment mismatch.");
       }
 
+      const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
+      const existingEdition = (editionSnap.data() ?? {}) as Record<string, unknown>;
+      const rightsMode = normalizeBookRightsMode(existingBook.rightsMode || existingEdition.rightsMode);
       const title = release.title;
       const synopsis = deriveSynopsis(release.normalizedContent);
       const authorName = release.authorDisplayName;
       const language = release.language;
+      const canonicalAuthor = await materializeAuthoredCanonicalAuthor({
+        tx,
+        ownerUid: release.ownerUid,
+        authorDisplayName: authorName,
+        language,
+      });
       const titleEn = language === "ar" ? "" : title;
       const titleAr = language === "ar" ? title : "";
       const normalizedTitle = normalizeSearchText(titleEn || titleAr || title);
@@ -234,8 +261,52 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       tx.set(
         attachmentRef,
         {
-          visibility: "public",
+          parentType: "editions",
+          parentId: editionId,
+          editionId,
+          bookId,
+          releaseId,
+          visibility: attachmentVisibilityForRightsMode(rightsMode),
           updatedAt: now,
+        },
+        { merge: true }
+      );
+
+      tx.set(
+        editionRef,
+        {
+          id: editionId,
+          editionId,
+          bookId,
+          authorId: canonicalAuthor.authorId,
+          canonicalKey,
+          source: "write_release",
+          externalId: release.projectId,
+          currentReleaseId: releaseId,
+          title,
+          titleEn,
+          titleAr,
+          authors: [authorName],
+          authorEn: authorName,
+          authorAr: authorName,
+          language,
+          description: synopsis,
+          descriptionEn: synopsis,
+          descriptionAr: synopsis,
+          hasEbook: true,
+          downloadable: true,
+          isEbookAvailable: true,
+          ebookAttachmentId: release.attachmentId,
+          epubStoragePath: release.epubStoragePath,
+          searchTitleNormalized: normalizedTitle,
+          searchAuthorNormalized: normalizedAuthor,
+          searchTokens: searchFields.tokens,
+          rightsMode,
+          visibility: bookVisibilityForRightsMode(rightsMode),
+          publicDomain: false,
+          createdAt: existingEdition.createdAt || now,
+          updatedAt: now,
+          ...(coverUrl ? { coverUrl } : { coverUrl: FieldValue.delete() }),
         },
         { merge: true }
       );
@@ -246,10 +317,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           {
             id: bookId,
             bookId,
+            editionId,
             projectId: release.projectId,
             ownerId: release.ownerUid,
             ownerUid: release.ownerUid,
-            authorId: release.ownerUid,
+            authorId: canonicalAuthor.authorId,
+            authorCanonicalKey: canonicalAuthor.canonicalKey,
             author: authorName,
             authorEn: authorName,
             authorAr: authorName,
@@ -279,7 +352,8 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             hasEbook: true,
             downloadable: true,
             isEbookAvailable: true,
-            visibility: "public",
+            rightsMode,
+            visibility: bookVisibilityForRightsMode(rightsMode),
             createdAt: now,
             updatedAt: now,
             ...(coverUrl
@@ -297,7 +371,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           { merge: true }
         );
       } else {
-        const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
         const existingOwnerUid = asNonEmptyString(existingBook.ownerUid, 256);
         if (existingOwnerUid && existingOwnerUid !== release.ownerUid) {
           throw new HttpsError("failed-precondition", "Canonical book ownership mismatch.");
@@ -306,7 +379,9 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         tx.set(
           bookRef,
           {
-            authorId: release.ownerUid,
+            editionId,
+            authorId: canonicalAuthor.authorId,
+            authorCanonicalKey: canonicalAuthor.canonicalKey,
             author: authorName,
             authorEn: authorName,
             authorAr: authorName,
@@ -330,6 +405,8 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
               tokens: searchFields.tokens,
             },
             canonicalKey,
+            rightsMode,
+            visibility: bookVisibilityForRightsMode(rightsMode),
             ...(coverUrl
               ? {
                   coverUrl,
@@ -352,6 +429,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
 
       return {
         bookId,
+        editionId,
         attachmentId: release.attachmentId,
         currentReleaseId: releaseId,
       };
@@ -360,6 +438,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
     logger.info("[PUBLISH][CANONICAL_BOOK_BOUND]", {
       releaseId,
       bookId: result.bookId,
+      editionId: result.editionId,
       attachmentId: result.attachmentId,
       currentReleaseId: result.currentReleaseId,
     });

@@ -10,6 +10,7 @@ import { VertexAI } from "@google-cloud/vertexai";
 import type { AgentContextSnapshot } from "../intelligence/types";
 import { enqueueIntelligenceSignal } from "../intelligence/signalQueue";
 import { admin } from "../firebaseAdmin";
+import { isBookVisibleToPublic } from "../rights/bookRights";
 import {
   unifiedSearch,
   type UnifiedSearchResponse,
@@ -2004,6 +2005,9 @@ function topGenreWeights(context: AgentContextSnapshot): Record<string, number> 
 
 function normalizeCandidate(docSnap: QueryDocumentSnapshot<DocumentData>): CandidateBook | null {
   const data = docSnap.data() || {};
+  if (!isBookVisibleToPublic(data)) {
+    return null;
+  }
   const title = String(data.titleEn || data.title || "").trim().slice(0, 300);
   if (!title) return null;
   const author = String(data.authorEn || data.author || "Unknown").trim().slice(0, 180);

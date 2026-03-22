@@ -72,11 +72,16 @@ export const getProjectReleaseEbookPreviewSession = onCall(
       const attachment = (attachmentSnap.data() ?? {}) as Record<string, unknown>;
       const attachmentParentType = asNonEmptyString(attachment.parentType, 64);
       const attachmentParentId = asNonEmptyString(attachment.parentId, 256);
+      const attachmentReleaseId = asNonEmptyString(attachment.releaseId, 256);
       const attachmentStoragePath = asNonEmptyString(attachment.storagePath, 2048);
 
       if (
-        attachmentParentType !== "project_releases" ||
-        attachmentParentId !== releaseId ||
+        !(
+          (attachmentParentType === "project_releases" &&
+            attachmentParentId === releaseId) ||
+          (attachmentParentType === "editions" &&
+            attachmentReleaseId === releaseId)
+        ) ||
         attachmentStoragePath !== epubStoragePath
       ) {
         throw new HttpsError(

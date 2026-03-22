@@ -3,6 +3,7 @@ import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 import { FieldValue } from "firebase-admin/firestore";
+import { canUserReadBook } from "../rights/bookRights";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -191,7 +192,11 @@ async function resolveReadableSource(params: {
 
   const attachment = await resolveBookToEbookAttachment(bookId);
   if (attachment?.storagePath) {
-    if (attachment.visibility === "private") {
+    if (
+      !canUserReadBook(book, uid) ||
+      attachment.visibility === "private" ||
+      attachment.visibility === "restricted"
+    ) {
       throw new HttpsError("permission-denied", "You do not have access to this ebook.");
     }
 

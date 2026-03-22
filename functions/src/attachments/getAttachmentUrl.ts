@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { canUserReadBook, resolveBookOwnerUid } from "../rights/bookRights";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -40,6 +41,8 @@ export const getAttachmentUrl = onCall({ cors: true }, async (request) => {
   }
 
   const metadata = attSnap.data()!;
+  let editionData: Record<string, unknown> | null = null;
+  let bookData: Record<string, unknown> | null = null;
 
   // -------------------------------------------------
   // 2. Base Access Control (UNCHANGED LOGIC)
@@ -80,31 +83,70 @@ export const getAttachmentUrl = onCall({ cors: true }, async (request) => {
   // -------------------------------------------------
   // 3. RIGHTS-AWARE ENFORCEMENT (STEP 3.4)
   // -------------------------------------------------
+  if (metadata.parentType === "editions" && metadata.parentId) {
+    const editionSnap = await db
+      .collection("editions")
+      .doc(metadata.parentId)
+      .get();
+
+    if (!editionSnap.exists) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Edition not found for attachment."
+      );
+    }
+
+    editionData = editionSnap.data() as Record<string, unknown>;
+    const bookId =
+      typeof editionData.bookId === "string" && editionData.bookId.trim().length > 0
+        ? editionData.bookId.trim()
+        : typeof metadata.bookId === "string" && metadata.bookId.trim().length > 0
+        ? metadata.bookId.trim()
+        : "";
+
+    if (bookId) {
+      const bookSnap = await db.collection("books").doc(bookId).get();
+      if (bookSnap.exists) {
+        bookData = (bookSnap.data() ?? {}) as Record<string, unknown>;
+      }
+    }
+  }
+
+  if (surface === "read" && bookData) {
+    if (!canUserReadBook(bookData, uid)) {
+      throw new HttpsError(
+        "permission-denied",
+        "You do not have access to this content."
+      );
+    }
+  }
+
   if (surface === "download") {
     /**
      * Downloads are ONLY allowed if:
      *  - Parent entity is public domain
      *  - OR future: licensed / purchased (not implemented yet)
      */
-    if (
-      metadata.parentType === "editions" &&
-      metadata.parentId
-    ) {
-      const editionSnap = await db
-        .collection("editions")
-        .doc(metadata.parentId)
-        .get();
+    if (metadata.parentType === "editions" && metadata.parentId && editionData) {
+      const edition = editionData;
 
-      if (!editionSnap.exists) {
-        throw new HttpsError(
-          "failed-precondition",
-          "Edition not found for attachment."
-        );
-      }
-
-      const edition = editionSnap.data()!;
-
-      if (edition.publicDomain !== true) {
+      const source = typeof edition.source === "string" ? edition.source.trim() : "";
+      const bookOwnerUid = bookData ? resolveBookOwnerUid(bookData) : null;
+      if (source === "write_release") {
+        if (!bookOwnerUid || bookOwnerUid !== uid) {
+          logger.warn(
+            `[RIGHTS][BLOCKED] User ${uid} attempted to download authored content without ownership`,
+            {
+              attachmentId,
+              editionId: metadata.parentId,
+            }
+          );
+          throw new HttpsError(
+            "permission-denied",
+            "Download not permitted for this content."
+          );
+        }
+      } else if (edition.publicDomain !== true) {
         logger.warn(
           `[RIGHTS][BLOCKED] User ${uid} attempted to download non-public-domain content`,
           {

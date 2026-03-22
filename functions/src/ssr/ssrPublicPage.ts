@@ -1,6 +1,7 @@
 import { onRequest } from "firebase-functions/v2/https";
 import type { Request } from "express";
 import { admin } from "../firebaseAdmin";
+import { isBookVisibleToPublic } from "../rights/bookRights";
 
 type EntityType = "book" | "author" | "post";
 
@@ -355,6 +356,9 @@ const fetchBookEntity = async (bookId: string): Promise<BookEntityView | null> =
   }
 
   const source = (snap.data() ?? {}) as Record<string, unknown>;
+  if (!isBookVisibleToPublic(source)) {
+    return null;
+  }
   const title = firstText([source.title, source.titleEn, source.titleAr], 300);
   const titleFallback = title || `Book ${bookId}`;
 

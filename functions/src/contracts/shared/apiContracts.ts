@@ -2454,8 +2454,30 @@ export const apiContracts = {
       z
         .object({
           bookId: z.string().min(1),
+          editionId: z.string().min(1),
           attachmentId: z.string().min(1),
           currentReleaseId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    updatePublishedBookRights: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          rightsMode: z.enum(["public_free", "private", "paid", "premium_only"]),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          rightsMode: z.enum(["public_free", "private", "paid", "premium_only"]),
+          visibility: z.enum(["public", "private"]),
+          attachmentVisibility: z.enum(["public", "restricted", "private"]),
         })
         .strict(),
       "httpsCallable",

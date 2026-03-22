@@ -12,6 +12,7 @@ import {
   deriveWordCount,
 } from "./publishing/releaseDerivedFields";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
 
 type ReadyLongformRelease = {
   releaseId: string;
@@ -173,6 +174,12 @@ export const bridgeReleaseToLongformPublication = onCall(
         const wordCount = deriveWordCount(release.normalizedContent);
         const estimatedReadingMinutes = deriveEstimatedReadingMinutes(wordCount);
         const slug = slugifyTitle(title);
+        const canonicalAuthor = await materializeAuthoredCanonicalAuthor({
+          tx,
+          ownerUid: release.ownerUid,
+          authorDisplayName: release.authorDisplayName,
+          language,
+        });
 
         const existingSnap = await tx.get(
           db
@@ -195,7 +202,7 @@ export const bridgeReleaseToLongformPublication = onCall(
               publicationId: publicationRef.id,
               projectId: release.projectId,
               ownerUid: release.ownerUid,
-              authorId: release.ownerUid,
+              authorId: canonicalAuthor.authorId,
               authorDisplayName: release.authorDisplayName,
               title,
               slug,
@@ -242,7 +249,7 @@ export const bridgeReleaseToLongformPublication = onCall(
           tx.set(
             publicationRef,
             {
-              authorId: release.ownerUid,
+              authorId: canonicalAuthor.authorId,
               authorDisplayName: release.authorDisplayName,
               title,
               slug: nextSlug,

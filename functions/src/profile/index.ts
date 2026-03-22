@@ -7,6 +7,7 @@ import {
   normalizeSearchText,
 } from "../search/normalization";
 import { canonicalizeRoleClaim } from "../shared/auth";
+import { canUserReadBook } from "../rights/bookRights";
 
 const db = admin.firestore();
 
@@ -1302,6 +1303,8 @@ export const runReviewStackReleaseGate = onCall({ cors: true }, async (request) 
 export const listProfileBooks = onCall({ cors: true }, async (request) => {
   const targetUid = ensureUid(request.data?.uid, "uid");
   const limitSize = resolveLimit(request.data?.limit);
+  const viewerUid =
+    request.auth && typeof request.auth.uid === "string" ? request.auth.uid : null;
 
   const profile = await readOrCreatePublicProfile(targetUid);
   if (!profile) {
@@ -1332,7 +1335,9 @@ export const listProfileBooks = onCall({ cors: true }, async (request) => {
   const items: ProfileBook[] = [];
   for (const bookSnap of bookSnaps) {
     if (!bookSnap.exists) continue;
-    items.push(normalizeProfileBook(bookSnap.id, toRecord(bookSnap.data())));
+    const book = toRecord(bookSnap.data());
+    if (!canUserReadBook(book, viewerUid)) continue;
+    items.push(normalizeProfileBook(bookSnap.id, book));
   }
 
   return {

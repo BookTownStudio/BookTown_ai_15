@@ -82,6 +82,42 @@ service cloud.firestore {
       );
     }
 
+    function resolveBookOwnerId(bookData) {
+      return bookData.ownerUid is string
+        ? bookData.ownerUid
+        : (
+            bookData.ownerId is string
+              ? bookData.ownerId
+              : ""
+          );
+    }
+
+    function resolveBookVisibility(bookData) {
+      return bookData.visibility is string
+        ? bookData.visibility
+        : "public";
+    }
+
+    function resolveBookRightsMode(bookData) {
+      return bookData.rightsMode is string
+        ? bookData.rightsMode
+        : "public_free";
+    }
+
+    function canReadBookByData(bookData) {
+      let ownerId = resolveBookOwnerId(bookData);
+      let visibility = resolveBookVisibility(bookData);
+      let rightsMode = resolveBookRightsMode(bookData);
+
+      return (
+        (isSignedIn() && request.auth.uid == ownerId)
+        || (
+          visibility == "public"
+          && rightsMode != "private"
+        )
+      );
+    }
+
     function isBoundedString(value, maxLen) {
       return value is string
         && value.size() > 0
@@ -485,7 +521,7 @@ service cloud.firestore {
        BOOKS (CATALOG)
        ========================= */
     match /books/{bookId} {
-      allow get, list: if true;
+      allow get, list: if canReadBookByData(resource.data);
       allow create, update, delete: if false;
 
       /* =========================

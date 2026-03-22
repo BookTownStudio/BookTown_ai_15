@@ -351,6 +351,7 @@ export interface ProjectDataService {
     releaseId: string
   ): Promise<{
     bookId: string;
+    editionId: string;
     attachmentId: string;
     currentReleaseId: string;
   }>;
@@ -361,6 +362,15 @@ export interface ProjectDataService {
     publicationId: string;
     projectId: string;
     currentReleaseId: string;
+  }>;
+  updatePublishedBookRights(
+    bookId: string,
+    rightsMode: "public_free" | "private" | "paid" | "premium_only"
+  ): Promise<{
+    bookId: string;
+    rightsMode: "public_free" | "private" | "paid" | "premium_only";
+    visibility: "public" | "private";
+    attachmentVisibility: "public" | "restricted" | "private";
   }>;
 
   getReleasePreview(

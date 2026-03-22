@@ -1,5 +1,6 @@
 import { getFirestore } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
+import { isBookVisibleToPublic } from "../../rights/bookRights";
 
 export interface SearchOptions {
   ebookOnly?: boolean;
@@ -603,6 +604,10 @@ function mapCanonicalBook(
   options: SearchOptions,
   queryIntent: QueryIntent = "MIXED_INTENT"
 ): RankedResult | null {
+  if (!isBookVisibleToPublic(data)) {
+    return null;
+  }
+
   const title =
     asNonEmptyString(data.title) ||
     asNonEmptyString(data.titleEn) ||
@@ -675,7 +680,7 @@ function mapCanonicalBook(
 
   return {
     id: docId,
-    editionId: docId,
+    editionId: asNonEmptyString(data.editionId) || docId,
     bookId: docId,
     externalId: "",
     source: "booktown",

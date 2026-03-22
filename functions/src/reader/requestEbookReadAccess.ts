@@ -17,6 +17,7 @@ import * as admin from 'firebase-admin';
 import * as logger from "firebase-functions/logger";
 import { getSignedUrl } from '../attachments/storageSignedUrl';
 import { resolveBookToEbookAttachment } from '../attachments/resolveBookToEbookAttachment';
+import { canUserReadBook } from "../rights/bookRights";
 
 const db = admin.firestore();
 const EBOOK_URL_TTL_MS = 10 * 60 * 1000;
@@ -51,7 +52,19 @@ export const requestEbookReadAccess = onCall(
     /* ----------------------------------
        2. Resolve Catalog → Edition → Attachment
     ---------------------------------- */
-    const attachment = await resolveBookToEbookAttachment(bookId);
+    const [bookSnap, attachment] = await Promise.all([
+      db.collection("books").doc(bookId).get(),
+      resolveBookToEbookAttachment(bookId),
+    ]);
+
+    if (!bookSnap.exists) {
+      throw new HttpsError(
+        "not-found",
+        "Book not found."
+      );
+    }
+
+    const book = (bookSnap.data() ?? {}) as Record<string, unknown>;
 
     if (!attachment) {
       logger.warn("[READER][READ_ACCESS_ATTACHMENT_NOT_FOUND]", {
@@ -70,12 +83,13 @@ export const requestEbookReadAccess = onCall(
        - Uploaded books are public by default
        - Paid / restricted paths come later
     ---------------------------------- */
-    if (attachment.visibility === 'restricted') {
+    if (!canUserReadBook(book, uid) || attachment.visibility === 'restricted' || attachment.visibility === 'private') {
       logger.warn("[READER][READ_ACCESS_DENIED]", {
         uid,
         bookId,
         attachmentId: attachment.id,
         visibility: attachment.visibility,
+        rightsMode: book.rightsMode ?? null,
       });
       throw new HttpsError(
         'permission-denied',

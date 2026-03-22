@@ -184,6 +184,7 @@ async function createReleaseAttachment(params: {
   await db.collection("attachments").doc(attachmentId).set(
     {
       id: attachmentId,
+      releaseId: params.releaseId,
       type: "ebook",
       purpose: "ebook",
       format: "epub",
