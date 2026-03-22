@@ -16,6 +16,7 @@ import { EyeIcon } from '../../components/icons/EyeIcon.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { extractProjectSynopsis } from '../../lib/projects/projectSummary.ts';
+import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
 
 type PublishTarget = 'blog' | 'ebook';
 
@@ -42,6 +43,7 @@ const ProjectPublishScreen: React.FC = () => {
         publishTargetFromRoute ?? null
     );
     const [confirmingPublish, setConfirmingPublish] = useState(false);
+    const [preflightError, setPreflightError] = useState<string | null>(null);
 
     useEffect(() => {
         if (publishTargetFromRoute) {
@@ -80,6 +82,7 @@ const ProjectPublishScreen: React.FC = () => {
     const handleTargetSelect = (target: PublishTarget) => {
         setSelectedTarget(target);
         setConfirmingPublish(false);
+        setPreflightError(null);
 
         if (preparedReleaseId && preparedTarget !== target) {
             persistPublishState({ publishTarget: target });
@@ -118,6 +121,21 @@ const ProjectPublishScreen: React.FC = () => {
             showToast(lang === 'en' ? 'Select a publish target first.' : 'اختر نوع النشر أولاً.');
             return;
         }
+
+        const preflight = validateReleasePreflight(project.contentDoc);
+        if (!preflight.ok) {
+            const localizedMessage =
+                lang === 'en'
+                    ? preflight.message
+                    : preflight.chapterNumber
+                        ? `الفصل ${preflight.chapterNumber} يفتقد عنواناً مباشراً بعد الفاصل البنيوي.`
+                        : 'هذا المخطوط يفتقد محتوى المحرر البنيوي ولا يمكن تجهيزه للنشر.';
+            setPreflightError(localizedMessage);
+            showToast(localizedMessage);
+            return;
+        }
+
+        setPreflightError(null);
 
         if (hasPreparedRelease && preparedReleaseId) {
             openPreview(preparedReleaseId, selectedTarget);
@@ -313,6 +331,12 @@ const ProjectPublishScreen: React.FC = () => {
                             </p>
                         )}
                     </GlassCard>
+
+                    {preflightError ? (
+                        <div className="mb-8 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
+                            {preflightError}
+                        </div>
+                    ) : null}
 
                     <div className="flex flex-col gap-4">
                         <Button
