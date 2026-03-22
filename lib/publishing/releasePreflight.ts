@@ -40,7 +40,7 @@ export function validateReleasePreflight(
         ok: false,
         chapterNumber: chapterBoundaryCount,
         nodeIndex: index,
-        message: `Chapter ${chapterBoundaryCount} is missing a heading immediately after its separator.`,
+        message: `Chapter ${chapterBoundaryCount} needs a heading before its text begins.`,
       };
     }
   }

@@ -128,8 +128,8 @@ const ProjectPublishScreen: React.FC = () => {
                 lang === 'en'
                     ? preflight.message
                     : preflight.chapterNumber
-                        ? `الفصل ${preflight.chapterNumber} يفتقد عنواناً مباشراً بعد الفاصل البنيوي.`
-                        : 'هذا المخطوط يفتقد محتوى المحرر البنيوي ولا يمكن تجهيزه للنشر.';
+                        ? `الفصل ${preflight.chapterNumber} يحتاج إلى عنوان قبل أن يبدأ النص.`
+                        : 'هذا المخطوط لا يحتوي على بنية كتابة صالحة لتجهيز المعاينة.';
             setPreflightError(localizedMessage);
             showToast(localizedMessage);
             return;
@@ -158,8 +158,8 @@ const ProjectPublishScreen: React.FC = () => {
             showToast(
                 message || (
                     lang === 'en'
-                        ? 'Failed to prepare the preview release.'
-                        : 'فشل تجهيز نسخة المعاينة.'
+                        ? 'Failed to prepare the preview.'
+                        : 'فشل تجهيز المعاينة.'
                 )
             );
         }
@@ -277,7 +277,7 @@ const ProjectPublishScreen: React.FC = () => {
                                 </div>
                                 <div className="text-xs text-slate-400">
                                     {lang === 'en'
-                                        ? 'Internal BookTown longform publication'
+                                        ? 'Publish as an article inside BookTown'
                                         : 'منشور طويل داخل منظومة بوكتاون'}
                                 </div>
                             </button>
@@ -296,7 +296,7 @@ const ProjectPublishScreen: React.FC = () => {
                                 </div>
                                 <div className="text-xs text-slate-400">
                                     {lang === 'en'
-                                        ? 'Native BookTown ebook with reader-ready attachment'
+                                        ? 'Publish as an ebook for BookTown Reader'
                                         : 'كتاب إلكتروني أصلي داخل بوكتاون وجاهز للقارئ'}
                                 </div>
                             </button>
@@ -305,29 +305,25 @@ const ProjectPublishScreen: React.FC = () => {
 
                     <GlassCard className="mb-8 !bg-white/5 !p-5">
                         <BilingualText role="Caption" className="mb-3 uppercase tracking-wider text-slate-400">
-                            {lang === 'en' ? 'Selected Release' : 'النسخة المحددة'}
+                            {lang === 'en' ? 'Prepared Version' : 'النسخة الجاهزة'}
                         </BilingualText>
                         {hasPreparedRelease ? (
                             <div className="space-y-2 text-sm text-white/80">
                                 <div>
-                                    {lang === 'en' ? 'Release ID:' : 'معرف النسخة:'}{' '}
-                                    <span className="font-mono text-white">{preparedReleaseId}</span>
-                                </div>
-                                <div>
-                                    {lang === 'en' ? 'Target:' : 'الوجهة:'}{' '}
+                                    {lang === 'en' ? 'Format:' : 'الصيغة:'}{' '}
                                     <span className="text-white">{selectedTarget === 'ebook' ? 'Ebook' : 'Blog'}</span>
                                 </div>
                                 <div className="text-xs text-slate-400">
                                     {lang === 'en'
-                                        ? 'Only this prepared release can be published from this screen.'
-                                        : 'يمكن نشر هذه النسخة الجاهزة فقط من هذه الشاشة.'}
+                                        ? 'This prepared version is the one that will be published from this screen.'
+                                        : 'هذه النسخة الجاهزة هي التي سيتم نشرها من هذه الشاشة.'}
                                 </div>
                             </div>
                         ) : (
                             <p className="text-sm text-slate-400">
                                 {lang === 'en'
-                                    ? 'No preview release is prepared yet. Select a target and create a preview first.'
-                                    : 'لا توجد نسخة معاينة جاهزة بعد. اختر نوع النشر وأنشئ المعاينة أولاً.'}
+                                    ? 'No preview is ready yet. Choose a format and prepare a preview first.'
+                                    : 'لا توجد معاينة جاهزة بعد. اختر الصيغة وجهّز المعاينة أولاً.'}
                             </p>
                         )}
                     </GlassCard>
@@ -348,7 +344,7 @@ const ProjectPublishScreen: React.FC = () => {
                             {createReleaseMutation.isLoading ? (
                                 <div className="flex items-center gap-2">
                                     <LoadingSpinner />
-                                    <span>{lang === 'en' ? 'Preparing release...' : 'جار تجهيز النسخة...'}</span>
+                                    <span>{lang === 'en' ? 'Preparing preview...' : 'جار تجهيز المعاينة...'}</span>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
@@ -356,7 +352,7 @@ const ProjectPublishScreen: React.FC = () => {
                                     <span>
                                         {hasPreparedRelease
                                             ? (lang === 'en' ? 'Open Preview' : 'فتح المعاينة')
-                                            : (lang === 'en' ? 'Create Preview Release' : 'إنشاء نسخة المعاينة')}
+                                            : (lang === 'en' ? 'Prepare Preview' : 'تجهيز المعاينة')}
                                     </span>
                                 </div>
                             )}
@@ -375,15 +371,15 @@ const ProjectPublishScreen: React.FC = () => {
                                         <span>{lang === 'en' ? 'Publishing...' : 'جار النشر...'}</span>
                                     </div>
                                 ) : (
-                                    lang === 'en' ? 'Publish This Release' : 'نشر هذه النسخة'
+                                    lang === 'en' ? 'Publish This Version' : 'نشر هذه النسخة'
                                 )}
                             </Button>
                         ) : (
                             <GlassCard className="border border-amber-300/20 !bg-amber-500/10 !p-5">
                                 <div className="mb-4 text-sm text-white">
                                     {lang === 'en'
-                                        ? `Confirm publishing release ${preparedReleaseId} as ${selectedTarget === 'ebook' ? 'ebook' : 'blog'}.`
-                                        : `أكد نشر النسخة ${preparedReleaseId} كـ ${selectedTarget === 'ebook' ? 'كتاب إلكتروني' : 'مدونة'}.`}
+                                        ? `Publish this version as ${selectedTarget === 'ebook' ? 'an ebook' : 'an article'} in BookTown?`
+                                        : `هل تريد نشر هذه النسخة كـ ${selectedTarget === 'ebook' ? 'كتاب إلكتروني' : 'مقال'} داخل بوك تاون؟`}
                                 </div>
                                 <div className="flex flex-col gap-3 sm:flex-row">
                                     <Button
@@ -410,8 +406,8 @@ const ProjectPublishScreen: React.FC = () => {
 
                         <p className="text-center text-xs text-slate-500">
                             {lang === 'en'
-                                ? 'Preview stays separate. Publishing only uses the selected release shown above.'
-                                : 'المعاينة تبقى منفصلة. النشر يستخدم فقط النسخة المحددة أعلاه.'}
+                                ? 'Preview stays separate. Publishing uses only the prepared version shown above.'
+                                : 'المعاينة تبقى منفصلة. النشر يستخدم فقط النسخة الجاهزة الموضحة أعلاه.'}
                         </p>
                     </div>
                 </div>

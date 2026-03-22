@@ -109,13 +109,13 @@ const ProjectPublishedScreen: React.FC = () => {
                     {publishTarget === 'ebook'
                         ? (
                             lang === 'en'
-                                ? 'Your ebook release is now bound to a native readable BookTown book.'
-                                : 'أصبحت نسخة الكتاب الإلكتروني مرتبطة الآن بكتاب أصلي قابل للقراءة داخل بوكتاون.'
+                                ? 'Your ebook is now available in BookTown Reader.'
+                                : 'أصبح كتابك الإلكتروني متاحاً الآن داخل قارئ بوك تاون.'
                         )
                         : (
                             lang === 'en'
-                                ? 'Your longform blog release is now bound to BookTown’s internal publication domain.'
-                                : 'تم الآن ربط نسخة المدونة الطويلة بنطاق النشر الداخلي في بوكتاون.'
+                                ? 'Your article is now published in BookTown.'
+                                : 'أصبح مقالك منشوراً الآن داخل بوك تاون.'
                         )}
                 </BilingualText>
 
@@ -134,12 +134,6 @@ const ProjectPublishedScreen: React.FC = () => {
                     <BilingualText role="Caption" className="mt-1 text-center">
                         {publishTarget === 'ebook' ? 'Ebook' : 'Blog'}
                     </BilingualText>
-
-                    <div className="mt-4 space-y-2 text-center text-xs font-mono text-white/60">
-                        <div>release: {releaseId}</div>
-                        {bookId ? <div>book: {bookId}</div> : null}
-                        {publicationId ? <div>publication: {publicationId}</div> : null}
-                    </div>
                 </GlassCard>
 
                 <div className="w-full space-y-3">
