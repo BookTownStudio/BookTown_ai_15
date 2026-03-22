@@ -28,6 +28,10 @@ const PublicationReaderScreen: React.FC = () => {
         refetch,
     } = useLongformPublication(publicationId);
 
+    console.log('READER_PUBLICATION_DOC', publication);
+    console.log('READER_PUBLICATION_TYPE', publication?.publicationType);
+    console.log('READER_BEFORE_LONGFORM_BRANCH');
+
     const handleBack = () => navigate(from ?? { type: 'tab', id: 'read' });
 
     if (isLoading) {
