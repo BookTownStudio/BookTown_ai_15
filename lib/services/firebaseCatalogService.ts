@@ -1,5 +1,6 @@
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import type { FirebaseError } from "firebase/app";
+import { httpsCallable } from "firebase/functions";
 import {
   collection,
   deleteDoc,
