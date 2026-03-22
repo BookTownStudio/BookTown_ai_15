@@ -769,24 +769,17 @@ const ReaderScreen: React.FC = () => {
   }
 
   const activeReaderUrl = offlineObjectUrl || readerSession?.signedUrl || null;
-  const initialReaderPage = useMemo(() => {
-    const rawPage =
-      hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
+  const initialReaderPage =
+    !shouldUseManifestContinuityEstimate || !manifestEstimatedPageCount
+      ? hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
         ? Math.max(1, Math.trunc(offlineRecord.lastKnownPage))
-        : readerSession?.resumePage || 1;
-
-    if (!shouldUseManifestContinuityEstimate || !manifestEstimatedPageCount) {
-      return rawPage;
-    }
-
-    return clampReaderPage(rawPage, manifestEstimatedPageCount);
-  }, [
-    hasOfflineCopy,
-    manifestEstimatedPageCount,
-    offlineRecord?.lastKnownPage,
-    readerSession?.resumePage,
-    shouldUseManifestContinuityEstimate,
-  ]);
+        : readerSession?.resumePage || 1
+      : clampReaderPage(
+          hasOfflineCopy && typeof offlineRecord?.lastKnownPage === 'number'
+            ? Math.max(1, Math.trunc(offlineRecord.lastKnownPage))
+            : readerSession?.resumePage || 1,
+          manifestEstimatedPageCount
+        );
 
   if (!book || !activeReaderUrl) {
     return (
