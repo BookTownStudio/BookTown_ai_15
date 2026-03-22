@@ -112,7 +112,7 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       unitCount: normalizedContent.units.length,
     });
 
-    return {
+    const responsePayload = {
       publicationId,
       title,
       author,
@@ -123,6 +123,13 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       ownerUid,
       language,
     };
+
+    console.log(
+      "LONGFORM_RESPONSE_DEBUG",
+      JSON.stringify(responsePayload, null, 2)
+    );
+
+    return responsePayload;
   } catch (error) {
     logger.error("[PUBLICATION][READ_FAILED]", {
       publicationId,
