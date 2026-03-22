@@ -78,7 +78,7 @@ const PublicationReaderScreen: React.FC = () => {
                     ) : (
                         <ErrorState
                             title="Unable to load publication"
-                            message="Please try again."
+                            message={String((error as Error | undefined)?.message || 'Please try again.')}
                             onRetry={() => void refetch()}
                             className="max-w-md"
                         />
