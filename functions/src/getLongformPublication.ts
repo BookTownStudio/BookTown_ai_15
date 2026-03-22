@@ -57,7 +57,15 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       throw new HttpsError("not-found", "Publication not found.");
     }
 
+    console.log("STEP_1_DOC_EXISTS");
+
     const publication = (publicationSnap.data() ?? {}) as Record<string, unknown>;
+    console.log("STEP_2_TITLE", publication.title);
+    console.log("STEP_3_AUTHOR", publication.authorDisplayName);
+    console.log(
+      "STEP_4_NORMALIZED_CONTENT_PRESENT",
+      !!publication.normalizedContent
+    );
     const ownerUid = asNonEmptyString(publication.ownerUid, 256);
     const visibility = asNonEmptyString(publication.visibility, 32);
     const isOwner = ownerUid.length > 0 && ownerUid === caller.uid;
@@ -123,6 +131,8 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       ownerUid,
       language,
     };
+
+    console.log("STEP_5_BEFORE_RESPONSE");
 
     console.log(
       "LONGFORM_RESPONSE_DEBUG",
