@@ -95,6 +95,16 @@ export interface LongformPublicationRecord {
   language: string;
 }
 
+export interface OwnedLongformPublicationRecord {
+  publicationId: string;
+  title: string;
+  excerpt: string;
+  estimatedReadingMinutes: number;
+  lastPublishedAt: string;
+  publicationType: string;
+  coverUrl?: string;
+}
+
 export interface ShelfStats {
   followers: number;
   posts: number;
@@ -427,6 +437,7 @@ export interface CatalogDataService {
   getBook(bookId: string): Promise<Book | null>;
   createBook(book: Book): Promise<void>;
   getLongformPublication(publicationId: string): Promise<LongformPublicationRecord>;
+  listOwnLongformPublications(): Promise<OwnedLongformPublicationRecord[]>;
 
   ingestBook(params: {
     providerExternalId?: string;

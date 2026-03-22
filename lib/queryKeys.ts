@@ -75,6 +75,9 @@ export const queryKeys = {
     ) =>
       [...sessionRoot(uid), 'user', 'projectReleasePreview', safe({ releaseId, previewType })] as const,
 
+    longformPublications: (uid: string | null | undefined) =>
+      [...sessionRoot(uid), 'user', 'longformPublications'] as const,
+
     quotes: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'quotes'] as const,
 

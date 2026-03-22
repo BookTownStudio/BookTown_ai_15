@@ -7,6 +7,7 @@ import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import ProjectCard from '../../components/content/ProjectCard.tsx';
+import PublicationCard from '../../components/content/PublicationCard.tsx';
 import TemplateCard from '../../components/content/TemplateCard.tsx';
 import FloatingActionPanel from '../../components/ui/FloatingActionPanel.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
@@ -19,6 +20,7 @@ import { useToast } from '../../store/toast.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
 import { createBlankProjectSeed, createProjectSeedFromTemplate, writeTemplates } from '../../lib/templates/writeTemplates.ts';
+import { useOwnLongformPublications } from '../../lib/hooks/useOwnLongformPublications.ts';
 
 interface TemplatesPanelTriggerProps {
     isOpen: boolean;
@@ -136,6 +138,10 @@ const WriteScreen: React.FC = () => {
     const { lang } = useI18n();
     const { showToast } = useToast();
     const { data: projects, isLoading, isError, error } = useUserProjects();
+    const {
+        data: publications,
+        isLoading: publicationsLoading,
+    } = useOwnLongformPublications();
     const { navigate, currentView, resetTokens } = useNavigation();
     const isInitialMount = useRef(true);
     const [isPanelOpen, setPanelOpen] = useState(false);
@@ -278,6 +284,17 @@ const WriteScreen: React.FC = () => {
     const handleTemplateSelect = (templateId: string) => {
         handleCreateProject(templateId, createProjectSeedFromTemplate(templateId, lang === 'ar' ? 'ar' : 'en'));
     };
+
+    const handleOpenPublication = useCallback((publicationId: string) => {
+        navigate({
+            type: 'immersive',
+            id: 'publicationReader',
+            params: {
+                publicationId,
+                from: currentView,
+            },
+        });
+    }, [currentView, navigate]);
 
     // Updated: Navigate to Metadata Editor
     const handleEdit = (project: Project) => {
@@ -424,7 +441,44 @@ const WriteScreen: React.FC = () => {
                 ))}
             </div>
         );
-    }
+    };
+
+    const renderPublicationShelf = () => {
+        if (publicationsLoading) {
+            return (
+                <div className="flex min-h-[140px] items-center justify-center rounded-[28px] border border-white/8 bg-[#161b22]">
+                    <LoadingSpinner />
+                </div>
+            );
+        }
+
+        if (!publications || publications.length === 0) {
+            return (
+                <div className="rounded-[28px] border border-dashed border-[#d7cab6] bg-[#f4ecdd] px-6 py-12 text-center">
+                    <BilingualText role="H1" className="!text-2xl !text-[#171512]">
+                        {lang === 'en' ? 'No publications yet' : 'لا توجد منشورات بعد'}
+                    </BilingualText>
+                    <BilingualText className="mt-2 !text-[#6b5f54]">
+                        {lang === 'en'
+                            ? 'Published longform pieces will appear here.'
+                            : 'ستظهر هنا الأعمال الطويلة المنشورة.'}
+                    </BilingualText>
+                </div>
+            );
+        }
+
+        return (
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {publications.map((publication) => (
+                    <PublicationCard
+                        key={publication.publicationId}
+                        publication={publication}
+                        onPress={() => handleOpenPublication(publication.publicationId)}
+                    />
+                ))}
+            </div>
+        );
+    };
 
     return (
         <>
@@ -460,6 +514,22 @@ const WriteScreen: React.FC = () => {
                         <div className="mb-6">
                             {renderContent()}
                         </div>
+
+                        <section className="mt-10">
+                            <div className="mb-6 flex items-center justify-between">
+                                <div>
+                                    <BilingualText role="H1" className="!text-3xl !font-bold">
+                                        {lang === 'en' ? 'Your Publications' : 'منشوراتك'}
+                                    </BilingualText>
+                                    <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
+                                        {lang === 'en'
+                                            ? 'Your published BookTown longform work.'
+                                            : 'أعمالك الطويلة المنشورة داخل بوك تاون.'}
+                                    </BilingualText>
+                                </div>
+                            </div>
+                            {renderPublicationShelf()}
+                        </section>
                     </LiteraryShell>
                 </main>
                 <TemplatesPanelTrigger

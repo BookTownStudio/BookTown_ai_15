@@ -2540,6 +2540,31 @@ export const apiContracts = {
       }
     ),
 
+    listOwnLongformPublications: defineContract(
+      z.object({}).strict(),
+      z
+        .object({
+          publications: z.array(
+            z
+              .object({
+                publicationId: z.string().min(1),
+                title: z.string().min(1),
+                excerpt: z.string(),
+                estimatedReadingMinutes: z.number().int().positive(),
+                lastPublishedAt: z.string().min(1),
+                publicationType: z.string().min(1),
+                coverUrl: z.string().max(2048).optional(),
+              })
+              .strict()
+          ),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["app/tabs/write.tsx"],
+      }
+    ),
+
     createWriteProjectShareLink: defineContract(
       z
         .object({

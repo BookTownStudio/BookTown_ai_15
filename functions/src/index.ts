@@ -89,6 +89,7 @@ import { bridgeReleaseToCanonicalBook as bridgeReleaseToCanonicalBookRaw } from 
 import { bridgeReleaseToLongformPublication as bridgeReleaseToLongformPublicationRaw } from "./bridgeReleaseToLongformPublication";
 import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getProjectReleasePreview";
 import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
+import { listOwnLongformPublications as listOwnLongformPublicationsRaw } from "./listOwnLongformPublications";
 import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
 import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
 import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttachmentUrl";
@@ -643,6 +644,10 @@ export const getProjectReleasePreview = wrapCallableV2(
 export const getLongformPublication = wrapCallableV2(
   "getLongformPublication",
   getLongformPublicationRaw
+);
+export const listOwnLongformPublications = wrapCallableV2(
+  "listOwnLongformPublications",
+  listOwnLongformPublicationsRaw
 );
 export const createWriteProjectShareLink = wrapCallableV2(
   "createWriteProjectShareLink",
