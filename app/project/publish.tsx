@@ -20,6 +20,7 @@ import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.
 
 type PublishTarget = 'blog' | 'ebook';
 type PublishAction = 'idle' | 'preview' | 'publish';
+const PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY = 'booktown:publish-success-pending';
 
 function suggestTargetByWordCount(wordCount: number): PublishTarget {
     return wordCount >= 8000 ? 'ebook' : 'blog';
@@ -195,6 +196,20 @@ const ProjectPublishScreen: React.FC = () => {
                 target: selectedTarget,
                 projectId,
             });
+
+            if (typeof window !== 'undefined') {
+                const celebrationToken = crypto.randomUUID();
+                window.sessionStorage.setItem(
+                    PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY,
+                    JSON.stringify({
+                        token: celebrationToken,
+                        projectId,
+                        releaseId,
+                        publishTarget: selectedTarget,
+                        publicationVersion: result.publicationVersion,
+                    })
+                );
+            }
 
             navigate({
                 type: 'immersive',

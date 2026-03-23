@@ -12,6 +12,8 @@ import type { ProjectReleaseEbookPreviewSession } from '../../services/firebaseP
 import Button from '../../components/ui/Button.tsx';
 import { useToast } from '../../store/toast.tsx';
 
+const PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY = 'booktown:publish-success-pending';
+
 const ProjectPreviewScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
@@ -102,6 +104,20 @@ const ProjectPreviewScreen: React.FC = () => {
                 target: previewType,
                 projectId,
             });
+
+            if (typeof window !== 'undefined') {
+                const celebrationToken = crypto.randomUUID();
+                window.sessionStorage.setItem(
+                    PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY,
+                    JSON.stringify({
+                        token: celebrationToken,
+                        projectId,
+                        releaseId,
+                        publishTarget: previewType,
+                        publicationVersion: result.publicationVersion,
+                    })
+                );
+            }
 
             navigate({
                 type: 'immersive',
