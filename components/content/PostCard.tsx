@@ -37,7 +37,7 @@ interface PostCardProps {
     surface?: RenderSurface;
 }
 
-type StructuredEntityType = 'book' | 'author' | 'quote' | 'shelf' | 'venue';
+type StructuredEntityType = 'book' | 'author' | 'quote' | 'shelf' | 'venue' | 'publication';
 type HydratedEntityPayload = {
     type?: string;
     id?: string;
@@ -53,7 +53,8 @@ const normalizeStructuredType = (value: unknown): StructuredEntityType | null =>
         normalized === 'author' ||
         normalized === 'quote' ||
         normalized === 'shelf' ||
-        normalized === 'venue'
+        normalized === 'venue' ||
+        normalized === 'publication'
     ) {
         return normalized;
     }
@@ -242,6 +243,24 @@ const resolveAttachmentFromHydratedEntity = (
         return {
             type: 'venue',
             venueId: refId,
+        };
+    }
+
+    if (refType === 'publication') {
+        return {
+            type: 'publication',
+            publicationId: refId,
+            title:
+                (typeof data.title === 'string' ? data.title : '') ||
+                'Publication',
+            coverUrl:
+                typeof data.coverUrl === 'string' ? data.coverUrl : '',
+            author:
+                (typeof data.authorDisplayName === 'string' ? data.authorDisplayName : '') ||
+                (typeof data.author === 'string' ? data.author : '') ||
+                '',
+            canonicalSlug:
+                typeof data.canonicalSlug === 'string' ? data.canonicalSlug : '',
         };
     }
 
@@ -517,6 +536,32 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     return {
                         type: 'venue',
                         venueId: resolvedEntityId,
+                    };
+                }
+
+                if (refType === 'publication') {
+                    return {
+                        type: 'publication',
+                        publicationId: resolvedEntityId,
+                        title:
+                            (hydratedData && typeof hydratedData.title === 'string' ? hydratedData.title : '') ||
+                            'Publication',
+                        coverUrl:
+                            hydratedData && typeof hydratedData.coverUrl === 'string'
+                                ? hydratedData.coverUrl
+                                : '',
+                        author:
+                            (hydratedData && typeof hydratedData.authorDisplayName === 'string'
+                                ? hydratedData.authorDisplayName
+                                : '') ||
+                            (hydratedData && typeof hydratedData.author === 'string'
+                                ? hydratedData.author
+                                : '') ||
+                            '',
+                        canonicalSlug:
+                            hydratedData && typeof hydratedData.canonicalSlug === 'string'
+                                ? hydratedData.canonicalSlug
+                                : '',
                     };
                 }
             }

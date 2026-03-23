@@ -21,6 +21,7 @@ const AttachmentIcon: React.FC<{ attachment?: PostAttachment }> = ({ attachment 
     if (!attachment) return null;
     let Icon = DraftIcon;
     if (attachment.type === 'book') Icon = BookIcon;
+    if (attachment.type === 'publication') Icon = BookIcon;
     if (attachment.type === 'quote') Icon = QuoteIcon;
     if (attachment.type === 'media') Icon = MediaIcon;
     if (attachment.type === 'shelf') Icon = ShelvesIcon;

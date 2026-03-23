@@ -95,6 +95,7 @@ const primaryStructuredEntityTypeSchema = z.enum([
   "quote",
   "shelf",
   "venue",
+  "publication",
 ]);
 
 const createStructuredAttachmentSchema = z

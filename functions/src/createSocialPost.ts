@@ -5,7 +5,13 @@ import { recomputeUserStats } from "./userStats/recomputeUserStats";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { checkUserMutationQuota } from "./utils/mutationQuota";
 
-type StructuredEntityType = "book" | "author" | "quote" | "shelf" | "venue";
+type StructuredEntityType =
+  | "book"
+  | "author"
+  | "quote"
+  | "shelf"
+  | "venue"
+  | "publication";
 
 type StructuredAttachment = {
   type: StructuredEntityType;
@@ -29,6 +35,7 @@ const STRUCTURED_ENTITY_TYPES = new Set<StructuredEntityType>([
   "quote",
   "shelf",
   "venue",
+  "publication",
 ]);
 
 function readNonEmptyString(value: unknown): string {
@@ -54,7 +61,9 @@ function normalizeStructuredAttachment(
           ? readNonEmptyString(raw.quoteId)
           : entityType === "shelf"
             ? readNonEmptyString(raw.shelfId)
-            : readNonEmptyString(raw.venueId);
+            : entityType === "venue"
+              ? readNonEmptyString(raw.venueId)
+              : readNonEmptyString(raw.publicationId);
   const explicitEntityId = readNonEmptyString(raw.entityId);
   const structuredAttachmentId = readNonEmptyString(raw.attachmentId);
   const entityId = explicitEntityId || idFromType;
@@ -190,6 +199,27 @@ async function assertStructuredEntityAccessible(
       throw new HttpsError(
         "permission-denied",
         "Referenced quote is not accessible."
+      );
+    }
+    return;
+  }
+
+  if (entity.type === "publication") {
+    const snap = await db
+      .collection("longform_publications")
+      .doc(entity.entityId)
+      .get();
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced publication not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const ownerUid = readNonEmptyString(data.ownerUid);
+    const visibility = readNonEmptyString(data.visibility).toLowerCase();
+    const isPublic = visibility === "public";
+    if (ownerUid && ownerUid !== uid && !isPublic) {
+      throw new HttpsError(
+        "permission-denied",
+        "Referenced publication is not accessible."
       );
     }
     return;

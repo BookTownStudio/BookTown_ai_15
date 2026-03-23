@@ -391,6 +391,36 @@ const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: s
     </div>
 );
 
+const PublicationReferenceCard: React.FC<{ title: string; coverUrl?: string; author?: string }> = ({
+    title,
+    coverUrl,
+    author,
+}) => (
+    <div className="relative overflow-hidden rounded-[0.85rem] bg-gradient-to-br from-[#16120d] via-[#201912] to-[#2c2318] px-4 py-4 shadow-[0_12px_24px_-16px_rgba(0,0,0,0.5)] min-h-[24vh]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(231,193,128,0.18),transparent_58%)]" />
+        <div className="relative flex items-start gap-3">
+            <div className="h-24 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-white/10">
+                {coverUrl ? (
+                    <img src={coverUrl} alt="" className="h-full w-full object-cover" />
+                ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03))]">
+                        <BookIcon className="h-5 w-5 text-[#d9c4a2]" />
+                    </div>
+                )}
+            </div>
+            <div className="min-w-0 flex-1">
+                <AttachmentTypeLabel label="Publication" />
+                <BilingualText className="mt-2 font-semibold text-[15px] leading-snug text-white line-clamp-3">
+                    {title || 'Publication'}
+                </BilingualText>
+                <BilingualText role="Caption" className="mt-1 !text-[11px] text-white/65 line-clamp-2">
+                    {author || 'Article in BookTown'}
+                </BilingualText>
+            </div>
+        </div>
+    </div>
+);
+
 const HookedBookReferenceView: React.FC<{ id: string; surface: RenderSurface }> = ({ id, surface }) => {
     const { data: book, isLoading } = useBookCatalog(id);
     if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
@@ -441,7 +471,8 @@ type StructuredNavigationTarget =
     | { id: 'authorDetails'; params: { authorId: string } }
     | { id: 'quoteDetails'; params: { quoteId: string; ownerId: string } }
     | { id: 'shelfDetails'; params: { shelfId: string; ownerId?: string } }
-    | { id: 'venueDetails'; params: { venueId: string } };
+    | { id: 'venueDetails'; params: { venueId: string } }
+    | { id: 'publicationReader'; params: { publicationId: string; title?: string; canonicalSlug?: string } };
 
 const isStructuredAttachment = (attachment: PostAttachment): boolean => {
     if ('attachmentId' in attachment) {
@@ -455,7 +486,8 @@ const isStructuredAttachment = (attachment: PostAttachment): boolean => {
         type === 'author' ||
         type === 'quote' ||
         type === 'shelf' ||
-        type === 'venue'
+        type === 'venue' ||
+        type === 'publication'
     );
 };
 
@@ -516,6 +548,21 @@ const resolveStructuredNavigationTarget = (
     if (legacy.type === 'venue') {
         const venueId = entityId || readNonEmptyString(legacy.venueId);
         return venueId ? { id: 'venueDetails', params: { venueId } } : null;
+    }
+    if (legacy.type === 'publication') {
+        const publicationId = entityId || readNonEmptyString(legacy.publicationId);
+        const title = readNonEmptyString(legacy.title);
+        const canonicalSlug = readNonEmptyString(legacy.canonicalSlug);
+        return publicationId
+            ? {
+                id: 'publicationReader',
+                params: {
+                    publicationId,
+                    ...(title ? { title } : {}),
+                    ...(canonicalSlug ? { canonicalSlug } : {}),
+                },
+            }
+            : null;
     }
     return null;
 };
@@ -831,6 +878,15 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                             readNonEmptyString(legacy.venueLocation) ||
                             ''
                         }
+                    />
+                );
+                break;
+            case 'publication':
+                visual = (
+                    <PublicationReferenceCard
+                        title={readNonEmptyString(legacy.title) || 'Publication'}
+                        coverUrl={readNonEmptyString(legacy.coverUrl) || undefined}
+                        author={readNonEmptyString(legacy.author) || undefined}
                     />
                 );
                 break;

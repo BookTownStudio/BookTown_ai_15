@@ -133,7 +133,8 @@ type PrimaryStructuredEntityType =
   | "author"
   | "quote"
   | "shelf"
-  | "venue";
+  | "venue"
+  | "publication";
 
 type FeedPostContext = {
   post: Post;
@@ -2410,6 +2411,7 @@ class FirebaseSocialService {
     "quote",
     "shelf",
     "venue",
+    "publication",
   ]);
 
   private static readonly STRUCTURED_ENTITY_ID_KEYS: Record<string, string[]> = {
@@ -2418,6 +2420,7 @@ class FirebaseSocialService {
     quote: ["entityId", "quoteId"],
     shelf: ["entityId", "shelfId"],
     venue: ["entityId", "venueId"],
+    publication: ["entityId", "publicationId"],
   };
 
   private isGuestIdentity(uid: string): boolean {
@@ -2427,7 +2430,7 @@ class FirebaseSocialService {
 
   private normalizeCreatePostAttachment(attachment: any):
     | { attachmentId: string; type: string }
-    | { type: "book" | "author" | "quote" | "shelf" | "venue"; entityId: string; entityOwnerId?: string } {
+    | { type: "book" | "author" | "quote" | "shelf" | "venue" | "publication"; entityId: string; entityOwnerId?: string } {
     if (!attachment || typeof attachment !== "object") {
       throw new Error("INVALID_ARGUMENT: Malformed attachment payload.");
     }
@@ -2477,7 +2480,7 @@ class FirebaseSocialService {
         .find((value) => value.length > 0);
 
       return {
-        type: normalizedType as "book" | "author" | "quote" | "shelf" | "venue",
+        type: normalizedType as "book" | "author" | "quote" | "shelf" | "venue" | "publication",
         entityId,
         ...(entityOwnerId ? { entityOwnerId } : {}),
       };
@@ -2764,6 +2767,7 @@ class FirebaseSocialService {
       quote: new Set(),
       shelf: new Set(),
       venue: new Set(),
+      publication: new Set(),
     };
     const primaryByPostId = new Map<string, { type: PrimaryStructuredEntityType; id: string }>();
 
@@ -2789,16 +2793,18 @@ class FirebaseSocialService {
         uniqueQuotes: 0,
         uniqueShelves: 0,
         uniqueVenues: 0,
+        uniquePublications: 0,
       });
       return boundedContexts.map((context) => context.post);
     }
 
-    const [books, authors, quotes, shelves, venues] = await Promise.all([
+    const [books, authors, quotes, shelves, venues, publications] = await Promise.all([
       this.fetchCollectionDocsByIds(db, "books", Array.from(idsByType.book)),
       this.fetchCollectionDocsByIds(db, "authors", Array.from(idsByType.author)),
       this.fetchQuoteDocsByIds(db, Array.from(idsByType.quote)),
       this.fetchCollectionDocsByIds(db, "shelves", Array.from(idsByType.shelf)),
       this.fetchCollectionDocsByIds(db, "venues", Array.from(idsByType.venue)),
+      this.fetchCollectionDocsByIds(db, "longform_publications", Array.from(idsByType.publication)),
     ]);
 
     const resolvedBookCoverMap = new Map<string, string>();
@@ -2884,6 +2890,9 @@ class FirebaseSocialService {
     for (const [id, data] of venues) {
       entityMap.set(`venue:${id}`, { type: "venue", id, data });
     }
+    for (const [id, data] of publications) {
+      entityMap.set(`publication:${id}`, { type: "publication", id, data });
+    }
 
     const hydratedPosts = boundedContexts.map((context) => {
       const primary = primaryByPostId.get(context.post.id);
@@ -2921,6 +2930,7 @@ class FirebaseSocialService {
       uniqueQuotes: idsByType.quote.size,
       uniqueShelves: idsByType.shelf.size,
       uniqueVenues: idsByType.venue.size,
+      uniquePublications: idsByType.publication.size,
     });
 
     return hydratedPosts;
@@ -3206,7 +3216,7 @@ class FirebaseSocialService {
       const type =
         typeof attachment?.type === "string" ? attachment.type.trim().toLowerCase() : "";
       return FirebaseSocialService.STRUCTURED_ENTITY_TYPES.has(
-        type as "book" | "author" | "quote" | "shelf" | "venue"
+        type as "book" | "author" | "quote" | "shelf" | "venue" | "publication"
       );
     }).length;
 
@@ -3241,12 +3251,12 @@ class FirebaseSocialService {
           text?: string;
           attachments?: Array<
             { attachmentId: string; type: string } |
-            { type: "book" | "author" | "quote" | "shelf" | "venue"; entityId: string; entityOwnerId?: string }
+            { type: "book" | "author" | "quote" | "shelf" | "venue" | "publication"; entityId: string; entityOwnerId?: string }
           >;
         };
         attachments: Array<
           { attachmentId: string; type: string } |
-          { type: "book" | "author" | "quote" | "shelf" | "venue"; entityId: string; entityOwnerId?: string }
+          { type: "book" | "author" | "quote" | "shelf" | "venue" | "publication"; entityId: string; entityOwnerId?: string }
         >;
         visibility: string;
         publishToken: string;

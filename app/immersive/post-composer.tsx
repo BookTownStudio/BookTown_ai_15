@@ -75,6 +75,7 @@ const PostComposerScreen: React.FC = () => {
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);
   const [debouncedAttachment] = useDebounce(attachment, AUTOSAVE_DEBOUNCE);
   const attachedBookRef = useRef<string>('');
+  const attachedPublicationRef = useRef<string>('');
   const prefillTextRef = useRef<string>('');
 
   useEffect(() => {
@@ -123,6 +124,41 @@ const PostComposerScreen: React.FC = () => {
   }, [currentView, lang, showToast]);
 
   useEffect(() => {
+    const attachedPublication =
+      currentView.type === 'immersive' &&
+      currentView.id === 'postComposer' &&
+      currentView.params &&
+      typeof currentView.params.attachedPublication === 'object'
+        ? (currentView.params.attachedPublication as Record<string, unknown>)
+        : null;
+
+    const attachedPublicationId =
+      attachedPublication && typeof attachedPublication.id === 'string'
+        ? attachedPublication.id.trim()
+        : '';
+
+    if (!attachedPublicationId) return;
+    if (attachedPublicationRef.current === attachedPublicationId) return;
+
+    attachedPublicationRef.current = attachedPublicationId;
+    setAttachment({
+      type: 'publication',
+      entityId: attachedPublicationId,
+      publicationId: attachedPublicationId,
+      ...(typeof attachedPublication.title === 'string' && attachedPublication.title.trim()
+        ? { title: attachedPublication.title.trim() }
+        : {}),
+      ...(typeof attachedPublication.coverUrl === 'string' && attachedPublication.coverUrl.trim()
+        ? { coverUrl: attachedPublication.coverUrl.trim() }
+        : {}),
+      ...(typeof attachedPublication.canonicalSlug === 'string' && attachedPublication.canonicalSlug.trim()
+        ? { canonicalSlug: attachedPublication.canonicalSlug.trim() }
+        : {}),
+    } as PostAttachment);
+    showToast(lang === 'en' ? 'Publication attached.' : 'تم إرفاق المنشور.');
+  }, [currentView, lang, showToast]);
+
+  useEffect(() => {
     if (!debouncedText.trim() && !debouncedAttachment) return;
     setIsAutosaving(true);
 
@@ -156,12 +192,12 @@ const PostComposerScreen: React.FC = () => {
       return;
     }
 
-    const structuredTypes = new Set(['book', 'author', 'quote', 'shelf', 'venue']);
+    const structuredTypes = new Set(['book', 'author', 'quote', 'shelf', 'venue', 'publication']);
     const structuredAttachment =
       attachment &&
       typeof (attachment as { type?: unknown }).type === 'string' &&
       structuredTypes.has(String((attachment as { type?: unknown }).type).toLowerCase())
-        ? (attachment as { type: string; entityId?: string; bookId?: string; authorId?: string; quoteId?: string; shelfId?: string; venueId?: string })
+        ? (attachment as { type: string; entityId?: string; bookId?: string; authorId?: string; quoteId?: string; shelfId?: string; venueId?: string; publicationId?: string })
         : null;
     const structuredEntityId = structuredAttachment
       ? (typeof structuredAttachment.entityId === 'string' && structuredAttachment.entityId.trim()) ||
@@ -170,6 +206,7 @@ const PostComposerScreen: React.FC = () => {
         (typeof structuredAttachment.quoteId === 'string' && structuredAttachment.quoteId.trim()) ||
         (typeof structuredAttachment.shelfId === 'string' && structuredAttachment.shelfId.trim()) ||
         (typeof structuredAttachment.venueId === 'string' && structuredAttachment.venueId.trim()) ||
+        (typeof structuredAttachment.publicationId === 'string' && structuredAttachment.publicationId.trim()) ||
         ''
       : '';
 

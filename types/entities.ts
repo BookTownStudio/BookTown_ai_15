@@ -438,6 +438,14 @@ export interface UserDiscoveryAttachment {
 export type PostAttachment = 
   | AttachmentV1
   | { type: 'book'; bookId: string; bookTitle: string; bookAuthor: string; bookCover: string; bookRating: number; }
+  | {
+      type: 'publication';
+      publicationId: string;
+      title?: string;
+      coverUrl?: string;
+      author?: string;
+      canonicalSlug?: string;
+    }
   | { type: 'quote'; quoteId: string, quoteOwnerId: string }
   | { type: 'media'; url: string }
   | { type: 'author'; authorId: string; authorName: string; authorPhoto: string; authorCountry?: string; signatureQuote?: string; }
@@ -472,7 +480,7 @@ export interface AttachmentRef {
 }
 
 export interface HydratedSocialEntity {
-    type: 'book' | 'author' | 'quote' | 'shelf' | 'venue';
+    type: 'book' | 'author' | 'quote' | 'shelf' | 'venue' | 'publication';
     id: string;
     ownerId?: string;
     data: Record<string, unknown>;
@@ -512,7 +520,7 @@ export interface Post {
         hasAttachments: boolean;
     };
     editedAt?: string | null;
-    primaryEntityType?: 'book' | 'author' | 'quote' | 'shelf' | 'venue' | null;
+    primaryEntityType?: 'book' | 'author' | 'quote' | 'shelf' | 'venue' | 'publication' | null;
     primaryEntityId?: string | null;
     hydratedEntity?: HydratedSocialEntity | null;
 

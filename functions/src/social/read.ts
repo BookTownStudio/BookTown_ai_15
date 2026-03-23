@@ -13,7 +13,13 @@ const COMMENT_PAGE_SIZE = 20;
 
 type FeedScope = "explore" | "following" | "books" | "discover";
 type FeedFilter = "media" | "text" | "book" | "quote" | "project";
-type StructuredEntityType = "book" | "author" | "quote" | "shelf" | "venue";
+type StructuredEntityType =
+  | "book"
+  | "author"
+  | "quote"
+  | "shelf"
+  | "venue"
+  | "publication";
 
 type FeedCursor = {
   v: 1;
@@ -234,7 +240,8 @@ function normalizeStructuredEntityType(value: unknown): StructuredEntityType | n
     normalized === "author" ||
     normalized === "quote" ||
     normalized === "shelf" ||
-    normalized === "venue"
+    normalized === "venue" ||
+    normalized === "publication"
   ) {
     return normalized;
   }
@@ -487,6 +494,7 @@ async function hydratePrimaryEntities(
     ["author", new Set<string>()],
     ["shelf", new Set<string>()],
     ["venue", new Set<string>()],
+    ["publication", new Set<string>()],
   ]);
   const quoteRequests = new Map<string, { ownerId: string; quoteId: string }>();
   const postPrimaryKeys = new Map<string, { type: StructuredEntityType; id: string; ownerId?: string }>();
@@ -532,7 +540,9 @@ async function hydratePrimaryEntities(
             ? "authors"
             : entityType === "shelf"
               ? "shelves"
-              : "venues";
+              : entityType === "venue"
+                ? "venues"
+                : "longform_publications";
 
       await Promise.all(
         chunk(Array.from(ids), FOLLOWING_BATCH_SIZE).map(async (idBatch) => {

@@ -128,7 +128,17 @@ const ProjectPublishedScreen: React.FC = () => {
             id: 'postComposer',
             params: {
                 from: currentView,
-                prefillText: shareText,
+                prefillText: publishTarget === 'blog' ? title : shareText,
+                ...(publishTarget === 'blog' && publicationId
+                    ? {
+                        attachedPublication: {
+                            id: publicationId,
+                            title,
+                            ...(coverUrl ? { coverUrl } : {}),
+                            ...(canonicalSlug ? { canonicalSlug } : {}),
+                        },
+                    }
+                    : {}),
                 ...(publishTarget === 'ebook' && bookId
                     ? { attachedBook: { id: bookId } }
                     : {}),
