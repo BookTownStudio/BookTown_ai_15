@@ -23,15 +23,15 @@ const SignaturePublishBook: React.FC<{
     shouldAnimate: boolean;
 }> = ({ phase, isRepublish, shouldAnimate }) => {
     const transformByPhase: Record<CelebrationPhase, string> = {
-        hidden: 'translate3d(0,-24px,0) rotateX(8deg) rotateY(-12deg) scale(0.82)',
-        spawn: 'translate3d(0,-18px,0) rotateX(7deg) rotateY(-10deg) scale(0.86)',
+        hidden: 'translate3d(0,-24px,0) rotateY(-10deg) scale(0.7)',
+        spawn: 'translate3d(0,-18px,0) rotateY(-8deg) scale(0.78)',
         arrival: isRepublish
-            ? 'translate3d(0,-6px,0) rotateX(3deg) rotateY(-4deg) scale(0.94)'
-            : 'translate3d(0,-2px,0) rotateX(4deg) rotateY(-8deg) scale(0.94)',
+            ? 'translate3d(0,-5px,0) rotateY(-4deg) scale(0.94)'
+            : 'translate3d(0,-2px,0) rotateY(-5deg) scale(0.94)',
         settle: isRepublish
-            ? 'translate3d(0,0,0) rotateX(1deg) rotateY(-1deg) scale(1.04)'
-            : 'translate3d(0,0,0) rotateX(2deg) rotateY(-2deg) scale(1.08)',
-        stable: 'translate3d(0,0,0) rotateX(0deg) rotateY(0deg) scale(1)',
+            ? 'translate3d(0,0,0) rotateY(-1deg) scale(1.04)'
+            : 'translate3d(0,0,0) rotateY(-1deg) scale(1.08)',
+        stable: 'translate3d(0,0,0) rotateY(0deg) scale(1)',
     };
 
     const reflectionTransformByPhase: Record<CelebrationPhase, string> = {
@@ -66,7 +66,7 @@ const SignaturePublishBook: React.FC<{
                 }}
             />
             <div
-                className="relative h-[112px] w-[92px] transition-all ease-[cubic-bezier(0.22,1,0.36,1)]"
+                className="relative h-[88px] w-[64px] transition-all ease-[cubic-bezier(0.22,1,0.36,1)]"
                 style={{
                     opacity: phase === 'hidden' ? 0 : 1,
                     transform: transformByPhase[phase],
@@ -75,21 +75,23 @@ const SignaturePublishBook: React.FC<{
                     filter: 'drop-shadow(0 18px 34px rgba(0,0,0,0.24))',
                 }}
             >
-                <div className="absolute inset-y-[7px] -right-[10px] w-[12px] rounded-r-[10px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(183,225,212,0.14)_38%,rgba(16,55,53,0.46))]" />
-                <div className="absolute inset-0 overflow-hidden rounded-[22px] border border-white/24 bg-[linear-gradient(165deg,rgba(255,255,255,0.42)_0%,rgba(214,255,243,0.18)_16%,rgba(79,172,152,0.18)_38%,rgba(12,38,42,0.72)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.42),inset_0_-14px_24px_rgba(3,7,18,0.34)] backdrop-blur-md">
-                    <div className="absolute inset-[2px] rounded-[20px] border border-white/10" />
-                    <div className="absolute left-[14px] top-[13px] h-[34px] w-[56px] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.48)_0%,rgba(255,255,255,0.14)_46%,rgba(255,255,255,0)_76%)] blur-[1px]" />
+                <div className="absolute right-[-5px] top-[6px] h-[74px] w-[7px] rounded-r-[4px] border border-white/10 bg-[linear-gradient(180deg,rgba(245,255,251,0.4)_0%,rgba(169,222,210,0.18)_36%,rgba(14,38,38,0.58)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]" />
+                <div className="absolute right-[-9px] top-[9px] h-[68px] w-[5px] rounded-r-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(11,23,28,0.4))] opacity-80" />
+                <div className="absolute left-0 top-0 h-full w-[10px] rounded-l-[10px] border border-white/10 bg-[linear-gradient(180deg,rgba(232,255,247,0.38)_0%,rgba(137,204,189,0.18)_38%,rgba(15,43,47,0.6)_100%)] shadow-[inset_1px_0_0_rgba(255,255,255,0.18)]" />
+                <div className="absolute left-[8px] top-0 h-full w-[56px] overflow-hidden rounded-[12px] border border-white/24 bg-[linear-gradient(165deg,rgba(255,255,255,0.44)_0%,rgba(225,255,247,0.2)_16%,rgba(101,192,171,0.18)_36%,rgba(11,33,37,0.76)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),inset_0_-14px_24px_rgba(3,7,18,0.3)] backdrop-blur-md">
+                    <div className="absolute inset-[2px] rounded-[10px] border border-white/12" />
+                    <div className="absolute left-[10px] top-[9px] h-[24px] w-[35px] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.52)_0%,rgba(255,255,255,0.16)_46%,rgba(255,255,255,0)_76%)] blur-[1px]" />
                     <div
-                        className="absolute inset-y-[-16px] left-[-48px] w-[44px] bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.34)_46%,rgba(255,255,255,0)_100%)] opacity-70 transition-transform ease-out"
+                        className="absolute inset-y-[-14px] left-[-40px] w-[28px] bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.34)_46%,rgba(255,255,255,0)_100%)] opacity-70 transition-transform ease-out"
                         style={{
                             transform: reflectionTransformByPhase[phase],
                             transitionDuration: shouldAnimate ? '700ms' : '0ms',
                         }}
                     />
-                    <div className="absolute inset-x-[18px] top-[22px] h-[2px] rounded-full bg-white/55" />
-                    <div className="absolute inset-x-[18px] top-[34px] h-[2px] rounded-full bg-white/30" />
-                    <div className="absolute inset-x-[18px] top-[46px] h-[2px] rounded-full bg-white/22" />
-                    <div className="absolute inset-x-[18px] bottom-[18px] h-[18px] rounded-full bg-[linear-gradient(180deg,rgba(16,185,129,0.18),rgba(5,150,105,0.05))]" />
+                    <div className="absolute inset-x-[10px] top-[16px] h-[2px] rounded-full bg-white/58" />
+                    <div className="absolute inset-x-[10px] top-[28px] h-[2px] rounded-full bg-white/34" />
+                    <div className="absolute inset-x-[10px] top-[40px] h-[2px] rounded-full bg-white/24" />
+                    <div className="absolute inset-x-[10px] bottom-[12px] h-[16px] rounded-[8px] bg-[linear-gradient(180deg,rgba(16,185,129,0.18),rgba(5,150,105,0.04))]" />
                 </div>
             </div>
         </div>
