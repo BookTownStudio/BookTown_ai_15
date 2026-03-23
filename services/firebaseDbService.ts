@@ -2335,10 +2335,54 @@ class FirebaseMessagingService {
     return data.messages.map((message) => ({
       id: ensureNonEmptyString(message.id, "message.id", 128),
       senderId: ensureNonEmptyString(message.senderId, "message.senderId", 128),
-      text: ensureNonEmptyString(message.text, "message.text", 2000),
+      text:
+        typeof message.text === "string" && message.text.trim().length <= 2000
+          ? message.text.trim()
+          : "",
+      ...(message.attachment &&
+      typeof message.attachment === "object" &&
+      (message.attachment.type === "book" ||
+        message.attachment.type === "publication" ||
+        message.attachment.type === "quote") &&
+      typeof message.attachment.entityId === "string" &&
+      message.attachment.entityId.trim()
+        ? {
+            attachment: {
+              type: message.attachment.type,
+              entityId: message.attachment.entityId.trim(),
+              ...(typeof message.attachment.title === "string" &&
+              message.attachment.title.trim()
+                ? { title: message.attachment.title.trim() }
+                : {}),
+              ...(typeof message.attachment.author === "string" &&
+              message.attachment.author.trim()
+                ? { author: message.attachment.author.trim() }
+                : {}),
+              ...(typeof message.attachment.coverUrl === "string" &&
+              message.attachment.coverUrl.trim()
+                ? { coverUrl: message.attachment.coverUrl.trim() }
+                : {}),
+              ...(typeof message.attachment.canonicalSlug === "string" &&
+              message.attachment.canonicalSlug.trim()
+                ? { canonicalSlug: message.attachment.canonicalSlug.trim() }
+                : {}),
+              ...(typeof message.attachment.quoteOwnerId === "string" &&
+              message.attachment.quoteOwnerId.trim()
+                ? { quoteOwnerId: message.attachment.quoteOwnerId.trim() }
+                : {}),
+              ...(typeof message.attachment.quoteText === "string" &&
+              message.attachment.quoteText.trim()
+                ? { quoteText: message.attachment.quoteText.trim() }
+                : {}),
+            },
+          }
+        : {}),
       timestamp: toIsoString(message.timestamp),
       ...(typeof message.readByPeer === "boolean"
         ? { readByPeer: message.readByPeer }
+        : {}),
+      ...(typeof message.seenAt === "string" && message.seenAt.trim()
+        ? { seenAt: toIsoString(message.seenAt) }
         : {}),
     }));
   }
@@ -2347,7 +2391,8 @@ class FirebaseMessagingService {
     uid: string,
     conversationId: string,
     text: string,
-    idempotencyKey: string
+    idempotencyKey: string,
+    attachment?: { type: "book" | "publication" | "quote"; entityId: string }
   ): Promise<{ conversationId: string; messageId: string }> {
     ensureNonEmptyString(uid, "uid", 128);
     const normalizedConversationId = ensureNonEmptyString(
@@ -2355,19 +2400,41 @@ class FirebaseMessagingService {
       "conversationId",
       190
     );
-    const normalizedText = ensureNonEmptyString(text, "text", 2000);
+    const normalizedText =
+      typeof text === "string" && text.trim().length <= 2000 ? text.trim() : "";
     const normalizedIdempotencyKey = ensureNonEmptyString(
       idempotencyKey,
       "idempotencyKey",
       96
     );
+    const normalizedAttachment =
+      attachment &&
+      (attachment.type === "book" ||
+        attachment.type === "publication" ||
+        attachment.type === "quote") &&
+      typeof attachment.entityId === "string" &&
+      attachment.entityId.trim().length > 0
+        ? {
+            type: attachment.type,
+            entityId: attachment.entityId.trim(),
+          }
+        : undefined;
+    if (!normalizedText && !normalizedAttachment) {
+      throw new Error("INVALID_ARGUMENT: text or attachment is required.");
+    }
 
     const data = await callEndpoint<
-      { conversationId: string; text: string; idempotencyKey: string },
+      {
+        conversationId: string;
+        text?: string;
+        attachment?: { type: "book" | "publication" | "quote"; entityId: string };
+        idempotencyKey: string;
+      },
       { conversationId: string; messageId: string }
     >("sendDirectMessage", {
       conversationId: normalizedConversationId,
-      text: normalizedText,
+      ...(normalizedText ? { text: normalizedText } : {}),
+      ...(normalizedAttachment ? { attachment: normalizedAttachment } : {}),
       idempotencyKey: normalizedIdempotencyKey,
     });
 

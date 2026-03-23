@@ -15,6 +15,24 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
         currentView.type === 'immersive' && typeof currentView.params?.prefillText === 'string'
             ? currentView.params.prefillText.trim()
             : '';
+    const attachedBook =
+        currentView.type === 'immersive' &&
+        currentView.params &&
+        typeof currentView.params?.attachedBook === 'object'
+            ? currentView.params.attachedBook
+            : undefined;
+    const attachedPublication =
+        currentView.type === 'immersive' &&
+        currentView.params &&
+        typeof currentView.params?.attachedPublication === 'object'
+            ? currentView.params.attachedPublication
+            : undefined;
+    const attachedQuote =
+        currentView.type === 'immersive' &&
+        currentView.params &&
+        typeof currentView.params?.attachedQuote === 'object'
+            ? currentView.params.attachedQuote
+            : undefined;
 
     const handlePress = () => {
         navigate({
@@ -25,6 +43,9 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
                 conversationId: conversation.id,
                 contactName: conversation.contactName,
                 ...(prefillText ? { prefillText } : {}),
+                ...(attachedBook ? { attachedBook } : {}),
+                ...(attachedPublication ? { attachedPublication } : {}),
+                ...(attachedQuote ? { attachedQuote } : {}),
             }
         });
     };

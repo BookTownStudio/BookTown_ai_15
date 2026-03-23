@@ -15,6 +15,17 @@ type ParticipantProfile = {
   handle: string;
 };
 
+type DirectMessageAttachment = {
+  type: "book" | "publication" | "quote";
+  entityId: string;
+  title?: string;
+  author?: string;
+  coverUrl?: string;
+  canonicalSlug?: string;
+  quoteOwnerId?: string;
+  quoteText?: string;
+};
+
 type ConversationDoc = {
   kind: "direct";
   participantIds: string[];
@@ -59,6 +70,81 @@ function normalizeText(value: unknown): string {
     );
   }
   return normalized;
+}
+
+function normalizeOptionalText(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "text must be a string.");
+  }
+  const normalized = value.trim();
+  if (normalized.length > MAX_MESSAGE_LENGTH) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Message text exceeds ${MAX_MESSAGE_LENGTH} characters.`
+    );
+  }
+  return normalized;
+}
+
+function readTrimmedString(value: unknown, maxLength = 2048): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, maxLength);
+}
+
+function normalizeDirectMessageAttachment(
+  value: unknown
+): { type: "book" | "publication" | "quote"; entityId: string } | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+  const raw = value as Record<string, unknown>;
+  const type = readTrimmedString(raw.type, 32).toLowerCase();
+  if (type !== "book" && type !== "publication" && type !== "quote") {
+    throw new HttpsError("invalid-argument", "attachment.type is invalid.");
+  }
+  const entityId = readTrimmedString(raw.entityId, 256);
+  if (!entityId) {
+    throw new HttpsError("invalid-argument", "attachment.entityId is required.");
+  }
+  return {
+    type,
+    entityId,
+  };
+}
+
+function normalizeStoredAttachment(value: unknown): DirectMessageAttachment | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+  const raw = value as Record<string, unknown>;
+  const type = readTrimmedString(raw.type, 32).toLowerCase();
+  if (type !== "book" && type !== "publication" && type !== "quote") {
+    return undefined;
+  }
+  const entityId = readTrimmedString(raw.entityId, 256);
+  if (!entityId) {
+    return undefined;
+  }
+  const title = readTrimmedString(raw.title, 300);
+  const author = readTrimmedString(raw.author, 300);
+  const coverUrl = readTrimmedString(raw.coverUrl, 2048);
+  const canonicalSlug = readTrimmedString(raw.canonicalSlug, 160);
+  const quoteOwnerId = readTrimmedString(raw.quoteOwnerId, 128);
+  const quoteText = readTrimmedString(raw.quoteText, 600);
+
+  return {
+    type,
+    entityId,
+    ...(title ? { title } : {}),
+    ...(author ? { author } : {}),
+    ...(coverUrl ? { coverUrl } : {}),
+    ...(canonicalSlug ? { canonicalSlug } : {}),
+    ...(quoteOwnerId ? { quoteOwnerId } : {}),
+    ...(quoteText ? { quoteText } : {}),
+  };
 }
 
 function normalizeLimit(value: unknown, fallbackValue: number, max: number): number {
@@ -123,6 +209,110 @@ function asParticipantProfile(payload: unknown): ParticipantProfile {
     name: typeof data.name === "string" && data.name.trim() ? data.name.trim() : "Unknown",
     avatarUrl: typeof data.avatarUrl === "string" ? data.avatarUrl : "",
     handle: typeof data.handle === "string" ? data.handle : "",
+  };
+}
+
+async function resolveAttachmentSnapshot(
+  transaction: FirebaseFirestore.Transaction,
+  attachment: { type: "book" | "publication" | "quote"; entityId: string },
+  uid: string
+): Promise<DirectMessageAttachment> {
+  if (attachment.type === "book") {
+    const snap = await transaction.get(db.collection("books").doc(attachment.entityId));
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced book not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const title =
+      readTrimmedString(data.titleEn, 300) ||
+      readTrimmedString(data.titleAr, 300);
+    const author =
+      readTrimmedString(data.authorEn, 300) ||
+      readTrimmedString(data.authorAr, 300);
+    const coverUrl = readTrimmedString(data.coverUrl, 2048);
+
+    return {
+      type: "book",
+      entityId: attachment.entityId,
+      ...(title ? { title } : {}),
+      ...(author ? { author } : {}),
+      ...(coverUrl ? { coverUrl } : {}),
+    };
+  }
+
+  if (attachment.type === "publication") {
+    const snap = await transaction.get(
+      db.collection("longform_publications").doc(attachment.entityId)
+    );
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced publication not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const ownerUid = readTrimmedString(data.ownerUid, 128);
+    const visibility = readTrimmedString(data.visibility, 32).toLowerCase();
+    if (ownerUid && ownerUid !== uid && visibility !== "public") {
+      throw new HttpsError("permission-denied", "Referenced publication is not accessible.");
+    }
+
+    const title = readTrimmedString(data.title, 300);
+    const author = readTrimmedString(data.authorDisplayName, 300);
+    const coverUrl = readTrimmedString(data.coverUrl, 2048);
+    const canonicalSlug = readTrimmedString(data.canonicalSlug, 160);
+
+    return {
+      type: "publication",
+      entityId: attachment.entityId,
+      ...(title ? { title } : {}),
+      ...(author ? { author } : {}),
+      ...(coverUrl ? { coverUrl } : {}),
+      ...(canonicalSlug ? { canonicalSlug } : {}),
+    };
+  }
+
+  const quoteQuery = db
+    .collectionGroup("quotes")
+    .where(admin.firestore.FieldPath.documentId(), "==", attachment.entityId)
+    .limit(10);
+  const quoteSnap = await transaction.get(quoteQuery);
+  const accessibleQuotes = quoteSnap.docs
+    .map((docSnap) => {
+      const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+      const quoteOwnerId = readTrimmedString(docSnap.ref.parent.parent?.id, 128);
+      const isPublic = data.isPublic === true;
+      if (!quoteOwnerId) return null;
+      if (!isPublic && quoteOwnerId !== uid) return null;
+      return { docSnap, data, quoteOwnerId };
+    })
+    .filter(
+      (
+        entry
+      ): entry is {
+        docSnap: FirebaseFirestore.QueryDocumentSnapshot;
+        data: Record<string, unknown>;
+        quoteOwnerId: string;
+      } => entry !== null
+    );
+
+  if (accessibleQuotes.length === 0) {
+    throw new HttpsError("not-found", "Referenced quote not found.");
+  }
+  if (accessibleQuotes.length > 1) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Referenced quote identity is ambiguous."
+    );
+  }
+
+  const { data, quoteOwnerId } = accessibleQuotes[0];
+  const quoteText =
+    readTrimmedString(data.textEn, 600) ||
+    readTrimmedString(data.textAr, 600);
+
+  return {
+    type: "quote",
+    entityId: attachment.entityId,
+    quoteOwnerId,
+    ...(quoteText ? { quoteText } : {}),
   };
 }
 
@@ -358,8 +548,14 @@ export const listDirectMessages = onCall({ cors: true }, async (request) => {
       id: messageSnap.id,
       senderId,
       text: typeof messageData.text === "string" ? messageData.text : "",
+      ...(normalizeStoredAttachment(messageData.attachment)
+        ? { attachment: normalizeStoredAttachment(messageData.attachment) }
+        : {}),
       timestamp: toIsoString(messageData.createdAt),
       readByPeer: isReadByPeer,
+      ...(isReadByPeer && peerReadTimestamp
+        ? { seenAt: peerReadTimestamp.toDate().toISOString() }
+        : {}),
     };
   });
 
@@ -375,11 +571,19 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
   const data = (request.data ?? {}) as {
     conversationId?: unknown;
     text?: unknown;
+    attachment?: unknown;
     idempotencyKey?: unknown;
   };
   const conversationId = normalizeUid(data.conversationId, "conversationId");
-  const text = normalizeText(data.text);
+  const text = normalizeOptionalText(data.text);
+  const attachment = normalizeDirectMessageAttachment(data.attachment);
   const idempotencyKey = normalizeIdempotencyKey(data.idempotencyKey);
+  if (!text && !attachment) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Message text or attachment is required."
+    );
+  }
 
   const conversationRef = db.collection("conversations").doc(conversationId);
   const messageRef = conversationRef.collection("messages").doc();
@@ -414,6 +618,10 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
     if (!peerUid) {
       throw new HttpsError("failed-precondition", "Invalid direct conversation.");
     }
+
+    const attachmentSnapshot = attachment
+      ? await resolveAttachmentSnapshot(transaction, attachment, uid)
+      : null;
 
     const [dedupeSnap, rateSnap, senderBlocksPeerSnap, peerBlocksSenderSnap] =
       await Promise.all([
@@ -496,10 +704,20 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
         : {};
     const senderProfile = asParticipantProfile(participantProfiles[uid]);
     const senderName = senderProfile.name || "Someone";
+    const conversationPreviewText =
+      text ||
+      (attachmentSnapshot?.type === "publication"
+        ? "Shared a publication"
+        : attachmentSnapshot?.type === "book"
+          ? "Shared a book"
+          : attachmentSnapshot?.type === "quote"
+            ? "Shared a quote"
+          : "");
 
     transaction.set(messageRef, {
       senderId: uid,
       text,
+      ...(attachmentSnapshot ? { attachment: attachmentSnapshot } : {}),
       createdAt: now,
       idempotencyKey,
       version: 1,
@@ -514,7 +732,7 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
     transaction.set(
       conversationRef,
       {
-        lastMessageText: text,
+        lastMessageText: conversationPreviewText,
         lastMessageAt: now,
         lastMessageSenderId: uid,
         unreadCounts,
@@ -569,7 +787,9 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
 
     if (canSendInAppNotification) {
       const preview =
-        text.length > 96 ? `${text.slice(0, 93).trimEnd()}...` : text;
+        conversationPreviewText.length > 96
+          ? `${conversationPreviewText.slice(0, 93).trimEnd()}...`
+          : conversationPreviewText;
       const notificationId = `dm_${conversationId}_${messageRef.id}_${peerUid}`;
       const notificationRef = db.collection("notifications").doc(notificationId);
       const unreadRef = db.collection("users").doc(peerUid).collection("meta").doc("unread");

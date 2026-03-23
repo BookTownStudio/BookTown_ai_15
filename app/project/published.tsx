@@ -147,8 +147,8 @@ const ProjectPublishedScreen: React.FC = () => {
     };
 
     const handleDm = () => {
-        if (!shareUrl) {
-            showToast(lang === 'en' ? 'No message link available yet.' : 'لا يوجد رابط للرسالة بعد.');
+        if ((publishTarget === 'blog' && !publicationId) || (publishTarget === 'ebook' && !bookId)) {
+            showToast(lang === 'en' ? 'No message attachment available yet.' : 'لا يوجد مرفق رسالة متاح بعد.');
             return;
         }
 
@@ -157,7 +157,20 @@ const ProjectPublishedScreen: React.FC = () => {
             id: 'messengerList',
             params: {
                 from: currentView,
-                prefillText: shareText,
+                ...(title ? { prefillText: title } : {}),
+                ...(publishTarget === 'blog' && publicationId
+                    ? {
+                        attachedPublication: {
+                            id: publicationId,
+                            title,
+                            ...(coverUrl ? { coverUrl } : {}),
+                            ...(canonicalSlug ? { canonicalSlug } : {}),
+                        },
+                    }
+                    : {}),
+                ...(publishTarget === 'ebook' && bookId
+                    ? { attachedBook: { id: bookId } }
+                    : {}),
             },
         });
     };

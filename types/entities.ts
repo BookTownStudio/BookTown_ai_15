@@ -446,7 +446,7 @@ export type PostAttachment =
       author?: string;
       canonicalSlug?: string;
     }
-  | { type: 'quote'; quoteId: string, quoteOwnerId: string }
+  | { type: 'quote'; quoteId: string, quoteOwnerId: string, quoteText?: string }
   | { type: 'media'; url: string }
   | { type: 'author'; authorId: string; authorName: string; authorPhoto: string; authorCountry?: string; signatureQuote?: string; }
   | { type: 'shelf'; shelfId: string, ownerId: string, shelfName: string, bookCount: number, covers: string[] }
@@ -737,8 +737,19 @@ export interface DirectMessage {
     id: string;
     senderId: string;
     text: string;
+    attachment?: {
+        type: 'book' | 'publication' | 'quote';
+        entityId: string;
+        title?: string;
+        author?: string;
+        coverUrl?: string;
+        canonicalSlug?: string;
+        quoteOwnerId?: string;
+        quoteText?: string;
+    };
     timestamp: string; // ISO string
     readByPeer?: boolean;
+    seenAt?: string;
 }
 
 export interface Conversation {

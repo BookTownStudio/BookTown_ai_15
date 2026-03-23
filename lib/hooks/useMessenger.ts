@@ -34,10 +34,24 @@ export const useSendMessage = (conversationId: string | undefined) => {
     const uid = user?.uid;
 
     return useMutation({
-        mutationFn: ({ text, idempotencyKey }: { text: string; idempotencyKey: string; }) => {
+        mutationFn: ({
+            text,
+            idempotencyKey,
+            attachment,
+        }: {
+            text: string;
+            idempotencyKey: string;
+            attachment?: { type: 'book' | 'publication' | 'quote'; entityId: string };
+        }) => {
             if (!uid) throw new Error("Not authenticated");
             if (!conversationId) throw new Error("Missing conversationId");
-            return dataService.messaging.sendMessage(uid, conversationId!, text, idempotencyKey);
+            return dataService.messaging.sendMessage(
+                uid,
+                conversationId!,
+                text,
+                idempotencyKey,
+                attachment
+            );
         },
         onSuccess: () => {
             queryClient.invalidateQueries(['messages', uid, conversationId]);

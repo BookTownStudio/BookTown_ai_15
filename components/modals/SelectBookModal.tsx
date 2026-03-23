@@ -28,12 +28,14 @@ interface SelectBookModalProps {
   isOpen: boolean;
   onClose: () => void;
   onBookSelect: (book: Book) => void;
+  selectionMode?: 'navigate' | 'selectCanonical';
 }
 
 const SelectBookModal: React.FC<SelectBookModalProps> = ({
   isOpen,
   onClose,
-  onBookSelect
+  onBookSelect,
+  selectionMode = 'navigate',
 }) => {
   const { lang } = useI18n();
   const { showToast } = useToast();
@@ -156,6 +158,18 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
         resultType: 'canonical',
         bookId: canonicalBookId,
       };
+
+      if (selectionMode === 'selectCanonical') {
+        onBookSelect(
+          mapResultToBook({
+            ...result,
+            resultType: 'canonical',
+            bookId: canonicalBookId,
+          })
+        );
+        onClose();
+        return;
+      }
 
       navigate({
         type: 'immersive',

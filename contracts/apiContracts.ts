@@ -632,9 +632,23 @@ const directMessageSchema = z
   .object({
     id: z.string().min(1),
     senderId: z.string().min(1),
-    text: z.string().min(1).max(2000),
+    text: z.string().max(2000),
+    attachment: z
+      .object({
+        type: z.enum(["book", "publication", "quote"]),
+        entityId: z.string().min(1),
+        title: z.string().max(300).optional(),
+        author: z.string().max(300).optional(),
+        coverUrl: z.string().max(2048).optional(),
+        canonicalSlug: z.string().min(1).max(160).optional(),
+        quoteOwnerId: z.string().min(1).max(128).optional(),
+        quoteText: z.string().max(600).optional(),
+      })
+      .strict()
+      .optional(),
     timestamp: z.string().min(1),
     readByPeer: z.boolean().optional(),
+    seenAt: z.string().min(1).optional(),
   })
   .strict();
 
@@ -901,7 +915,14 @@ export const apiContracts = {
       z
         .object({
           conversationId: z.string().min(1),
-          text: z.string().min(1).max(2000),
+          text: z.string().max(2000).optional(),
+          attachment: z
+            .object({
+              type: z.enum(["book", "publication", "quote"]),
+              entityId: z.string().min(1),
+            })
+            .strict()
+            .optional(),
           idempotencyKey: z
             .string()
             .regex(/^[A-Za-z0-9_-]{8,96}$/),
