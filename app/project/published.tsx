@@ -54,7 +54,7 @@ const SignaturePublishBook: React.FC<{
                         : 0.22;
 
     return (
-        <div className="relative mb-8 flex h-40 w-40 items-center justify-center [perspective:1200px]">
+        <div className="relative mb-8 flex h-44 w-44 items-center justify-center [perspective:1200px]">
             <div
                 className="absolute inset-0 rounded-full blur-3xl transition-all ease-out"
                 style={{
@@ -66,32 +66,35 @@ const SignaturePublishBook: React.FC<{
                 }}
             />
             <div
-                className="relative h-[88px] w-[64px] transition-all ease-[cubic-bezier(0.22,1,0.36,1)]"
+                className="relative h-[116px] w-[88px] transition-all ease-[cubic-bezier(0.22,1,0.36,1)]"
                 style={{
                     opacity: phase === 'hidden' ? 0 : 1,
                     transform: transformByPhase[phase],
                     transformStyle: 'preserve-3d',
                     transitionDuration: shouldAnimate ? (isRepublish ? '280ms' : '360ms') : '0ms',
-                    filter: 'drop-shadow(0 18px 34px rgba(0,0,0,0.24))',
+                    filter: 'drop-shadow(0 22px 38px rgba(0,0,0,0.28))',
                 }}
             >
-                <div className="absolute right-[-5px] top-[6px] h-[74px] w-[7px] rounded-r-[4px] border border-white/10 bg-[linear-gradient(180deg,rgba(245,255,251,0.4)_0%,rgba(169,222,210,0.18)_36%,rgba(14,38,38,0.58)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.2)]" />
-                <div className="absolute right-[-9px] top-[9px] h-[68px] w-[5px] rounded-r-[3px] bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(11,23,28,0.4))] opacity-80" />
-                <div className="absolute left-0 top-0 h-full w-[10px] rounded-l-[10px] border border-white/10 bg-[linear-gradient(180deg,rgba(232,255,247,0.38)_0%,rgba(137,204,189,0.18)_38%,rgba(15,43,47,0.6)_100%)] shadow-[inset_1px_0_0_rgba(255,255,255,0.18)]" />
-                <div className="absolute left-[8px] top-0 h-full w-[56px] overflow-hidden rounded-[12px] border border-white/24 bg-[linear-gradient(165deg,rgba(255,255,255,0.44)_0%,rgba(225,255,247,0.2)_16%,rgba(101,192,171,0.18)_36%,rgba(11,33,37,0.76)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),inset_0_-14px_24px_rgba(3,7,18,0.3)] backdrop-blur-md">
-                    <div className="absolute inset-[2px] rounded-[10px] border border-white/12" />
-                    <div className="absolute left-[10px] top-[9px] h-[24px] w-[35px] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.52)_0%,rgba(255,255,255,0.16)_46%,rgba(255,255,255,0)_76%)] blur-[1px]" />
+                <div className="absolute right-[6px] top-[8px] h-[96px] w-[66px] rounded-[16px] border border-white/18 bg-[linear-gradient(180deg,rgba(253,255,252,0.92)_0%,rgba(235,243,239,0.86)_48%,rgba(204,216,210,0.82)_100%)] shadow-[0_10px_20px_rgba(3,7,18,0.18)]" />
+                <div className="absolute right-[2px] top-[12px] h-[88px] w-[10px] rounded-r-[8px] border border-white/12 bg-[linear-gradient(180deg,rgba(255,255,255,0.4)_0%,rgba(218,230,224,0.94)_52%,rgba(183,198,192,0.92)_100%)]" />
+                <div className="absolute left-0 top-[4px] h-[108px] w-[16px] rounded-l-[14px] border border-emerald-100/20 bg-[linear-gradient(180deg,rgba(220,255,245,0.42)_0%,rgba(74,139,124,0.26)_34%,rgba(7,24,29,0.8)_100%)] shadow-[inset_1px_0_0_rgba(255,255,255,0.22)]" />
+                <div className="absolute left-[10px] top-0 h-[108px] w-[72px] overflow-hidden rounded-[16px] border border-white/24 bg-[linear-gradient(165deg,rgba(244,255,251,0.54)_0%,rgba(189,246,228,0.22)_16%,rgba(93,192,167,0.22)_36%,rgba(8,28,33,0.82)_100%)] shadow-[inset_0_1px_0_rgba(255,255,255,0.4),inset_0_-18px_28px_rgba(3,7,18,0.34)] backdrop-blur-md">
+                    <div className="absolute inset-[2px] rounded-[14px] border border-white/12" />
+                    <div className="absolute left-0 top-0 h-full w-[11px] bg-[linear-gradient(180deg,rgba(255,255,255,0.18),rgba(255,255,255,0.04)_30%,rgba(0,0,0,0.16)_100%)]" />
+                    <div className="absolute left-[14px] top-[12px] h-[28px] w-[42px] rounded-full bg-[radial-gradient(circle,rgba(255,255,255,0.56)_0%,rgba(255,255,255,0.16)_46%,rgba(255,255,255,0)_76%)] blur-[1px]" />
                     <div
-                        className="absolute inset-y-[-14px] left-[-40px] w-[28px] bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.34)_46%,rgba(255,255,255,0)_100%)] opacity-70 transition-transform ease-out"
+                        className="absolute inset-y-[-14px] left-[-44px] w-[34px] bg-[linear-gradient(180deg,rgba(255,255,255,0)_0%,rgba(255,255,255,0.34)_46%,rgba(255,255,255,0)_100%)] opacity-70 transition-transform ease-out"
                         style={{
                             transform: reflectionTransformByPhase[phase],
                             transitionDuration: shouldAnimate ? '700ms' : '0ms',
                         }}
                     />
-                    <div className="absolute inset-x-[10px] top-[16px] h-[2px] rounded-full bg-white/58" />
-                    <div className="absolute inset-x-[10px] top-[28px] h-[2px] rounded-full bg-white/34" />
-                    <div className="absolute inset-x-[10px] top-[40px] h-[2px] rounded-full bg-white/24" />
-                    <div className="absolute inset-x-[10px] bottom-[12px] h-[16px] rounded-[8px] bg-[linear-gradient(180deg,rgba(16,185,129,0.18),rgba(5,150,105,0.04))]" />
+                    <div className="absolute inset-x-[18px] top-[16px] h-[2px] rounded-full bg-white/58" />
+                    <div className="absolute inset-x-[18px] top-[28px] h-[2px] rounded-full bg-white/34" />
+                    <div className="absolute inset-x-[18px] top-[40px] h-[2px] rounded-full bg-white/24" />
+                    <div className="absolute inset-x-[16px] bottom-[14px] flex items-center justify-center rounded-[12px] border border-white/10 bg-[linear-gradient(180deg,rgba(16,185,129,0.2),rgba(5,150,105,0.06))] py-4">
+                        <BookIcon className="h-8 w-8 text-white/70" />
+                    </div>
                 </div>
             </div>
         </div>

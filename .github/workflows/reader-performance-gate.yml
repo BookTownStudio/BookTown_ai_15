@@ -1,10 +1,13 @@
 name: Reader Performance Gate
 
 on:
-  pull_request:
-  push:
-    branches:
-      - main
+  workflow_dispatch:
+
+# temporary until GitHub Actions quota resets
+# pull_request:
+# push:
+#   branches:
+#     - main
 
 jobs:
   reader-performance-gate:
