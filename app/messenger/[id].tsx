@@ -41,10 +41,15 @@ const MessengerChatScreen: React.FC = () => {
     const { navigate, currentView } = useNavigation();
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const lastReadMarkerRef = useRef<string | null>(null);
+    const prefillAppliedRef = useRef<string>('');
     const [input, setInput] = useState('');
     
     const conversationId = currentView.type === 'immersive' ? currentView.params?.conversationId : undefined;
     const contactName = currentView.type === 'immersive' ? currentView.params?.contactName : 'Chat';
+    const prefillText =
+        currentView.type === 'immersive' && typeof currentView.params?.prefillText === 'string'
+            ? currentView.params.prefillText.trim()
+            : '';
 
     const { data: messages, isLoading, isError } = useChatHistory(conversationId);
     const sendMutation = useSendMessage(conversationId);
@@ -77,6 +82,15 @@ const MessengerChatScreen: React.FC = () => {
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
+
+    useEffect(() => {
+        if (!prefillText || input.trim() || prefillAppliedRef.current === prefillText) {
+            return;
+        }
+
+        prefillAppliedRef.current = prefillText;
+        setInput(prefillText);
+    }, [input, prefillText]);
 
     useEffect(() => {
         if (!conversationId || !messages || messages.length === 0) return;

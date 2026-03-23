@@ -55,6 +55,9 @@ export const listOwnLongformPublications = onCall({ cors: true }, async (request
         lastPublishedAt: toIso(data.lastPublishedAt),
         publicationType:
           asNonEmptyString(data.publicationType, 64) || "blog_longform",
+        ...(asNonEmptyString(data.canonicalSlug, 120)
+          ? { canonicalSlug: asNonEmptyString(data.canonicalSlug, 120) }
+          : {}),
         ...(asNonEmptyString(data.coverUrl, 2048)
           ? { coverUrl: asNonEmptyString(data.coverUrl, 2048) }
           : {}),

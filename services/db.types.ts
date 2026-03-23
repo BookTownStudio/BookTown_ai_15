@@ -94,6 +94,9 @@ export interface LongformPublicationRecord {
   };
   ownerUid: string;
   language: string;
+  canonicalSlug?: string;
+  datePublished?: string;
+  dateModified?: string;
 }
 
 export interface OwnedLongformPublicationRecord {
@@ -103,6 +106,7 @@ export interface OwnedLongformPublicationRecord {
   estimatedReadingMinutes: number;
   lastPublishedAt: string;
   publicationType: string;
+  canonicalSlug?: string;
   coverUrl?: string;
 }
 

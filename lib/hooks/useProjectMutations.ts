@@ -267,7 +267,9 @@ export const usePublishProjectRelease = () => {
             if (uid) {
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
                 queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
+                queryClient.invalidateQueries(queryKeys.user.longformPublications(uid) as unknown as any[]);
             }
+            queryClient.invalidateQueries(['catalog', 'publication'] as unknown as any[]);
         },
     });
 };

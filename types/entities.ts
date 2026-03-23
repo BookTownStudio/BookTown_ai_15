@@ -366,6 +366,8 @@ export interface Project {
     contentDoc?: WriteContentDoc;
     isPublished?: boolean;
     publishedBookId?: string;
+    publishedPublicationId?: string;
+    lastPublishedTarget?: 'blog' | 'ebook';
     revision?: number;
     coverUrl?: string;
 }

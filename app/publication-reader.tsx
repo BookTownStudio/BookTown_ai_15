@@ -42,6 +42,9 @@ const PublicationReaderScreen: React.FC = () => {
                 author: publication.author,
                 excerpt: publication.excerpt,
                 coverUrl: publication.coverUrl,
+                canonicalSlug: publication.canonicalSlug,
+                datePublished: publication.datePublished,
+                dateModified: publication.dateModified,
                 normalizedContent: publication.normalizedContent,
             }
             : null
@@ -79,6 +82,7 @@ const PublicationReaderScreen: React.FC = () => {
             .map((item) => ({
                 publicationId: item.publicationId,
                 title: item.title,
+                canonicalSlug: item.canonicalSlug,
                 excerpt: item.excerpt,
                 estimatedReadingMinutes: item.estimatedReadingMinutes,
             }));
@@ -88,8 +92,16 @@ const PublicationReaderScreen: React.FC = () => {
         if (!publication) return;
 
         const shareUrl = typeof window !== 'undefined'
-            ? `${window.location.origin}${buildPublicationSlugPath(publication.title, publication.publicationId)}`
-            : buildPublicationSlugPath(publication.title, publication.publicationId);
+            ? `${window.location.origin}${buildPublicationSlugPath(
+                publication.title,
+                publication.publicationId,
+                publication.canonicalSlug
+            )}`
+            : buildPublicationSlugPath(
+                publication.title,
+                publication.publicationId,
+                publication.canonicalSlug
+            );
 
         const shareData = {
             title: publication.title,
@@ -129,13 +141,18 @@ const PublicationReaderScreen: React.FC = () => {
         });
     };
 
-    const handleOpenRelated = (nextPublicationId: string, title: string) => {
+    const handleOpenRelated = (
+        nextPublicationId: string,
+        title: string,
+        canonicalSlug?: string
+    ) => {
         navigate({
             type: 'immersive',
             id: 'publicationReader',
             params: {
                 publicationId: nextPublicationId,
                 title,
+                ...(canonicalSlug ? { canonicalSlug } : {}),
                 from: currentView,
             },
         });

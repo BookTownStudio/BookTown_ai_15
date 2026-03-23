@@ -207,6 +207,12 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                     : undefined;
             const bookId = searchParams.get('bookId')?.trim() ?? '';
             const publicationId = searchParams.get('publicationId')?.trim() ?? '';
+            const canonicalSlug = searchParams.get('canonicalSlug')?.trim() ?? '';
+            const publicationVersionRaw = Number(searchParams.get('publicationVersion') || '');
+            const publicationVersion =
+                Number.isInteger(publicationVersionRaw) && publicationVersionRaw > 0
+                    ? publicationVersionRaw
+                    : undefined;
 
             return {
                 type: 'immersive',
@@ -217,6 +223,8 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                     ...(publishTarget ? { publishTarget } : {}),
                     ...(bookId ? { bookId } : {}),
                     ...(publicationId ? { publicationId } : {}),
+                    ...(canonicalSlug ? { canonicalSlug } : {}),
+                    ...(typeof publicationVersion === 'number' ? { publicationVersion } : {}),
                 },
             };
         }
@@ -304,9 +312,13 @@ function resolvePathFromView(view: View): string | null {
                     typeof view.params?.title === 'string'
                         ? view.params.title.trim()
                         : '';
+                const canonicalSlug =
+                    typeof view.params?.canonicalSlug === 'string'
+                        ? view.params.canonicalSlug.trim()
+                        : '';
                 if (!publicationId) return null;
-                return title
-                    ? buildPublicationSlugPath(title, publicationId)
+                return (title || canonicalSlug)
+                    ? buildPublicationSlugPath(title, publicationId, canonicalSlug)
                     : `/read/publication/${encodePathSegment(publicationId)}`;
             }
             case 'editor': {
@@ -375,12 +387,24 @@ function resolvePathFromView(view: View): string | null {
                     typeof view.params?.bookId === 'string' ? view.params.bookId.trim() : '';
                 const publicationId =
                     typeof view.params?.publicationId === 'string' ? view.params.publicationId.trim() : '';
+                const canonicalSlug =
+                    typeof view.params?.canonicalSlug === 'string' ? view.params.canonicalSlug.trim() : '';
+                const publicationVersion =
+                    typeof view.params?.publicationVersion === 'number' &&
+                    Number.isInteger(view.params.publicationVersion) &&
+                    view.params.publicationVersion > 0
+                        ? view.params.publicationVersion
+                        : undefined;
 
                 const query = new URLSearchParams();
                 if (releaseId) query.set('releaseId', releaseId);
                 if (publishTarget) query.set('target', publishTarget);
                 if (bookId) query.set('bookId', bookId);
                 if (publicationId) query.set('publicationId', publicationId);
+                if (canonicalSlug) query.set('canonicalSlug', canonicalSlug);
+                if (typeof publicationVersion === 'number') {
+                    query.set('publicationVersion', String(publicationVersion));
+                }
 
                 const basePath = `/write/project/${encodePathSegment(projectId)}/published`;
                 const queryString = query.toString();
@@ -413,6 +437,8 @@ function isRouteBackedPath(pathname: string): boolean {
         || normalizedPath.startsWith('/post/')
         || normalizedPath.startsWith('/shelf/')
         || normalizedPath.startsWith('/reader/')
+        || normalizedPath.startsWith('/blog/')
+        || normalizedPath.startsWith('/publication/')
         || normalizedPath.startsWith('/read/publication/')
         || normalizedPath.startsWith('/write/editor/')
         || normalizedPath.startsWith('/write/project/')
@@ -469,8 +495,24 @@ function sanitizeViewForHistory(view: View): View {
                     typeof view.params?.publicationId === 'string'
                         ? view.params.publicationId.trim()
                         : '';
+                const title =
+                    typeof view.params?.title === 'string'
+                        ? view.params.title.trim()
+                        : '';
+                const canonicalSlug =
+                    typeof view.params?.canonicalSlug === 'string'
+                        ? view.params.canonicalSlug.trim()
+                        : '';
                 return publicationId
-                    ? { type: 'immersive', id: 'publicationReader', params: { publicationId } }
+                    ? {
+                        type: 'immersive',
+                        id: 'publicationReader',
+                        params: {
+                            publicationId,
+                            ...(title ? { title } : {}),
+                            ...(canonicalSlug ? { canonicalSlug } : {}),
+                        },
+                    }
                     : { type: 'tab', id: 'read' };
             }
             case 'editor':
@@ -546,6 +588,14 @@ function sanitizeViewForHistory(view: View): View {
                     typeof view.params?.title === 'string' ? view.params.title.trim() : '';
                 const coverUrl =
                     typeof view.params?.coverUrl === 'string' ? view.params.coverUrl.trim() : '';
+                const publicationVersion =
+                    typeof view.params?.publicationVersion === 'number' &&
+                    Number.isInteger(view.params.publicationVersion) &&
+                    view.params.publicationVersion > 0
+                        ? view.params.publicationVersion
+                        : undefined;
+                const canonicalSlug =
+                    typeof view.params?.canonicalSlug === 'string' ? view.params.canonicalSlug.trim() : '';
 
                 if (!projectId || !releaseId || !publishTarget) {
                     return { type: 'tab', id: 'write' };
@@ -562,6 +612,8 @@ function sanitizeViewForHistory(view: View): View {
                         ...(publicationId ? { publicationId } : {}),
                         ...(title ? { title } : {}),
                         ...(coverUrl ? { coverUrl } : {}),
+                        ...(typeof publicationVersion === 'number' ? { publicationVersion } : {}),
+                        ...(canonicalSlug ? { canonicalSlug } : {}),
                     },
                 };
             }

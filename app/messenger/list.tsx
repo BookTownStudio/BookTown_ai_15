@@ -11,12 +11,21 @@ import { Conversation } from '../../types/entities.ts';
 const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conversation }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
+    const prefillText =
+        currentView.type === 'immersive' && typeof currentView.params?.prefillText === 'string'
+            ? currentView.params.prefillText.trim()
+            : '';
 
     const handlePress = () => {
         navigate({
             type: 'immersive',
             id: 'messengerChat',
-            params: { from: currentView, conversationId: conversation.id, contactName: conversation.contactName }
+            params: {
+                from: currentView,
+                conversationId: conversation.id,
+                contactName: conversation.contactName,
+                ...(prefillText ? { prefillText } : {}),
+            }
         });
     };
 

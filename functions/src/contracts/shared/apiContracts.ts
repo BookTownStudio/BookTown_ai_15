@@ -2457,6 +2457,7 @@ export const apiContracts = {
           editionId: z.string().min(1),
           attachmentId: z.string().min(1),
           currentReleaseId: z.string().min(1),
+          publicationVersion: z.number().int().positive(),
         })
         .strict(),
       "httpsCallable",
@@ -2497,6 +2498,8 @@ export const apiContracts = {
           publicationId: z.string().min(1),
           projectId: z.string().min(1),
           currentReleaseId: z.string().min(1),
+          publicationVersion: z.number().int().positive(),
+          canonicalSlug: z.string().min(1),
         })
         .strict(),
       "httpsCallable",
@@ -2573,6 +2576,9 @@ export const apiContracts = {
           normalizedContent: normalizedManuscriptSchema,
           ownerUid: z.string().min(1),
           language: z.string().min(1),
+          canonicalSlug: z.string().min(1).optional(),
+          datePublished: z.string().min(1).optional(),
+          dateModified: z.string().min(1).optional(),
         })
         .strict(),
       "httpsCallable",
@@ -2594,6 +2600,7 @@ export const apiContracts = {
                 estimatedReadingMinutes: z.number().int().positive(),
                 lastPublishedAt: z.string().min(1),
                 publicationType: z.string().min(1),
+                canonicalSlug: z.string().min(1).optional(),
                 coverUrl: z.string().max(2048).optional(),
               })
               .strict()

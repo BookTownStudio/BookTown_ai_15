@@ -181,6 +181,13 @@ function assertReadyRelease(releaseId: string, release: Record<string, unknown>,
   };
 }
 
+function normalizePositiveInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return null;
+  }
+  return value;
+}
+
 export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   const releaseId = normalizeReleaseId((request.data as { releaseId?: unknown }).releaseId);
@@ -205,6 +212,11 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       const editionId = deriveEditionId(release.ownerUid, release.projectId);
       const bookRef = db.collection("books").doc(bookId);
       const editionRef = db.collection("editions").doc(editionId);
+      const projectRef = db
+        .collection("users")
+        .doc(release.ownerUid)
+        .collection("projects")
+        .doc(release.projectId);
 
       const [attachmentSnap, bookSnap, editionSnap] = await Promise.all([
         tx.get(attachmentRef),
@@ -234,6 +246,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
       const existingEdition = (editionSnap.data() ?? {}) as Record<string, unknown>;
       const isNewCanonicalBook = !bookSnap.exists;
+      const hasExistingCanonicalPublication = bookSnap.exists || editionSnap.exists;
       const rightsMode = normalizeBookRightsMode(existingBook.rightsMode || existingEdition.rightsMode);
       const title = release.title;
       const synopsis = deriveSynopsis(release.normalizedContent);
@@ -263,6 +276,18 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedTitle || normalizeSearchText(title)}`;
       const coverUrl = release.coverUrl;
       const now = FieldValue.serverTimestamp();
+      const existingPublicationVersion =
+        normalizePositiveInteger(existingBook.publicationVersion) ??
+        normalizePositiveInteger(existingEdition.publicationVersion);
+      const publicationVersion = hasExistingCanonicalPublication
+        ? (existingPublicationVersion ?? 1) + 1
+        : 1;
+      const datePublished =
+        existingBook.datePublished ??
+        existingEdition.datePublished ??
+        existingBook.createdAt ??
+        existingEdition.createdAt ??
+        now;
 
       tx.set(
         attachmentRef,
@@ -307,6 +332,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           searchTitleNormalized: normalizedTitle,
           searchAuthorNormalized: normalizedAuthor,
           searchTokens: searchFields.tokens,
+          publicationVersion,
+          datePublished,
+          dateModified: now,
+          lastPublishedTarget: "ebook",
+          publicationState: "published",
+          canonicalLocked: true,
           rightsMode,
           visibility: bookVisibilityForRightsMode(rightsMode),
           publicDomain: false,
@@ -358,6 +389,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             hasEbook: true,
             downloadable: true,
             isEbookAvailable: true,
+            publicationVersion,
+            datePublished,
+            dateModified: now,
+            lastPublishedTarget: "ebook",
+            publicationState: "published",
+            canonicalLocked: true,
             rightsMode,
             visibility: bookVisibilityForRightsMode(rightsMode),
             createdAt: now,
@@ -411,6 +448,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
               tokens: searchFields.tokens,
             },
             canonicalKey,
+            publicationVersion,
+            datePublished,
+            dateModified: now,
+            lastPublishedTarget: "ebook",
+            publicationState: "published",
+            canonicalLocked: true,
             rightsMode,
             visibility: bookVisibilityForRightsMode(rightsMode),
             ...(coverUrl
@@ -433,11 +476,24 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         );
       }
 
+      tx.set(
+        projectRef,
+        {
+          status: "Final",
+          isPublished: true,
+          publishedBookId: bookId,
+          lastPublishedTarget: "ebook",
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
       return {
         bookId,
         editionId,
         attachmentId: release.attachmentId,
         currentReleaseId: releaseId,
+        publicationVersion,
       };
     });
 

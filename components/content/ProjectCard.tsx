@@ -61,10 +61,9 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
         { label: 'Share', action: onShare, icon: ShareIcon },
         { label: 'Duplicate', action: onDuplicate, icon: DuplicateIcon, disabled: isDuplicatePending },
         {
-            label: project.isPublished ? 'Published' : 'Publish',
+            label: 'Publish',
             action: onPublish,
             icon: UploadIcon,
-            disabled: project.isPublished,
         },
     ];
 

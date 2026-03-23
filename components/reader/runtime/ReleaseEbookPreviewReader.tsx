@@ -15,6 +15,7 @@ type ReleaseEbookPreviewReaderProps = {
     onBack: () => void;
     previewLabel: string;
     initialPage?: number;
+    footerSlot?: React.ReactNode;
 };
 
 const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
@@ -24,6 +25,7 @@ const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
     onBack,
     previewLabel,
     initialPage = 1,
+    footerSlot,
 }) => {
     const { lang } = useI18n();
     const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
@@ -151,6 +153,14 @@ const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
 
             {isSettingsVisible ? (
                 <ReaderSettings onClose={() => setIsSettingsVisible(false)} />
+            ) : null}
+
+            {footerSlot ? (
+                <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
+                    <div className="pointer-events-auto mx-auto max-w-md">
+                        {footerSlot}
+                    </div>
+                </div>
             ) : null}
         </div>
     );

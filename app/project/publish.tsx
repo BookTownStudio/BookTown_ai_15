@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
@@ -19,6 +19,11 @@ import { extractProjectSynopsis } from '../../lib/projects/projectSummary.ts';
 import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
 
 type PublishTarget = 'blog' | 'ebook';
+type PublishAction = 'idle' | 'preview' | 'publish';
+
+function suggestTargetByWordCount(wordCount: number): PublishTarget {
+    return wordCount >= 8000 ? 'ebook' : 'blog';
+}
 
 const ProjectPublishScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -38,27 +43,36 @@ const ProjectPublishScreen: React.FC = () => {
     const { data: project, isLoading } = useProjectDetails(projectId);
     const createReleaseMutation = useCreateProjectRelease();
     const publishReleaseMutation = usePublishProjectRelease();
-
     const [selectedTarget, setSelectedTarget] = useState<PublishTarget | null>(
         publishTargetFromRoute ?? null
     );
-    const [confirmingPublish, setConfirmingPublish] = useState(false);
+    const [manualSelection, setManualSelection] = useState(Boolean(publishTargetFromRoute));
     const [preflightError, setPreflightError] = useState<string | null>(null);
+    const [activeAction, setActiveAction] = useState<PublishAction>('idle');
+
+    const suggestedTarget = useMemo(
+        () => suggestTargetByWordCount(project?.wordCount ?? 0),
+        [project?.wordCount]
+    );
 
     useEffect(() => {
         if (publishTargetFromRoute) {
             setSelectedTarget(publishTargetFromRoute);
+            setManualSelection(true);
+            return;
         }
-    }, [publishTargetFromRoute]);
+
+        if (!manualSelection) {
+            setSelectedTarget(suggestedTarget);
+        }
+    }, [manualSelection, publishTargetFromRoute, suggestedTarget]);
 
     const handleBack = () => navigate({ type: 'tab', id: 'write' });
     const isBusy = createReleaseMutation.isLoading || publishReleaseMutation.isLoading;
-    const preparedReleaseId = releaseIdFromRoute;
-    const preparedTarget = publishTargetFromRoute;
-    const hasPreparedRelease =
-        !!preparedReleaseId &&
-        !!selectedTarget &&
-        preparedTarget === selectedTarget;
+    const matchingReleaseId =
+        selectedTarget && publishTargetFromRoute === selectedTarget
+            ? releaseIdFromRoute
+            : '';
 
     const persistPublishState = (params: {
         releaseId?: string;
@@ -79,19 +93,43 @@ const ProjectPublishScreen: React.FC = () => {
         );
     };
 
-    const handleTargetSelect = (target: PublishTarget) => {
-        setSelectedTarget(target);
-        setConfirmingPublish(false);
+    const buildPreflightErrorMessage = (chapterNumber?: number) =>
+        lang === 'en'
+            ? (chapterNumber
+                ? `Chapter ${chapterNumber} needs a heading before its text begins.`
+                : 'This manuscript needs one more structural fix before it can be published.')
+            : (chapterNumber
+                ? `الفصل ${chapterNumber} يحتاج إلى عنوان قبل أن يبدأ النص.`
+                : 'هذه المخطوطة تحتاج إلى تعديل بنيوي واحد قبل النشر.');
+
+    const ensureReleaseForTarget = async (target: PublishTarget): Promise<string> => {
+        if (!projectId || !project) {
+            throw new Error(lang === 'en' ? 'Project not found.' : 'المشروع غير موجود.');
+        }
+
+        const preflight = validateReleasePreflight(project.contentDoc);
+        if (!preflight.ok) {
+            const message = buildPreflightErrorMessage(preflight.chapterNumber);
+            setPreflightError(message);
+            throw new Error(message);
+        }
+
         setPreflightError(null);
 
-        if (preparedReleaseId && preparedTarget !== target) {
-            persistPublishState({ publishTarget: target });
-            return;
+        if (matchingReleaseId) {
+            return matchingReleaseId;
         }
 
-        if (!preparedReleaseId && publishTargetFromRoute !== target) {
-            persistPublishState({ publishTarget: target });
-        }
+        const created = await createReleaseMutation.mutateAsync({
+            projectId,
+            publishKind: target === 'ebook' ? 'ebook_epub' : 'blog',
+        });
+
+        persistPublishState({
+            releaseId: created.releaseId,
+            publishTarget: target,
+        });
+        return created.releaseId;
     };
 
     const openPreview = (releaseId: string, target: PublishTarget) => {
@@ -116,68 +154,44 @@ const ProjectPublishScreen: React.FC = () => {
         });
     };
 
-    const handlePreview = async () => {
-        if (!projectId || !project || !selectedTarget) {
-            showToast(lang === 'en' ? 'Select a publish target first.' : 'اختر نوع النشر أولاً.');
-            return;
-        }
-
-        const preflight = validateReleasePreflight(project.contentDoc);
-        if (!preflight.ok) {
-            const localizedMessage =
-                lang === 'en'
-                    ? preflight.message
-                    : preflight.chapterNumber
-                        ? `الفصل ${preflight.chapterNumber} يحتاج إلى عنوان قبل أن يبدأ النص.`
-                        : 'هذا المخطوط لا يحتوي على بنية كتابة صالحة لتجهيز المعاينة.';
-            setPreflightError(localizedMessage);
-            showToast(localizedMessage);
-            return;
-        }
-
+    const handleTargetSelect = (target: PublishTarget) => {
+        setSelectedTarget(target);
+        setManualSelection(true);
         setPreflightError(null);
+        persistPublishState({ publishTarget: target });
+    };
 
-        if (hasPreparedRelease && preparedReleaseId) {
-            openPreview(preparedReleaseId, selectedTarget);
+    const handlePreview = async () => {
+        if (!selectedTarget) {
+            showToast(lang === 'en' ? 'Choose how you want to publish first.' : 'اختر طريقة النشر أولاً.');
             return;
         }
 
+        setActiveAction('preview');
         try {
-            const created = await createReleaseMutation.mutateAsync({
-                projectId,
-                publishKind: selectedTarget === 'ebook' ? 'ebook_epub' : 'blog',
-            });
-
-            persistPublishState({
-                releaseId: created.releaseId,
-                publishTarget: selectedTarget,
-            });
-            openPreview(created.releaseId, selectedTarget);
+            const releaseId = await ensureReleaseForTarget(selectedTarget);
+            openPreview(releaseId, selectedTarget);
         } catch (error) {
-            const message = error instanceof Error ? error.message : '';
-            showToast(
-                message || (
-                    lang === 'en'
-                        ? 'Failed to prepare the preview.'
-                        : 'فشل تجهيز المعاينة.'
-                )
-            );
+            const message = error instanceof Error ? error.message.trim() : '';
+            if (message) {
+                showToast(message);
+            }
+        } finally {
+            setActiveAction('idle');
         }
     };
 
     const handlePublish = async () => {
-        if (!projectId || !project || !selectedTarget || !hasPreparedRelease || !preparedReleaseId) {
-            showToast(
-                lang === 'en'
-                    ? 'Preview this release before publishing.'
-                    : 'قم بمعاينة هذه النسخة قبل النشر.'
-            );
+        if (!selectedTarget || !projectId || !project) {
+            showToast(lang === 'en' ? 'Choose how you want to publish first.' : 'اختر طريقة النشر أولاً.');
             return;
         }
 
+        setActiveAction('publish');
         try {
+            const releaseId = await ensureReleaseForTarget(selectedTarget);
             const result = await publishReleaseMutation.mutateAsync({
-                releaseId: preparedReleaseId,
+                releaseId,
                 target: selectedTarget,
                 projectId,
             });
@@ -187,26 +201,28 @@ const ProjectPublishScreen: React.FC = () => {
                 id: 'projectPublished',
                 params: {
                     projectId,
-                    releaseId: preparedReleaseId,
+                    releaseId,
                     publishTarget: selectedTarget,
                     title: lang === 'en' ? project.titleEn : project.titleAr,
                     ...(project.coverUrl ? { coverUrl: project.coverUrl } : {}),
+                    publicationVersion: result.publicationVersion,
                     ...(result.target === 'ebook'
                         ? { bookId: result.bookId }
-                        : { publicationId: result.publicationId }),
+                        : {
+                            publicationId: result.publicationId,
+                            canonicalSlug: result.canonicalSlug,
+                        }),
                 },
             });
         } catch (error) {
-            const message = error instanceof Error ? error.message : '';
-            showToast(
-                message || (
-                    lang === 'en'
-                        ? 'Publishing failed.'
-                        : 'فشل النشر.'
-                )
-            );
+            const message = error instanceof Error ? error.message.trim() : '';
+            if (message) {
+                showToast(message);
+            } else {
+                showToast(lang === 'en' ? 'Publishing failed.' : 'فشل النشر.');
+            }
         } finally {
-            setConfirmingPublish(false);
+            setActiveAction('idle');
         }
     };
 
@@ -222,44 +238,54 @@ const ProjectPublishScreen: React.FC = () => {
         contentDoc: project.contentDoc,
         html: project.content,
     });
+    const publishButtonLabel =
+        project.isPublished
+            ? (lang === 'en' ? 'Publish Update' : 'نشر التحديث')
+            : (lang === 'en' ? 'Publish' : 'نشر');
+    const previewButtonLabel = lang === 'en' ? 'Preview' : 'معاينة';
 
     return (
         <div className="h-screen flex flex-col bg-slate-900">
             <ScreenHeader titleEn="Publish Project" titleAr="نشر المشروع" onBack={handleBack} />
 
             <main className="flex-grow overflow-y-auto pt-24 pb-8">
-                <div className="container mx-auto max-w-3xl px-4 md:px-8">
-                    <div className="mb-8 flex flex-col items-start gap-8 md:flex-row">
-                        <div className="w-full overflow-hidden rounded-lg border border-white/10 bg-slate-800 text-slate-600 shadow-2xl md:w-48 md:aspect-[2/3]">
-                            {project.coverUrl ? (
-                                <img src={project.coverUrl} alt="Cover" className="h-full w-full object-cover" />
-                            ) : (
-                                <div className="flex aspect-[2/3] items-center justify-center">
-                                    <BookIcon className="h-12 w-12 opacity-50" />
-                                </div>
-                            )}
-                        </div>
-                        <div className="flex-grow">
-                            <BilingualText role="H1" className="!mb-2 !text-3xl">
-                                {lang === 'en' ? project.titleEn : project.titleAr}
-                            </BilingualText>
-                            <BilingualText className="mb-4 text-accent">
-                                {lang === 'en' ? project.typeEn : project.typeAr}
-                            </BilingualText>
-                            <GlassCard className="!bg-white/5 !p-4">
-                                <BilingualText role="Caption" className="mb-2 uppercase tracking-wider text-slate-400">
-                                    Synopsis
+                <div className="container mx-auto max-w-4xl px-4 md:px-8">
+                    <GlassCard className="mb-8 !bg-white/5 !p-5">
+                        <div className="flex items-start gap-4">
+                            <div className="w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 md:w-28">
+                                {project.coverUrl ? (
+                                    <img src={project.coverUrl} alt="Cover" className="aspect-[2/3] h-full w-full object-cover" />
+                                ) : (
+                                    <div className="flex aspect-[2/3] items-center justify-center text-slate-500">
+                                        <BookIcon className="h-8 w-8" />
+                                    </div>
+                                )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <BilingualText role="H1" className="!mb-2 !text-3xl">
+                                    {lang === 'en' ? project.titleEn : project.titleAr}
                                 </BilingualText>
-                                <p className="italic text-white/80">
-                                    {synopsis || (lang === 'en' ? 'No synopsis available yet.' : 'لا يوجد ملخص متاح بعد.')}
+                                <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                                    <span>{project.wordCount.toLocaleString()} {lang === 'en' ? 'words' : 'كلمة'}</span>
+                                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-300">
+                                        {project.status}
+                                    </span>
+                                    {project.isPublished ? (
+                                        <span className="rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-emerald-200">
+                                            {lang === 'en' ? 'Published' : 'منشور'}
+                                        </span>
+                                    ) : null}
+                                </div>
+                                <p className="max-w-2xl text-sm leading-7 text-white/70">
+                                    {synopsis || (lang === 'en' ? 'Ready to publish when you are.' : 'جاهز للنشر متى ما كنت جاهزاً.')}
                                 </p>
-                            </GlassCard>
+                            </div>
                         </div>
-                    </div>
+                    </GlassCard>
 
                     <div className="mb-8 rounded-xl border border-white/5 bg-slate-800/50 p-6">
                         <BilingualText role="H1" className="!mb-4 !text-lg">
-                            {lang === 'en' ? 'Publish Target' : 'نوع النشر'}
+                            {lang === 'en' ? 'Publish as' : 'انشر كـ'}
                         </BilingualText>
                         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                             <button
@@ -278,7 +304,7 @@ const ProjectPublishScreen: React.FC = () => {
                                 <div className="text-xs text-slate-400">
                                     {lang === 'en'
                                         ? 'Publish as an article inside BookTown'
-                                        : 'منشور طويل داخل منظومة بوكتاون'}
+                                        : 'انشره كمقال داخل بوك تاون'}
                                 </div>
                             </button>
                             <button
@@ -292,41 +318,16 @@ const ProjectPublishScreen: React.FC = () => {
                             >
                                 <div className="mb-2 flex items-center gap-3">
                                     <CheckCircleIcon className={`h-5 w-5 ${selectedTarget === 'ebook' ? 'text-amber-300' : 'text-slate-500'}`} />
-                                    <div className="font-bold text-white">Ebook (EPUB)</div>
+                                    <div className="font-bold text-white">Ebook</div>
                                 </div>
                                 <div className="text-xs text-slate-400">
                                     {lang === 'en'
                                         ? 'Publish as an ebook for BookTown Reader'
-                                        : 'كتاب إلكتروني أصلي داخل بوكتاون وجاهز للقارئ'}
+                                        : 'انشره ككتاب إلكتروني لقارئ بوك تاون'}
                                 </div>
                             </button>
                         </div>
                     </div>
-
-                    <GlassCard className="mb-8 !bg-white/5 !p-5">
-                        <BilingualText role="Caption" className="mb-3 uppercase tracking-wider text-slate-400">
-                            {lang === 'en' ? 'Prepared Version' : 'النسخة الجاهزة'}
-                        </BilingualText>
-                        {hasPreparedRelease ? (
-                            <div className="space-y-2 text-sm text-white/80">
-                                <div>
-                                    {lang === 'en' ? 'Format:' : 'الصيغة:'}{' '}
-                                    <span className="text-white">{selectedTarget === 'ebook' ? 'Ebook' : 'Blog'}</span>
-                                </div>
-                                <div className="text-xs text-slate-400">
-                                    {lang === 'en'
-                                        ? 'This prepared version is the one that will be published from this screen.'
-                                        : 'هذه النسخة الجاهزة هي التي سيتم نشرها من هذه الشاشة.'}
-                                </div>
-                            </div>
-                        ) : (
-                            <p className="text-sm text-slate-400">
-                                {lang === 'en'
-                                    ? 'No preview is ready yet. Choose a format and prepare a preview first.'
-                                    : 'لا توجد معاينة جاهزة بعد. اختر الصيغة وجهّز المعاينة أولاً.'}
-                            </p>
-                        )}
-                    </GlassCard>
 
                     {preflightError ? (
                         <div className="mb-8 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
@@ -334,81 +335,41 @@ const ProjectPublishScreen: React.FC = () => {
                         </div>
                     ) : null}
 
-                    <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                         <Button
                             variant="secondary"
                             onClick={handlePreview}
                             disabled={!selectedTarget || isBusy}
                             className="w-full !h-14 !text-lg"
                         >
-                            {createReleaseMutation.isLoading ? (
+                            {activeAction === 'preview' && isBusy ? (
                                 <div className="flex items-center gap-2">
                                     <LoadingSpinner />
-                                    <span>{lang === 'en' ? 'Preparing preview...' : 'جار تجهيز المعاينة...'}</span>
+                                    <span>{lang === 'en' ? 'Opening preview...' : 'جار فتح المعاينة...'}</span>
                                 </div>
                             ) : (
                                 <div className="flex items-center gap-2">
                                     <EyeIcon className="h-5 w-5" />
-                                    <span>
-                                        {hasPreparedRelease
-                                            ? (lang === 'en' ? 'Open Preview' : 'فتح المعاينة')
-                                            : (lang === 'en' ? 'Prepare Preview' : 'تجهيز المعاينة')}
-                                    </span>
+                                    <span>{previewButtonLabel}</span>
                                 </div>
                             )}
                         </Button>
 
-                        {!confirmingPublish ? (
-                            <Button
-                                variant="primary"
-                                onClick={() => setConfirmingPublish(true)}
-                                disabled={!hasPreparedRelease || isBusy}
-                                className="w-full !h-14 !text-lg shadow-lg shadow-primary/20 transition-all"
-                            >
-                                {publishReleaseMutation.isLoading ? (
-                                    <div className="flex items-center gap-2">
-                                        <LoadingSpinner />
-                                        <span>{lang === 'en' ? 'Publishing...' : 'جار النشر...'}</span>
-                                    </div>
-                                ) : (
-                                    lang === 'en' ? 'Publish This Version' : 'نشر هذه النسخة'
-                                )}
-                            </Button>
-                        ) : (
-                            <GlassCard className="border border-amber-300/20 !bg-amber-500/10 !p-5">
-                                <div className="mb-4 text-sm text-white">
-                                    {lang === 'en'
-                                        ? `Publish this version as ${selectedTarget === 'ebook' ? 'an ebook' : 'an article'} in BookTown?`
-                                        : `هل تريد نشر هذه النسخة كـ ${selectedTarget === 'ebook' ? 'كتاب إلكتروني' : 'مقال'} داخل بوك تاون؟`}
+                        <Button
+                            variant="primary"
+                            onClick={handlePublish}
+                            disabled={!selectedTarget || isBusy}
+                            className="w-full !h-14 !text-lg shadow-lg shadow-primary/20 transition-all"
+                        >
+                            {activeAction === 'publish' && isBusy ? (
+                                <div className="flex items-center gap-2">
+                                    <LoadingSpinner />
+                                    <span>{lang === 'en' ? 'Publishing...' : 'جار النشر...'}</span>
                                 </div>
-                                <div className="flex flex-col gap-3 sm:flex-row">
-                                    <Button
-                                        variant="primary"
-                                        onClick={handlePublish}
-                                        disabled={isBusy}
-                                        className="flex-1"
-                                    >
-                                        {publishReleaseMutation.isLoading
-                                            ? (lang === 'en' ? 'Publishing...' : 'جار النشر...')
-                                            : (lang === 'en' ? 'Confirm Publish' : 'تأكيد النشر')}
-                                    </Button>
-                                    <Button
-                                        variant="ghost"
-                                        onClick={() => setConfirmingPublish(false)}
-                                        disabled={isBusy}
-                                        className="flex-1"
-                                    >
-                                        {lang === 'en' ? 'Cancel' : 'إلغاء'}
-                                    </Button>
-                                </div>
-                            </GlassCard>
-                        )}
-
-                        <p className="text-center text-xs text-slate-500">
-                            {lang === 'en'
-                                ? 'Preview stays separate. Publishing uses only the prepared version shown above.'
-                                : 'المعاينة تبقى منفصلة. النشر يستخدم فقط النسخة الجاهزة الموضحة أعلاه.'}
-                        </p>
+                            ) : (
+                                publishButtonLabel
+                            )}
+                        </Button>
                     </div>
                 </div>
             </main>

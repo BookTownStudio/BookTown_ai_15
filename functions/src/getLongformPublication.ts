@@ -40,6 +40,23 @@ function assertNormalizedContent(value: unknown): NormalizedManuscript {
   return record as unknown as NormalizedManuscript;
 }
 
+function toIso(value: unknown): string | undefined {
+  if (
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    return ((value as { toDate: () => Date }).toDate()).toISOString();
+  }
+
+  if (typeof value === "string" && value.trim()) {
+    return value.trim();
+  }
+
+  return undefined;
+}
+
 export const getLongformPublication = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   const publicationId = normalizePublicationId(
@@ -130,6 +147,15 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       normalizedContent,
       ownerUid,
       language,
+      ...(asNonEmptyString(publication.canonicalSlug, 120)
+        ? { canonicalSlug: asNonEmptyString(publication.canonicalSlug, 120) }
+        : {}),
+      ...(toIso(publication.datePublished)
+        ? { datePublished: toIso(publication.datePublished) }
+        : {}),
+      ...(toIso(publication.dateModified)
+        ? { dateModified: toIso(publication.dateModified) }
+        : {}),
     };
 
     console.log("STEP_5_BEFORE_RESPONSE");

@@ -285,13 +285,18 @@ const WriteScreen: React.FC = () => {
         handleCreateProject(templateId, createProjectSeedFromTemplate(templateId, lang === 'ar' ? 'ar' : 'en'));
     };
 
-    const handleOpenPublication = useCallback((publicationId: string, title?: string) => {
+    const handleOpenPublication = useCallback((
+        publicationId: string,
+        title?: string,
+        canonicalSlug?: string
+    ) => {
         navigate({
             type: 'immersive',
             id: 'publicationReader',
             params: {
                 publicationId,
                 ...(title ? { title } : {}),
+                ...(canonicalSlug ? { canonicalSlug } : {}),
                 from: currentView,
             },
         });
@@ -358,10 +363,6 @@ const WriteScreen: React.FC = () => {
     // Updated: Navigate to Publish Screen
     const handlePublish = (project: Project) => {
         closeActiveMenu();
-        if (project.isPublished) {
-            showToast(lang === 'en' ? 'This project is already published.' : 'تم نشر هذا المشروع بالفعل.');
-            return;
-        }
         navigate({ type: 'immersive', id: 'projectPublish', params: { projectId: project.id, from: currentView } });
     };
 
@@ -454,18 +455,7 @@ const WriteScreen: React.FC = () => {
         }
 
         if (!publications || publications.length === 0) {
-            return (
-                <div className="rounded-[28px] border border-dashed border-[#d7cab6] bg-[#f4ecdd] px-6 py-12 text-center">
-                    <BilingualText role="H1" className="!text-2xl !text-[#171512]">
-                        {lang === 'en' ? 'No publications yet' : 'لا توجد منشورات بعد'}
-                    </BilingualText>
-                    <BilingualText className="mt-2 !text-[#6b5f54]">
-                        {lang === 'en'
-                            ? 'Published longform pieces will appear here.'
-                            : 'ستظهر هنا الأعمال الطويلة المنشورة.'}
-                    </BilingualText>
-                </div>
-            );
+            return null;
         }
 
         return (
@@ -474,12 +464,20 @@ const WriteScreen: React.FC = () => {
                     <PublicationCard
                         key={publication.publicationId}
                         publication={publication}
-                        onPress={() => handleOpenPublication(publication.publicationId, publication.title)}
+                        onPress={() =>
+                            handleOpenPublication(
+                                publication.publicationId,
+                                publication.title,
+                                publication.canonicalSlug
+                            )
+                        }
                     />
                 ))}
             </div>
         );
     };
+
+    const shouldShowPublicationShelf = publicationsLoading || Boolean(publications?.length);
 
     return (
         <>
@@ -516,21 +514,23 @@ const WriteScreen: React.FC = () => {
                             {renderContent()}
                         </div>
 
-                        <section className="mt-10">
-                            <div className="mb-6 flex items-center justify-between">
-                                <div>
-                                    <BilingualText role="H1" className="!text-3xl !font-bold">
-                                        {lang === 'en' ? 'Your Publications' : 'منشوراتك'}
-                                    </BilingualText>
-                                    <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
-                                        {lang === 'en'
-                                            ? 'Your published BookTown longform work.'
-                                            : 'أعمالك الطويلة المنشورة داخل بوك تاون.'}
-                                    </BilingualText>
+                        {shouldShowPublicationShelf ? (
+                            <section className="mt-10">
+                                <div className="mb-6 flex items-center justify-between">
+                                    <div>
+                                        <BilingualText role="H1" className="!text-3xl !font-bold">
+                                            {lang === 'en' ? 'Your Publications' : 'منشوراتك'}
+                                        </BilingualText>
+                                        <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
+                                            {lang === 'en'
+                                                ? 'Your published BookTown longform work.'
+                                                : 'أعمالك الطويلة المنشورة داخل بوك تاون.'}
+                                        </BilingualText>
+                                    </div>
                                 </div>
-                            </div>
-                            {renderPublicationShelf()}
-                        </section>
+                                {renderPublicationShelf()}
+                            </section>
+                        ) : null}
                     </LiteraryShell>
                 </main>
                 <TemplatesPanelTrigger

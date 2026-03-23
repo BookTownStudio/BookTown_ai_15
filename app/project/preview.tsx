@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
@@ -6,23 +6,49 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import LongformReadingSurface from '../../components/content/LongformReadingSurface.tsx';
 import ReleaseEbookPreviewReader from '../../components/reader/runtime/ReleaseEbookPreviewReader.tsx';
 import { useProjectReleasePreview } from '../../lib/hooks/useProjectReleasePreview.ts';
+import { usePublishProjectRelease } from '../../lib/hooks/useProjectMutations.ts';
 import { dataService } from '../../services/dataService.ts';
 import type { ProjectReleaseEbookPreviewSession } from '../../services/firebaseProjectService.ts';
+import Button from '../../components/ui/Button.tsx';
+import { useToast } from '../../store/toast.tsx';
 
 const ProjectPreviewScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
+    const { showToast } = useToast();
 
-    const releaseId = currentView.type === 'immersive' ? currentView.params?.releaseId : undefined;
-    const previewType = currentView.type === 'immersive' ? currentView.params?.previewType as 'blog' | 'ebook' | undefined : undefined;
+    const projectId =
+        currentView.type === 'immersive' && typeof currentView.params?.projectId === 'string'
+            ? currentView.params.projectId
+            : '';
+    const releaseId =
+        currentView.type === 'immersive' && typeof currentView.params?.releaseId === 'string'
+            ? currentView.params.releaseId
+            : '';
+    const previewType =
+        currentView.type === 'immersive' && (currentView.params?.previewType === 'blog' || currentView.params?.previewType === 'ebook')
+            ? currentView.params.previewType
+            : undefined;
     const from = currentView.type === 'immersive' ? currentView.params?.from : undefined;
 
     const { data: preview, isLoading } = useProjectReleasePreview(releaseId, previewType);
+    const publishReleaseMutation = usePublishProjectRelease();
     const [ebookSession, setEbookSession] = useState<ProjectReleaseEbookPreviewSession | null>(null);
     const [isPreparingEbookPreview, setIsPreparingEbookPreview] = useState(false);
     const [ebookPreviewError, setEbookPreviewError] = useState<string | null>(null);
 
     const handleBack = () => navigate(from ?? { type: 'tab', id: 'write' });
+    const isPublishing = publishReleaseMutation.isLoading;
+
+    const publishedRouteParams = useMemo(
+        () => ({
+            projectId,
+            releaseId,
+            ...(preview?.title ? { title: preview.title } : {}),
+            ...(preview?.coverUrl ? { coverUrl: preview.coverUrl } : {}),
+        }),
+        [preview?.coverUrl, preview?.title, projectId, releaseId]
+    );
 
     useEffect(() => {
         if (previewType !== 'ebook' || !releaseId) {
@@ -64,6 +90,56 @@ const ProjectPreviewScreen: React.FC = () => {
         };
     }, [lang, previewType, releaseId]);
 
+    const handlePublish = async () => {
+        if (!projectId || !releaseId || !previewType) {
+            showToast(lang === 'en' ? 'Preview is unavailable.' : 'المعاينة غير متاحة.');
+            return;
+        }
+
+        try {
+            const result = await publishReleaseMutation.mutateAsync({
+                releaseId,
+                target: previewType,
+                projectId,
+            });
+
+            navigate({
+                type: 'immersive',
+                id: 'projectPublished',
+                params: {
+                    ...publishedRouteParams,
+                    publishTarget: previewType,
+                    publicationVersion: result.publicationVersion,
+                    ...(result.target === 'ebook'
+                        ? { bookId: result.bookId }
+                        : {
+                            publicationId: result.publicationId,
+                            canonicalSlug: result.canonicalSlug,
+                        }),
+                },
+            });
+        } catch (error) {
+            const message =
+                error instanceof Error && error.message.trim()
+                    ? error.message
+                    : (lang === 'en' ? 'Publishing failed.' : 'فشل النشر.');
+            showToast(message);
+        }
+    };
+
+    const publishCta = (
+        <Button
+            variant="primary"
+            onClick={handlePublish}
+            disabled={isPublishing}
+            className="w-full !h-12 shadow-lg shadow-primary/20"
+        >
+            {isPublishing
+                ? (lang === 'en' ? 'Publishing...' : 'جار النشر...')
+                : (lang === 'en' ? 'Publish' : 'نشر')}
+        </Button>
+    );
+
     if (previewType === 'ebook') {
         if (ebookPreviewError) {
             return (
@@ -94,6 +170,7 @@ const ProjectPreviewScreen: React.FC = () => {
                 signedUrl={ebookSession.signedUrl}
                 onBack={handleBack}
                 previewLabel={lang === 'en' ? 'Preview' : 'معاينة'}
+                footerSlot={publishCta}
             />
         );
     }
@@ -109,12 +186,12 @@ const ProjectPreviewScreen: React.FC = () => {
     return (
         <div className="h-screen flex flex-col bg-slate-900">
             <ScreenHeader
-                titleEn="Preview Blog"
-                titleAr="معاينة المقال"
+                titleEn="Preview"
+                titleAr="معاينة"
                 onBack={handleBack}
             />
 
-            <main className="flex-grow overflow-y-auto pt-20">
+            <main className="flex-grow overflow-y-auto pt-20 pb-24">
                 <div className="min-h-full bg-[radial-gradient(circle_at_top,_rgba(196,165,121,0.12),_transparent_42%),linear-gradient(180deg,_#14181f_0%,_#11151b_100%)] px-4 py-8 md:px-8 md:py-10">
                     <div className="mx-auto max-w-3xl">
                         <div className="mb-4">
@@ -133,6 +210,12 @@ const ProjectPreviewScreen: React.FC = () => {
                     </div>
                 </div>
             </main>
+
+            <div className="pointer-events-none fixed inset-x-0 bottom-0 z-40 px-4 pb-4">
+                <div className="pointer-events-auto mx-auto max-w-md">
+                    {publishCta}
+                </div>
+            </div>
         </div>
     );
 };

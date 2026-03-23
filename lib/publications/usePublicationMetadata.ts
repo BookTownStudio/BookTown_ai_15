@@ -7,6 +7,7 @@ type PublicationMetadataInput = {
   author?: string;
   excerpt?: string;
   coverUrl?: string;
+  canonicalSlug?: string;
   datePublished?: string;
   dateModified?: string;
   normalizedContent?: {
@@ -145,7 +146,7 @@ export function usePublicationMetadata(input: PublicationMetadataInput | null) {
     const title = (input.title || "").trim() || DEFAULT_TITLE;
     const seoDescription = deriveDescription(input);
     const canonicalUrl = toAbsoluteUrl(
-      buildPublicationSlugPath(title, input.publicationId)
+      buildPublicationSlugPath(title, input.publicationId, input.canonicalSlug)
     );
     const imageUrl = toAbsoluteUrl(input.coverUrl?.trim() || DEFAULT_IMAGE_PATH);
     const authorName = input.author?.trim() || "BookTown";
@@ -198,7 +199,10 @@ export function usePublicationMetadata(input: PublicationMetadataInput | null) {
     };
   }, [
     input?.author,
+    input?.canonicalSlug,
     input?.coverUrl,
+    input?.dateModified,
+    input?.datePublished,
     input?.excerpt,
     input?.normalizedContent,
     input?.publicationId,

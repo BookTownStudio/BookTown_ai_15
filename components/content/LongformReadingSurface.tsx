@@ -37,10 +37,11 @@ type LongformReadingSurfaceProps = {
     relatedItems?: Array<{
         publicationId: string;
         title: string;
+        canonicalSlug?: string;
         excerpt: string;
         estimatedReadingMinutes: number;
     }>;
-    onRelatedSelect?: (publicationId: string, title: string) => void;
+    onRelatedSelect?: (publicationId: string, title: string, canonicalSlug?: string) => void;
 };
 
 const formatReadingTime = (estimatedReadingMinutes: number): string => {
@@ -236,7 +237,7 @@ const LongformReadingSurface: React.FC<LongformReadingSurfaceProps> = ({
                             <button
                                 key={item.publicationId}
                                 type="button"
-                                onClick={() => onRelatedSelect(item.publicationId, item.title)}
+                                onClick={() => onRelatedSelect(item.publicationId, item.title, item.canonicalSlug)}
                                 className="group rounded-[22px] border border-[#dbcdb8] bg-[#efe3cf] p-4 text-left transition hover:-translate-y-0.5 hover:bg-[#eadbc5]"
                             >
                                 <div className="mb-3 line-clamp-2 text-lg font-semibold leading-tight text-[#171512]">

@@ -73,14 +73,23 @@ function assertNormalizedContent(value: unknown): NormalizedManuscript {
 export function slugifyTitle(title: string): string {
   const normalized = title
     .trim()
+    .toLowerCase()
     .normalize("NFKD")
     .replace(/\p{M}/gu, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/[^\p{Script=Arabic}a-z0-9\s-]/gu, "")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .replace(/-{2,}/g, "-");
+    .slice(0, 96);
 
-  return normalized.slice(0, 120) || "publication";
+  return normalized || "publication";
+}
+
+function normalizePositiveInteger(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 1) {
+    return null;
+  }
+  return value;
 }
 
 function assertReadyLongformRelease(
@@ -173,7 +182,7 @@ export const bridgeReleaseToLongformPublication = onCall(
         const excerpt = deriveExcerpt(release.normalizedContent);
         const wordCount = deriveWordCount(release.normalizedContent);
         const estimatedReadingMinutes = deriveEstimatedReadingMinutes(wordCount);
-        const slug = slugifyTitle(title);
+        const nextDerivedSlug = slugifyTitle(title);
         const existingSnap = await tx.get(
           db
             .collection("longform_publications")
@@ -193,6 +202,28 @@ export const bridgeReleaseToLongformPublication = onCall(
         const publicationRef = existingSnap.empty
           ? db.collection("longform_publications").doc()
           : existingSnap.docs[0].ref;
+        const projectRef = db
+          .collection("users")
+          .doc(release.ownerUid)
+          .collection("projects")
+          .doc(release.projectId);
+        const existing = existingSnap.empty
+          ? null
+          : ((existingSnap.docs[0].data() ?? {}) as Record<string, unknown>);
+        const existingPublicationVersion =
+          normalizePositiveInteger(existing?.publicationVersion) ??
+          normalizePositiveInteger(existing?.publishVersion);
+        const publicationVersion = existing
+          ? (existingPublicationVersion ?? 1) + 1
+          : 1;
+        const canonicalSlug =
+          asNonEmptyString(existing?.canonicalSlug, 120) ||
+          asNonEmptyString(existing?.slug, 120) ||
+          nextDerivedSlug;
+        const datePublished =
+          existing?.datePublished ??
+          existing?.createdAt ??
+          now;
 
         if (existingSnap.empty) {
           tx.set(
@@ -204,7 +235,8 @@ export const bridgeReleaseToLongformPublication = onCall(
               authorId: canonicalAuthor.authorId,
               authorDisplayName: release.authorDisplayName,
               title,
-              slug,
+              slug: canonicalSlug,
+              canonicalSlug,
               excerpt,
               publicationType: "blog_longform",
               currentReleaseId: releaseId,
@@ -212,9 +244,15 @@ export const bridgeReleaseToLongformPublication = onCall(
               language,
               status: "published",
               visibility: "public",
+              publicationVersion,
               publishVersion: 1,
               wordCount,
               estimatedReadingMinutes,
+              datePublished,
+              dateModified: now,
+              lastPublishedTarget: "blog",
+              publicationState: "published",
+              canonicalLocked: true,
               lastPublishedAt: now,
               ...(coverUrl ? { coverUrl } : {}),
               createdAt: now,
@@ -223,8 +261,7 @@ export const bridgeReleaseToLongformPublication = onCall(
             { merge: true }
           );
         } else {
-          const existing = (existingSnap.docs[0].data() ?? {}) as Record<string, unknown>;
-          const existingOwnerUid = asNonEmptyString(existing.ownerUid, 256);
+          const existingOwnerUid = asNonEmptyString(existing?.ownerUid, 256);
           if (existingOwnerUid && existingOwnerUid !== release.ownerUid) {
             throw new HttpsError(
               "failed-precondition",
@@ -232,37 +269,45 @@ export const bridgeReleaseToLongformPublication = onCall(
             );
           }
 
-          const existingTitle = asNonEmptyString(existing.title, 180);
-          const nextSlug =
-            existingTitle === title
-              ? asNonEmptyString(existing.slug, 120) || slug
-              : slug;
-          const publishVersionRaw = existing.publishVersion;
-          const publishVersion =
-            typeof publishVersionRaw === "number" &&
-            Number.isInteger(publishVersionRaw) &&
-            publishVersionRaw > 0
-              ? publishVersionRaw + 1
-              : 1;
-
           tx.set(
             publicationRef,
             {
               authorId: canonicalAuthor.authorId,
               authorDisplayName: release.authorDisplayName,
               title,
-              slug: nextSlug,
+              slug: canonicalSlug,
+              canonicalSlug,
               excerpt,
               currentReleaseId: releaseId,
               normalizedContent: release.normalizedContent,
               language,
               status: "published",
               visibility: "public",
-              publishVersion,
+              publicationVersion,
+              publishVersion: publicationVersion,
               wordCount,
               estimatedReadingMinutes,
+              datePublished,
+              dateModified: now,
+              lastPublishedTarget: "blog",
+              publicationState: "published",
+              canonicalLocked: true,
               lastPublishedAt: now,
               ...(coverUrl ? { coverUrl } : { coverUrl: FieldValue.delete() }),
+              updatedAt: now,
+            },
+            { merge: true }
+          );
+        }
+
+        if (projectRef.id) {
+          tx.set(
+            projectRef,
+            {
+              status: "Final",
+              isPublished: true,
+              publishedPublicationId: publicationRef.id,
+              lastPublishedTarget: "blog",
               updatedAt: now,
             },
             { merge: true }
@@ -273,6 +318,8 @@ export const bridgeReleaseToLongformPublication = onCall(
           publicationId: publicationRef.id,
           projectId: release.projectId,
           currentReleaseId: releaseId,
+          publicationVersion,
+          canonicalSlug,
         };
       });
 

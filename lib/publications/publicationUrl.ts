@@ -11,13 +11,21 @@ export function slugifyPublicationTitle(title: string): string {
     .slice(0, 96);
 }
 
-export function buildPublicationSlugPath(title: string, publicationId: string): string {
+export function buildPublicationSlugPath(
+  title: string,
+  publicationId: string,
+  canonicalSlug?: string
+): string {
   const normalizedId = publicationId.trim();
   if (!normalizedId) {
     return "/read/publication";
   }
 
-  const slug = slugifyPublicationTitle(title) || `publication-${normalizedId}`;
+  const lockedSlug =
+    typeof canonicalSlug === "string" && canonicalSlug.trim()
+      ? canonicalSlug.trim()
+      : "";
+  const slug = lockedSlug || slugifyPublicationTitle(title) || `publication-${normalizedId}`;
   return `/blog/${slug}-${normalizedId}`;
 }
 

@@ -80,11 +80,14 @@ export type CanonicalBookPublishResult = {
   editionId: string;
   attachmentId: string;
   currentReleaseId: string;
+  publicationVersion: number;
 };
 export type LongformPublicationPublishResult = {
   publicationId: string;
   projectId: string;
   currentReleaseId: string;
+  publicationVersion: number;
+  canonicalSlug: string;
 };
 export type PublishedBookRightsResult = {
   bookId: string;
@@ -163,6 +166,14 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
     publishedBookId:
       typeof payload.publishedBookId === "string" && payload.publishedBookId.trim()
         ? payload.publishedBookId.trim()
+        : undefined,
+    publishedPublicationId:
+      typeof payload.publishedPublicationId === "string" && payload.publishedPublicationId.trim()
+        ? payload.publishedPublicationId.trim()
+        : undefined,
+    lastPublishedTarget:
+      payload.lastPublishedTarget === "blog" || payload.lastPublishedTarget === "ebook"
+        ? payload.lastPublishedTarget
         : undefined,
     revision:
       typeof payload.revision === "number" && Number.isInteger(payload.revision) && payload.revision > 0

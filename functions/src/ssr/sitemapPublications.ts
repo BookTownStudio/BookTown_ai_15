@@ -90,13 +90,18 @@ const slugifyPublicationTitle = (title: string): string =>
     .replace(/^-+|-+$/g, "")
     .slice(0, 96);
 
-const buildPublicationSlugPath = (title: string, publicationId: string): string => {
+const buildPublicationSlugPath = (
+  title: string,
+  publicationId: string,
+  canonicalSlug?: string
+): string => {
   const normalizedId = publicationId.trim();
   if (!normalizedId) {
     return "/blog";
   }
 
-  const slug = slugifyPublicationTitle(title) || `publication-${normalizedId}`;
+  const lockedSlug = asNonEmptyString(canonicalSlug, 120);
+  const slug = lockedSlug || slugifyPublicationTitle(title) || `publication-${normalizedId}`;
   return `/blog/${slug}-${normalizedId}`;
 };
 
@@ -171,7 +176,8 @@ export const sitemapPublications = onRequest(
 
         const publicationId = asNonEmptyString(data.publicationId, 256) || docSnap.id;
         const title = asNonEmptyString(data.title, 180) || "BookTown Publication";
-        const path = buildPublicationSlugPath(title, publicationId);
+        const canonicalSlug = asNonEmptyString(data.canonicalSlug, 120);
+        const path = buildPublicationSlugPath(title, publicationId, canonicalSlug);
         const lastmod = resolveLastmod(data);
 
         return {

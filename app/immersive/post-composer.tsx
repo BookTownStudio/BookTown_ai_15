@@ -75,11 +75,26 @@ const PostComposerScreen: React.FC = () => {
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);
   const [debouncedAttachment] = useDebounce(attachment, AUTOSAVE_DEBOUNCE);
   const attachedBookRef = useRef<string>('');
+  const prefillTextRef = useRef<string>('');
 
   useEffect(() => {
     const stored = localStorage.getItem(DRAFTS_KEY);
     if (stored) setDrafts(JSON.parse(stored));
   }, []);
+
+  useEffect(() => {
+    const prefillText =
+      currentView.type === 'immersive' &&
+      currentView.id === 'postComposer' &&
+      typeof currentView.params?.prefillText === 'string'
+        ? currentView.params.prefillText.trim()
+        : '';
+
+    if (!prefillText || prefillTextRef.current === prefillText || text.trim()) return;
+
+    prefillTextRef.current = prefillText;
+    setText(prefillText);
+  }, [currentView, text]);
 
   useEffect(() => {
     const attachedBook =
