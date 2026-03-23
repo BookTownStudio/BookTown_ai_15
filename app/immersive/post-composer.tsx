@@ -77,6 +77,13 @@ const PostComposerScreen: React.FC = () => {
   const attachedBookRef = useRef<string>('');
   const attachedPublicationRef = useRef<string>('');
   const prefillTextRef = useRef<string>('');
+  const cancelTarget =
+    currentView.type === 'immersive' &&
+    currentView.id === 'postComposer' &&
+    currentView.params?.from?.type === 'immersive' &&
+    currentView.params.from.id === 'projectPublished'
+      ? currentView.params.from
+      : { type: 'tab', id: 'social' as const };
 
   useEffect(() => {
     const stored = localStorage.getItem(DRAFTS_KEY);
@@ -350,7 +357,7 @@ const PostComposerScreen: React.FC = () => {
       />
 
       <Modal isOpen={showCancelPrompt} onClose={() => setShowCancelPrompt(false)}>
-        <Button onClick={() => navigate({ type: 'tab', id: 'social' })}>Discard</Button>
+        <Button onClick={() => navigate(cancelTarget)}>Discard</Button>
       </Modal>
     </div>
   );

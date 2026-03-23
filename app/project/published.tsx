@@ -70,11 +70,6 @@ const ProjectPublishedScreen: React.FC = () => {
         return '';
     }, [bookId, canonicalSlug, publicationId, publishTarget, title]);
 
-    const shareText = useMemo(
-        () => [title, shareUrl].filter(Boolean).join('\n'),
-        [shareUrl, title]
-    );
-
     const handlePrimaryAction = () => {
         if (publishTarget === 'ebook' && bookId) {
             navigate({ type: 'immersive', id: 'reader', params: { bookId } });
@@ -128,7 +123,7 @@ const ProjectPublishedScreen: React.FC = () => {
             id: 'postComposer',
             params: {
                 from: currentView,
-                prefillText: publishTarget === 'blog' ? title : shareText,
+                prefillText: title,
                 ...(publishTarget === 'blog' && publicationId
                     ? {
                         attachedPublication: {
