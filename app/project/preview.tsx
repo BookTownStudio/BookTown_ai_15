@@ -13,6 +13,11 @@ import Button from '../../components/ui/Button.tsx';
 import { useToast } from '../../store/toast.tsx';
 
 const PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY = 'booktown:publish-success-pending';
+type PublicationVisibility = 'public' | 'private';
+
+function normalizePublicationVisibility(value: unknown): PublicationVisibility {
+    return value === 'private' ? 'private' : 'public';
+}
 
 const ProjectPreviewScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -31,6 +36,9 @@ const ProjectPreviewScreen: React.FC = () => {
         currentView.type === 'immersive' && (currentView.params?.previewType === 'blog' || currentView.params?.previewType === 'ebook')
             ? currentView.params.previewType
             : undefined;
+    const visibility = normalizePublicationVisibility(
+        currentView.type === 'immersive' ? currentView.params?.visibility : undefined
+    );
     const from = currentView.type === 'immersive' ? currentView.params?.from : undefined;
 
     const { data: preview, isLoading } = useProjectReleasePreview(releaseId, previewType);
@@ -103,6 +111,7 @@ const ProjectPreviewScreen: React.FC = () => {
                 releaseId,
                 target: previewType,
                 projectId,
+                visibility,
             });
 
             if (typeof window !== 'undefined') {

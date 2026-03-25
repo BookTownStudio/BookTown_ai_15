@@ -1,16 +1,14 @@
 import { useQuery } from '../react-query.ts';
 import { quoteService } from '../../services/quoteService.ts';
-import { useAuth } from '../auth.tsx';
 import { Quote } from '../../types/entities.ts';
 
 export const useQuoteDetails = (quoteId: string | undefined, ownerId?: string) => {
-    const { user } = useAuth();
-    const loggedInUid = user?.uid;
-    const resolvedOwnerId = ownerId || loggedInUid;
+    const resolvedOwnerId =
+        typeof ownerId === 'string' && ownerId.trim().length > 0 ? ownerId.trim() : undefined;
     
     return useQuery<Quote>({
-        queryKey: ['quoteDetails', resolvedOwnerId ?? null, quoteId ?? null],
-        queryFn: () => quoteService.getQuoteById({ quoteId: quoteId!, ownerId: resolvedOwnerId }),
-        enabled: !!quoteId && !!resolvedOwnerId,
+        queryKey: ['quoteDetails', quoteId ?? null, resolvedOwnerId ?? null],
+        queryFn: () => quoteService.getQuoteById({ quoteId: quoteId!, ...(resolvedOwnerId ? { ownerId: resolvedOwnerId } : {}) }),
+        enabled: !!quoteId,
     });
 };

@@ -26,6 +26,9 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
       workType?: unknown;
       typeEn?: unknown;
       typeAr?: unknown;
+      lastCursorBlockId?: unknown;
+      lastCursorOffset?: unknown;
+      lastCursorSavedAt?: unknown;
     };
   };
   const uid = caller.uid;
@@ -82,6 +85,27 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     return "book";
   };
 
+  const normalizeCursorBlockId = (value: unknown): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    return normalized.slice(0, 64);
+  };
+
+  const normalizeCursorOffset = (value: unknown): number | undefined => {
+    if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+      return undefined;
+    }
+    return value;
+  };
+
+  const normalizeCursorSavedAt = (value: unknown): string | undefined => {
+    if (typeof value !== "string") return undefined;
+    const normalized = value.trim();
+    if (!normalized) return undefined;
+    return normalized.slice(0, 128);
+  };
+
   // 4. Construct Canonical Payload (Enforcement Model)
   // Ensures server-side control over timestamps and core fields
   const now = admin.firestore.Timestamp.now();
@@ -108,6 +132,15 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
     workType: normalizeWorkType(project.workType),
     typeEn: normalizeString(project.typeEn, "Draft", 80),
     typeAr: normalizeString(project.typeAr, "مسودة", 80),
+    ...(normalizeCursorBlockId(project.lastCursorBlockId)
+      ? { lastCursorBlockId: normalizeCursorBlockId(project.lastCursorBlockId) }
+      : {}),
+    ...(normalizeCursorOffset(project.lastCursorOffset) !== undefined
+      ? { lastCursorOffset: normalizeCursorOffset(project.lastCursorOffset) }
+      : {}),
+    ...(normalizeCursorSavedAt(project.lastCursorSavedAt)
+      ? { lastCursorSavedAt: normalizeCursorSavedAt(project.lastCursorSavedAt) }
+      : {}),
     isPublished: false,
     revision: 1,
     

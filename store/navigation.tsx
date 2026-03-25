@@ -169,6 +169,11 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                 targetRaw === 'blog' || targetRaw === 'ebook'
                     ? targetRaw
                     : undefined;
+            const visibilityRaw = searchParams.get('visibility')?.trim();
+            const visibility =
+                visibilityRaw === 'public' || visibilityRaw === 'private'
+                    ? visibilityRaw
+                    : undefined;
 
             return {
                 type: 'immersive',
@@ -177,6 +182,7 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                     projectId,
                     ...(releaseId ? { releaseId } : {}),
                     ...(publishTarget ? { publishTarget } : {}),
+                    ...(visibility ? { visibility } : {}),
                 },
             };
         }
@@ -187,6 +193,11 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                 previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
                     ? previewTypeRaw
                     : undefined;
+            const visibilityRaw = searchParams.get('visibility')?.trim();
+            const visibility =
+                visibilityRaw === 'public' || visibilityRaw === 'private'
+                    ? visibilityRaw
+                    : undefined;
 
             return {
                 type: 'immersive',
@@ -195,6 +206,7 @@ function resolveViewFromPath(pathname: string, search = ''): View {
                     projectId,
                     ...(releaseId ? { releaseId } : {}),
                     ...(previewType ? { previewType } : {}),
+                    ...(visibility ? { visibility } : {}),
                 },
             };
         }
@@ -341,10 +353,17 @@ function resolvePathFromView(view: View): string | null {
                     targetRaw === 'blog' || targetRaw === 'ebook'
                         ? targetRaw
                         : '';
+                const visibilityRaw =
+                    typeof view.params?.visibility === 'string' ? view.params.visibility.trim() : '';
+                const visibility =
+                    visibilityRaw === 'public' || visibilityRaw === 'private'
+                        ? visibilityRaw
+                        : '';
 
                 const query = new URLSearchParams();
                 if (releaseId) query.set('releaseId', releaseId);
                 if (publishTarget) query.set('target', publishTarget);
+                if (visibility) query.set('visibility', visibility);
 
                 const basePath = `/write/project/${encodePathSegment(projectId)}/publish`;
                 const queryString = query.toString();
@@ -362,10 +381,17 @@ function resolvePathFromView(view: View): string | null {
                     previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
                         ? previewTypeRaw
                         : '';
+                const visibilityRaw =
+                    typeof view.params?.visibility === 'string' ? view.params.visibility.trim() : '';
+                const visibility =
+                    visibilityRaw === 'public' || visibilityRaw === 'private'
+                        ? visibilityRaw
+                        : '';
 
                 const query = new URLSearchParams();
                 if (releaseId) query.set('releaseId', releaseId);
                 if (previewType) query.set('previewType', previewType);
+                if (visibility) query.set('visibility', visibility);
 
                 const basePath = `/write/project/${encodePathSegment(projectId)}/preview`;
                 const queryString = query.toString();
@@ -530,6 +556,12 @@ function sanitizeViewForHistory(view: View): View {
                     targetRaw === 'blog' || targetRaw === 'ebook'
                         ? targetRaw
                         : '';
+                const visibilityRaw =
+                    typeof view.params?.visibility === 'string' ? view.params.visibility.trim() : '';
+                const visibility =
+                    visibilityRaw === 'public' || visibilityRaw === 'private'
+                        ? visibilityRaw
+                        : '';
 
                 if (!projectId) {
                     return { type: 'tab', id: 'write' };
@@ -542,6 +574,7 @@ function sanitizeViewForHistory(view: View): View {
                         projectId,
                         ...(releaseId ? { releaseId } : {}),
                         ...(publishTarget ? { publishTarget } : {}),
+                        ...(visibility ? { visibility } : {}),
                     },
                 };
             }
@@ -555,6 +588,12 @@ function sanitizeViewForHistory(view: View): View {
                     previewTypeRaw === 'blog' || previewTypeRaw === 'ebook'
                         ? previewTypeRaw
                         : '';
+                const visibilityRaw =
+                    typeof view.params?.visibility === 'string' ? view.params.visibility.trim() : '';
+                const visibility =
+                    visibilityRaw === 'public' || visibilityRaw === 'private'
+                        ? visibilityRaw
+                        : '';
 
                 if (!projectId || !releaseId || !previewType) {
                     return { type: 'tab', id: 'write' };
@@ -567,6 +606,7 @@ function sanitizeViewForHistory(view: View): View {
                         projectId,
                         releaseId,
                         previewType,
+                        ...(visibility ? { visibility } : {}),
                     },
                 };
             }

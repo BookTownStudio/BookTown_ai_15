@@ -127,6 +127,19 @@ type ProfileBook = {
   ebookAttachmentId?: string;
 };
 
+type ProfilePublication = {
+  id: string;
+  entityType: "blog" | "ebook";
+  title: string;
+  publicationType: string;
+  publishedAt: string;
+  updatedAt: string;
+  coverUrl?: string;
+  canonicalSlug?: string;
+  publicationId?: string;
+  bookId?: string;
+};
+
 function buildProfileSearchFields(profile: {
   name: string;
   handle: string;
@@ -635,6 +648,107 @@ function normalizeProfileBook(docId: string, source: Record<string, unknown>): P
     source.ebookAttachmentId.trim().length > 0
       ? { ebookAttachmentId: source.ebookAttachmentId.trim().slice(0, 256) }
       : {}),
+  };
+}
+
+function normalizeProfilePublicationDate(value: unknown): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  if (value && typeof (value as { toDate?: unknown }).toDate === "function") {
+    const parsed = (value as { toDate: () => Date }).toDate();
+    return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+  }
+
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+
+  return null;
+}
+
+function normalizeProfileBlogPublication(
+  docId: string,
+  source: Record<string, unknown>
+): ProfilePublication | null {
+  const title = sanitizeString(source.title, 300);
+  const publishedAt =
+    normalizeProfilePublicationDate(source.datePublished) ??
+    normalizeProfilePublicationDate(source.lastPublishedAt) ??
+    normalizeProfilePublicationDate(source.createdAt);
+  const updatedAt =
+    normalizeProfilePublicationDate(source.dateModified) ??
+    normalizeProfilePublicationDate(source.lastPublishedAt) ??
+    publishedAt;
+
+  if (!title || !publishedAt || !updatedAt) {
+    return null;
+  }
+
+  return {
+    id: sanitizeString(docId, 128),
+    entityType: "blog",
+    title,
+    publicationType: "blog",
+    publishedAt,
+    updatedAt,
+    ...(normalizeUrlForRead(source.coverUrl)
+      ? { coverUrl: normalizeUrlForRead(source.coverUrl) }
+      : {}),
+    ...(sanitizeString(source.canonicalSlug ?? source.slug, 160)
+      ? { canonicalSlug: sanitizeString(source.canonicalSlug ?? source.slug, 160) }
+      : {}),
+    publicationId: sanitizeString(source.publicationId, 128) || sanitizeString(docId, 128),
+  };
+}
+
+function normalizeProfileEbookPublication(
+  docId: string,
+  source: Record<string, unknown>
+): ProfilePublication | null {
+  const isPublishedAuthoredEbook =
+    sanitizeString(source.source, 64) === "write_release" ||
+    sanitizeString(source.bookType, 64) === "authored_native" ||
+    sanitizeString(source.currentReleaseId, 256).length > 0;
+  const ebookAttachmentId = sanitizeString(source.ebookAttachmentId, 256);
+  const title =
+    sanitizeString(source.title, 300) ||
+    sanitizeString(source.titleEn ?? source.titleAr, 300);
+  const publishedAt =
+    normalizeProfilePublicationDate(source.datePublished) ??
+    normalizeProfilePublicationDate(source.createdAt);
+  const updatedAt =
+    normalizeProfilePublicationDate(source.dateModified) ??
+    normalizeProfilePublicationDate(source.updatedAt) ??
+    publishedAt;
+
+  if (!isPublishedAuthoredEbook || !ebookAttachmentId || !title || !publishedAt || !updatedAt) {
+    return null;
+  }
+
+  return {
+    id: sanitizeString(docId, 128),
+    entityType: "ebook",
+    title,
+    publicationType: "ebook",
+    publishedAt,
+    updatedAt,
+    ...(normalizeUrlForRead(
+      source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
+    )
+      ? {
+          coverUrl: normalizeUrlForRead(
+            source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
+          ),
+        }
+      : {}),
+    bookId: sanitizeString(docId, 128),
   };
 }
 
@@ -1343,5 +1457,65 @@ export const listProfileBooks = onCall({ cors: true }, async (request) => {
   return {
     items,
     hasMore: orderedBookIds.length > limitSize,
+  };
+});
+
+export const listProfilePublications = onCall({ cors: true }, async (request) => {
+  const targetUid = ensureUid(request.data?.uid, "uid");
+  const limitSize = resolveLimit(request.data?.limit);
+
+  const profile = await readOrCreatePublicProfile(targetUid);
+  if (!profile) {
+    throw new HttpsError("not-found", "Profile not found.");
+  }
+
+  const [blogSnap, ebookSnap] = await Promise.all([
+    db
+      .collection("longform_publications")
+      .where("ownerUid", "==", targetUid)
+      .where("publicationType", "==", "blog_longform")
+      .where("visibility", "==", "public")
+      .where("status", "==", "published")
+      .orderBy("updatedAt", "desc")
+      .limit(limitSize + 1)
+      .get(),
+    db
+      .collection("books")
+      .where("ownerUid", "==", targetUid)
+      .where("visibility", "==", "public")
+      .orderBy("updatedAt", "desc")
+      .limit(limitSize + 1)
+      .get(),
+  ]);
+
+  const items = [
+    ...blogSnap.docs
+      .map((docSnap) =>
+        normalizeProfileBlogPublication(
+          docSnap.id,
+          (docSnap.data() ?? {}) as Record<string, unknown>
+        )
+      )
+      .filter((item): item is ProfilePublication => item !== null),
+    ...ebookSnap.docs
+      .map((docSnap) =>
+        normalizeProfileEbookPublication(
+          docSnap.id,
+          (docSnap.data() ?? {}) as Record<string, unknown>
+        )
+      )
+      .filter((item): item is ProfilePublication => item !== null),
+  ]
+    .sort((left, right) => {
+      const rightMs = Date.parse(right.updatedAt);
+      const leftMs = Date.parse(left.updatedAt);
+      return (Number.isFinite(rightMs) ? rightMs : 0) - (Number.isFinite(leftMs) ? leftMs : 0);
+    })
+    .slice(0, limitSize)
+    .map(({ updatedAt: _updatedAt, ...item }) => item);
+
+  return {
+    items,
+    hasMore: blogSnap.size > limitSize || ebookSnap.size > limitSize,
   };
 });

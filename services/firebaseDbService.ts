@@ -33,6 +33,7 @@ import {
   BookStats,
   ShelfStats,
   AgentTurnPersistenceInput,
+  ProfilePublicationRecord,
 } from "./db.types.ts";
 
 import {
@@ -717,6 +718,45 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
   });
 };
 
+const toProfilePublication = (
+  source: Record<string, unknown>
+): ProfilePublicationRecord | null => {
+  const entityType =
+    typeof source.entityType === "string" && source.entityType.trim() === "ebook"
+      ? "ebook"
+      : typeof source.entityType === "string" && source.entityType.trim() === "blog"
+        ? "blog"
+        : null;
+  const id = normalizeString(source.id, 128);
+  const title = normalizeString(source.title, 300);
+  const publicationType = normalizeString(source.publicationType, 64);
+  const publishedAt = toIsoString(source.publishedAt);
+
+  if (!entityType || !id || !title || !publicationType || !publishedAt) {
+    return null;
+  }
+
+  return {
+    id,
+    entityType,
+    title,
+    publicationType,
+    publishedAt,
+    ...(normalizeString(source.coverUrl, 2048)
+      ? { coverUrl: normalizeString(source.coverUrl, 2048) }
+      : {}),
+    ...(normalizeString(source.canonicalSlug, 160)
+      ? { canonicalSlug: normalizeString(source.canonicalSlug, 160) }
+      : {}),
+    ...(normalizeString(source.publicationId, 128)
+      ? { publicationId: normalizeString(source.publicationId, 128) }
+      : {}),
+    ...(normalizeString(source.bookId, 128)
+      ? { bookId: normalizeString(source.bookId, 128) }
+      : {}),
+  };
+};
+
 const toShelf = (source: Record<string, unknown>): Shelf => {
   const entriesSource =
     source.entries && typeof source.entries === "object" && !Array.isArray(source.entries)
@@ -989,6 +1029,28 @@ class FirebaseUserService {
         }
       })
       .filter((book): book is Book => book !== null);
+  }
+
+  async getProfilePublications(
+    uid: string,
+    limitSize = 20
+  ): Promise<ProfilePublicationRecord[]> {
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const boundedLimit = Math.min(30, Math.max(1, toNonNegativeInt(limitSize) || 20));
+    const response = await callEndpoint<
+      { uid: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean }
+    >("listProfilePublications", { uid: normalizedUid, limit: boundedLimit });
+
+    return response.items
+      .map((item) => {
+        try {
+          return toProfilePublication(item);
+        } catch {
+          return null;
+        }
+      })
+      .filter((publication): publication is ProfilePublicationRecord => publication !== null);
   }
 
   async followUser(followerId: string, targetId: string): Promise<void> {
@@ -2774,8 +2836,8 @@ class FirebaseSocialService {
   private async fetchQuoteDocsByIds(
     db: ReturnType<typeof getDb>,
     ids: string[]
-  ): Promise<Map<string, { data: Record<string, unknown>; ownerId?: string }>> {
-    const result = new Map<string, { data: Record<string, unknown>; ownerId?: string }>();
+  ): Promise<Map<string, { data: Record<string, unknown>; ownerId?: string; canonicalQuoteId?: string }>> {
+    const result = new Map<string, { data: Record<string, unknown>; ownerId?: string; canonicalQuoteId?: string }>();
     const uniqueIds = Array.from(
       new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))
     );
@@ -2788,7 +2850,7 @@ class FirebaseSocialService {
       chunks.map((chunk) =>
         getDocs(
           query(
-            collectionGroup(db, "quotes"),
+            collection(db, "quotes"),
             where(documentId(), "in", chunk)
           )
         )
@@ -2800,10 +2862,51 @@ class FirebaseSocialService {
         if (result.has(docSnap.id)) {
           continue;
         }
-        const ownerId = docSnap.ref.parent?.parent?.id;
         result.set(docSnap.id, {
           data: docSnap.data() as Record<string, unknown>,
+          ...(typeof docSnap.data().ownerId === "string" && docSnap.data().ownerId.trim()
+            ? { ownerId: docSnap.data().ownerId.trim() }
+            : {}),
+          canonicalQuoteId: docSnap.id,
+        });
+      }
+    }
+
+    const unresolvedLegacyIds = uniqueIds.filter((id) => !result.has(id));
+    if (unresolvedLegacyIds.length === 0) {
+      return result;
+    }
+
+    const legacyChunks = FirebaseSocialService.chunkEntityIds(unresolvedLegacyIds);
+    const legacySnapshots = await Promise.all(
+      legacyChunks.map((chunk) =>
+        getDocs(
+          query(
+            collectionGroup(db, "quotes"),
+            where(documentId(), "in", chunk)
+          )
+        )
+      )
+    );
+
+    for (const snap of legacySnapshots) {
+      for (const docSnap of snap.docs) {
+        if (result.has(docSnap.id)) {
+          continue;
+        }
+        const data = docSnap.data() as Record<string, unknown>;
+        const canonicalQuoteId =
+          typeof data.canonicalQuoteId === "string" && data.canonicalQuoteId.trim()
+            ? data.canonicalQuoteId.trim()
+            : "";
+        if (!canonicalQuoteId) {
+          continue;
+        }
+        const ownerId = docSnap.ref.parent?.parent?.id;
+        result.set(docSnap.id, {
+          data,
           ...(ownerId ? { ownerId } : {}),
+          canonicalQuoteId,
         });
       }
     }
@@ -2836,14 +2939,49 @@ class FirebaseSocialService {
       venue: new Set(),
       publication: new Set(),
     };
-    const primaryByPostId = new Map<string, { type: PrimaryStructuredEntityType; id: string }>();
+    const primaryByPostId = new Map<string, { type: PrimaryStructuredEntityType; id: string; ownerId?: string }>();
 
     for (const context of boundedContexts) {
       const primary = this.extractPrimaryEntityRef(context.raw, context.post);
       if (!primary) {
         continue;
       }
-      primaryByPostId.set(context.post.id, primary);
+      if (primary.type === "quote") {
+        const quoteOwnerId =
+          (Array.isArray(context.post.content?.attachments)
+            ? context.post.content.attachments.find((attachment) => {
+                const type =
+                  typeof attachment?.type === "string"
+                    ? attachment.type.trim().toLowerCase()
+                    : "";
+                const entityId =
+                  typeof (attachment as { entityId?: unknown }).entityId === "string"
+                    ? (attachment as { entityId: string }).entityId.trim()
+                    : "";
+                const attachmentId =
+                  typeof attachment?.attachmentId === "string"
+                    ? attachment.attachmentId.trim()
+                    : "";
+                return (
+                  type === "quote" &&
+                  (entityId === primary.id || attachmentId === primary.id)
+                );
+              })
+            : null
+          ) as { entityOwnerId?: string } | null;
+
+        const ownerId =
+          typeof quoteOwnerId?.entityOwnerId === "string" && quoteOwnerId.entityOwnerId.trim()
+            ? quoteOwnerId.entityOwnerId.trim()
+            : context.post.authorId;
+
+        primaryByPostId.set(context.post.id, {
+          ...primary,
+          ...(ownerId ? { ownerId } : {}),
+        });
+      } else {
+        primaryByPostId.set(context.post.id, primary);
+      }
       idsByType[primary.type].add(primary.id);
     }
 
@@ -2944,12 +3082,17 @@ class FirebaseSocialService {
       entityMap.set(`author:${id}`, { type: "author", id, data });
     }
     for (const [id, payload] of quotes) {
-      entityMap.set(`quote:${id}`, {
+      const effectiveQuoteId = payload.canonicalQuoteId || id;
+      const hydratedQuote = {
         type: "quote",
-        id,
+        id: effectiveQuoteId,
         data: payload.data,
         ...(payload.ownerId ? { ownerId: payload.ownerId } : {}),
-      });
+      } satisfies HydratedFeedEntity;
+      entityMap.set(`quote:${id}`, hydratedQuote);
+      if (payload.ownerId) {
+        entityMap.set(`quote:${payload.ownerId}:${id}`, hydratedQuote);
+      }
     }
     for (const [id, data] of shelves) {
       entityMap.set(`shelf:${id}`, { type: "shelf", id, data });
@@ -2967,11 +3110,16 @@ class FirebaseSocialService {
         return context.post;
       }
 
-      const hydrated = entityMap.get(`${primary.type}:${primary.id}`);
+      const hydrated =
+        primary.type === "quote"
+          ? entityMap.get(`quote:${primary.id}`) ||
+            (primary.ownerId ? entityMap.get(`quote:${primary.ownerId}:${primary.id}`) : undefined)
+          : entityMap.get(`${primary.type}:${primary.id}`);
       const enriched = {
         ...context.post,
         primaryEntityType: primary.type,
-        primaryEntityId: primary.id,
+        primaryEntityId:
+          primary.type === "quote" && hydrated?.id ? hydrated.id : primary.id,
         hydratedEntity: hydrated
           ? {
               type: hydrated.type,

@@ -10,9 +10,11 @@ import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/no
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
 import {
-  attachmentVisibilityForRightsMode,
-  bookVisibilityForRightsMode,
+  attachmentVisibilityForPublication,
   normalizeBookRightsMode,
+  normalizePublicationVisibility,
+  publicationVisibilityForRightsMode,
+  type PublicationVisibility,
 } from "./rights/bookRights";
 
 type ReadyRelease = {
@@ -46,6 +48,14 @@ function normalizeReleaseId(value: unknown): string {
     throw new HttpsError("invalid-argument", "A valid releaseId is required.");
   }
   return releaseId;
+}
+
+function normalizeRequestedVisibility(value: unknown): PublicationVisibility {
+  const normalized = normalizePublicationVisibility(value, "public");
+  if (value !== "public" && value !== "private") {
+    throw new HttpsError("invalid-argument", "A valid visibility is required.");
+  }
+  return normalized;
 }
 
 function deriveBookId(ownerUid: string, projectId: string): string {
@@ -191,6 +201,9 @@ function normalizePositiveInteger(value: unknown): number | null {
 export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   const releaseId = normalizeReleaseId((request.data as { releaseId?: unknown }).releaseId);
+  const requestedVisibility = normalizeRequestedVisibility(
+    (request.data as { visibility?: unknown }).visibility
+  );
   const db = admin.firestore();
   const releaseRef = db.collection("project_releases").doc(releaseId);
 
@@ -288,6 +301,14 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         existingBook.createdAt ??
         existingEdition.createdAt ??
         now;
+      const effectiveVisibility = publicationVisibilityForRightsMode(
+        rightsMode,
+        requestedVisibility
+      );
+      const attachmentVisibility = attachmentVisibilityForPublication(
+        rightsMode,
+        effectiveVisibility
+      );
 
       tx.set(
         attachmentRef,
@@ -297,7 +318,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           editionId,
           bookId,
           releaseId,
-          visibility: attachmentVisibilityForRightsMode(rightsMode),
+          visibility: attachmentVisibility,
           updatedAt: now,
         },
         { merge: true }
@@ -339,7 +360,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           publicationState: "published",
           canonicalLocked: true,
           rightsMode,
-          visibility: bookVisibilityForRightsMode(rightsMode),
+          visibility: effectiveVisibility,
           publicDomain: false,
           createdAt: existingEdition.createdAt || now,
           updatedAt: now,
@@ -396,7 +417,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             publicationState: "published",
             canonicalLocked: true,
             rightsMode,
-            visibility: bookVisibilityForRightsMode(rightsMode),
+            visibility: effectiveVisibility,
             createdAt: now,
             updatedAt: now,
             ...(coverUrl
@@ -455,7 +476,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             publicationState: "published",
             canonicalLocked: true,
             rightsMode,
-            visibility: bookVisibilityForRightsMode(rightsMode),
+            visibility: effectiveVisibility,
             ...(coverUrl
               ? {
                   coverUrl,

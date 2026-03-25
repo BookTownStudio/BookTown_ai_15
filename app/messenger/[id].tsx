@@ -24,6 +24,7 @@ import SelectPublicationModal from '../../components/modals/SelectPublicationMod
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { QuoteIcon } from '../../components/icons/QuoteIcon.tsx';
 import type { Quote } from '../../types/entities.ts';
+import GlassCard from '../../components/ui/GlassCard.tsx';
 
 type ComposerAttachment = NonNullable<DirectMessage['attachment']>;
 type OptimisticDeliveryState = 'sending' | 'sent';
@@ -56,23 +57,68 @@ const toRenderableDmAttachment = (
             ...(attachment.canonicalSlug ? { canonicalSlug: attachment.canonicalSlug } : {}),
         };
     }
-    if (attachment.type === 'quote' && attachment.quoteOwnerId) {
-        return {
-            type: 'quote',
-            quoteId: attachment.entityId,
-            quoteOwnerId: attachment.quoteOwnerId,
-            ...(attachment.quoteText ? { quoteText: attachment.quoteText } : {}),
-        };
-    }
     return null;
 };
+
+const isCanonicalQuoteId = (value: string | undefined): boolean =>
+    typeof value === 'string' && /^cq_[A-Za-z0-9_-]+$/.test(value.trim());
+
+const QuoteAttachmentCard: React.FC<{
+    attachment: NonNullable<DirectMessage['attachment']>;
+    onOpen: () => void;
+}> = ({ attachment, onOpen }) => (
+    <button type="button" onClick={onOpen} className="block w-full text-left">
+        <GlassCard className="!p-3 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
+            <div className="flex items-start gap-3">
+                <div className="mt-0.5 rounded-xl bg-accent/10 p-2 text-accent">
+                    <QuoteIcon className="h-4 w-4" />
+                </div>
+                <div className="min-w-0 flex-1">
+                    <BilingualText className="font-semibold">
+                        Quote
+                    </BilingualText>
+                    {attachment.quoteText ? (
+                        <BilingualText role="Quote" className="mt-1 !text-sm line-clamp-3">
+                            "{attachment.quoteText}"
+                        </BilingualText>
+                    ) : null}
+                </div>
+            </div>
+        </GlassCard>
+    </button>
+);
 
 const ChatBubble: React.FC<{
     message: DirectMessage | OptimisticDirectMessage;
     isMe: boolean;
 }> = ({ message, isMe }) => {
     const { isRTL, lang } = useI18n();
+    const { navigate, currentView } = useNavigation();
     const renderableAttachment = toRenderableDmAttachment(message.attachment);
+    const handleOpenQuoteAttachment = () => {
+        if (!message.attachment || message.attachment.type !== 'quote') {
+            return;
+        }
+
+        const quoteId = message.attachment.entityId.trim();
+        if (!quoteId) {
+            return;
+        }
+
+        const params: Record<string, unknown> = {
+            quoteId,
+            from: currentView,
+        };
+        if (!isCanonicalQuoteId(quoteId) && message.attachment.quoteOwnerId) {
+            params.ownerId = message.attachment.quoteOwnerId;
+        }
+
+        navigate({
+            type: 'immersive',
+            id: 'quoteDetails',
+            params,
+        });
+    };
     const deliveryLabel = !isMe
         ? ''
         : 'deliveryState' in message && message.deliveryState === 'sending'
@@ -86,7 +132,14 @@ const ChatBubble: React.FC<{
                 {message.text ? (
                     <p className={`${isRTL ? 'text-right' : 'text-left'} leading-relaxed`}>{message.text}</p>
                 ) : null}
-                {renderableAttachment ? (
+                {message.attachment?.type === 'quote' ? (
+                    <div className={message.text ? 'mt-3' : ''}>
+                        <QuoteAttachmentCard
+                            attachment={message.attachment}
+                            onOpen={handleOpenQuoteAttachment}
+                        />
+                    </div>
+                ) : renderableAttachment ? (
                     <div className={message.text ? 'mt-3' : ''}>
                         <AttachmentListV1 attachments={[renderableAttachment]} surface="read" />
                     </div>
@@ -295,6 +348,8 @@ const MessengerChatScreen: React.FC = () => {
         const quoteId =
             attachedQuote && typeof attachedQuote.id === 'string'
                 ? attachedQuote.id.trim()
+                : attachedQuote && typeof attachedQuote.canonicalQuoteId === 'string'
+                    ? attachedQuote.canonicalQuoteId.trim()
                 : '';
         const quoteOwnerId =
             attachedQuote && typeof attachedQuote.ownerId === 'string'
@@ -307,11 +362,11 @@ const MessengerChatScreen: React.FC = () => {
         }
 
         attachedEntityAppliedRef.current = nextKey;
-        if (quoteId && quoteOwnerId) {
+        if (quoteId) {
             setAttachment({
                 type: 'quote',
                 entityId: quoteId,
-                quoteOwnerId,
+                ...(quoteOwnerId ? { quoteOwnerId } : {}),
                 quoteText:
                     typeof attachedQuote?.text === 'string'
                         ? attachedQuote.text.trim()
@@ -374,8 +429,8 @@ const MessengerChatScreen: React.FC = () => {
     };
 
     const handleQuoteSelect = (quote: Quote) => {
-        const quoteOwnerId = quote.ownerId || user?.uid || '';
-        if (!quoteOwnerId) {
+        const canonicalQuoteId = quote.canonicalQuoteId || quote.id;
+        if (!canonicalQuoteId) {
             showToast(
                 lang === 'en'
                     ? 'This quote is unavailable right now.'
@@ -385,8 +440,8 @@ const MessengerChatScreen: React.FC = () => {
         }
         setAttachment({
             type: 'quote',
-            entityId: quote.id,
-            quoteOwnerId,
+            entityId: canonicalQuoteId,
+            ...(quote.ownerId ? { quoteOwnerId: quote.ownerId } : {}),
             quoteText: (lang === 'en' ? quote.textEn : quote.textAr) || quote.textEn,
         });
         setQuotePickerOpen(false);

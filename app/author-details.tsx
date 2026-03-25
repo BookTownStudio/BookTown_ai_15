@@ -212,13 +212,12 @@ const AuthorDetailsScreen: React.FC = () => {
               <button
                 type="button"
                 onClick={() =>
-                  quotes[0]?.ownerId
+                  quotes[0]
                     ? navigate({
                         type: "immersive",
                         id: "quoteDetails",
                         params: {
                           quoteId: quotes[0].id,
-                          ownerId: quotes[0].ownerId,
                           from: currentView,
                         },
                       })

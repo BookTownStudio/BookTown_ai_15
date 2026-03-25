@@ -49,6 +49,12 @@ export const queryKeys = {
     ) =>
       [...sessionRoot(sessionUid), 'user', 'profileBooks', safe({ profileUid })] as const,
 
+    profilePublications: (
+      sessionUid: string | null | undefined,
+      profileUid: string | undefined
+    ) =>
+      [...sessionRoot(sessionUid), 'user', 'profilePublications', safe({ profileUid })] as const,
+
     // FIX: Added 'stats' to user query keys for authoritative read path.
     stats: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'stats'] as const,
@@ -67,6 +73,9 @@ export const queryKeys = {
 
     project: (uid: string | null | undefined, projectId: string | undefined) =>
       [...sessionRoot(uid), 'user', 'project', safe({ projectId })] as const,
+
+    projectPublicationSettings: (uid: string | null | undefined, projectId: string | undefined) =>
+      [...sessionRoot(uid), 'user', 'projectPublicationSettings', safe({ projectId })] as const,
 
     projectReleasePreview: (
       uid: string | null | undefined,

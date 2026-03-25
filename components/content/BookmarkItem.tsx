@@ -51,8 +51,12 @@ const BookItem: React.FC<ItemProps> = ({ bookmark, lang, onPress }) => {
     );
 };
 
-const QuoteItem: React.FC<ItemProps> = ({ bookmark, lang, onPress }) => {
-    const { data: quote, isLoading } = useQuoteDetails(bookmark.entityId, bookmark.quoteOwnerId);
+interface QuoteItemProps extends ItemProps {
+    quote?: ReturnType<typeof useQuoteDetails>['data'];
+    isLoading: boolean;
+}
+
+const QuoteItem: React.FC<QuoteItemProps> = ({ lang, quote, isLoading }) => {
     if (isLoading) return <LoadingCard />;
     if (!quote) return null;
 
@@ -125,6 +129,13 @@ const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
     const { lang } = useI18n();
     const { user } = useAuth();
     const { navigate, currentView, navigateToSocialAndHighlight } = useNavigation();
+    const {
+        data: quote,
+        isLoading: isQuoteLoading,
+    } = useQuoteDetails(
+        bookmark.type === 'quote' ? bookmark.entityId : undefined,
+        bookmark.quoteOwnerId
+    );
     
     // Authoritative Toggle Hook
     const { mutate: toggleBookmark, isLoading: isToggling } = useBookmarkToggle();
@@ -138,7 +149,14 @@ const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
                 navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: bookmark.entityId, from: currentView } });
                 break;
             case 'quote':
-                navigate({ type: 'immersive', id: 'quoteDetails', params: { quoteId: bookmark.entityId, ownerId: bookmark.quoteOwnerId, from: currentView } });
+                navigate({
+                    type: 'immersive',
+                    id: 'quoteDetails',
+                    params: {
+                        quoteId: quote?.id || bookmark.entityId,
+                        from: currentView,
+                    },
+                });
                 break;
             case 'author':
                 navigate({ type: 'immersive', id: 'authorDetails', params: { authorId: bookmark.entityId, from: currentView } });
@@ -167,7 +185,14 @@ const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
     const renderInner = () => {
         switch(bookmark.type) {
             case 'book': return <BookItem {...itemProps} />;
-            case 'quote': return <QuoteItem {...itemProps} />;
+            case 'quote':
+                return (
+                    <QuoteItem
+                        {...itemProps}
+                        quote={quote}
+                        isLoading={isQuoteLoading}
+                    />
+                );
             case 'post': return <PostItem {...itemProps} />;
             case 'author': return <AuthorItem {...itemProps} />;
             case 'venue':

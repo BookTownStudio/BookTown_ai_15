@@ -8,7 +8,7 @@ import { BookIcon } from '../icons/BookIcon.tsx';
 
 interface QuoteCardProps {
     quoteId: string;
-    ownerId: string;
+    ownerId?: string;
     onPress: () => void;
 }
 

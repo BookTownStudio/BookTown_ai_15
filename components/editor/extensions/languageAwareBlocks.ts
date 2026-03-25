@@ -39,6 +39,16 @@ export const LanguageAwareHeading = Heading.extend({
     return {
       ...(this.parent?.() || {}),
       ...baseLanguageAttrs,
+      journalEntryDate: {
+        default: null,
+        rendered: false,
+        parseHTML: (element: HTMLElement) =>
+          element.getAttribute('data-journal-entry-date') || null,
+        renderHTML: (attrs: Record<string, unknown>) =>
+          typeof attrs.journalEntryDate === 'string' && attrs.journalEntryDate.trim()
+            ? { 'data-journal-entry-date': attrs.journalEntryDate }
+            : {},
+      },
     };
   },
 });

@@ -571,21 +571,46 @@ async function hydratePrimaryEntities(
   await Promise.all(
     chunk(uniqueQuoteIds, FOLLOWING_BATCH_SIZE).map(async (quoteIdBatch) => {
       if (quoteIdBatch.length === 0) return;
-      const snap = await db
-        .collectionGroup("quotes")
+      const rootSnap = await db
+        .collection("quotes")
         .where(FieldPath.documentId(), "in", quoteIdBatch)
         .get();
 
-      snap.docs.forEach((docSnap) => {
-        const ownerId = docSnap.ref.parent.parent?.id;
-        if (!ownerId) return;
-        const compositeKey = `${ownerId}:${docSnap.id}`;
-        if (!quoteRequests.has(compositeKey)) return;
-        quoteHydrated.set(compositeKey, {
+      rootSnap.docs.forEach((docSnap) => {
+        const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+        const ownerId = readTrimmedString(data.ownerId, 128);
+        quoteHydrated.set(docSnap.id, {
           type: "quote",
           id: docSnap.id,
+          ...(ownerId ? { ownerId } : {}),
+          data,
+        });
+      });
+
+      const unresolvedLegacyIds = quoteIdBatch.filter((quoteId) => !quoteHydrated.has(quoteId));
+      if (unresolvedLegacyIds.length === 0) return;
+
+      const legacySnap = await db
+        .collectionGroup("quotes")
+        .where(FieldPath.documentId(), "in", unresolvedLegacyIds)
+        .get();
+
+      legacySnap.docs.forEach((docSnap) => {
+        const ownerId = docSnap.ref.parent.parent?.id;
+        if (!ownerId) return;
+
+        const compositeKey = `${ownerId}:${docSnap.id}`;
+        if (!quoteRequests.has(compositeKey)) return;
+
+        const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+        const canonicalQuoteId = readTrimmedString(data.canonicalQuoteId, 256);
+        if (!canonicalQuoteId) return;
+
+        quoteHydrated.set(compositeKey, {
+          type: "quote",
+          id: canonicalQuoteId,
           ownerId,
-          data: (docSnap.data() ?? {}) as Record<string, unknown>,
+          data,
         });
       });
     })
@@ -601,7 +626,9 @@ async function hydratePrimaryEntities(
     if (primary.type === "quote") {
       hydratedByPostId.set(
         post.id,
-        quoteHydrated.get(`${primary.ownerId}:${primary.id}`) ?? null
+        quoteHydrated.get(primary.id) ??
+          quoteHydrated.get(`${primary.ownerId}:${primary.id}`) ??
+          null
       );
       return;
     }

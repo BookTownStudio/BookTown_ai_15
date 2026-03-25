@@ -18,7 +18,6 @@ import { useI18n } from '../../store/i18n.tsx';
 interface BookFlowActionsProps {
     entityType: 'book' | 'user' | 'quote' | 'venue' | 'event' | 'bookfair' | 'author';
     entityId: string;
-    quoteOwnerId?: string;
 }
 
 const ActionButton: React.FC<{ icon: React.FC<any>, label: string, onClick: (e: React.MouseEvent) => void }> = ({ icon: Icon, label, onClick }) => (
@@ -30,7 +29,7 @@ const ActionButton: React.FC<{ icon: React.FC<any>, label: string, onClick: (e: 
 );
 
 
-const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId, quoteOwnerId }) => {
+const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId }) => {
     const { data: shelves } = useUserShelves();
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
@@ -54,8 +53,14 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId,
                 }
                 break;
             case 'quote':
-                if (!quoteOwnerId) return;
-                saveQuote({ quoteId: entityId, ownerId: quoteOwnerId });
+                navigate({
+                    type: 'immersive',
+                    id: 'quoteDetails',
+                    params: {
+                        quoteId: entityId,
+                        from: currentView,
+                    },
+                });
                 break;
             case 'user':
                 // FIX: mutate correctly accepts string now.
@@ -84,7 +89,7 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId,
             return;
         }
         if (entityType === 'quote') {
-            saveBookmark({ entityId, type: 'quote', quoteOwnerId });
+            saveBookmark({ entityId, type: 'quote' });
             return;
         }
         if (entityType === 'author') {

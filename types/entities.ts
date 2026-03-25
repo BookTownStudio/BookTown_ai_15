@@ -332,8 +332,10 @@ export interface RecommendedShelf {
 
 
 export interface Quote {
-    id: string;
-    ownerId?: string;
+    id: string; // canonicalQuoteId
+    canonicalQuoteId?: string; // transitional compatibility mirror of `id`
+    legacyQuoteId?: string; // transitional legacy mirror id only
+    ownerId?: string; // metadata only, never quote identity
     textEn: string;
     textAr: string;
     sourceEn: string;
@@ -370,6 +372,9 @@ export interface Project {
     lastPublishedTarget?: 'blog' | 'ebook';
     revision?: number;
     coverUrl?: string;
+    lastCursorBlockId?: string;
+    lastCursorOffset?: number;
+    lastCursorSavedAt?: string;
 }
 
 export type AttachmentTypeV1 = 
@@ -446,7 +451,7 @@ export type PostAttachment =
       author?: string;
       canonicalSlug?: string;
     }
-  | { type: 'quote'; quoteId: string, quoteOwnerId: string, quoteText?: string }
+  | { type: 'quote'; quoteId: string, quoteOwnerId?: string, quoteText?: string }
   | { type: 'media'; url: string }
   | { type: 'author'; authorId: string; authorName: string; authorPhoto: string; authorCountry?: string; signatureQuote?: string; }
   | { type: 'shelf'; shelfId: string, ownerId: string, shelfName: string, bookCount: number, covers: string[] }
@@ -707,9 +712,9 @@ export type BookmarkType = 'book' | 'quote' | 'post' | 'author' | 'venue' | 'eve
 export interface Bookmark {
     id: string;
     type: BookmarkType;
-    entityId: string;
+    entityId: string; // canonical quote id for quote bookmarks
     timestamp: string; // ISO string
-    quoteOwnerId?: string;
+    quoteOwnerId?: string; // optional metadata only for legacy compatibility
 }
 
 export type FeedbackType = 'action-required' | 'praise-general';
@@ -739,12 +744,12 @@ export interface DirectMessage {
     text: string;
     attachment?: {
         type: 'book' | 'publication' | 'quote';
-        entityId: string;
+        entityId: string; // canonical entity id
         title?: string;
         author?: string;
         coverUrl?: string;
         canonicalSlug?: string;
-        quoteOwnerId?: string;
+        quoteOwnerId?: string; // optional metadata only for legacy compatibility
         quoteText?: string;
     };
     timestamp: string; // ISO string

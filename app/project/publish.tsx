@@ -7,6 +7,7 @@ import {
     useCreateProjectRelease,
     usePublishProjectRelease,
 } from '../../lib/hooks/useProjectMutations.ts';
+import { useProjectPublicationSettings } from '../../lib/hooks/useProjectPublicationSettings.ts';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
@@ -19,11 +20,45 @@ import { extractProjectSynopsis } from '../../lib/projects/projectSummary.ts';
 import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
 
 type PublishTarget = 'blog' | 'ebook';
+type PublicationVisibility = 'public' | 'private';
 type PublishAction = 'idle' | 'preview' | 'publish';
 const PUBLISH_SUCCESS_CELEBRATION_STORAGE_KEY = 'booktown:publish-success-pending';
 
+function normalizePublicationVisibility(value: unknown): PublicationVisibility | undefined {
+    return value === 'private' || value === 'public' ? value : undefined;
+}
+
 function suggestTargetByWordCount(wordCount: number): PublishTarget {
     return wordCount >= 8000 ? 'ebook' : 'blog';
+}
+
+function detectRepublishTarget(project: ReturnType<typeof useProjectDetails>['data']): PublishTarget | null {
+    if (!project?.isPublished) {
+        return null;
+    }
+
+    const hasBlogPublication =
+        typeof project.publishedPublicationId === 'string' && project.publishedPublicationId.trim().length > 0;
+    const hasEbookPublication =
+        typeof project.publishedBookId === 'string' && project.publishedBookId.trim().length > 0;
+
+    if (project.lastPublishedTarget === 'ebook' && hasEbookPublication) {
+        return 'ebook';
+    }
+
+    if (project.lastPublishedTarget === 'blog' && hasBlogPublication) {
+        return 'blog';
+    }
+
+    if (hasEbookPublication && !hasBlogPublication) {
+        return 'ebook';
+    }
+
+    if (hasBlogPublication && !hasEbookPublication) {
+        return 'blog';
+    }
+
+    return null;
 }
 
 const ProjectPublishScreen: React.FC = () => {
@@ -40,14 +75,32 @@ const ProjectPublishScreen: React.FC = () => {
         (currentView.params?.publishTarget === 'blog' || currentView.params?.publishTarget === 'ebook')
             ? currentView.params.publishTarget
             : undefined;
+    const publishVisibilityFromRoute =
+        currentView.type === 'immersive'
+            ? normalizePublicationVisibility(currentView.params?.visibility)
+            : undefined;
 
     const { data: project, isLoading } = useProjectDetails(projectId);
+    const hasLinkedCanonicalPublication =
+        !!project?.publishedBookId || !!project?.publishedPublicationId;
+    const { data: publicationSettings } = useProjectPublicationSettings(
+        projectId,
+        hasLinkedCanonicalPublication
+    );
     const createReleaseMutation = useCreateProjectRelease();
     const publishReleaseMutation = usePublishProjectRelease();
     const [selectedTarget, setSelectedTarget] = useState<PublishTarget | null>(
         publishTargetFromRoute ?? null
     );
     const [manualSelection, setManualSelection] = useState(Boolean(publishTargetFromRoute));
+    const [selectedVisibilityByTarget, setSelectedVisibilityByTarget] = useState<Record<PublishTarget, PublicationVisibility>>({
+        blog: publishVisibilityFromRoute && publishTargetFromRoute === 'blog' ? publishVisibilityFromRoute : 'public',
+        ebook: publishVisibilityFromRoute && publishTargetFromRoute === 'ebook' ? publishVisibilityFromRoute : 'public',
+    });
+    const [manualVisibilitySelection, setManualVisibilitySelection] = useState<Record<PublishTarget, boolean>>({
+        blog: publishTargetFromRoute === 'blog' && Boolean(publishVisibilityFromRoute),
+        ebook: publishTargetFromRoute === 'ebook' && Boolean(publishVisibilityFromRoute),
+    });
     const [preflightError, setPreflightError] = useState<string | null>(null);
     const [activeAction, setActiveAction] = useState<PublishAction>('idle');
 
@@ -55,6 +108,7 @@ const ProjectPublishScreen: React.FC = () => {
         () => suggestTargetByWordCount(project?.wordCount ?? 0),
         [project?.wordCount]
     );
+    const republishTarget = useMemo(() => detectRepublishTarget(project), [project]);
 
     useEffect(() => {
         if (publishTargetFromRoute) {
@@ -64,9 +118,45 @@ const ProjectPublishScreen: React.FC = () => {
         }
 
         if (!manualSelection) {
-            setSelectedTarget(suggestedTarget);
+            setSelectedTarget(republishTarget ?? suggestedTarget);
         }
-    }, [manualSelection, publishTargetFromRoute, suggestedTarget]);
+    }, [manualSelection, publishTargetFromRoute, republishTarget, suggestedTarget]);
+
+    useEffect(() => {
+        setSelectedVisibilityByTarget((previous) => {
+            const next = { ...previous };
+
+            if (!manualVisibilitySelection.blog && publicationSettings?.blog?.visibility) {
+                next.blog = publicationSettings.blog.visibility;
+            } else if (!manualVisibilitySelection.blog && !project?.publishedPublicationId) {
+                next.blog = 'public';
+            }
+
+            if (!manualVisibilitySelection.ebook && publicationSettings?.ebook?.visibility) {
+                next.ebook = publicationSettings.ebook.visibility;
+            } else if (!manualVisibilitySelection.ebook && !project?.publishedBookId) {
+                next.ebook = 'public';
+            }
+
+            if (
+                publishTargetFromRoute &&
+                publishVisibilityFromRoute &&
+                !manualVisibilitySelection[publishTargetFromRoute]
+            ) {
+                next[publishTargetFromRoute] = publishVisibilityFromRoute;
+            }
+
+            return next;
+        });
+    }, [
+        manualVisibilitySelection,
+        project?.publishedBookId,
+        project?.publishedPublicationId,
+        publicationSettings?.blog?.visibility,
+        publicationSettings?.ebook?.visibility,
+        publishTargetFromRoute,
+        publishVisibilityFromRoute,
+    ]);
 
     const handleBack = () => navigate({ type: 'tab', id: 'write' });
     const isBusy = createReleaseMutation.isLoading || publishReleaseMutation.isLoading;
@@ -78,6 +168,7 @@ const ProjectPublishScreen: React.FC = () => {
     const persistPublishState = (params: {
         releaseId?: string;
         publishTarget?: PublishTarget;
+        visibility?: PublicationVisibility;
     }) => {
         if (!projectId) return;
         navigate(
@@ -88,6 +179,7 @@ const ProjectPublishScreen: React.FC = () => {
                     projectId,
                     ...(params.releaseId ? { releaseId: params.releaseId } : {}),
                     ...(params.publishTarget ? { publishTarget: params.publishTarget } : {}),
+                    ...(params.visibility ? { visibility: params.visibility } : {}),
                 },
             },
             { replace: true }
@@ -129,12 +221,14 @@ const ProjectPublishScreen: React.FC = () => {
         persistPublishState({
             releaseId: created.releaseId,
             publishTarget: target,
+            visibility: selectedVisibilityByTarget[target],
         });
         return created.releaseId;
     };
 
     const openPreview = (releaseId: string, target: PublishTarget) => {
         if (!projectId) return;
+        const visibility = selectedVisibilityByTarget[target];
         navigate({
             type: 'immersive',
             id: 'projectPreview',
@@ -142,6 +236,7 @@ const ProjectPublishScreen: React.FC = () => {
                 projectId,
                 releaseId,
                 previewType: target,
+                visibility,
                 from: {
                     type: 'immersive',
                     id: 'projectPublish',
@@ -149,6 +244,7 @@ const ProjectPublishScreen: React.FC = () => {
                         projectId,
                         releaseId,
                         publishTarget: target,
+                        visibility,
                     },
                 },
             },
@@ -159,7 +255,29 @@ const ProjectPublishScreen: React.FC = () => {
         setSelectedTarget(target);
         setManualSelection(true);
         setPreflightError(null);
-        persistPublishState({ publishTarget: target });
+        persistPublishState({
+            publishTarget: target,
+            visibility: selectedVisibilityByTarget[target],
+        });
+    };
+
+    const handleVisibilityChange = (target: PublishTarget, visibility: PublicationVisibility) => {
+        setSelectedVisibilityByTarget((previous) => ({
+            ...previous,
+            [target]: visibility,
+        }));
+        setManualVisibilitySelection((previous) => ({
+            ...previous,
+            [target]: true,
+        }));
+
+        if (selectedTarget === target) {
+            persistPublishState({
+                releaseId: matchingReleaseId || undefined,
+                publishTarget: target,
+                visibility,
+            });
+        }
     };
 
     const handlePreview = async () => {
@@ -195,6 +313,7 @@ const ProjectPublishScreen: React.FC = () => {
                 releaseId,
                 target: selectedTarget,
                 projectId,
+                visibility: selectedVisibilityByTarget[selectedTarget],
             });
 
             if (typeof window !== 'undefined') {
@@ -258,6 +377,7 @@ const ProjectPublishScreen: React.FC = () => {
             ? (lang === 'en' ? 'Publish Update' : 'نشر التحديث')
             : (lang === 'en' ? 'Publish' : 'نشر');
     const previewButtonLabel = lang === 'en' ? 'Preview' : 'معاينة';
+    const selectedVisibility = selectedTarget ? selectedVisibilityByTarget[selectedTarget] : 'public';
 
     return (
         <div className="h-screen flex flex-col bg-slate-900">
@@ -341,6 +461,46 @@ const ProjectPublishScreen: React.FC = () => {
                                         : 'انشره ككتاب إلكتروني لقارئ بوك تاون'}
                                 </div>
                             </button>
+                        </div>
+                    </div>
+
+                    <div className="mb-8 rounded-xl border border-white/5 bg-slate-800/50 p-6">
+                        <BilingualText role="H1" className="!mb-4 !text-lg">
+                            {lang === 'en' ? 'Publication Visibility' : 'ظهور المنشور'}
+                        </BilingualText>
+                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                            {(['public', 'private'] as PublicationVisibility[]).map((visibility) => {
+                                const isActive = selectedVisibility === visibility;
+                                const label =
+                                    visibility === 'public'
+                                        ? (lang === 'en' ? 'Public' : 'عام')
+                                        : (lang === 'en' ? 'Private' : 'خاص');
+                                const description =
+                                    visibility === 'public'
+                                        ? (lang === 'en'
+                                            ? 'Visible on your profile and public surfaces.'
+                                            : 'يظهر في ملفك الشخصي والواجهات العامة.')
+                                        : (lang === 'en'
+                                            ? 'Only you can open it until you change this later.'
+                                            : 'لن تتمكن من فتحه إلا أنت حتى تغيّر هذا لاحقاً.');
+
+                                return (
+                                    <button
+                                        key={visibility}
+                                        type="button"
+                                        onClick={() => selectedTarget && handleVisibilityChange(selectedTarget, visibility)}
+                                        disabled={!selectedTarget}
+                                        className={`rounded-xl border p-4 text-left transition ${
+                                            isActive
+                                                ? 'border-sky-400 bg-sky-500/10'
+                                                : 'border-white/10 bg-black/20 hover:border-white/20'
+                                        } ${!selectedTarget ? 'opacity-60' : ''}`}
+                                    >
+                                        <div className="mb-2 font-bold text-white">{label}</div>
+                                        <div className="text-xs text-slate-400">{description}</div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     </div>
 

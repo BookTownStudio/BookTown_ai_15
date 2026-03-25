@@ -42,11 +42,11 @@ export const useSaveBookmark = () => {
         mutationFn: async (params: SaveBookmarkParams) => {
             if (!uid) throw new Error("Not authenticated");
 
-            if (params.type === 'quote' && params.quoteOwnerId) {
+            if (params.type === 'quote') {
                 await quoteService.toggleQuoteBookmark({
                     quoteId: params.entityId,
-                    quoteOwnerId: params.quoteOwnerId,
                     active: true,
+                    ...(params.quoteOwnerId ? { quoteOwnerId: params.quoteOwnerId } : {}),
                 });
                 return;
             }

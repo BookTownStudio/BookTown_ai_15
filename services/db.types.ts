@@ -110,6 +110,18 @@ export interface OwnedLongformPublicationRecord {
   coverUrl?: string;
 }
 
+export interface ProfilePublicationRecord {
+  id: string;
+  entityType: 'blog' | 'ebook';
+  title: string;
+  publicationType: string;
+  publishedAt: string;
+  coverUrl?: string;
+  canonicalSlug?: string;
+  publicationId?: string;
+  bookId?: string;
+}
+
 export interface ShelfStats {
   followers: number;
   posts: number;
@@ -217,6 +229,7 @@ export interface UserDataService {
     options?: { limit?: number; cursor?: string }
   ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }>;
   getProfileBooks(uid: string, limit?: number): Promise<Book[]>;
+  getProfilePublications(uid: string, limit?: number): Promise<ProfilePublicationRecord[]>;
   followUser(followerId: string, targetId: string): Promise<void>;
   unfollowUser(followerId: string, targetId: string): Promise<void>;
 
@@ -352,20 +365,51 @@ export interface ProjectDataService {
   }>;
 
   bridgeReleaseToCanonicalBook(
-    releaseId: string
+    releaseId: string,
+    visibility: "public" | "private"
   ): Promise<{
     bookId: string;
     editionId: string;
     attachmentId: string;
     currentReleaseId: string;
+    publicationVersion: number;
   }>;
 
   bridgeReleaseToLongformPublication(
-    releaseId: string
+    releaseId: string,
+    visibility: "public" | "private"
   ): Promise<{
     publicationId: string;
     projectId: string;
     currentReleaseId: string;
+    publicationVersion: number;
+    canonicalSlug: string;
+  }>;
+  getProjectPublicationSettings(projectId: string): Promise<{
+    projectId: string;
+    blog?: {
+      publicationId: string;
+      visibility: "public" | "private";
+    };
+    ebook?: {
+      bookId: string;
+      visibility: "public" | "private";
+    };
+  }>;
+  updateLongformPublicationVisibility(
+    publicationId: string,
+    visibility: "public" | "private"
+  ): Promise<{
+    publicationId: string;
+    visibility: "public" | "private";
+  }>;
+  updatePublishedBookVisibility(
+    bookId: string,
+    visibility: "public" | "private"
+  ): Promise<{
+    bookId: string;
+    visibility: "public" | "private";
+    attachmentVisibility: "public" | "restricted" | "private";
   }>;
   updatePublishedBookRights(
     bookId: string,

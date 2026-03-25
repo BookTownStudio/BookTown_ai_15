@@ -353,7 +353,15 @@ const PostComposerScreen: React.FC = () => {
       <AttachQuoteModal
         isOpen={modals.quote}
         onClose={() => setModals(m => ({ ...m, quote: false }))}
-        onSelect={(q) => setAttachment({ type: 'quote', entityId: q.id, quoteId: q.id, quoteOwnerId: q.ownerId } as PostAttachment)}
+        onSelect={(q) => {
+          const canonicalQuoteId = q.canonicalQuoteId || q.id;
+          setAttachment({
+            type: 'quote',
+            entityId: canonicalQuoteId,
+            quoteId: canonicalQuoteId,
+            quoteOwnerId: q.ownerId,
+          } as PostAttachment);
+        }}
       />
 
       <Modal isOpen={showCancelPrompt} onClose={() => setShowCancelPrompt(false)}>

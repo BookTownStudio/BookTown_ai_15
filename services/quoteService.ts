@@ -66,6 +66,8 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
   }
 
   const quote = payload as Record<string, unknown>;
+  const canonicalQuoteId = normalizeOptionalString(quote.canonicalQuoteId);
+  const legacyQuoteId = normalizeOptionalString(quote.legacyQuoteId);
   const bookId = normalizeOptionalString(quote.bookId);
   const authorId = normalizeOptionalString(quote.authorId);
   const createdAt = normalizeOptionalString(quote.createdAt);
@@ -104,6 +106,8 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
 
   return {
     id: assertNonEmptyString(quote.id, "quote.id"),
+    ...(canonicalQuoteId ? { canonicalQuoteId } : {}),
+    ...(legacyQuoteId ? { legacyQuoteId } : {}),
     ownerId: assertNonEmptyString(quote.ownerId, "quote.ownerId"),
     textEn: assertNonEmptyString(quote.textEn, "quote.textEn"),
     textAr: assertNonEmptyString(quote.textAr, "quote.textAr"),
@@ -258,7 +262,7 @@ export const quoteService = {
 
   async toggleQuoteBookmark(params: {
     quoteId: string;
-    quoteOwnerId: string;
+    quoteOwnerId?: string;
     active: boolean;
   }): Promise<{ bookmarked: boolean; bookmarkId: string }> {
     const data = await callQuoteEndpoint<typeof params, {

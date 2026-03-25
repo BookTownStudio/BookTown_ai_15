@@ -61,10 +61,9 @@ const PeopleSegment: React.FC = () => {
 const QuoteFlowCard: React.FC<{ quote: Quote }> = ({ quote }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
-    const quoteOwnerId = 'alex_doe';
 
     const handleNavigateToDetails = () => {
-        navigate({ type: 'immersive', id: 'quoteDetails', params: { quoteId: quote.id, ownerId: quoteOwnerId, from: currentView } });
+        navigate({ type: 'immersive', id: 'quoteDetails', params: { quoteId: quote.id, from: currentView } });
     };
 
     return (
@@ -81,7 +80,7 @@ const QuoteFlowCard: React.FC<{ quote: Quote }> = ({ quote }) => {
                     — {lang === 'en' ? quote.sourceEn : quote.sourceAr}
                 </BilingualText>
             </div>
-            <BookFlowActions entityType="quote" entityId={quote.id} quoteOwnerId={quoteOwnerId} />
+            <BookFlowActions entityType="quote" entityId={quote.id} />
         </div>
     );
 };

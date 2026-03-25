@@ -19,7 +19,12 @@ import { Project } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
-import { createBlankProjectSeed, createProjectSeedFromTemplate, writeTemplates } from '../../lib/templates/writeTemplates.ts';
+import {
+    createBlankProjectSeed,
+    createProjectSeedFromImportedText,
+    createProjectSeedFromTemplate,
+    writeTemplateLaunchers,
+} from '../../lib/templates/writeTemplates.ts';
 import { useOwnLongformPublications } from '../../lib/hooks/useOwnLongformPublications.ts';
 
 interface TemplatesPanelTriggerProps {
@@ -28,6 +33,8 @@ interface TemplatesPanelTriggerProps {
     onClose: () => void;
     pendingCreationKey: string | null;
     onSelectTemplate: (templateId: string) => void;
+    onSelectBlank: () => void;
+    onSelectFromFile: () => void;
 }
 
 const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
@@ -36,6 +43,8 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
     onClose,
     pendingCreationKey,
     onSelectTemplate,
+    onSelectBlank,
+    onSelectFromFile,
 }) => {
     const { lang } = useI18n();
     const [currentPage, setCurrentPage] = useState(0);
@@ -46,7 +55,7 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
             items.slice(index * size, index * size + size)
         );
 
-    const templatePages = chunk(writeTemplates, 4);
+    const templatePages = chunk(writeTemplateLaunchers, 4);
 
     const handleScroll = useCallback(() => {
         if (!scrollContainerRef.current) {
@@ -105,10 +114,20 @@ const TemplatesPanelTrigger: React.FC<TemplatesPanelTriggerProps> = ({
                                             title={lang === 'en' ? template.titleEn : template.titleAr}
                                             description={lang === 'en' ? template.descriptionEn : template.descriptionAr}
                                             icon={template.icon}
-                                            tagLabel={template.id === 'article-blog' ? (lang === 'en' ? 'Guided start' : 'بداية موجهة') : undefined}
+                                            tagLabel={template.featured ? (lang === 'en' ? 'Guided start' : 'بداية موجهة') : undefined}
                                             disabled={pendingCreationKey !== null}
                                             onClick={() => {
                                                 onClose();
+                                                if (template.kind === 'blank') {
+                                                    onSelectBlank();
+                                                    return;
+                                                }
+
+                                                if (template.kind === 'from-file') {
+                                                    onSelectFromFile();
+                                                    return;
+                                                }
+
                                                 onSelectTemplate(template.id);
                                             }}
                                         />
@@ -151,6 +170,7 @@ const WriteScreen: React.FC = () => {
     const [pendingDuplicateProjectId, setPendingDuplicateProjectId] = useState<string | null>(null);
     const [pendingCreationKey, setPendingCreationKey] = useState<string | null>(null);
     const menuTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
+    const importFileInputRef = useRef<HTMLInputElement>(null);
 
     const { mutate: deleteProject, isLoading: isDeleting } = useDeleteProject();
     const { mutate: duplicateProject } = useDuplicateProject();
@@ -283,6 +303,57 @@ const WriteScreen: React.FC = () => {
 
     const handleTemplateSelect = (templateId: string) => {
         handleCreateProject(templateId, createProjectSeedFromTemplate(templateId, lang === 'ar' ? 'ar' : 'en'));
+    };
+
+    const handleFromFile = () => {
+        if (pendingCreationKey) {
+            return;
+        }
+
+        importFileInputRef.current?.click();
+    };
+
+    const handleImportedFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+
+        if (!file || pendingCreationKey) {
+            return;
+        }
+
+        const lowerName = file.name.toLowerCase();
+        const isSupported =
+            lowerName.endsWith('.txt') ||
+            lowerName.endsWith('.md') ||
+            lowerName.endsWith('.markdown');
+
+        if (!isSupported) {
+            showToast(
+                lang === 'en'
+                    ? 'Import supports .txt, .md, and .markdown files.'
+                    : 'الاستيراد يدعم ملفات .txt و .md و .markdown فقط.'
+            );
+            return;
+        }
+
+        try {
+            const rawText = await file.text();
+            handleCreateProject(
+                'from-file',
+                createProjectSeedFromImportedText({
+                    fileName: file.name,
+                    rawText,
+                    locale: lang === 'ar' ? 'ar' : 'en',
+                })
+            );
+        } catch (importError) {
+            console.error('[WRITE][IMPORT_PROJECT_FAILED]', importError);
+            showToast(
+                lang === 'en'
+                    ? 'Failed to import this file.'
+                    : 'تعذر استيراد هذا الملف.'
+            );
+        }
     };
 
     const handleOpenPublication = useCallback((
@@ -539,6 +610,15 @@ const WriteScreen: React.FC = () => {
                     onClose={() => setPanelOpen(false)}
                     pendingCreationKey={pendingCreationKey}
                     onSelectTemplate={handleTemplateSelect}
+                    onSelectBlank={handleNewProject}
+                    onSelectFromFile={handleFromFile}
+                />
+                <input
+                    ref={importFileInputRef}
+                    type="file"
+                    accept=".txt,.md,.markdown,text/plain,text/markdown"
+                    className="hidden"
+                    onChange={handleImportedFileChange}
                 />
             </div>
             <ConfirmDeleteModal

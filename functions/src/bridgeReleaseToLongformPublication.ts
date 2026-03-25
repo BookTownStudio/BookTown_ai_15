@@ -13,6 +13,7 @@ import {
 } from "./publishing/releaseDerivedFields";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
+import { normalizePublicationVisibility, type PublicationVisibility } from "./rights/bookRights";
 
 type ReadyLongformRelease = {
   releaseId: string;
@@ -43,6 +44,14 @@ function normalizeReleaseId(value: unknown): string {
     throw new HttpsError("invalid-argument", "A valid releaseId is required.");
   }
   return releaseId;
+}
+
+function normalizeRequestedVisibility(value: unknown): PublicationVisibility {
+  const normalized = normalizePublicationVisibility(value, "public");
+  if (value !== "public" && value !== "private") {
+    throw new HttpsError("invalid-argument", "A valid visibility is required.");
+  }
+  return normalized;
 }
 
 function normalizeCoverUrl(value: unknown): string | undefined {
@@ -160,6 +169,9 @@ export const bridgeReleaseToLongformPublication = onCall(
     const releaseId = normalizeReleaseId(
       (request.data as { releaseId?: unknown }).releaseId
     );
+    const requestedVisibility = normalizeRequestedVisibility(
+      (request.data as { visibility?: unknown }).visibility
+    );
     const db = admin.firestore();
     const releaseRef = db.collection("project_releases").doc(releaseId);
 
@@ -243,7 +255,7 @@ export const bridgeReleaseToLongformPublication = onCall(
               normalizedContent: release.normalizedContent,
               language,
               status: "published",
-              visibility: "public",
+              visibility: requestedVisibility,
               publicationVersion,
               publishVersion: 1,
               wordCount,
@@ -282,7 +294,7 @@ export const bridgeReleaseToLongformPublication = onCall(
               normalizedContent: release.normalizedContent,
               language,
               status: "published",
-              visibility: "public",
+              visibility: requestedVisibility,
               publicationVersion,
               publishVersion: publicationVersion,
               wordCount,

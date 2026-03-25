@@ -1,6 +1,7 @@
 export type BookRightsMode = "public_free" | "private" | "paid" | "premium_only";
 
 export type AttachmentVisibility = "public" | "restricted" | "private";
+export type PublicationVisibility = "public" | "private";
 
 function asNonEmptyString(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -13,6 +14,16 @@ export function normalizeBookRightsMode(value: unknown): BookRightsMode {
   if (normalized === "paid") return "paid";
   if (normalized === "premium_only") return "premium_only";
   return "public_free";
+}
+
+export function normalizePublicationVisibility(
+  value: unknown,
+  fallback: PublicationVisibility = "public"
+): PublicationVisibility {
+  const normalized = asNonEmptyString(value).toLowerCase();
+  if (normalized === "private") return "private";
+  if (normalized === "public") return "public";
+  return fallback;
 }
 
 export function resolveBookOwnerUid(book: Record<string, unknown>): string {
@@ -51,6 +62,22 @@ export function attachmentVisibilityForRightsMode(
   return "public";
 }
 
-export function bookVisibilityForRightsMode(rightsMode: BookRightsMode): "public" | "private" {
-  return rightsMode === "private" ? "private" : "public";
+export function attachmentVisibilityForPublication(
+  rightsMode: BookRightsMode,
+  visibility: PublicationVisibility
+): AttachmentVisibility {
+  if (visibility === "private") {
+    return "private";
+  }
+  return attachmentVisibilityForRightsMode(rightsMode);
+}
+
+export function publicationVisibilityForRightsMode(
+  rightsMode: BookRightsMode,
+  requestedVisibility: PublicationVisibility
+): PublicationVisibility {
+  if (rightsMode === "private") {
+    return "private";
+  }
+  return requestedVisibility;
 }

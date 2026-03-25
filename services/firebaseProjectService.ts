@@ -95,6 +95,20 @@ export type PublishedBookRightsResult = {
   visibility: "public" | "private";
   attachmentVisibility: "public" | "restricted" | "private";
 };
+export type ProjectPublicationSettings = {
+  projectId: string;
+  blog?: {
+    publicationId: string;
+    visibility: "public" | "private";
+  };
+  ebook?: {
+    bookId: string;
+    visibility: "public" | "private";
+  };
+};
+export type PublicationVisibilityUpdateResult = {
+  visibility: "public" | "private";
+};
 type WriteShareLinkResult = {
   projectId: string;
   token: string;
@@ -183,6 +197,18 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
       typeof payload.coverUrl === "string" && payload.coverUrl.trim()
         ? payload.coverUrl.trim()
         : undefined,
+    lastCursorBlockId:
+      typeof payload.lastCursorBlockId === "string" && payload.lastCursorBlockId.trim()
+        ? payload.lastCursorBlockId.trim().slice(0, 64)
+        : undefined,
+    lastCursorOffset:
+      typeof payload.lastCursorOffset === "number" &&
+      Number.isInteger(payload.lastCursorOffset) &&
+      payload.lastCursorOffset >= 0
+        ? payload.lastCursorOffset
+        : undefined,
+    lastCursorSavedAt:
+      payload.lastCursorSavedAt !== undefined ? toIso(payload.lastCursorSavedAt) : undefined,
   };
 }
 
@@ -256,6 +282,9 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   typeEn?: string;
   typeAr?: string;
   coverUrl?: string;
+  lastCursorBlockId?: string;
+  lastCursorOffset?: number;
+  lastCursorSavedAt?: string;
 } {
   const updates: {
     titleEn?: string;
@@ -267,6 +296,9 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
     typeEn?: string;
     typeAr?: string;
     coverUrl?: string;
+    lastCursorBlockId?: string;
+    lastCursorOffset?: number;
+    lastCursorSavedAt?: string;
   } = {};
 
   if (typeof input.titleEn === "string" && input.titleEn.trim()) {
@@ -305,6 +337,19 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
     } catch {
       // ignore invalid cover URL values
     }
+  }
+  if (typeof input.lastCursorBlockId === "string" && input.lastCursorBlockId.trim()) {
+    updates.lastCursorBlockId = input.lastCursorBlockId.trim().slice(0, 64);
+  }
+  if (
+    typeof input.lastCursorOffset === "number" &&
+    Number.isInteger(input.lastCursorOffset) &&
+    input.lastCursorOffset >= 0
+  ) {
+    updates.lastCursorOffset = input.lastCursorOffset;
+  }
+  if (typeof input.lastCursorSavedAt === "string" && input.lastCursorSavedAt.trim()) {
+    updates.lastCursorSavedAt = input.lastCursorSavedAt.trim();
   }
 
   return updates;
@@ -354,6 +399,17 @@ export const firebaseProjectService: ProjectDataService = {
       workType: project.workType === "article" || project.workType === "journal" ? project.workType : "book",
       typeEn: normalizeBoundedString(project.typeEn, "Draft", 80),
       typeAr: normalizeBoundedString(project.typeAr, "مسودة", 80),
+      ...(typeof project.lastCursorBlockId === "string" && project.lastCursorBlockId.trim()
+        ? { lastCursorBlockId: project.lastCursorBlockId.trim().slice(0, 64) }
+        : {}),
+      ...(typeof project.lastCursorOffset === "number" &&
+      Number.isInteger(project.lastCursorOffset) &&
+      project.lastCursorOffset >= 0
+        ? { lastCursorOffset: project.lastCursorOffset }
+        : {}),
+      ...(typeof project.lastCursorSavedAt === "string" && project.lastCursorSavedAt.trim()
+        ? { lastCursorSavedAt: project.lastCursorSavedAt.trim() }
+        : {}),
     };
 
     const created = await callEndpoint<
@@ -376,6 +432,9 @@ export const firebaseProjectService: ProjectDataService = {
         revision: number;
         publishedBookId?: string;
         coverUrl?: string;
+        lastCursorBlockId?: string;
+        lastCursorOffset?: number;
+        lastCursorSavedAt?: string;
       }
     >("createWriteProject", { project: payload });
 
@@ -550,24 +609,73 @@ export const firebaseProjectService: ProjectDataService = {
   },
 
   async bridgeReleaseToCanonicalBook(
-    releaseId: string
+    releaseId: string,
+    visibility: "public" | "private"
   ): Promise<CanonicalBookPublishResult> {
     return callEndpoint<
-      { releaseId: string },
+      { releaseId: string; visibility: "public" | "private" },
       CanonicalBookPublishResult
     >("bridgeReleaseToCanonicalBook", {
       releaseId,
+      visibility,
     });
   },
 
   async bridgeReleaseToLongformPublication(
-    releaseId: string
+    releaseId: string,
+    visibility: "public" | "private"
   ): Promise<LongformPublicationPublishResult> {
     return callEndpoint<
-      { releaseId: string },
+      { releaseId: string; visibility: "public" | "private" },
       LongformPublicationPublishResult
     >("bridgeReleaseToLongformPublication", {
       releaseId,
+      visibility,
+    });
+  },
+
+  async getProjectPublicationSettings(
+    projectId: string
+  ): Promise<ProjectPublicationSettings> {
+    return callEndpoint<
+      { projectId: string },
+      ProjectPublicationSettings
+    >("getProjectPublicationSettings", {
+      projectId,
+    });
+  },
+
+  async updateLongformPublicationVisibility(
+    publicationId: string,
+    visibility: "public" | "private"
+  ): Promise<{ publicationId: string } & PublicationVisibilityUpdateResult> {
+    return callEndpoint<
+      { publicationId: string; visibility: "public" | "private" },
+      { publicationId: string } & PublicationVisibilityUpdateResult
+    >("updateLongformPublicationVisibility", {
+      publicationId,
+      visibility,
+    });
+  },
+
+  async updatePublishedBookVisibility(
+    bookId: string,
+    visibility: "public" | "private"
+  ): Promise<{
+    bookId: string;
+    visibility: "public" | "private";
+    attachmentVisibility: "public" | "restricted" | "private";
+  }> {
+    return callEndpoint<
+      { bookId: string; visibility: "public" | "private" },
+      {
+        bookId: string;
+        visibility: "public" | "private";
+        attachmentVisibility: "public" | "restricted" | "private";
+      }
+    >("updatePublishedBookVisibility", {
+      bookId,
+      visibility,
     });
   },
 

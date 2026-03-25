@@ -8,8 +8,8 @@ import {
   normalizeBookRightsMode,
   normalizePublicationVisibility,
   publicationVisibilityForRightsMode,
-  type BookRightsMode,
   resolveBookOwnerUid,
+  type PublicationVisibility,
 } from "./rights/bookRights";
 
 function asNonEmptyString(value: unknown, max = 512): string {
@@ -25,24 +25,19 @@ function normalizeBookId(value: unknown): string {
   return bookId;
 }
 
-function normalizeRequestedRightsMode(value: unknown): BookRightsMode {
-  const normalized = normalizeBookRightsMode(value);
-  if (
-    value !== "public_free" &&
-    value !== "private" &&
-    value !== "paid" &&
-    value !== "premium_only"
-  ) {
-    throw new HttpsError("invalid-argument", "A valid rightsMode is required.");
+function normalizeRequestedVisibility(value: unknown): PublicationVisibility {
+  const normalized = normalizePublicationVisibility(value, "public");
+  if (value !== "public" && value !== "private") {
+    throw new HttpsError("invalid-argument", "A valid visibility is required.");
   }
   return normalized;
 }
 
-export const updatePublishedBookRights = onCall({ cors: true }, async (request) => {
+export const updatePublishedBookVisibility = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   const bookId = normalizeBookId((request.data as { bookId?: unknown }).bookId);
-  const rightsMode = normalizeRequestedRightsMode(
-    (request.data as { rightsMode?: unknown }).rightsMode
+  const visibility = normalizeRequestedVisibility(
+    (request.data as { visibility?: unknown }).visibility
   );
   const db = admin.firestore();
   const bookRef = db.collection("books").doc(bookId);
@@ -59,36 +54,24 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
       if (!ownerUid || ownerUid !== caller.uid) {
         throw new HttpsError(
           "permission-denied",
-          "Only the book owner can update rights."
-        );
-      }
-
-      const bookType = asNonEmptyString(book.bookType, 64);
-      const source = asNonEmptyString(book.source, 64);
-      if (bookType !== "authored_native" && source !== "write_release") {
-        throw new HttpsError(
-          "failed-precondition",
-          "This rights update path is only available for authored books."
+          "Only the book owner can update visibility."
         );
       }
 
       const editionId = asNonEmptyString(book.editionId, 256);
       const attachmentId = asNonEmptyString(book.ebookAttachmentId, 256);
-      const now = FieldValue.serverTimestamp();
-      const bookVisibility = publicationVisibilityForRightsMode(
-        rightsMode,
-        normalizePublicationVisibility(book.visibility)
-      );
+      const rightsMode = normalizeBookRightsMode(book.rightsMode);
+      const effectiveVisibility = publicationVisibilityForRightsMode(rightsMode, visibility);
       const attachmentVisibility = attachmentVisibilityForPublication(
         rightsMode,
-        bookVisibility
+        effectiveVisibility
       );
+      const now = FieldValue.serverTimestamp();
 
       tx.set(
         bookRef,
         {
-          rightsMode,
-          visibility: bookVisibility,
+          visibility: effectiveVisibility,
           updatedAt: now,
         },
         { merge: true }
@@ -98,8 +81,7 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
         tx.set(
           db.collection("editions").doc(editionId),
           {
-            rightsMode,
-            visibility: bookVisibility,
+            visibility: effectiveVisibility,
             updatedAt: now,
           },
           { merge: true }
@@ -119,26 +101,24 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
 
       return {
         bookId,
-        rightsMode,
-        visibility: bookVisibility,
+        visibility: effectiveVisibility,
         attachmentVisibility,
       };
     });
 
-    logger.info("[PUBLISH][AUTHORED_BOOK_RIGHTS_UPDATED]", {
+    logger.info("[PUBLISH][AUTHORED_BOOK_VISIBILITY_UPDATED]", {
       uid: caller.uid,
       bookId: result.bookId,
-      rightsMode: result.rightsMode,
       visibility: result.visibility,
       attachmentVisibility: result.attachmentVisibility,
     });
 
     return result;
   } catch (error) {
-    logger.error("[PUBLISH][AUTHORED_BOOK_RIGHTS_UPDATE_FAILED]", {
+    logger.error("[PUBLISH][AUTHORED_BOOK_VISIBILITY_UPDATE_FAILED]", {
       uid: caller.uid,
       bookId,
-      rightsMode,
+      visibility,
       error,
     });
     if (error instanceof HttpsError) {
@@ -146,7 +126,7 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
     }
     throw new HttpsError(
       "internal",
-      "Failed to update published book rights."
+      "Failed to update published book visibility."
     );
   }
 });

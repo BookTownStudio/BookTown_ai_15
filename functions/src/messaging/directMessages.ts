@@ -269,6 +269,29 @@ async function resolveAttachmentSnapshot(
     };
   }
 
+  const rootQuoteSnap = await transaction.get(
+    db.collection("quotes").doc(attachment.entityId)
+  );
+  if (rootQuoteSnap.exists) {
+    const data = (rootQuoteSnap.data() ?? {}) as Record<string, unknown>;
+    const ownerId = readTrimmedString(data.ownerId, 128);
+    const isPublic = data.isPublic !== false;
+    if (!isPublic && ownerId !== uid) {
+      throw new HttpsError("permission-denied", "Referenced quote is not accessible.");
+    }
+
+    const quoteText =
+      readTrimmedString(data.textEn, 600) ||
+      readTrimmedString(data.textAr, 600);
+
+    return {
+      type: "quote",
+      entityId: attachment.entityId,
+      ...(ownerId ? { quoteOwnerId: ownerId } : {}),
+      ...(quoteText ? { quoteText } : {}),
+    };
+  }
+
   const quoteQuery = db
     .collectionGroup("quotes")
     .where(admin.firestore.FieldPath.documentId(), "==", attachment.entityId)
@@ -278,19 +301,20 @@ async function resolveAttachmentSnapshot(
     .map((docSnap) => {
       const data = (docSnap.data() ?? {}) as Record<string, unknown>;
       const quoteOwnerId = readTrimmedString(docSnap.ref.parent.parent?.id, 128);
+      const canonicalQuoteId = readTrimmedString(data.canonicalQuoteId, 256);
       const isPublic = data.isPublic === true;
       if (!quoteOwnerId) return null;
       if (!isPublic && quoteOwnerId !== uid) return null;
-      return { docSnap, data, quoteOwnerId };
+      return { data, quoteOwnerId, canonicalQuoteId };
     })
     .filter(
       (
         entry
       ): entry is {
-        docSnap: FirebaseFirestore.QueryDocumentSnapshot;
         data: Record<string, unknown>;
         quoteOwnerId: string;
-      } => entry !== null
+        canonicalQuoteId: string;
+      } => entry !== null && Boolean(entry.canonicalQuoteId)
     );
 
   if (accessibleQuotes.length === 0) {
@@ -303,14 +327,14 @@ async function resolveAttachmentSnapshot(
     );
   }
 
-  const { data, quoteOwnerId } = accessibleQuotes[0];
+  const { data, quoteOwnerId, canonicalQuoteId } = accessibleQuotes[0];
   const quoteText =
     readTrimmedString(data.textEn, 600) ||
     readTrimmedString(data.textAr, 600);
 
   return {
     type: "quote",
-    entityId: attachment.entityId,
+    entityId: canonicalQuoteId,
     quoteOwnerId,
     ...(quoteText ? { quoteText } : {}),
   };

@@ -7,7 +7,7 @@ import { useUserStats } from '../../lib/hooks/useUserStats.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useUserProfilePosts } from '../../lib/hooks/useUserProfilePosts.ts';
 import { useUserProfileReviews } from '../../lib/hooks/useUserProfileReviews.ts';
-import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
+import { useUserProfilePublications } from '../../lib/hooks/useUserProfilePublications.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -15,6 +15,7 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { EditIcon } from '../../components/icons/EditIcon.tsx';
 import { CalendarIcon } from '../../components/icons/CalendarIcon.tsx';
+import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { useUpdateProfile } from '../../lib/hooks/useUpdateProfile.ts';
 import { useStartConversation } from '../../lib/hooks/useMessenger.ts';
 import { useFollowStatus, useFollowUser, useUnfollowUser } from '../../lib/hooks/useFollowUser.ts';
@@ -27,9 +28,9 @@ import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import PostCard from '../../components/content/PostCard.tsx';
 import ReviewCard from '../../components/content/ReviewCard.tsx';
 
-type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'projects';
+type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'publications';
 
-const TABS: ProfileTab[] = ['posts', 'reviews', 'shelves', 'projects'];
+const TABS: ProfileTab[] = ['posts', 'reviews', 'shelves', 'publications'];
 const PROFILE_TAB_STORAGE_PREFIX = 'booktown_profile_tab_v1';
 
 const isProfileTab = (value: unknown): value is ProfileTab =>
@@ -53,6 +54,37 @@ const persistProfileTab = (uid: string | undefined, tab: ProfileTab): void => {
   } catch {
     // Ignore storage write failures; tab state remains in-memory.
   }
+};
+
+const formatPublicationTypeLabel = (
+  value: string,
+  lang: 'en' | 'ar'
+): string => {
+  if (value === 'blog' || value === 'blog_longform') {
+    return lang === 'en' ? 'Blog' : 'مدونة';
+  }
+  if (value === 'ebook') {
+    return lang === 'en' ? 'Ebook' : 'كتاب إلكتروني';
+  }
+  return lang === 'en' ? 'Publication' : 'منشور';
+};
+
+const formatProfileTabLabel = (
+  tab: ProfileTab,
+  lang: 'en' | 'ar'
+): string => {
+  if (lang === 'ar') {
+    if (tab === 'posts') return 'المنشورات';
+    if (tab === 'reviews') return 'المراجعات';
+    if (tab === 'shelves') return 'الرفوف';
+    return 'الإصدارات';
+  }
+
+  if (tab === 'publications') {
+    return 'Publications';
+  }
+
+  return tab.charAt(0).toUpperCase() + tab.slice(1);
 };
 
 /* -----------------------------------------------------
@@ -124,7 +156,7 @@ const ProfileScreen: React.FC = () => {
     posts: 0,
     reviews: 0,
     shelves: 0,
-    projects: 0,
+    publications: 0,
   });
   const scopedProfileRef = useRef<string | null>(null);
 
@@ -163,12 +195,15 @@ const ProfileScreen: React.FC = () => {
       20,
       activeTab === 'reviews'
     );
-  const canViewProjects = isOwnProfile;
   const {
-    data: profileProjects,
-    isLoading: profileProjectsLoading,
-    isError: profileProjectsError,
-  } = useUserProjects(activeTab === 'projects' && canViewProjects);
+    data: profilePublications,
+    isLoading: profilePublicationsLoading,
+    isError: profilePublicationsError,
+  } = useUserProfilePublications(
+    effectiveProfileUserId,
+    20,
+    activeTab === 'publications'
+  );
 
   const profile = isGuestView ? MOCK_GUEST_PROFILE : fetchedProfile;
 
@@ -305,6 +340,36 @@ const ProfileScreen: React.FC = () => {
         from: currentView,
       },
     });
+  };
+  const handleOpenProfilePublication = (publication: {
+    entityType: 'blog' | 'ebook';
+    publicationId?: string;
+    canonicalSlug?: string;
+    bookId?: string;
+  }) => {
+    if (publication.entityType === 'blog' && publication.publicationId) {
+      navigate({
+        type: 'immersive',
+        id: 'publicationReader',
+        params: {
+          publicationId: publication.publicationId,
+          ...(publication.canonicalSlug ? { canonicalSlug: publication.canonicalSlug } : {}),
+          from: currentView,
+        },
+      });
+      return;
+    }
+
+    if (publication.entityType === 'ebook' && publication.bookId) {
+      navigate({
+        type: 'immersive',
+        id: 'bookDetails',
+        params: {
+          bookId: publication.bookId,
+          from: currentView,
+        },
+      });
+    }
   };
 
   return (
@@ -513,7 +578,7 @@ const ProfileScreen: React.FC = () => {
                     : 'text-slate-500'
                 }`}
               >
-                {tab}
+                {formatProfileTabLabel(tab, lang)}
                 {activeTab === tab && (
                   <motion.div
                     layoutId="profile-tab-underline"
@@ -610,47 +675,57 @@ const ProfileScreen: React.FC = () => {
                   </BilingualText>
                 ))}
 
-              {activeTab === 'projects' &&
-                (!canViewProjects ? (
-                  <BilingualText className="text-slate-500">
-                    {lang === 'en'
-                      ? 'Projects are private and visible only to the owner.'
-                      : 'المشاريع خاصة وتظهر فقط لصاحب الحساب.'}
-                  </BilingualText>
-                ) : profileProjectsLoading ? (
+              {activeTab === 'publications' &&
+                (profilePublicationsLoading ? (
                   <LoadingSpinner />
-                ) : profileProjectsError ? (
+                ) : profilePublicationsError ? (
                   <BilingualText className="text-red-500 dark:text-red-400">
-                    {lang === 'en' ? 'Failed to load projects.' : 'فشل تحميل المشاريع.'}
+                    {lang === 'en'
+                      ? 'Failed to load publications.'
+                      : 'فشل تحميل المنشورات.'}
                   </BilingualText>
-                ) : profileProjects && profileProjects.length > 0 ? (
-                  profileProjects.map(project => (
-                    <div
-                      key={project.id}
-                      className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm dark:border-white/10 dark:bg-slate-800"
+                ) : profilePublications && profilePublications.length > 0 ? (
+                  profilePublications.map(publication => (
+                    <button
+                      key={`${publication.entityType}:${publication.id}`}
+                      type="button"
+                      onClick={() => handleOpenProfilePublication(publication)}
+                      className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-800/80"
                     >
-                      <BilingualText role="H3" className="!text-lg !font-semibold">
-                        {lang === 'en'
-                          ? project.titleEn
-                          : (project.titleAr || project.titleEn)}
-                      </BilingualText>
-                      <div className="mt-2 flex items-center justify-between text-xs text-slate-500">
-                        <span>{project.status}</span>
-                        <span>
-                          {new Date(project.updatedAt).toLocaleDateString(
+                      <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-700/60">
+                        {publication.coverUrl ? (
+                          <img
+                            src={publication.coverUrl}
+                            alt={publication.title}
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <BookIcon className="h-7 w-7 text-slate-400" />
+                        )}
+                      </div>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                          {formatPublicationTypeLabel(publication.publicationType, lang)}
+                        </div>
+                        <BilingualText
+                          role="H3"
+                          className="mt-2 line-clamp-2 !text-lg !font-semibold"
+                        >
+                          {publication.title}
+                        </BilingualText>
+                        <div className="mt-2 text-xs text-slate-500">
+                          {new Date(publication.publishedAt).toLocaleDateString(
                             lang === 'ar' ? 'ar-EG' : 'en-US',
                             { month: 'short', day: 'numeric', year: 'numeric' }
                           )}
-                        </span>
+                        </div>
                       </div>
-                      <div className="mt-2 text-xs text-slate-500">
-                        {project.wordCount.toLocaleString()} {lang === 'en' ? 'words' : 'كلمة'}
-                      </div>
-                    </div>
+                    </button>
                   ))
                 ) : (
                   <BilingualText className="text-slate-500">
-                    {lang === 'en' ? 'No projects yet.' : 'لا توجد مشاريع بعد.'}
+                    {lang === 'en' ? 'No publications yet.' : 'لا توجد منشورات بعد.'}
                   </BilingualText>
                 ))}
             </motion.div>

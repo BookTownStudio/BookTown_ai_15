@@ -2,9 +2,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
+import { useToast } from '../../store/toast.tsx';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
-import { useUpdateProject } from '../../lib/hooks/useProjectMutations.ts';
+import {
+    useUpdateProject,
+    useUpdateLongformPublicationVisibility,
+    useUpdatePublishedBookVisibility,
+} from '../../lib/hooks/useProjectMutations.ts';
+import { useProjectPublicationSettings } from '../../lib/hooks/useProjectPublicationSettings.ts';
 import InputField from '../../components/ui/InputField.tsx';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -16,14 +22,25 @@ import ProjectTypeDropdown, {
     type ProjectTypeValue,
 } from '../../components/write/ProjectTypeDropdown.tsx';
 
+type PublicationVisibility = 'public' | 'private';
+
 const ProjectEditScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
+    const { showToast } = useToast();
     const projectId = currentView.type === 'immersive' ? currentView.params?.projectId : undefined;
 
     const { data: project, isLoading } = useProjectDetails(projectId);
     const { mutate: updateProject, isLoading: isSaving } = useUpdateProject();
+    const updateLongformVisibility = useUpdateLongformPublicationVisibility();
+    const updateBookVisibility = useUpdatePublishedBookVisibility();
     const { upload, isUploading } = useMediaUpload();
+    const hasLinkedCanonicalPublication =
+        !!project?.publishedPublicationId || !!project?.publishedBookId;
+    const { data: publicationSettings } = useProjectPublicationSettings(
+        projectId,
+        hasLinkedCanonicalPublication
+    );
 
     const [formData, setFormData] = useState({
         titleEn: '',
@@ -87,6 +104,97 @@ const ProjectEditScreen: React.FC = () => {
         });
     };
 
+    const handlePublicationVisibilityChange = (
+        target: 'blog' | 'ebook',
+        visibility: PublicationVisibility
+    ) => {
+        if (target === 'blog') {
+            const publicationId = publicationSettings?.blog?.publicationId;
+            if (!publicationId || updateLongformVisibility.isLoading) {
+                return;
+            }
+            updateLongformVisibility.mutate(
+                { publicationId, visibility, projectId },
+                {
+                    onSuccess: () => {
+                        showToast(lang === 'en' ? 'Blog visibility updated.' : 'تم تحديث ظهور المدونة.');
+                    },
+                    onError: (error) => {
+                        const message =
+                            error instanceof Error && error.message.trim()
+                                ? error.message
+                                : (lang === 'en' ? 'Unable to update blog visibility.' : 'تعذّر تحديث ظهور المدونة.');
+                        showToast(message);
+                    },
+                }
+            );
+            return;
+        }
+
+        const bookId = publicationSettings?.ebook?.bookId;
+        if (!bookId || updateBookVisibility.isLoading) {
+            return;
+        }
+        updateBookVisibility.mutate(
+            { bookId, visibility, projectId },
+            {
+                onSuccess: () => {
+                    showToast(lang === 'en' ? 'Ebook visibility updated.' : 'تم تحديث ظهور الكتاب الإلكتروني.');
+                },
+                onError: (error) => {
+                    const message =
+                        error instanceof Error && error.message.trim()
+                            ? error.message
+                            : (lang === 'en' ? 'Unable to update ebook visibility.' : 'تعذّر تحديث ظهور الكتاب الإلكتروني.');
+                    showToast(message);
+                },
+            }
+        );
+    };
+
+    const renderVisibilityRow = (
+        target: 'blog' | 'ebook',
+        label: string,
+        visibility: PublicationVisibility
+    ) => {
+        const isUpdating =
+            target === 'blog' ? updateLongformVisibility.isLoading : updateBookVisibility.isLoading;
+
+        return (
+            <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="font-semibold text-white">{label}</div>
+                    {isUpdating ? <LoadingSpinner /> : null}
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                    {(['public', 'private'] as PublicationVisibility[]).map((option) => {
+                        const isActive = visibility === option;
+                        const optionLabel =
+                            option === 'public'
+                                ? (lang === 'en' ? 'Public' : 'عام')
+                                : (lang === 'en' ? 'Private' : 'خاص');
+
+                        return (
+                            <button
+                                key={option}
+                                type="button"
+                                disabled={isUpdating}
+                                onClick={() => handlePublicationVisibilityChange(target, option)}
+                                className={`rounded-xl border px-4 py-3 text-sm font-medium transition ${
+                                    isActive
+                                        ? 'border-sky-400 bg-sky-500/10 text-white'
+                                        : 'border-white/10 bg-slate-800/70 text-slate-300 hover:border-white/20'
+                                }`}
+                            >
+                                {optionLabel}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+    };
+
     if (isLoading) return <div className="h-screen flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
     if (!project) return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Project not found</div>;
 
@@ -148,6 +256,28 @@ const ProjectEditScreen: React.FC = () => {
                         value={formData.projectType}
                         onChange={handleProjectTypeChange}
                     />
+
+                    {publicationSettings?.blog || publicationSettings?.ebook ? (
+                        <div className="space-y-4 rounded-2xl border border-white/5 bg-slate-800/50 p-5">
+                            <BilingualText role="H1" className="!mb-0 !text-lg">
+                                {lang === 'en' ? 'Visibility' : 'الظهور'}
+                            </BilingualText>
+                            {publicationSettings.blog
+                                ? renderVisibilityRow(
+                                    'blog',
+                                    lang === 'en' ? 'Blog publication' : 'المنشور',
+                                    publicationSettings.blog.visibility
+                                )
+                                : null}
+                            {publicationSettings.ebook
+                                ? renderVisibilityRow(
+                                    'ebook',
+                                    lang === 'en' ? 'Ebook publication' : 'الكتاب الإلكتروني',
+                                    publicationSettings.ebook.visibility
+                                )
+                                : null}
+                        </div>
+                    ) : null}
 
                     <div className="pt-4">
                         <Button variant="primary" className="w-full" onClick={handleSave} disabled={isSaving || isUploading}>

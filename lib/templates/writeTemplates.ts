@@ -8,7 +8,11 @@ import { JournalIcon } from '../../components/icons/JournalIcon.tsx';
 import { PoetryIcon } from '../../components/icons/PoetryIcon.tsx';
 import { ScreenplayIcon } from '../../components/icons/ScreenplayIcon.tsx';
 import { ResearchPaperIcon } from '../../components/icons/ResearchPaperIcon.tsx';
+import { EssayIcon } from '../../components/icons/EssayIcon.tsx';
+import { DraftIcon } from '../../components/icons/DraftIcon.tsx';
+import { UploadIcon } from '../../components/icons/UploadIcon.tsx';
 import { createChapterBlockHtml, createChapterBlockNodes } from '../editor/chapterNodes.ts';
+import { createJournalEntryNodes, formatJournalEntryLabel, JOURNAL_TEMPLATE_ID } from '../editor/journalMode.ts';
 
 type WorkType = Project['workType'];
 type Locale = 'en' | 'ar';
@@ -26,6 +30,19 @@ type TemplateSeedDefinition = Omit<Template, 'boilerplateContent' | 'contentDoc'
 };
 
 type StarterSeed = Pick<Project, 'titleEn' | 'titleAr' | 'workType' | 'typeEn' | 'typeAr' | 'status' | 'wordCount' | 'content' | 'contentDoc' | 'isPublished'>;
+type TemplateLauncherKind = 'template' | 'blank' | 'from-file';
+
+export type WriteTemplateLauncher = {
+    id: string;
+    kind: TemplateLauncherKind;
+    workType: WorkType;
+    titleEn: string;
+    titleAr: string;
+    descriptionEn: string;
+    descriptionAr: string;
+    icon: Template['icon'];
+    featured?: boolean;
+};
 
 const DEFAULT_STATUS = {
     typeEn: 'Draft',
@@ -158,6 +175,104 @@ function buildBlankStarter(locale: Locale): Pick<StarterSeed, 'content' | 'conte
         content: `<p lang="${lang}" dir="${dir}"></p>`,
         contentDoc,
         wordCount: 0,
+    };
+}
+
+function normalizeImportedParagraphs(rawText: string): string[] {
+    return rawText
+        .replace(/\r\n/g, '\n')
+        .split(/\n{2,}/)
+        .map((segment) => segment.trim())
+        .filter(Boolean);
+}
+
+function stripMarkdownHeading(text: string): string {
+    return text.replace(/^#{1,6}\s+/, '').trim();
+}
+
+function deriveImportedTitle(fileName: string, locale: Locale): { titleEn: string; titleAr: string } {
+    const normalized = fileName.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim();
+    if (!normalized) {
+        return locale === 'ar'
+            ? { titleEn: 'Imported Project', titleAr: 'مشروع مستورد' }
+            : { titleEn: 'Imported Project', titleAr: 'مشروع مستورد' };
+    }
+
+    return {
+        titleEn: normalized,
+        titleAr: normalized,
+    };
+}
+
+function buildImportedStarter(rawText: string, locale: Locale): Pick<StarterSeed, 'content' | 'contentDoc' | 'wordCount'> {
+    const lang: Locale = locale === 'ar' ? 'ar' : 'en';
+    const dir: WriteDirection = lang === 'ar' ? 'rtl' : 'ltr';
+    const paragraphs = normalizeImportedParagraphs(rawText);
+
+    if (paragraphs.length === 0) {
+        return buildBlankStarter(locale);
+    }
+
+    const contentNodes: WriteContentDoc['content'] = [];
+    const htmlParts: string[] = [];
+    const plainTextParts: string[] = [];
+
+    paragraphs.forEach((paragraph) => {
+        if (/^#{1,6}\s+/.test(paragraph)) {
+            const heading = stripMarkdownHeading(paragraph);
+            if (!heading) {
+                return;
+            }
+
+            contentNodes.push(createHeadingNode(heading, lang, dir));
+            htmlParts.push(`<h2 lang="${lang}" dir="${dir}">${escapeHtml(heading)}</h2>`);
+            plainTextParts.push(heading);
+            return;
+        }
+
+        contentNodes.push(createParagraphNode(paragraph, lang, dir));
+        htmlParts.push(`<p lang="${lang}" dir="${dir}">${escapeHtml(paragraph)}</p>`);
+        plainTextParts.push(paragraph);
+    });
+
+    const plainText = plainTextParts.join('\n\n').trim();
+
+    return {
+        content: htmlParts.join(''),
+        contentDoc: {
+            version: 1,
+            type: 'doc',
+            content: contentNodes.length > 0
+                ? contentNodes
+                : buildBlankStarter(locale).contentDoc?.content ?? [],
+            plainText,
+        },
+        wordCount: countWordsScriptAware(plainText),
+    };
+}
+
+function buildJournalStarter(locale: Locale): Pick<StarterSeed, 'content' | 'contentDoc' | 'wordCount'> {
+    const entryDate = new Date();
+    const lang: Locale = locale === 'ar' ? 'ar' : 'en';
+    const dir: WriteDirection = lang === 'ar' ? 'rtl' : 'ltr';
+    const title = formatJournalEntryLabel(entryDate, lang);
+    const nodes = createJournalEntryNodes({ date: entryDate, locale: lang });
+    const contentDoc: WriteContentDoc = {
+        version: 1,
+        type: 'doc',
+        content: nodes,
+        plainText: title,
+    };
+
+    return {
+        content: createChapterBlockHtml({
+            title,
+            lang,
+            dir,
+            paragraphs: [''],
+        }),
+        contentDoc,
+        wordCount: countWordsScriptAware(title),
     };
 }
 
@@ -470,6 +585,73 @@ const templateDefinitions: TemplateSeedDefinition[] = [
             },
         ],
     },
+    {
+        id: 'essay',
+        workType: 'article',
+        titleEn: 'Essay',
+        titleAr: 'مقالة',
+        descriptionEn: 'A formal reflective structure for argument, voice, and insight.',
+        descriptionAr: 'بنية تأملية رسمية للحجة والصوت والبصيرة.',
+        icon: EssayIcon,
+        sections: [
+            {
+                titleEn: 'Opening Position',
+                titleAr: 'الموقف الافتتاحي',
+                bodyEn: ['Open with the central tension, thought, or observation that gives the essay its reason to exist.'],
+                bodyAr: ['ابدأ بالتوتر أو الفكرة أو الملاحظة التي تمنح المقالة سببها في الوجود.'],
+            },
+            {
+                titleEn: 'Development',
+                titleAr: 'التطوير',
+                bodyEn: ['Develop the thought with scenes, examples, or reasoning that deepen the reader’s understanding.'],
+                bodyAr: ['طوّر الفكرة بالمشاهد أو الأمثلة أو الاستدلال الذي يعمّق فهم القارئ.'],
+            },
+            {
+                titleEn: 'Countercurrent',
+                titleAr: 'التيار المقابل',
+                bodyEn: ['Let a contradiction, doubt, or alternate reading sharpen the essay instead of flattening it.'],
+                bodyAr: ['دع التناقض أو الشك أو القراءة البديلة يزيد المقالة حدة بدلاً من أن يسطّحها.'],
+            },
+            {
+                titleEn: 'Closing Insight',
+                titleAr: 'البصيرة الختامية',
+                bodyEn: ['Close with the insight that remains once the argument has done its work.'],
+                bodyAr: ['اختم بالبصيرة التي تبقى بعد أن تؤدي الحجة عملها.'],
+            },
+        ],
+    },
+    {
+        id: 'letters',
+        workType: 'article',
+        titleEn: 'Letters',
+        titleAr: 'رسائل',
+        descriptionEn: 'An intimate epistolary structure for one voice addressing another.',
+        descriptionAr: 'بنية رسائل حميمة لصوت يخاطب صوتاً آخر.',
+        icon: DraftIcon,
+        sections: [
+            {
+                titleEn: 'Letter 1',
+                titleAr: 'الرسالة 1',
+                bodyEn: ['Begin with who is being addressed, what presses on the voice, and why this letter must be written now.'],
+                bodyAr: ['ابدأ بمن تُوجَّه إليه الرسالة وما الذي يضغط على الصوت ولماذا يجب أن تُكتب الآن.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Letter 2',
+                titleAr: 'الرسالة 2',
+                bodyEn: ['Let the next letter widen or deepen the relationship through memory, distance, or revelation.'],
+                bodyAr: ['دع الرسالة التالية توسّع العلاقة أو تعمّقها عبر الذاكرة أو المسافة أو الكشف.'],
+                chapter: true,
+            },
+            {
+                titleEn: 'Letter 3',
+                titleAr: 'الرسالة 3',
+                bodyEn: ['Close with the final letter that leaves an emotional afterimage rather than a full explanation.'],
+                bodyAr: ['اختم بالرسالة الأخيرة التي تترك أثراً عاطفياً أكثر من كونها تشرح كل شيء.'],
+                chapter: true,
+            },
+        ],
+    },
 ];
 
 export const writeTemplates: Template[] = templateDefinitions.map((template) => ({
@@ -477,6 +659,130 @@ export const writeTemplates: Template[] = templateDefinitions.map((template) => 
     boilerplateContent: buildStructuredStarter(template.sections, 'en').content,
     contentDoc: buildStructuredStarter(template.sections, 'en').contentDoc,
 }));
+
+export const writeTemplateLaunchers: WriteTemplateLauncher[] = [
+    {
+        id: 'article-blog',
+        kind: 'template',
+        workType: 'article',
+        titleEn: 'Article / Blog',
+        titleAr: 'مقال / مدونة',
+        descriptionEn: 'A guided long-form article with a clear reading arc.',
+        descriptionAr: 'مقال طويل موجه ببنية قراءة واضحة.',
+        icon: BlogPostIcon,
+        featured: true,
+    },
+    {
+        id: 'novel',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Novel',
+        titleAr: 'رواية',
+        descriptionEn: 'A six-beat literary arc for a full-length narrative.',
+        descriptionAr: 'قوس أدبي من ست حركات لحكاية طويلة.',
+        icon: NovelIcon,
+    },
+    {
+        id: 'blank',
+        kind: 'blank',
+        workType: 'book',
+        titleEn: 'Blank',
+        titleAr: 'فارغ',
+        descriptionEn: 'Start without a framework',
+        descriptionAr: 'ابدأ من دون إطار',
+        icon: DraftIcon,
+    },
+    {
+        id: 'from-file',
+        kind: 'from-file',
+        workType: 'article',
+        titleEn: 'From File',
+        titleAr: 'من ملف',
+        descriptionEn: 'Turn your text into a project',
+        descriptionAr: 'حوّل نصك إلى مشروع',
+        icon: UploadIcon,
+    },
+    {
+        id: 'short-story',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Short Story',
+        titleAr: 'قصة قصيرة',
+        descriptionEn: 'A compact narrative structure with one clean turn.',
+        descriptionAr: 'بنية سردية مكثفة بانعطافة واحدة واضحة.',
+        icon: ShortStoryIcon,
+    },
+    {
+        id: 'memoir',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Memoir',
+        titleAr: 'مذكرات',
+        descriptionEn: 'A reflective structure rooted in lived change.',
+        descriptionAr: 'بنية تأملية تنطلق من أثر التجربة المعيشة.',
+        icon: MemoirIcon,
+    },
+    {
+        id: 'journal',
+        kind: 'template',
+        workType: 'journal',
+        titleEn: 'Journal',
+        titleAr: 'يوميات',
+        descriptionEn: 'A private reflection frame for what the day held.',
+        descriptionAr: 'إطار تأملي خاص لما حمله اليوم.',
+        icon: JournalIcon,
+    },
+    {
+        id: 'factual',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Factual',
+        titleAr: 'واقعي',
+        descriptionEn: 'Structured factual writing for ideas, arguments, or explanation.',
+        descriptionAr: 'كتابة واقعية منظمة للأفكار أو الحجج أو الشرح.',
+        icon: ResearchPaperIcon,
+    },
+    {
+        id: 'screenplay',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Screenplay',
+        titleAr: 'سيناريو',
+        descriptionEn: 'A scene-first dramatic progression for script drafting.',
+        descriptionAr: 'تدرج درامي يبدأ بالمشهد لكتابة السيناريو.',
+        icon: ScreenplayIcon,
+    },
+    {
+        id: 'poetry',
+        kind: 'template',
+        workType: 'book',
+        titleEn: 'Poetry',
+        titleAr: 'شعر',
+        descriptionEn: 'A quiet opening for a poem, cycle, or lyric sequence.',
+        descriptionAr: 'افتتاح هادئ لقصيدة أو مجموعة غنائية.',
+        icon: PoetryIcon,
+    },
+    {
+        id: 'essay',
+        kind: 'template',
+        workType: 'article',
+        titleEn: 'Essay',
+        titleAr: 'مقالة',
+        descriptionEn: 'A formal reflective structure for argument, voice, and insight.',
+        descriptionAr: 'بنية تأملية رسمية للحجة والصوت والبصيرة.',
+        icon: EssayIcon,
+    },
+    {
+        id: 'letters',
+        kind: 'template',
+        workType: 'article',
+        titleEn: 'Letters',
+        titleAr: 'رسائل',
+        descriptionEn: 'An intimate epistolary structure for one voice addressing another.',
+        descriptionAr: 'بنية رسائل حميمة لصوت يخاطب صوتاً آخر.',
+        icon: DraftIcon,
+    },
+];
 
 export function getWriteTemplate(templateId?: string | null): Template | undefined {
     if (!templateId) {
@@ -493,6 +799,17 @@ export function createProjectSeedFromTemplate(templateId: string, locale: Locale
     const template = getWriteTemplate(templateId);
     if (!template) {
         return createBlankProjectSeed('book', locale);
+    }
+
+    if (template.id === JOURNAL_TEMPLATE_ID) {
+        const untitled = UNTITLED_TITLES[template.workType];
+        return {
+            ...DEFAULT_STATUS,
+            ...buildJournalStarter(locale),
+            titleEn: untitled.titleEn,
+            titleAr: untitled.titleAr,
+            workType: template.workType,
+        };
     }
 
     const starter = buildStructuredStarter(
@@ -517,6 +834,24 @@ export function createBlankProjectSeed(workType: WorkType, locale: Locale): Star
         ...buildBlankStarter(locale),
         titleEn: untitled.titleEn,
         titleAr: untitled.titleAr,
+        workType,
+    };
+}
+
+export function createProjectSeedFromImportedText(params: {
+    fileName: string;
+    rawText: string;
+    locale: Locale;
+    workType?: WorkType;
+}): StarterSeed {
+    const { fileName, rawText, locale, workType = 'article' } = params;
+    const titles = deriveImportedTitle(fileName, locale);
+
+    return {
+        ...DEFAULT_STATUS,
+        ...buildImportedStarter(rawText, locale),
+        titleEn: titles.titleEn,
+        titleAr: titles.titleAr,
         workType,
     };
 }

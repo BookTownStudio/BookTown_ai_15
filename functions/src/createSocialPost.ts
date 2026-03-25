@@ -135,13 +135,13 @@ async function assertStructuredEntityAccessible(
   db: FirebaseFirestore.Firestore,
   uid: string,
   entity: StructuredAttachment
-): Promise<void> {
+): Promise<StructuredAttachment> {
   if (entity.type === "book") {
     const snap = await db.collection("books").doc(entity.entityId).get();
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced book not found.");
     }
-    return;
+    return entity;
   }
 
   if (entity.type === "author") {
@@ -149,7 +149,7 @@ async function assertStructuredEntityAccessible(
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced author not found.");
     }
-    return;
+    return entity;
   }
 
   if (entity.type === "venue") {
@@ -157,7 +157,7 @@ async function assertStructuredEntityAccessible(
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced venue not found.");
     }
-    return;
+    return entity;
   }
 
   if (entity.type === "shelf") {
@@ -180,28 +180,58 @@ async function assertStructuredEntityAccessible(
         "Referenced shelf is not accessible."
       );
     }
-    return;
+    return entity;
   }
 
   if (entity.type === "quote") {
+    const rootSnap = await db.collection("quotes").doc(entity.entityId).get();
+    if (rootSnap.exists) {
+      const quote = (rootSnap.data() ?? {}) as Record<string, unknown>;
+      const ownerId = readNonEmptyString(quote.ownerId);
+      if (ownerId !== uid && quote.isPublic === false) {
+        throw new HttpsError(
+          "permission-denied",
+          "Referenced quote is not accessible."
+        );
+      }
+      return {
+        type: "quote",
+        entityId: entity.entityId,
+        ...(ownerId ? { entityOwnerId: ownerId } : {}),
+      };
+    }
+
     const ownerId = entity.entityOwnerId || uid;
-    const snap = await db
+    const legacySnap = await db
       .collection("users")
       .doc(ownerId)
       .collection("quotes")
       .doc(entity.entityId)
       .get();
-    if (!snap.exists) {
+    if (!legacySnap.exists) {
       throw new HttpsError("not-found", "Referenced quote not found.");
     }
-    const quote = (snap.data() ?? {}) as Record<string, unknown>;
+    const quote = (legacySnap.data() ?? {}) as Record<string, unknown>;
     if (ownerId !== uid && quote.isPublic === false) {
       throw new HttpsError(
         "permission-denied",
         "Referenced quote is not accessible."
       );
     }
-    return;
+
+    const canonicalQuoteId = readNonEmptyString(quote.canonicalQuoteId);
+    if (!canonicalQuoteId) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Referenced quote is missing canonical identity."
+      );
+    }
+
+    return {
+      type: "quote",
+      entityId: canonicalQuoteId,
+      ...(ownerId ? { entityOwnerId: ownerId } : {}),
+    };
   }
 
   if (entity.type === "publication") {
@@ -222,8 +252,10 @@ async function assertStructuredEntityAccessible(
         "Referenced publication is not accessible."
       );
     }
-    return;
+    return entity;
   }
+
+  return entity;
 }
 
 function readAttachmentUploaderUid(source: Record<string, unknown>): string {
@@ -302,10 +334,9 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
     );
   }
 
-  const primaryStructured = structuredAttachments[0] ?? null;
-  if (primaryStructured) {
-    await assertStructuredEntityAccessible(db, uid, primaryStructured);
-  }
+  const primaryStructured = structuredAttachments[0]
+    ? await assertStructuredEntityAccessible(db, uid, structuredAttachments[0])
+    : null;
 
   const attachmentRefs = [
     ...(primaryStructured
@@ -313,6 +344,9 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
           {
             attachmentId: primaryStructured.entityId,
             entityId: primaryStructured.entityId,
+            ...(primaryStructured.entityOwnerId
+              ? { entityOwnerId: primaryStructured.entityOwnerId }
+              : {}),
             type: primaryStructured.type,
             role: "primary",
             renderHint: "card",

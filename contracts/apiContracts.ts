@@ -169,9 +169,16 @@ const searchBookSchema = z
   })
   .strict();
 
+// Canonical quote contract:
+// - `id` is the authoritative canonical quote identity used by new reads/writes.
+// - `canonicalQuoteId` remains transitional compatibility metadata.
+// - `legacyQuoteId` remains transitional only for mirror-backed compatibility flows.
+// - `ownerId` is metadata, not quote identity.
 const quoteSchema = z
   .object({
     id: z.string().min(1),
+    canonicalQuoteId: z.string().min(1).optional(),
+    legacyQuoteId: z.string().min(1).optional(),
     ownerId: z.string().min(1),
     textEn: z.string().min(1),
     textAr: z.string().min(1),
@@ -370,6 +377,20 @@ const profileBookSchema = z
     publicationDate: z.string().max(64).nullable(),
     pageCount: z.number().int().nonnegative().nullable(),
     ebookAttachmentId: z.string().max(256).optional(),
+  })
+  .strict();
+
+const profilePublicationSchema = z
+  .object({
+    id: z.string().min(1),
+    entityType: z.enum(["blog", "ebook"]),
+    title: z.string().min(1).max(300),
+    publicationType: z.string().min(1).max(64),
+    publishedAt: z.string().min(1),
+    coverUrl: z.string().max(2048).optional(),
+    canonicalSlug: z.string().min(1).max(160).optional(),
+    publicationId: z.string().min(1).max(128).optional(),
+    bookId: z.string().min(1).max(128).optional(),
   })
   .strict();
 
@@ -610,6 +631,9 @@ const writeProjectUpdatesSchema = z
     typeEn: z.string().min(1).max(80).optional(),
     typeAr: z.string().min(1).max(80).optional(),
     coverUrl: z.string().url().max(2048).optional(),
+    lastCursorBlockId: z.string().min(1).max(64).optional(),
+    lastCursorOffset: z.number().int().nonnegative().optional(),
+    lastCursorSavedAt: z.string().min(1).max(128).optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
@@ -628,6 +652,8 @@ const directConversationSchema = z
   })
   .strict();
 
+// DM quote attachments use canonical `entityId`.
+// `quoteOwnerId` is optional compatibility metadata only.
 const directMessageSchema = z
   .object({
     id: z.string().min(1),
@@ -1263,6 +1289,28 @@ export const apiContracts = {
         callSites: [
           "services/firebaseDbService.ts",
           "lib/hooks/useUserProfileBooks.ts",
+        ],
+      }
+    ),
+
+    listProfilePublications: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          limit: z.number().int().min(1).max(30).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(profilePublicationSchema),
+          hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/hooks/useUserProfilePublications.ts",
         ],
       }
     ),
@@ -2180,6 +2228,9 @@ export const apiContracts = {
       }
     ),
 
+    // Canonical quote read contract:
+    // - `quoteId` is the canonical quote identity.
+    // - `ownerId` remains optional only for legacy mirror fallback compatibility.
     getQuoteById: defineContract(
       z
         .object({
@@ -2235,11 +2286,14 @@ export const apiContracts = {
       }
     ),
 
+    // Canonical quote bookmark contract:
+    // - `quoteId` is the canonical quote identity.
+    // - `quoteOwnerId` remains optional metadata for legacy fallback compatibility only.
     toggleQuoteBookmark: defineContract(
       z
         .object({
           quoteId: z.string().min(1),
-          quoteOwnerId: z.string().min(1),
+          quoteOwnerId: z.string().min(1).optional(),
           active: z.boolean(),
         })
         .strict(),
@@ -2269,6 +2323,9 @@ export const apiContracts = {
               workType: writeProjectWorkTypeSchema.optional(),
               typeEn: z.string().min(1).max(80).optional(),
               typeAr: z.string().min(1).max(80).optional(),
+              lastCursorBlockId: z.string().min(1).max(64).optional(),
+              lastCursorOffset: z.number().int().nonnegative().optional(),
+              lastCursorSavedAt: z.string().min(1).max(128).optional(),
             })
             .strict(),
         })
@@ -2296,6 +2353,9 @@ export const apiContracts = {
           version: z.number().int().positive(),
           createdAt: z.string().min(1),
           updatedAt: z.string().min(1),
+          lastCursorBlockId: z.string().min(1).max(64).optional(),
+          lastCursorOffset: z.number().int().nonnegative().optional(),
+          lastCursorSavedAt: z.string().min(1).max(128).optional(),
         })
         .strict(),
       "httpsCallable",
@@ -2471,6 +2531,7 @@ export const apiContracts = {
       z
         .object({
           releaseId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
         })
         .strict(),
       z
@@ -2509,10 +2570,81 @@ export const apiContracts = {
       }
     ),
 
+    getProjectPublicationSettings: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          projectId: z.string().min(1),
+          blog: z
+            .object({
+              publicationId: z.string().min(1),
+              visibility: z.enum(["public", "private"]),
+            })
+            .strict()
+            .optional(),
+          ebook: z
+            .object({
+              bookId: z.string().min(1),
+              visibility: z.enum(["public", "private"]),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    updateLongformPublicationVisibility: defineContract(
+      z
+        .object({
+          publicationId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
+        })
+        .strict(),
+      z
+        .object({
+          publicationId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
+    updatePublishedBookVisibility: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
+          attachmentVisibility: z.enum(["public", "restricted", "private"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
     bridgeReleaseToLongformPublication: defineContract(
       z
         .object({
           releaseId: z.string().min(1),
+          visibility: z.enum(["public", "private"]),
         })
         .strict(),
       z

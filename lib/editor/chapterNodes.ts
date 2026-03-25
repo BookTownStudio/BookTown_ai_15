@@ -10,6 +10,7 @@ type ChapterBlockOptions = {
   lang: SupportedLocale;
   dir: SupportedDirection;
   paragraphs?: string[];
+  headingAttrs?: Record<string, unknown>;
 };
 
 export function createChapterSeparatorNode(): WriteContentNode {
@@ -35,13 +36,19 @@ function createTextNode(text: string) {
   return { type: 'text', text };
 }
 
-function createHeadingNode(title: string, lang: SupportedLocale, dir: SupportedDirection): WriteContentNode {
+function createHeadingNode(
+  title: string,
+  lang: SupportedLocale,
+  dir: SupportedDirection,
+  headingAttrs?: Record<string, unknown>
+): WriteContentNode {
   return {
     type: 'heading',
     attrs: {
       level: 2,
       lang,
       dir,
+      ...(headingAttrs ?? {}),
     },
     content: [createTextNode(title)],
   };
@@ -73,12 +80,13 @@ export function createChapterBlockNodes({
   lang,
   dir,
   paragraphs,
+  headingAttrs,
 }: ChapterBlockOptions): WriteContentNode[] {
   const writingParagraphs = paragraphs && paragraphs.length > 0 ? paragraphs : [''];
 
   return [
     createChapterSeparatorNode(),
-    createHeadingNode(title, lang, dir),
+    createHeadingNode(title, lang, dir, headingAttrs),
     ...writingParagraphs.map((paragraph) => createParagraphNode(paragraph, lang, dir)),
   ];
 }

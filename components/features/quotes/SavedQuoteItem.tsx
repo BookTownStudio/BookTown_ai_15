@@ -20,13 +20,11 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
     const { navigate, currentView } = useNavigation();
 
     const handleOpenDetails = () => {
-        if (!quote.ownerId) return;
         navigate({
             type: 'immersive',
             id: 'quoteDetails',
             params: {
                 quoteId: quote.id,
-                ownerId: quote.ownerId,
                 from: currentView,
             },
         });
@@ -39,7 +37,7 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
             id: 'postComposer',
             params: {
                 from: currentView,
-                attachment: { type: 'quote', id: quote.id }
+                attachment: { type: 'quote', id: quote.legacyQuoteId || quote.id }
             }
         });
     };
@@ -53,7 +51,7 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
 
 
     return (
-        <GlassCard onClick={quote.ownerId ? handleOpenDetails : undefined} className={quote.ownerId ? 'cursor-pointer' : ''}>
+        <GlassCard onClick={handleOpenDetails} className="cursor-pointer">
             <BilingualText role="Quote" className="text-white">
                 "{lang === 'en' ? quote.textEn : quote.textAr}"
             </BilingualText>

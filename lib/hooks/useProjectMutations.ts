@@ -233,6 +233,7 @@ type PublishReleaseVariables = {
     releaseId: string;
     target: 'blog' | 'ebook';
     projectId: string;
+    visibility: 'public' | 'private';
 };
 
 type PublishReleaseResult =
@@ -245,11 +246,14 @@ export const usePublishProjectRelease = () => {
     const uid = user?.uid;
 
     return useMutation<PublishReleaseResult, PublishReleaseVariables>({
-        mutationFn: async ({ releaseId, target }) => {
+        mutationFn: async ({ releaseId, target, visibility }) => {
             if (!uid) throw new Error("Unauthenticated publish attempt blocked.");
 
             if (target === 'blog') {
-                const result = await dataService.projects.bridgeReleaseToLongformPublication(releaseId);
+                const result = await dataService.projects.bridgeReleaseToLongformPublication(
+                    releaseId,
+                    visibility
+                );
                 return {
                     target,
                     ...result,
@@ -257,7 +261,10 @@ export const usePublishProjectRelease = () => {
             }
 
             await dataService.projects.generateProjectReleaseEpub(releaseId);
-            const result = await dataService.projects.bridgeReleaseToCanonicalBook(releaseId);
+            const result = await dataService.projects.bridgeReleaseToCanonicalBook(
+                releaseId,
+                visibility
+            );
             return {
                 target,
                 ...result,
@@ -267,9 +274,79 @@ export const usePublishProjectRelease = () => {
             if (uid) {
                 queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
                 queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
+                queryClient.invalidateQueries(
+                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
+                );
                 queryClient.invalidateQueries(queryKeys.user.longformPublications(uid) as unknown as any[]);
             }
             queryClient.invalidateQueries(['catalog', 'publication'] as unknown as any[]);
+        },
+    });
+};
+
+export const useUpdateLongformPublicationVisibility = () => {
+    const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation({
+        mutationFn: async ({
+            publicationId,
+            visibility,
+            projectId: _projectId,
+        }: {
+            publicationId: string;
+            visibility: 'public' | 'private';
+            projectId?: string;
+        }) => {
+            if (!uid) throw new Error("Unauthenticated visibility update attempt blocked.");
+            return dataService.projects.updateLongformPublicationVisibility(publicationId, visibility);
+        },
+        onSuccess: (_data, vars) => {
+            if (!uid) {
+                return;
+            }
+            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            if (vars.projectId) {
+                queryClient.invalidateQueries(
+                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
+                );
+            }
+            queryClient.invalidateQueries(queryKeys.user.longformPublications(uid) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.catalog.publication(vars.publicationId) as unknown as any[]);
+        },
+    });
+};
+
+export const useUpdatePublishedBookVisibility = () => {
+    const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation({
+        mutationFn: async ({
+            bookId,
+            visibility,
+            projectId: _projectId,
+        }: {
+            bookId: string;
+            visibility: 'public' | 'private';
+            projectId?: string;
+        }) => {
+            if (!uid) throw new Error("Unauthenticated visibility update attempt blocked.");
+            return dataService.projects.updatePublishedBookVisibility(bookId, visibility);
+        },
+        onSuccess: (_data, vars) => {
+            if (!uid) {
+                return;
+            }
+            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            if (vars.projectId) {
+                queryClient.invalidateQueries(
+                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
+                );
+            }
+            queryClient.invalidateQueries(queryKeys.catalog.book(vars.bookId) as unknown as any[]);
         },
     });
 };

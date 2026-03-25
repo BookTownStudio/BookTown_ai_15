@@ -55,6 +55,27 @@ function normalizeCoverUrl(value: unknown): string | undefined {
   }
 }
 
+function normalizeCursorBlockId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  return normalized.slice(0, 64);
+}
+
+function normalizeCursorOffset(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    return undefined;
+  }
+  return value;
+}
+
+function normalizeCursorSavedAt(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim();
+  if (!normalized) return undefined;
+  return normalized.slice(0, 128);
+}
+
 /**
  * updateWriteProject
  * Deterministic project update with revision precondition.
@@ -94,6 +115,9 @@ export const updateWriteProject = onCall({ cors: true }, async (request) => {
   const typeEn = normalizeString(updates.typeEn, 80);
   const typeAr = normalizeString(updates.typeAr, 80);
   const coverUrl = normalizeCoverUrl(updates.coverUrl);
+  const lastCursorBlockId = normalizeCursorBlockId(updates.lastCursorBlockId);
+  const lastCursorOffset = normalizeCursorOffset(updates.lastCursorOffset);
+  const lastCursorSavedAt = normalizeCursorSavedAt(updates.lastCursorSavedAt);
 
   if (titleEn !== undefined) {
     normalizedUpdates.titleEn = titleEn;
@@ -107,6 +131,9 @@ export const updateWriteProject = onCall({ cors: true }, async (request) => {
   if (typeEn !== undefined) normalizedUpdates.typeEn = typeEn;
   if (typeAr !== undefined) normalizedUpdates.typeAr = typeAr;
   if (coverUrl !== undefined) normalizedUpdates.coverUrl = coverUrl;
+  if (lastCursorBlockId !== undefined) normalizedUpdates.lastCursorBlockId = lastCursorBlockId;
+  if (lastCursorOffset !== undefined) normalizedUpdates.lastCursorOffset = lastCursorOffset;
+  if (lastCursorSavedAt !== undefined) normalizedUpdates.lastCursorSavedAt = lastCursorSavedAt;
 
   if (Object.keys(normalizedUpdates).length === 0) {
     throw new HttpsError(

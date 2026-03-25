@@ -44,6 +44,7 @@ import {
   listProfileReviews as listProfileReviewsRaw,
   runReviewStackReleaseGate as runReviewStackReleaseGateRaw,
   listProfileBooks as listProfileBooksRaw,
+  listProfilePublications as listProfilePublicationsRaw,
 } from "./profile";
 import {
   deleteBookReview as deleteBookReviewRaw,
@@ -88,6 +89,9 @@ import { generateProjectReleaseEpub as generateProjectReleaseEpubRaw } from "./g
 import { bridgeReleaseToCanonicalBook as bridgeReleaseToCanonicalBookRaw } from "./bridgeReleaseToCanonicalBook";
 import { updatePublishedBookRights as updatePublishedBookRightsRaw } from "./updatePublishedBookRights";
 import { bridgeReleaseToLongformPublication as bridgeReleaseToLongformPublicationRaw } from "./bridgeReleaseToLongformPublication";
+import { getProjectPublicationSettings as getProjectPublicationSettingsRaw } from "./getProjectPublicationSettings";
+import { updateLongformPublicationVisibility as updateLongformPublicationVisibilityRaw } from "./updateLongformPublicationVisibility";
+import { updatePublishedBookVisibility as updatePublishedBookVisibilityRaw } from "./updatePublishedBookVisibility";
 import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getProjectReleasePreview";
 import { getProjectReleaseEbookPreviewSession as getProjectReleaseEbookPreviewSessionRaw } from "./getProjectReleaseEbookPreviewSession";
 import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
@@ -446,6 +450,10 @@ export const listProfileBooks = wrapCallableV2(
   "listProfileBooks",
   listProfileBooksRaw
 );
+export const listProfilePublications = wrapCallableV2(
+  "listProfilePublications",
+  listProfilePublicationsRaw
+);
 export const listBookReviews = wrapCallableV2(
   "listBookReviews",
   listBookReviewsRaw
@@ -639,6 +647,18 @@ export const bridgeReleaseToCanonicalBook = wrapCallableV2(
 export const updatePublishedBookRights = wrapCallableV2(
   "updatePublishedBookRights",
   updatePublishedBookRightsRaw
+);
+export const getProjectPublicationSettings = wrapCallableV2(
+  "getProjectPublicationSettings",
+  getProjectPublicationSettingsRaw
+);
+export const updateLongformPublicationVisibility = wrapCallableV2(
+  "updateLongformPublicationVisibility",
+  updateLongformPublicationVisibilityRaw
+);
+export const updatePublishedBookVisibility = wrapCallableV2(
+  "updatePublishedBookVisibility",
+  updatePublishedBookVisibilityRaw
 );
 export const bridgeReleaseToLongformPublication = wrapCallableV2(
   "bridgeReleaseToLongformPublication",
