@@ -955,7 +955,6 @@ const EditorScreen: React.FC = () => {
                 typeEn: 'Draft',
                 typeAr: 'مسودة',
                 status: 'Draft',
-                isPublished: false,
                 ...(initialCursorMemory ?? {}),
             },
             {

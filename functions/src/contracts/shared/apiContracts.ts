@@ -545,6 +545,7 @@ const writeContentNodeSchema: z.ZodType<unknown> = z.lazy(() =>
           lang: z.string().min(2).max(12).optional(),
           dir: z.enum(["ltr", "rtl"]).optional(),
           langManual: z.boolean().optional(),
+          journalEntryDate: z.string().min(1).max(64).optional(),
         })
         .strict()
         .optional(),
