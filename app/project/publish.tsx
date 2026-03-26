@@ -11,12 +11,10 @@ import { useProjectPublicationSettings } from '../../lib/hooks/useProjectPublica
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
-import GlassCard from '../../components/ui/GlassCard.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
 import { EyeIcon } from '../../components/icons/EyeIcon.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { useToast } from '../../store/toast.tsx';
-import { extractProjectSynopsis } from '../../lib/projects/projectSummary.ts';
 import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
 
 type PublishTarget = 'blog' | 'ebook';
@@ -368,10 +366,6 @@ const ProjectPublishScreen: React.FC = () => {
         return <div className="h-screen flex items-center justify-center bg-slate-900 text-white">Project not found</div>;
     }
 
-    const synopsis = extractProjectSynopsis({
-        contentDoc: project.contentDoc,
-        html: project.content,
-    });
     const publishButtonLabel =
         project.isPublished
             ? (lang === 'en' ? 'Publish Update' : 'نشر التحديث')
@@ -383,11 +377,11 @@ const ProjectPublishScreen: React.FC = () => {
         <div className="h-screen flex flex-col bg-slate-900">
             <ScreenHeader titleEn="Publish Project" titleAr="نشر المشروع" onBack={handleBack} />
 
-            <main className="flex-grow overflow-y-auto pt-24 pb-8">
+            <main className="flex-grow overflow-y-auto pt-24 pb-40">
                 <div className="container mx-auto max-w-4xl px-4 md:px-8">
-                    <GlassCard className="mb-8 !bg-white/5 !p-5">
+                    <div className="mb-4 rounded-2xl border border-white/5 bg-slate-800/50 p-4">
                         <div className="flex items-start gap-4">
-                            <div className="w-24 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 md:w-28">
+                            <div className="w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 md:w-24">
                                 {project.coverUrl ? (
                                     <img src={project.coverUrl} alt="Cover" className="aspect-[2/3] h-full w-full object-cover" />
                                 ) : (
@@ -397,10 +391,10 @@ const ProjectPublishScreen: React.FC = () => {
                                 )}
                             </div>
                             <div className="min-w-0 flex-1">
-                                <BilingualText role="H1" className="!mb-2 !text-3xl">
+                                <BilingualText role="H1" className="!mb-2 !text-2xl">
                                     {lang === 'en' ? project.titleEn : project.titleAr}
                                 </BilingualText>
-                                <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-slate-400">
+                                <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
                                     <span>{project.wordCount.toLocaleString()} {lang === 'en' ? 'words' : 'كلمة'}</span>
                                     <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-300">
                                         {project.status}
@@ -411,14 +405,11 @@ const ProjectPublishScreen: React.FC = () => {
                                         </span>
                                     ) : null}
                                 </div>
-                                <p className="max-w-2xl text-sm leading-7 text-white/70">
-                                    {synopsis || (lang === 'en' ? 'Ready to publish when you are.' : 'جاهز للنشر متى ما كنت جاهزاً.')}
-                                </p>
                             </div>
                         </div>
-                    </GlassCard>
+                    </div>
 
-                    <div className="mb-8 rounded-xl border border-white/5 bg-slate-800/50 p-6">
+                    <div className="mb-4 rounded-2xl border border-white/5 bg-slate-800/50 p-5">
                         <BilingualText role="H1" className="!mb-4 !text-lg">
                             {lang === 'en' ? 'Publish as' : 'انشر كـ'}
                         </BilingualText>
@@ -426,13 +417,13 @@ const ProjectPublishScreen: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => handleTargetSelect('blog')}
-                                className={`rounded-xl border p-4 text-left transition ${
+                                className={`rounded-xl border px-4 py-3 text-left transition ${
                                     selectedTarget === 'blog'
                                         ? 'border-emerald-400 bg-emerald-500/10'
                                         : 'border-white/10 bg-black/20 hover:border-white/20'
                                 }`}
                             >
-                                <div className="mb-2 flex items-center gap-3">
+                                <div className="mb-1.5 flex items-center gap-3">
                                     <CheckCircleIcon className={`h-5 w-5 ${selectedTarget === 'blog' ? 'text-emerald-300' : 'text-slate-500'}`} />
                                     <div className="font-bold text-white">Blog</div>
                                 </div>
@@ -445,13 +436,13 @@ const ProjectPublishScreen: React.FC = () => {
                             <button
                                 type="button"
                                 onClick={() => handleTargetSelect('ebook')}
-                                className={`rounded-xl border p-4 text-left transition ${
+                                className={`rounded-xl border px-4 py-3 text-left transition ${
                                     selectedTarget === 'ebook'
                                         ? 'border-amber-300 bg-amber-500/10'
                                         : 'border-white/10 bg-black/20 hover:border-white/20'
                                 }`}
                             >
-                                <div className="mb-2 flex items-center gap-3">
+                                <div className="mb-1.5 flex items-center gap-3">
                                     <CheckCircleIcon className={`h-5 w-5 ${selectedTarget === 'ebook' ? 'text-amber-300' : 'text-slate-500'}`} />
                                     <div className="font-bold text-white">Ebook</div>
                                 </div>
@@ -464,90 +455,91 @@ const ProjectPublishScreen: React.FC = () => {
                         </div>
                     </div>
 
-                    <div className="mb-8 rounded-xl border border-white/5 bg-slate-800/50 p-6">
-                        <BilingualText role="H1" className="!mb-4 !text-lg">
-                            {lang === 'en' ? 'Publication Visibility' : 'ظهور المنشور'}
-                        </BilingualText>
-                        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            {(['public', 'private'] as PublicationVisibility[]).map((visibility) => {
-                                const isActive = selectedVisibility === visibility;
-                                const label =
-                                    visibility === 'public'
+                    <div className="mb-5 rounded-2xl border border-white/5 bg-slate-800/50 px-4 py-3.5">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="min-w-0">
+                                <div className="text-sm font-semibold text-white">
+                                    {lang === 'en' ? 'Visibility' : 'الظهور'}
+                                </div>
+                                <div className="mt-1 text-xs text-slate-400">
+                                    {lang === 'en'
+                                        ? 'Who can open this publication'
+                                        : 'من يمكنه فتح هذا المنشور'}
+                                </div>
+                            </div>
+                            <div className={`flex items-center gap-3 ${!selectedTarget ? 'opacity-60' : ''}`}>
+                                <span className="text-sm font-medium text-white">
+                                    {selectedVisibility === 'public'
                                         ? (lang === 'en' ? 'Public' : 'عام')
-                                        : (lang === 'en' ? 'Private' : 'خاص');
-                                const description =
-                                    visibility === 'public'
-                                        ? (lang === 'en'
-                                            ? 'Visible on your profile and public surfaces.'
-                                            : 'يظهر في ملفك الشخصي والواجهات العامة.')
-                                        : (lang === 'en'
-                                            ? 'Only you can open it until you change this later.'
-                                            : 'لن تتمكن من فتحه إلا أنت حتى تغيّر هذا لاحقاً.');
-
-                                return (
-                                    <button
-                                        key={visibility}
-                                        type="button"
-                                        onClick={() => selectedTarget && handleVisibilityChange(selectedTarget, visibility)}
+                                        : (lang === 'en' ? 'Private' : 'خاص')}
+                                </span>
+                                <label htmlFor="publish-visibility-toggle" className="relative inline-flex items-center cursor-pointer">
+                                    <input
+                                        id="publish-visibility-toggle"
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={selectedVisibility === 'public'}
                                         disabled={!selectedTarget}
-                                        className={`rounded-xl border p-4 text-left transition ${
-                                            isActive
-                                                ? 'border-sky-400 bg-sky-500/10'
-                                                : 'border-white/10 bg-black/20 hover:border-white/20'
-                                        } ${!selectedTarget ? 'opacity-60' : ''}`}
-                                    >
-                                        <div className="mb-2 font-bold text-white">{label}</div>
-                                        <div className="text-xs text-slate-400">{description}</div>
-                                    </button>
-                                );
-                            })}
+                                        onChange={(event) => {
+                                            if (!selectedTarget) return;
+                                            handleVisibilityChange(
+                                                selectedTarget,
+                                                event.target.checked ? 'public' : 'private'
+                                            );
+                                        }}
+                                    />
+                                    <div className="h-6 w-11 rounded-full bg-slate-600 transition-colors peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 peer-disabled:cursor-not-allowed peer-disabled:opacity-70 peer-checked:bg-primary after:absolute after:left-[2px] after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:transition-all after:content-[''] peer-checked:after:translate-x-full"></div>
+                                </label>
+                            </div>
                         </div>
                     </div>
 
                     {preflightError ? (
-                        <div className="mb-8 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
+                        <div className="mb-5 rounded-xl border border-red-400/30 bg-red-500/10 px-5 py-4 text-sm text-red-100">
                             {preflightError}
                         </div>
                     ) : null}
-
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                        <Button
-                            variant="secondary"
-                            onClick={handlePreview}
-                            disabled={!selectedTarget || isBusy}
-                            className="w-full !h-14 !text-lg"
-                        >
-                            {activeAction === 'preview' && isBusy ? (
-                                <div className="flex items-center gap-2">
-                                    <LoadingSpinner />
-                                    <span>{lang === 'en' ? 'Opening preview...' : 'جار فتح المعاينة...'}</span>
-                                </div>
-                            ) : (
-                                <div className="flex items-center gap-2">
-                                    <EyeIcon className="h-5 w-5" />
-                                    <span>{previewButtonLabel}</span>
-                                </div>
-                            )}
-                        </Button>
-
-                        <Button
-                            variant="primary"
-                            onClick={handlePublish}
-                            disabled={!selectedTarget || isBusy}
-                            className="w-full !h-14 !text-lg shadow-lg shadow-primary/20 transition-all"
-                        >
-                            {activeAction === 'publish' && isBusy ? (
-                                <div className="flex items-center gap-2">
-                                    <LoadingSpinner />
-                                    <span>{lang === 'en' ? 'Publishing...' : 'جار النشر...'}</span>
-                                </div>
-                            ) : (
-                                publishButtonLabel
-                            )}
-                        </Button>
-                    </div>
                 </div>
             </main>
+
+            <div className="border-t border-white/5 bg-slate-900/95 px-4 pb-6 pt-3 backdrop-blur md:px-8">
+                <div className="container mx-auto max-w-4xl">
+                    <Button
+                        variant="ghost"
+                        onClick={handlePreview}
+                        disabled={!selectedTarget || isBusy}
+                        className="mb-3 w-full !justify-center !text-slate-200 hover:!bg-white/5 hover:!text-white"
+                    >
+                        {activeAction === 'preview' && isBusy ? (
+                            <div className="flex items-center gap-2">
+                                <LoadingSpinner />
+                                <span>{lang === 'en' ? 'Opening preview...' : 'جار فتح المعاينة...'}</span>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <EyeIcon className="h-5 w-5" />
+                                <span>{previewButtonLabel}</span>
+                            </div>
+                        )}
+                    </Button>
+
+                    <Button
+                        variant="primary"
+                        onClick={handlePublish}
+                        disabled={!selectedTarget || isBusy}
+                        className="w-full !h-14 !text-lg shadow-lg shadow-primary/20 transition-all"
+                    >
+                        {activeAction === 'publish' && isBusy ? (
+                            <div className="flex items-center gap-2">
+                                <LoadingSpinner />
+                                <span>{lang === 'en' ? 'Publishing...' : 'جار النشر...'}</span>
+                            </div>
+                        ) : (
+                            publishButtonLabel
+                        )}
+                    </Button>
+                </div>
+            </div>
         </div>
     );
 };

@@ -307,6 +307,7 @@ export const useUpdateLongformPublicationVisibility = () => {
                 return;
             }
             queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.user.profilePublications(uid, uid) as unknown as any[]);
             if (vars.projectId) {
                 queryClient.invalidateQueries(
                     queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
@@ -341,6 +342,7 @@ export const useUpdatePublishedBookVisibility = () => {
                 return;
             }
             queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            queryClient.invalidateQueries(queryKeys.user.profilePublications(uid, uid) as unknown as any[]);
             if (vars.projectId) {
                 queryClient.invalidateQueries(
                     queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]

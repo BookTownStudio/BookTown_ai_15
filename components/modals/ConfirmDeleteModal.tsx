@@ -12,6 +12,10 @@ interface ConfirmDeleteModalProps {
     isDeleting: boolean;
     itemName: string;
     itemType: string;
+    titleText?: string;
+    bodyText?: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
 }
 
 const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({ 
@@ -20,9 +24,24 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
     onConfirm, 
     isDeleting,
     itemName,
-    itemType
+    itemType,
+    titleText,
+    bodyText,
+    confirmLabel,
+    cancelLabel,
 }) => {
     const { lang } = useI18n();
+    const resolvedTitle =
+        titleText || (lang === 'en' ? `Delete ${itemType}?` : `حذف ${itemType}؟`);
+    const resolvedBody =
+        bodyText ||
+        (lang === 'en'
+            ? `Are you sure you want to delete "${itemName}"? This post will be removed from public view.`
+            : `هل أنت متأكد أنك تريد حذف "${itemName}"؟ سيتم إزالة هذا المنشور من العرض العام.`);
+    const resolvedConfirmLabel =
+        confirmLabel || (lang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف');
+    const resolvedCancelLabel =
+        cancelLabel || (lang === 'en' ? 'Cancel' : 'إلغاء');
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -35,12 +54,10 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
                     </div>
                 </div>
                 <BilingualText role="H1" className="!text-xl">
-                    {lang === 'en' ? `Delete ${itemType}?` : `حذف ${itemType}؟`}
+                    {resolvedTitle}
                 </BilingualText>
                 <BilingualText role="Body" className="mt-4 text-slate-600 dark:text-white/70">
-                    {lang === 'en' 
-                        ? `Are you sure you want to delete "${itemName}"? This post will be removed from public view.` 
-                        : `هل أنت متأكد أنك تريد حذف "${itemName}"؟ سيتم إزالة هذا المنشور من العرض العام.`}
+                    {resolvedBody}
                 </BilingualText>
             </div>
             <div className="mt-8 flex flex-col gap-3">
@@ -50,10 +67,10 @@ const ConfirmDeleteModal: React.FC<ConfirmDeleteModalProps> = ({
                     disabled={isDeleting}
                     className="w-full !h-12 !bg-red-600 hover:!bg-red-700 border-none"
                 >
-                    {isDeleting ? <LoadingSpinner className="!h-5 !w-5" /> : (lang === 'en' ? 'Confirm Delete' : 'تأكيد الحذف')}
+                    {isDeleting ? <LoadingSpinner className="!h-5 !w-5" /> : resolvedConfirmLabel}
                 </Button>
                 <Button variant="ghost" onClick={onClose} disabled={isDeleting} className="w-full">
-                    {lang === 'en' ? 'Cancel' : 'إلغاء'}
+                    {resolvedCancelLabel}
                 </Button>
             </div>
         </Modal>

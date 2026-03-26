@@ -16,17 +16,24 @@ import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { EditIcon } from '../../components/icons/EditIcon.tsx';
 import { CalendarIcon } from '../../components/icons/CalendarIcon.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
+import { VerticalEllipsisIcon } from '../../components/icons/VerticalEllipsisIcon.tsx';
 import { useUpdateProfile } from '../../lib/hooks/useUpdateProfile.ts';
 import { useStartConversation } from '../../lib/hooks/useMessenger.ts';
 import { useFollowStatus, useFollowUser, useUnfollowUser } from '../../lib/hooks/useFollowUser.ts';
+import {
+  useUpdateLongformPublicationVisibility,
+  useUpdatePublishedBookVisibility,
+} from '../../lib/hooks/useProjectMutations.ts';
 import EditProfileModal, {
   ProfileEditData,
 } from '../../components/modals/EditProfileModal.tsx';
+import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal.tsx';
 import PageShell from '../../components/layout/PageShell.tsx';
 import ProfileStrengthBar from '../../components/ui/ProfileStrengthBar.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import PostCard from '../../components/content/PostCard.tsx';
 import ReviewCard from '../../components/content/ReviewCard.tsx';
+import type { ProfilePublicationRecord } from '../../services/db.types.ts';
 
 type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'publications';
 
@@ -164,6 +171,8 @@ const ProfileScreen: React.FC = () => {
     readPersistedProfileTab(effectiveProfileUserId) ?? 'shelves'
   );
   const [showCompactProfileBar, setShowCompactProfileBar] = useState(false);
+  const [activePublicationMenuId, setActivePublicationMenuId] = useState<string | null>(null);
+  const [publicationToUnpublish, setPublicationToUnpublish] = useState<ProfilePublicationRecord | null>(null);
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -210,6 +219,8 @@ const ProfileScreen: React.FC = () => {
   const { mutate: updateProfile, isLoading: isUpdating } = useUpdateProfile();
   const { mutate: startConversation, isLoading: isStartingConversation } =
     useStartConversation();
+  const updateLongformVisibility = useUpdateLongformPublicationVisibility();
+  const updateBookVisibility = useUpdatePublishedBookVisibility();
   const { data: isFollowed } = useFollowStatus(effectiveProfileUserId);
   const { mutate: followUser, isLoading: isFollowingUser } = useFollowUser();
   const { mutate: unfollowUser, isLoading: isUnfollowingUser } = useUnfollowUser();
@@ -252,6 +263,37 @@ const ProfileScreen: React.FC = () => {
     const restoredTab = readPersistedProfileTab(effectiveProfileUserId) ?? 'shelves';
     setActiveTab(restoredTab);
   }, [effectiveProfileUserId]);
+
+  useEffect(() => {
+    if (!activePublicationMenuId) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (
+        target?.closest('[data-profile-publication-menu="true"]') ||
+        target?.closest('[data-profile-publication-trigger="true"]')
+      ) {
+        return;
+      }
+      setActivePublicationMenuId(null);
+    };
+
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setActivePublicationMenuId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDown);
+    document.addEventListener('keydown', handleEscape);
+
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleEscape);
+    };
+  }, [activePublicationMenuId]);
 
   const switchTab = (tab: ProfileTab) => {
     const el = scrollRef.current;
@@ -371,6 +413,69 @@ const ProfileScreen: React.FC = () => {
       });
     }
   };
+
+  const handleRequestUnpublish = (publication: ProfilePublicationRecord) => {
+    setActivePublicationMenuId(null);
+    setPublicationToUnpublish(publication);
+  };
+
+  const handleConfirmUnpublish = () => {
+    if (!publicationToUnpublish) {
+      return;
+    }
+
+    if (publicationToUnpublish.entityType === 'blog' && publicationToUnpublish.publicationId) {
+      updateLongformVisibility.mutate(
+        {
+          publicationId: publicationToUnpublish.publicationId,
+          visibility: 'private',
+        },
+        {
+          onSuccess: () => {
+            setPublicationToUnpublish(null);
+            showToast(lang === 'en' ? 'Publication unpublished.' : 'تم إلغاء نشر المنشور.');
+          },
+          onError: (error) => {
+            const message =
+              error instanceof Error && error.message.trim()
+                ? error.message
+                : (lang === 'en'
+                    ? 'Unable to unpublish this publication.'
+                    : 'تعذّر إلغاء نشر هذا المنشور.');
+            showToast(message);
+          },
+        }
+      );
+      return;
+    }
+
+    if (publicationToUnpublish.entityType === 'ebook' && publicationToUnpublish.bookId) {
+      updateBookVisibility.mutate(
+        {
+          bookId: publicationToUnpublish.bookId,
+          visibility: 'private',
+        },
+        {
+          onSuccess: () => {
+            setPublicationToUnpublish(null);
+            showToast(lang === 'en' ? 'Publication unpublished.' : 'تم إلغاء نشر المنشور.');
+          },
+          onError: (error) => {
+            const message =
+              error instanceof Error && error.message.trim()
+                ? error.message
+                : (lang === 'en'
+                    ? 'Unable to unpublish this publication.'
+                    : 'تعذّر إلغاء نشر هذا المنشور.');
+            showToast(message);
+          },
+        }
+      );
+    }
+  };
+
+  const isUnpublishing =
+    updateLongformVisibility.isLoading || updateBookVisibility.isLoading;
 
   return (
     <>
@@ -686,42 +791,84 @@ const ProfileScreen: React.FC = () => {
                   </BilingualText>
                 ) : profilePublications && profilePublications.length > 0 ? (
                   profilePublications.map(publication => (
-                    <button
+                    <div
                       key={`${publication.entityType}:${publication.id}`}
-                      type="button"
-                      onClick={() => handleOpenProfilePublication(publication)}
-                      className="flex w-full items-center gap-4 rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-800/80"
+                      className="relative flex items-start gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition-colors hover:bg-slate-50 dark:border-white/10 dark:bg-slate-800 dark:hover:bg-slate-800/80"
                     >
-                      <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-700/60">
-                        {publication.coverUrl ? (
-                          <img
-                            src={publication.coverUrl}
-                            alt={publication.title}
-                            className="h-full w-full object-cover"
-                          />
-                        ) : (
-                          <BookIcon className="h-7 w-7 text-slate-400" />
-                        )}
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
-                          {formatPublicationTypeLabel(publication.publicationType, lang)}
-                        </div>
-                        <BilingualText
-                          role="H3"
-                          className="mt-2 line-clamp-2 !text-lg !font-semibold"
-                        >
-                          {publication.title}
-                        </BilingualText>
-                        <div className="mt-2 text-xs text-slate-500">
-                          {new Date(publication.publishedAt).toLocaleDateString(
-                            lang === 'ar' ? 'ar-EG' : 'en-US',
-                            { month: 'short', day: 'numeric', year: 'numeric' }
+                      <button
+                        type="button"
+                        onClick={() => handleOpenProfilePublication(publication)}
+                        className="flex min-w-0 flex-1 items-center gap-4 text-left"
+                      >
+                        <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-700/60">
+                          {publication.coverUrl ? (
+                            <img
+                              src={publication.coverUrl}
+                              alt={publication.title}
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <BookIcon className="h-7 w-7 text-slate-400" />
                           )}
                         </div>
-                      </div>
-                    </button>
+
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-500">
+                            {formatPublicationTypeLabel(publication.publicationType, lang)}
+                          </div>
+                          <BilingualText
+                            role="H3"
+                            className="mt-2 line-clamp-2 !text-lg !font-semibold"
+                          >
+                            {publication.title}
+                          </BilingualText>
+                          <div className="mt-2 text-xs text-slate-500">
+                            {new Date(publication.publishedAt).toLocaleDateString(
+                              lang === 'ar' ? 'ar-EG' : 'en-US',
+                              { month: 'short', day: 'numeric', year: 'numeric' }
+                            )}
+                          </div>
+                        </div>
+                      </button>
+
+                      {isOwnProfile ? (
+                        <div className="relative shrink-0">
+                          <button
+                            type="button"
+                            data-profile-publication-trigger="true"
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setActivePublicationMenuId((current) =>
+                                current === publication.id ? null : publication.id
+                              );
+                            }}
+                            className="flex h-9 w-9 items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-black/5 hover:text-white dark:hover:bg-white/10"
+                            aria-label={lang === 'en' ? 'Publication actions' : 'إجراءات المنشور'}
+                            aria-expanded={activePublicationMenuId === publication.id}
+                          >
+                            <VerticalEllipsisIcon className="h-5 w-5" />
+                          </button>
+
+                          {activePublicationMenuId === publication.id ? (
+                            <div
+                              data-profile-publication-menu="true"
+                              className="absolute right-0 top-10 z-20 w-44 overflow-hidden rounded-xl border border-white/10 bg-[#2A303C] p-1 shadow-xl"
+                            >
+                              <button
+                                type="button"
+                                className="w-full rounded-md px-3 py-2 text-left text-sm text-red-400 transition-colors hover:bg-red-500/10"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleRequestUnpublish(publication);
+                                }}
+                              >
+                                {lang === 'en' ? 'Unpublish' : 'إلغاء النشر'}
+                              </button>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
                   ))
                 ) : (
                   <BilingualText className="text-slate-500">
@@ -756,6 +903,21 @@ const ProfileScreen: React.FC = () => {
           isSaving={isUpdating}
         />
       )}
+      <ConfirmDeleteModal
+        isOpen={!!publicationToUnpublish}
+        onClose={() => setPublicationToUnpublish(null)}
+        onConfirm={handleConfirmUnpublish}
+        isDeleting={isUnpublishing}
+        itemName={publicationToUnpublish?.title || ''}
+        itemType={lang === 'en' ? 'publication' : 'منشور'}
+        titleText={lang === 'en' ? 'Unpublish publication?' : 'إلغاء نشر هذا المنشور؟'}
+        bodyText={
+          lang === 'en'
+            ? 'This will remove this publication from your public profile and readers. Your writing project will remain in Write.'
+            : 'سيؤدي هذا إلى إزالة هذا المنشور من ملفك العام ومن وصول القراء. وسيبقى مشروع الكتابة في قسم الكتابة.'
+        }
+        confirmLabel={lang === 'en' ? 'Confirm Unpublish' : 'تأكيد إلغاء النشر'}
+      />
     </>
   );
 };

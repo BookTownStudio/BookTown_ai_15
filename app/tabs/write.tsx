@@ -7,7 +7,6 @@ import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import ProjectCard from '../../components/content/ProjectCard.tsx';
-import PublicationCard from '../../components/content/PublicationCard.tsx';
 import TemplateCard from '../../components/content/TemplateCard.tsx';
 import FloatingActionPanel from '../../components/ui/FloatingActionPanel.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
@@ -25,7 +24,6 @@ import {
     createProjectSeedFromTemplate,
     writeTemplateLaunchers,
 } from '../../lib/templates/writeTemplates.ts';
-import { useOwnLongformPublications } from '../../lib/hooks/useOwnLongformPublications.ts';
 
 interface TemplatesPanelTriggerProps {
     isOpen: boolean;
@@ -157,10 +155,6 @@ const WriteScreen: React.FC = () => {
     const { lang } = useI18n();
     const { showToast } = useToast();
     const { data: projects, isLoading, isError, error } = useUserProjects();
-    const {
-        data: publications,
-        isLoading: publicationsLoading,
-    } = useOwnLongformPublications();
     const { navigate, currentView, resetTokens } = useNavigation();
     const isInitialMount = useRef(true);
     const [isPanelOpen, setPanelOpen] = useState(false);
@@ -356,23 +350,6 @@ const WriteScreen: React.FC = () => {
         }
     };
 
-    const handleOpenPublication = useCallback((
-        publicationId: string,
-        title?: string,
-        canonicalSlug?: string
-    ) => {
-        navigate({
-            type: 'immersive',
-            id: 'publicationReader',
-            params: {
-                publicationId,
-                ...(title ? { title } : {}),
-                ...(canonicalSlug ? { canonicalSlug } : {}),
-                from: currentView,
-            },
-        });
-    }, [currentView, navigate]);
-
     // Updated: Navigate to Metadata Editor
     const handleEdit = (project: Project) => {
         closeActiveMenu();
@@ -516,40 +493,6 @@ const WriteScreen: React.FC = () => {
         );
     };
 
-    const renderPublicationShelf = () => {
-        if (publicationsLoading) {
-            return (
-                <div className="flex min-h-[140px] items-center justify-center rounded-[28px] border border-white/8 bg-[#161b22]">
-                    <LoadingSpinner />
-                </div>
-            );
-        }
-
-        if (!publications || publications.length === 0) {
-            return null;
-        }
-
-        return (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                {publications.map((publication) => (
-                    <PublicationCard
-                        key={publication.publicationId}
-                        publication={publication}
-                        onPress={() =>
-                            handleOpenPublication(
-                                publication.publicationId,
-                                publication.title,
-                                publication.canonicalSlug
-                            )
-                        }
-                    />
-                ))}
-            </div>
-        );
-    };
-
-    const shouldShowPublicationShelf = publicationsLoading || Boolean(publications?.length);
-
     return (
         <>
             <div className="h-screen flex flex-col">
@@ -580,28 +523,10 @@ const WriteScreen: React.FC = () => {
                                 {pendingCreationKey === 'blank' ? <LoadingSpinner /> : <PlusIcon className="h-6 w-6" />}
                             </Button>
                         </div>
-                        
+
                         <div className="mb-6">
                             {renderContent()}
                         </div>
-
-                        {shouldShowPublicationShelf ? (
-                            <section className="mt-10">
-                                <div className="mb-6 flex items-center justify-between">
-                                    <div>
-                                        <BilingualText role="H1" className="!text-3xl !font-bold">
-                                            {lang === 'en' ? 'Your Publications' : 'منشوراتك'}
-                                        </BilingualText>
-                                        <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
-                                            {lang === 'en'
-                                                ? 'Your published BookTown longform work.'
-                                                : 'أعمالك الطويلة المنشورة داخل بوك تاون.'}
-                                        </BilingualText>
-                                    </div>
-                                </div>
-                                {renderPublicationShelf()}
-                            </section>
-                        ) : null}
                     </LiteraryShell>
                 </main>
                 <TemplatesPanelTrigger
@@ -628,6 +553,13 @@ const WriteScreen: React.FC = () => {
                 isDeleting={isDeleting}
                 itemName={projectToDelete ? (lang === 'en' ? projectToDelete.titleEn : projectToDelete.titleAr) : ''}
                 itemType={lang === 'en' ? 'project' : 'مشروع'}
+                titleText={lang === 'en' ? 'Remove project?' : 'إزالة المشروع؟'}
+                bodyText={
+                    lang === 'en'
+                        ? 'This will remove the project from your writing workspace. Its published version will remain visible in Publications.'
+                        : 'سيؤدي هذا إلى إزالة المشروع من مساحة الكتابة الخاصة بك. وستظل نسخته المنشورة ظاهرة في قسم الإصدارات.'
+                }
+                confirmLabel={lang === 'en' ? 'Confirm Remove' : 'تأكيد الإزالة'}
             />
         </>
     );

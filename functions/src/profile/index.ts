@@ -712,10 +712,14 @@ function normalizeProfileEbookPublication(
   docId: string,
   source: Record<string, unknown>
 ): ProfilePublication | null {
+  const publicationState = sanitizeString(source.publicationState, 64);
   const isPublishedAuthoredEbook =
-    sanitizeString(source.source, 64) === "write_release" ||
-    sanitizeString(source.bookType, 64) === "authored_native" ||
-    sanitizeString(source.currentReleaseId, 256).length > 0;
+    publicationState === "published" &&
+    (
+      sanitizeString(source.source, 64) === "write_release" ||
+      sanitizeString(source.bookType, 64) === "authored_native" ||
+      sanitizeString(source.currentReleaseId, 256).length > 0
+    );
   const ebookAttachmentId = sanitizeString(source.ebookAttachmentId, 256);
   const title =
     sanitizeString(source.title, 300) ||
@@ -1483,6 +1487,7 @@ export const listProfilePublications = onCall({ cors: true }, async (request) =>
       .collection("books")
       .where("ownerUid", "==", targetUid)
       .where("visibility", "==", "public")
+      .where("publicationState", "==", "published")
       .orderBy("updatedAt", "desc")
       .limit(limitSize + 1)
       .get(),

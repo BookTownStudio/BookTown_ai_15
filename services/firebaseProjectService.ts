@@ -223,7 +223,13 @@ function sanitizeContentDoc(value: unknown): WriteContentDoc | undefined {
     return undefined;
   }
 
-  const serialized = JSON.stringify(value);
+  const contentDocForWrite = {
+    version: value.version,
+    type: value.type,
+    content: value.content,
+  };
+
+  const serialized = JSON.stringify(contentDocForWrite);
   if (serialized.length > 2_000_000) {
     throw new Error("contentDoc exceeds maximum allowed size.");
   }

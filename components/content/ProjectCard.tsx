@@ -191,7 +191,7 @@ const ProjectCard: React.FC<ProjectCardProps> = ({
                                             role="menuitem"
                                         >
                                             <TrashIcon className="h-4 w-4 opacity-70" />
-                                            Delete
+                                            Remove
                                         </button>
                                     </div>
                                 </div>
