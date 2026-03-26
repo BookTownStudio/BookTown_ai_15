@@ -141,6 +141,52 @@ const readerInsightsDataSchema = z
   })
   .strict();
 
+const canonicalAnchorV1Schema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("epub_point"),
+      manifestVersion: z.number().int().positive(),
+      locationId: z.string().min(1),
+      spineItemId: z.string().min(1),
+      cfi: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("epub_range"),
+      manifestVersion: z.number().int().positive(),
+      startLocationId: z.string().min(1),
+      endLocationId: z.string().min(1),
+      spineItemId: z.string().min(1),
+      startCfi: z.string().min(1),
+      endCfi: z.string().min(1),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("pdf_point"),
+      manifestVersion: z.number().int().positive(),
+      locationId: z.string().min(1),
+      pageIndex: z.number().int().nonnegative(),
+      textOffset: z.number().int().nonnegative(),
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("pdf_range"),
+      manifestVersion: z.number().int().positive(),
+      startLocationId: z.string().min(1),
+      endLocationId: z.string().min(1),
+      pageIndex: z.number().int().nonnegative(),
+      startOffset: z.number().int().nonnegative(),
+      endOffset: z.number().int().nonnegative(),
+      quote: z.string(),
+      prefix: z.string(),
+      suffix: z.string(),
+    })
+    .strict(),
+]);
+
 const searchBookSchema = z
   .object({
     id: z.string().min(1),
@@ -1742,6 +1788,7 @@ export const apiContracts = {
           signedUrl: z.string().url(),
           resumePage: z.number().int().nonnegative(),
           format: z.enum(["pdf", "epub", "unknown"]),
+          resumeAnchor: canonicalAnchorV1Schema.nullable().optional(),
         })
         .strict(),
       "httpsCallable",
@@ -1768,6 +1815,9 @@ export const apiContracts = {
               version: z.literal("v1"),
               mode: z.enum(["page", "logical"]),
               checkpointUnit: z.enum(["page", "spine_item"]),
+              status: z.enum(["pending", "ready"]).optional(),
+              docPath: z.string().min(1).optional(),
+              anchorSchema: z.literal("canonical_anchor_v1").optional(),
             })
             .strict(),
           searchIndex: z
@@ -2822,6 +2872,8 @@ export const apiContracts = {
           bookId: z.string().min(1),
           progress: z.number().min(0).max(1),
           lastPosition: z.unknown().nullable(),
+          lastAnchor: canonicalAnchorV1Schema.nullable().optional(),
+          anchorManifestVersion: z.number().int().positive().nullable().optional(),
           updatedAt: z.unknown().optional(),
         })
         .strict(),
@@ -2847,6 +2899,8 @@ export const apiContracts = {
                 label: z.string(),
                 page: z.number().int().positive().nullable(),
                 cfi: z.string().nullable(),
+                anchor: canonicalAnchorV1Schema.nullable().optional(),
+                anchorManifestVersion: z.number().int().positive().nullable().optional(),
                 updatedAt: z.number().int().nonnegative().nullable(),
               })
               .strict()
@@ -2877,6 +2931,8 @@ export const apiContracts = {
                 color: z.string().min(1),
                 page: z.number().int().positive().nullable(),
                 cfi: z.string().nullable(),
+                anchor: canonicalAnchorV1Schema.nullable().optional(),
+                anchorManifestVersion: z.number().int().positive().nullable().optional(),
                 updatedAt: z.number().int().nonnegative().nullable(),
               })
               .strict()
@@ -2897,6 +2953,7 @@ export const apiContracts = {
           totalPages: z.number().int().positive(),
           percentage: z.number().min(0).max(1),
           lastPosition: z.unknown().optional(),
+          lastAnchor: canonicalAnchorV1Schema.optional(),
           status_state: z.enum(["reading", "paused", "completed"]).optional(),
           recommendationContext: recommendationOriginSchema.optional(),
         })

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../auth.tsx';
+import type { CanonicalAnchorV1 } from '../reader/runtime/contracts.ts';
 
 export interface ReaderBookmark {
   bookmarkId: string;
@@ -8,6 +9,8 @@ export interface ReaderBookmark {
   label: string;
   page: number | null;
   cfi: string | null;
+  anchor?: CanonicalAnchorV1 | null;
+  anchorManifestVersion?: number | null;
   updatedAt: number | null;
 }
 

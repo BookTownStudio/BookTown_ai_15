@@ -55,6 +55,104 @@ function asFiniteInt(value: unknown): number | null {
   return Math.trunc(n);
 }
 
+function asPositiveInt(value: unknown): number | null {
+  const n = asFiniteInt(value);
+  if (n === null || n <= 0) return null;
+  return n;
+}
+
+function asNonNegativeInt(value: unknown): number | null {
+  const n = asFiniteInt(value);
+  if (n === null || n < 0) return null;
+  return n;
+}
+
+function sanitizeCanonicalAnchor(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const kind = asNonEmptyString(record.kind);
+  const manifestVersion = asPositiveInt(record.manifestVersion);
+
+  if (!kind || manifestVersion === null) {
+    return null;
+  }
+
+  switch (kind) {
+  case "epub_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const cfi = asNonEmptyString(record.cfi);
+    if (!locationId || !spineItemId || !cfi) return null;
+    return { kind, manifestVersion, locationId, spineItemId, cfi };
+  }
+  case "epub_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const startCfi = asNonEmptyString(record.startCfi);
+    const endCfi = asNonEmptyString(record.endCfi);
+    if (!startLocationId || !endLocationId || !spineItemId || !startCfi || !endCfi) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      spineItemId,
+      startCfi,
+      endCfi,
+    };
+  }
+  case "pdf_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const textOffset = asNonNegativeInt(record.textOffset);
+    if (!locationId || pageIndex === null || textOffset === null) return null;
+    return { kind, manifestVersion, locationId, pageIndex, textOffset };
+  }
+  case "pdf_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const startOffset = asNonNegativeInt(record.startOffset);
+    const endOffset = asNonNegativeInt(record.endOffset);
+    const quote = typeof record.quote === "string" ? record.quote : null;
+    const prefix = typeof record.prefix === "string" ? record.prefix : null;
+    const suffix = typeof record.suffix === "string" ? record.suffix : null;
+    if (
+      !startLocationId ||
+      !endLocationId ||
+      pageIndex === null ||
+      startOffset === null ||
+      endOffset === null ||
+      quote === null ||
+      prefix === null ||
+      suffix === null
+    ) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      pageIndex,
+      startOffset,
+      endOffset,
+      quote,
+      prefix,
+      suffix,
+    };
+  }
+  default:
+    return null;
+  }
+}
+
 function assertTokenLike(value: string, fieldName: string): void {
   if (!ID_TOKEN_PATTERN.test(value)) {
     throw new Error(`${fieldName} is invalid.`);
@@ -141,6 +239,7 @@ async function applyProgressOperationInTx(params: {
     payload.lastPosition && typeof payload.lastPosition === "object"
       ? payload.lastPosition
       : null;
+  const lastAnchor = sanitizeCanonicalAnchor(payload.lastAnchor);
   const requestedState = resolveProgressState(payload);
   const recommendationOrigin = sanitizeRecommendationOrigin(payload.recommendationContext);
 
@@ -173,17 +272,20 @@ async function applyProgressOperationInTx(params: {
     previousData,
   });
 
-  tx.set(
-    progressRef,
-    {
-      ...mutation.payload,
-      updatedAt: FieldValue.serverTimestamp(),
-      ...(authoritativeRecommendationOrigin
-        ? { recommendationOrigin: authoritativeRecommendationOrigin }
-        : {}),
-    },
-    { merge: true }
-  );
+  const progressPayload: Record<string, unknown> = {
+    ...mutation.payload,
+    updatedAt: FieldValue.serverTimestamp(),
+    ...(authoritativeRecommendationOrigin
+      ? { recommendationOrigin: authoritativeRecommendationOrigin }
+      : {}),
+  };
+
+  if (lastAnchor) {
+    progressPayload.lastAnchor = lastAnchor;
+    progressPayload.anchorManifestVersion = lastAnchor.manifestVersion;
+  }
+
+  tx.set(progressRef, progressPayload, { merge: true });
 
   if (mutation.event) {
     tx.set(eventsRef.doc(), {
@@ -231,20 +333,28 @@ async function applyOperationInTx(params: {
   if (op.type === "upsert_highlight") {
     const highlightId = resolveEntityId(op.payload, "highlightId");
     const ref = db.collection("reader_highlights").doc(`${uid}_${op.bookId}_${highlightId}`);
+    const anchor = sanitizeCanonicalAnchor(op.payload?.anchor);
+    const highlightPayload: Record<string, unknown> = {
+      uid,
+      bookId: op.bookId,
+      highlightId,
+      quote: asNonEmptyString(op.payload?.quote) || "",
+      note: asNonEmptyString(op.payload?.note) || "",
+      color: asNonEmptyString(op.payload?.color) || "yellow",
+      cfi: asNonEmptyString(op.payload?.cfi) || null,
+      page: asFiniteInt(op.payload?.page),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+    };
+
+    if (anchor) {
+      highlightPayload.anchor = anchor;
+      highlightPayload.anchorManifestVersion = anchor.manifestVersion;
+    }
+
     tx.set(
       ref,
-      {
-        uid,
-        bookId: op.bookId,
-        highlightId,
-        quote: asNonEmptyString(op.payload?.quote) || "",
-        note: asNonEmptyString(op.payload?.note) || "",
-        color: asNonEmptyString(op.payload?.color) || "yellow",
-        cfi: asNonEmptyString(op.payload?.cfi) || null,
-        page: asFiniteInt(op.payload?.page),
-        updatedAt: FieldValue.serverTimestamp(),
-        createdAt: FieldValue.serverTimestamp(),
-      },
+      highlightPayload,
       { merge: true }
     );
     return;
@@ -260,18 +370,26 @@ async function applyOperationInTx(params: {
   if (op.type === "upsert_bookmark") {
     const bookmarkId = resolveEntityId(op.payload, "bookmarkId");
     const ref = db.collection("reader_bookmarks").doc(`${uid}_${op.bookId}_${bookmarkId}`);
+    const anchor = sanitizeCanonicalAnchor(op.payload?.anchor);
+    const bookmarkPayload: Record<string, unknown> = {
+      uid,
+      bookId: op.bookId,
+      bookmarkId,
+      label: asNonEmptyString(op.payload?.label) || "",
+      cfi: asNonEmptyString(op.payload?.cfi) || null,
+      page: asFiniteInt(op.payload?.page),
+      updatedAt: FieldValue.serverTimestamp(),
+      createdAt: FieldValue.serverTimestamp(),
+    };
+
+    if (anchor) {
+      bookmarkPayload.anchor = anchor;
+      bookmarkPayload.anchorManifestVersion = anchor.manifestVersion;
+    }
+
     tx.set(
       ref,
-      {
-        uid,
-        bookId: op.bookId,
-        bookmarkId,
-        label: asNonEmptyString(op.payload?.label) || "",
-        cfi: asNonEmptyString(op.payload?.cfi) || null,
-        page: asFiniteInt(op.payload?.page),
-        updatedAt: FieldValue.serverTimestamp(),
-        createdAt: FieldValue.serverTimestamp(),
-      },
+      bookmarkPayload,
       { merge: true }
     );
     return;

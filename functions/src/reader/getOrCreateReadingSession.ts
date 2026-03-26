@@ -8,6 +8,110 @@ const db = admin.firestore();
 const storage = admin.storage();
 const READER_URL_TTL_MS = 10 * 60 * 1000;
 
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asPositiveInt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : null;
+}
+
+function asNonNegativeInt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized >= 0 ? normalized : null;
+}
+
+function sanitizeCanonicalAnchor(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const kind = asNonEmptyString(record.kind);
+  const manifestVersion = asPositiveInt(record.manifestVersion);
+
+  if (!kind || manifestVersion === null) {
+    return null;
+  }
+
+  switch (kind) {
+  case "epub_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const cfi = asNonEmptyString(record.cfi);
+    if (!locationId || !spineItemId || !cfi) return null;
+    return { kind, manifestVersion, locationId, spineItemId, cfi };
+  }
+  case "epub_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const startCfi = asNonEmptyString(record.startCfi);
+    const endCfi = asNonEmptyString(record.endCfi);
+    if (!startLocationId || !endLocationId || !spineItemId || !startCfi || !endCfi) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      spineItemId,
+      startCfi,
+      endCfi,
+    };
+  }
+  case "pdf_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const textOffset = asNonNegativeInt(record.textOffset);
+    if (!locationId || pageIndex === null || textOffset === null) return null;
+    return { kind, manifestVersion, locationId, pageIndex, textOffset };
+  }
+  case "pdf_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const startOffset = asNonNegativeInt(record.startOffset);
+    const endOffset = asNonNegativeInt(record.endOffset);
+    const quote = typeof record.quote === "string" ? record.quote : null;
+    const prefix = typeof record.prefix === "string" ? record.prefix : null;
+    const suffix = typeof record.suffix === "string" ? record.suffix : null;
+    if (
+      !startLocationId ||
+      !endLocationId ||
+      pageIndex === null ||
+      startOffset === null ||
+      endOffset === null ||
+      quote === null ||
+      prefix === null ||
+      suffix === null
+    ) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      pageIndex,
+      startOffset,
+      endOffset,
+      quote,
+      prefix,
+      suffix,
+    };
+  }
+  default:
+    return null;
+  }
+}
+
 function resolveResumePage(lastPosition: unknown): number {
   if (typeof lastPosition === "number" && Number.isFinite(lastPosition)) {
     return Math.max(1, Math.trunc(lastPosition));
@@ -51,12 +155,13 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
   const progressRef = db.collection("reading_progress").doc(`${uid}_${bookId}`);
 
   try {
-    const [manifest, progressSnap] = await Promise.all([
+    const [manifest, progressSnap, sessionSnap] = await Promise.all([
       getOrBuildReaderManifest({
         uid,
         bookId,
       }),
       progressRef.get(),
+      sessionRef.get(),
     ]);
 
     const file = storage.bucket().file(manifest.storagePath);
@@ -92,23 +197,35 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
     }
 
     const progressData = progressSnap.exists
-      ? (progressSnap.data() as { lastPosition?: unknown } | undefined)
+      ? (progressSnap.data() as { lastPosition?: unknown; lastAnchor?: unknown } | undefined)
+      : null;
+    const sessionData = sessionSnap.exists
+      ? (sessionSnap.data() as { resumeAnchor?: unknown } | undefined)
       : null;
 
     const resumePage = resolveResumePage(progressData?.lastPosition);
+    const progressResumeAnchor = sanitizeCanonicalAnchor(progressData?.lastAnchor);
+    const storedResumeAnchor = sanitizeCanonicalAnchor(sessionData?.resumeAnchor);
+    const resumeAnchor = progressResumeAnchor ?? storedResumeAnchor ?? null;
     const now = FieldValue.serverTimestamp();
 
+    const sessionPayload: Record<string, unknown> = {
+      userId: uid,
+      bookId,
+      status: "reading",
+      resumePage,
+      format: manifest.format,
+      manifestVersion: manifest.version,
+      updatedAt: now,
+      createdAt: now,
+    };
+
+    if (progressResumeAnchor) {
+      sessionPayload.resumeAnchor = progressResumeAnchor;
+    }
+
     await sessionRef.set(
-      {
-        userId: uid,
-        bookId,
-        status: "reading",
-        resumePage,
-        format: manifest.format,
-        manifestVersion: manifest.version,
-        updatedAt: now,
-        createdAt: now,
-      },
+      sessionPayload,
       { merge: true }
     );
 
@@ -125,6 +242,7 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       signedUrl,
       resumePage,
       format: manifest.format,
+      resumeAnchor,
     };
   } catch (error: any) {
     logger.error("[READER][SESSION_INIT_FAILED]", {

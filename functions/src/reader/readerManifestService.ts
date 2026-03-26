@@ -17,6 +17,9 @@ interface ReaderManifestLocationMap {
   version: "v1";
   mode: "page" | "logical";
   checkpointUnit: "page" | "spine_item";
+  status?: "pending" | "ready";
+  docPath?: string;
+  anchorSchema?: "canonical_anchor_v1";
 }
 
 interface ReaderManifestIndexState {
@@ -149,6 +152,9 @@ function sanitizeExistingManifest(
     mode: locationMapRaw.mode === "page" ? "page" : "logical",
     checkpointUnit:
       locationMapRaw.checkpointUnit === "page" ? "page" : "spine_item",
+    status: locationMapRaw.status === "ready" ? "ready" : "pending",
+    docPath: asNonEmptyString(locationMapRaw.docPath) || `reader_location_map/${bookId}`,
+    anchorSchema: "canonical_anchor_v1",
   };
 
   const searchIndex: ReaderManifestIndexState = {
@@ -311,6 +317,9 @@ export async function getOrBuildReaderManifest(params: {
       version: "v1",
       mode: format === "pdf" ? "page" : "logical",
       checkpointUnit: format === "pdf" ? "page" : "spine_item",
+      status: "pending",
+      docPath: `reader_location_map/${bookId}`,
+      anchorSchema: "canonical_anchor_v1",
     },
     searchIndex: {
       status: "pending",

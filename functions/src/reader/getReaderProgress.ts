@@ -6,6 +6,110 @@ import * as logger from "firebase-functions/logger";
 
 const db = admin.firestore();
 
+function asNonEmptyString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+function asPositiveInt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized > 0 ? normalized : null;
+}
+
+function asNonNegativeInt(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  const normalized = Math.trunc(value);
+  return normalized >= 0 ? normalized : null;
+}
+
+function sanitizeCanonicalAnchor(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const kind = asNonEmptyString(record.kind);
+  const manifestVersion = asPositiveInt(record.manifestVersion);
+
+  if (!kind || manifestVersion === null) {
+    return null;
+  }
+
+  switch (kind) {
+  case "epub_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const cfi = asNonEmptyString(record.cfi);
+    if (!locationId || !spineItemId || !cfi) return null;
+    return { kind, manifestVersion, locationId, spineItemId, cfi };
+  }
+  case "epub_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const spineItemId = asNonEmptyString(record.spineItemId);
+    const startCfi = asNonEmptyString(record.startCfi);
+    const endCfi = asNonEmptyString(record.endCfi);
+    if (!startLocationId || !endLocationId || !spineItemId || !startCfi || !endCfi) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      spineItemId,
+      startCfi,
+      endCfi,
+    };
+  }
+  case "pdf_point": {
+    const locationId = asNonEmptyString(record.locationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const textOffset = asNonNegativeInt(record.textOffset);
+    if (!locationId || pageIndex === null || textOffset === null) return null;
+    return { kind, manifestVersion, locationId, pageIndex, textOffset };
+  }
+  case "pdf_range": {
+    const startLocationId = asNonEmptyString(record.startLocationId);
+    const endLocationId = asNonEmptyString(record.endLocationId);
+    const pageIndex = asNonNegativeInt(record.pageIndex);
+    const startOffset = asNonNegativeInt(record.startOffset);
+    const endOffset = asNonNegativeInt(record.endOffset);
+    const quote = typeof record.quote === "string" ? record.quote : null;
+    const prefix = typeof record.prefix === "string" ? record.prefix : null;
+    const suffix = typeof record.suffix === "string" ? record.suffix : null;
+    if (
+      !startLocationId ||
+      !endLocationId ||
+      pageIndex === null ||
+      startOffset === null ||
+      endOffset === null ||
+      quote === null ||
+      prefix === null ||
+      suffix === null
+    ) {
+      return null;
+    }
+    return {
+      kind,
+      manifestVersion,
+      startLocationId,
+      endLocationId,
+      pageIndex,
+      startOffset,
+      endOffset,
+      quote,
+      prefix,
+      suffix,
+    };
+  }
+  default:
+    return null;
+  }
+}
+
 /**
  * getReaderProgress
  *
@@ -56,6 +160,8 @@ export const getReaderProgressHandler = async (request: any) => {
       bookId,
       progress: 0,
       lastPosition: null,
+      lastAnchor: null,
+      anchorManifestVersion: null,
     };
   }
 
@@ -80,11 +186,19 @@ export const getReaderProgressHandler = async (request: any) => {
     throw new HttpsError("permission-denied", "Access denied.");
   }
 
+  const lastAnchor = sanitizeCanonicalAnchor(data.lastAnchor);
+  const anchorManifestVersion =
+    lastAnchor?.manifestVersion ??
+    asPositiveInt(data.anchorManifestVersion) ??
+    null;
+
   return {
     exists: true,
     bookId: data.bookId,
     progress: data.progress ?? 0,
     lastPosition: data.lastPosition ?? null,
+    lastAnchor,
+    anchorManifestVersion,
     updatedAt: data.updatedAt ?? null,
   };
 };

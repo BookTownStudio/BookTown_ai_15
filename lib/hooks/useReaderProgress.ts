@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import { getFunctions, httpsCallable } from "firebase/functions";
+import type { CanonicalAnchorV1 } from "../reader/runtime/contracts.ts";
 
 /**
  * useReaderProgress
@@ -23,6 +24,8 @@ interface ReaderProgress {
   bookId: string;
   progress: number; // 0.0 → 1.0
   lastPosition: any | null;
+  lastAnchor?: CanonicalAnchorV1 | null;
+  anchorManifestVersion?: number | null;
   updatedAt?: any;
 }
 

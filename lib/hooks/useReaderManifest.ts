@@ -1,28 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
 import { getFunctions, httpsCallable } from "firebase/functions";
 import { useAuth } from "../auth.tsx";
+import type { ReaderManifestSnapshot } from "../reader/runtime/contracts.ts";
 
-export interface ReaderManifest {
-  bookId: string;
-  version: number;
-  pipelineVersion: string;
-  format: "pdf" | "epub" | "unknown";
-  estimatedPageCount: number | null;
-  locationMap: {
-    version: "v1";
-    mode: "page" | "logical";
-    checkpointUnit: "page" | "spine_item";
-  };
-  searchIndex: {
-    status: "pending" | "ready";
-    docPath: string;
-  };
-  highlightAnchors: {
-    status: "pending" | "ready";
-    docPath: string;
-  };
-  generatedAtMs: number;
-}
+export type ReaderManifest = ReaderManifestSnapshot;
 
 export function useReaderManifest(bookId?: string) {
   const { user } = useAuth();

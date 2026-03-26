@@ -381,6 +381,7 @@ const EditorScreen: React.FC = () => {
     const lastConfirmedSnapshotRef = useRef<EditorSnapshot>(EMPTY_SNAPSHOT);
     const currentRevisionRef = useRef<number | null>(null);
     const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
+    const activeCursorSavePromiseRef = useRef<Promise<boolean> | null>(null);
     const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
     const latestAvailableDraftRef = useRef<WriteDraftRecord | null>(null);
     const editorScrollRef = useRef<HTMLDivElement | null>(null);
@@ -429,6 +430,7 @@ const EditorScreen: React.FC = () => {
         lastPersistedCursorRef.current = null;
         cursorRestoreAppliedRef.current = false;
         activeSavePromiseRef.current = null;
+        activeCursorSavePromiseRef.current = null;
         queuedSnapshotRef.current = null;
         setAuthorityStatus(isNewRoute ? 'ephemeral' : 'persistent');
         setIsSaving(false);
@@ -689,32 +691,43 @@ const EditorScreen: React.FC = () => {
             return false;
         }
 
-        const cursorMemory = captureCursorMemory(editor);
-        if (!cursorMemory || !cursorMemoryChanged(cursorMemory, lastPersistedCursorRef.current)) {
-            return false;
-        }
-
         if (activeSavePromiseRef.current) {
             await activeSavePromiseRef.current;
         }
 
-        try {
-            const result = await autosaveAsync({
-                projectId,
-                expectedRevision: currentRevisionRef.current ?? 1,
-                updates: cursorMemory,
-            });
-
-            currentRevisionRef.current = result.revision;
-            lastPersistedCursorRef.current = cursorMemory;
-            return true;
-        } catch (error) {
-            console.error('[WRITE][CURSOR_SAVE_FAILED]', {
-                projectId,
-                error,
-            });
-            return false;
+        if (activeCursorSavePromiseRef.current) {
+            await activeCursorSavePromiseRef.current;
         }
+
+        const run = async (): Promise<boolean> => {
+            const cursorMemory = captureCursorMemory(editor);
+            if (!cursorMemory || !cursorMemoryChanged(cursorMemory, lastPersistedCursorRef.current)) {
+                return false;
+            }
+
+            try {
+                const result = await autosaveAsync({
+                    projectId,
+                    expectedRevision: currentRevisionRef.current ?? 1,
+                    updates: cursorMemory,
+                });
+
+                currentRevisionRef.current = result.revision;
+                lastPersistedCursorRef.current = cursorMemory;
+                return true;
+            } catch (error) {
+                console.error('[WRITE][CURSOR_SAVE_FAILED]', {
+                    projectId,
+                    error,
+                });
+                return false;
+            }
+        };
+
+        activeCursorSavePromiseRef.current = run();
+        const success = await activeCursorSavePromiseRef.current;
+        activeCursorSavePromiseRef.current = null;
+        return success;
     }, [authorityStatus, autosaveAsync, editor, isOffline, projectId, uid]);
 
     const persistSnapshot = useCallback(async (
@@ -729,6 +742,10 @@ const EditorScreen: React.FC = () => {
             persistLocalDraft(snapshot, options?.draftReason || 'offline');
             setSaveIssue('offline');
             return false;
+        }
+
+        if (activeCursorSavePromiseRef.current) {
+            await activeCursorSavePromiseRef.current;
         }
 
         if (activeSavePromiseRef.current) {
