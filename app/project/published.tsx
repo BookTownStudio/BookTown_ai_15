@@ -5,7 +5,6 @@ import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { EyeIcon } from '../../components/icons/EyeIcon.tsx';
-import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { ShareIcon } from '../../components/icons/ShareIcon.tsx';
 import { DuplicateIcon } from '../../components/icons/DuplicateIcon.tsx';
 import { ChatIcon } from '../../components/icons/ChatIcon.tsx';
@@ -13,6 +12,9 @@ import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { useToast } from '../../store/toast.tsx';
 import GlassCard from '../../components/ui/GlassCard.tsx';
 import { buildPublicationSlugPath } from '../../lib/publications/publicationUrl.ts';
+import CanonicalCoverArtwork from '../../components/content/CanonicalCoverArtwork.tsx';
+import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
+import { useLongformPublication } from '../../lib/hooks/useLongformPublication.ts';
 
 const ProjectPublishedScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -45,6 +47,12 @@ const ProjectPublishedScreen: React.FC = () => {
     const coverUrl = currentView.type === 'immersive' && typeof currentView.params?.coverUrl === 'string'
         ? currentView.params.coverUrl
         : undefined;
+    const { data: publishedBook } = useBookCatalog(bookId || undefined, {
+        enabled: publishTarget === 'ebook' && bookId.length > 0,
+    });
+    const { data: publishedPublication } = useLongformPublication(
+        publishTarget === 'blog' && publicationId.length > 0 ? publicationId : undefined
+    );
 
     const handleBack = () => {
         navigate({ type: 'tab', id: 'write' });
@@ -175,6 +183,26 @@ const ProjectPublishedScreen: React.FC = () => {
     }
 
     const isRepublish = publicationVersion > 1;
+    const canonicalTitle =
+        publishTarget === 'ebook'
+            ? (lang === 'ar'
+                ? publishedBook?.titleAr || publishedBook?.titleEn || title
+                : publishedBook?.titleEn || publishedBook?.titleAr || title)
+            : publishedPublication?.title || title;
+    const canonicalAuthor =
+        publishTarget === 'ebook'
+            ? (lang === 'ar'
+                ? publishedBook?.authorAr || publishedBook?.authorEn || undefined
+                : publishedBook?.authorEn || publishedBook?.authorAr || undefined)
+            : publishedPublication?.author;
+    const canonicalCoverUrl =
+        publishTarget === 'ebook'
+            ? (publishedBook?.coverUrl || coverUrl)
+            : (publishedPublication?.coverUrl || coverUrl);
+    const canonicalCoverMode =
+        publishTarget === 'ebook' ? publishedBook?.coverMode : publishedPublication?.coverMode;
+    const canonicalFallbackCover =
+        publishTarget === 'ebook' ? publishedBook?.fallbackCover : publishedPublication?.fallbackCover;
 
     const subtitleText =
         isRepublish
@@ -201,7 +229,7 @@ const ProjectPublishedScreen: React.FC = () => {
 
             <div className="relative z-10 flex w-full max-w-2xl flex-col items-center">
                 <div className="relative mb-8 flex w-full flex-col items-center">
-                    <div className="pointer-events-none absolute left-1/2 top-[-5.5rem] z-[1] w-[min(48vw,220px)] -translate-x-1/2 opacity-95 sm:w-[240px]">
+                    <div className="pointer-events-none absolute left-1/2 top-[-8.5rem] z-[1] w-[min(88vw,520px)] -translate-x-1/2 opacity-70 sm:top-[-9rem]">
                         <DotLottieReact
                             src="/animations/publish-success-party.lottie"
                             autoplay
@@ -211,8 +239,8 @@ const ProjectPublishedScreen: React.FC = () => {
                         />
                     </div>
 
-                    <div className="relative mb-8 h-28 w-28 z-[2]">
-                        <div className="absolute inset-0 rounded-full bg-emerald-400/12 blur-3xl" />
+                    <div className="relative z-[2] mb-8 h-36 w-36">
+                        <div className="absolute inset-0 rounded-full bg-emerald-400/10 blur-3xl" />
                     </div>
 
                     <BilingualText role="H1" className="relative z-[2] !mb-2 !text-4xl !text-white text-center drop-shadow-lg">
@@ -227,17 +255,20 @@ const ProjectPublishedScreen: React.FC = () => {
                 </div>
 
                 <GlassCard className="relative z-[2] mb-8 flex w-full flex-col items-center border border-white/10 bg-white/5 p-6">
-                    <div className="mb-4 h-48 w-32 overflow-hidden rounded bg-slate-800 shadow-2xl">
-                        {coverUrl ? (
-                            <img src={coverUrl} alt="Cover" className="h-full w-full object-cover" />
-                        ) : (
-                            <div className="flex h-full items-center justify-center">
-                                <BookIcon className="h-10 w-10 text-white/20" />
-                            </div>
-                        )}
+                    <div className="mb-4 h-48 w-32 overflow-hidden rounded-[18px] bg-slate-800 shadow-2xl ring-1 ring-white/10">
+                        <CanonicalCoverArtwork
+                            title={canonicalTitle}
+                            author={canonicalAuthor}
+                            coverUrl={canonicalCoverUrl}
+                            coverMode={canonicalCoverMode}
+                            fallbackCover={canonicalFallbackCover}
+                            alt={canonicalTitle}
+                            className="h-full w-full"
+                            imageClassName="h-full w-full object-cover"
+                        />
                     </div>
 
-                    <BilingualText role="H2" className="!text-xl text-center">{title}</BilingualText>
+                    <BilingualText role="H2" className="!text-xl text-center">{canonicalTitle}</BilingualText>
                     <BilingualText role="Caption" className="mt-1 text-center">
                         {publishTarget === 'ebook' ? 'Ebook' : 'Blog'}
                     </BilingualText>

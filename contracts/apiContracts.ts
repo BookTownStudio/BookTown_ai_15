@@ -434,6 +434,15 @@ const profilePublicationSchema = z
     publicationType: z.string().min(1).max(64),
     publishedAt: z.string().min(1),
     coverUrl: z.string().max(2048).optional(),
+    coverMode: z.string().optional(),
+    fallbackCover: z
+      .object({
+        title: z.string().max(180).optional(),
+        author: z.string().max(180).optional(),
+        theme: z.string().optional(),
+      })
+      .strict()
+      .optional(),
     canonicalSlug: z.string().min(1).max(160).optional(),
     publicationId: z.string().min(1).max(128).optional(),
     bookId: z.string().min(1).max(128).optional(),
