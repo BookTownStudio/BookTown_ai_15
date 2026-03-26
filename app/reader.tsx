@@ -6,6 +6,7 @@ import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
+import NarrationMicroPlayer from '../components/reader/NarrationMicroPlayer.tsx';
 import QuoteBubble from '../components/reader/QuoteBubble.tsx';
 import ReaderSettings from '../components/reader/ReaderSettings.tsx';
 import ReaderSurface from '../components/reader/runtime/ReaderSurface.tsx';
@@ -22,6 +23,7 @@ import {
 import { useReaderBookmarks } from '../lib/hooks/useReaderBookmarks.ts';
 import { useReaderHighlights } from '../lib/hooks/useReaderHighlights.ts';
 import { useReaderSessionBootstrap } from '../lib/hooks/useReaderSessionBootstrap.ts';
+import { useReaderNarration } from '../lib/hooks/useReaderNarration.ts';
 import { resolveReaderEngine } from '../lib/reader/runtime/engineSelection.ts';
 import { useOffline } from '../lib/offline/OfflineProvider.tsx';
 import {
@@ -39,6 +41,7 @@ import { HighlightIcon } from '../components/icons/HighlightIcon.tsx';
 import type {
   ReaderFormat,
   ReaderHighlightOverlay,
+  ReaderNarrationSnapshot,
   ReaderTextSelection,
 } from '../lib/reader/runtime/contracts.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
@@ -140,8 +143,10 @@ const ReaderScreen: React.FC = () => {
   const [offlineObjectUrl, setOfflineObjectUrl] = useState<string | null>(null);
   const [isOfflineAssetBusy, setIsOfflineAssetBusy] = useState(false);
   const [pendingHighlightSelection, setPendingHighlightSelection] = useState<ReaderTextSelection | null>(null);
+  const [narrationSnapshot, setNarrationSnapshot] = useState<ReaderNarrationSnapshot | null>(null);
   const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressFingerprintRef = useRef<string>('');
+  const lastNarrationErrorRef = useRef<string>('');
   const latestProgressPayloadRef = useRef<{
     bookId: string;
     currentPage: number;
@@ -149,6 +154,7 @@ const ReaderScreen: React.FC = () => {
     percentage: number;
     format: ReaderFormat;
     readingMode: 'scroll' | 'page';
+    paragraphIndex: number | null;
   } | null>(null);
   const hasOfflineCopy = useMemo(
     () => Boolean(offlineRecord && isOfflineValid(offlineRecord)),
@@ -174,6 +180,13 @@ const ReaderScreen: React.FC = () => {
       ),
     [manifestEstimatedPageCount, readerManifest?.locationMap?.checkpointUnit]
   );
+  const narration = useReaderNarration({
+    bookId,
+    progressParagraphIndex: readerSession?.lastPosition?.paragraphIndex ?? null,
+    sessionNarration: readerSession?.narration ?? null,
+    snapshot: narrationSnapshot,
+    language: lang,
+  });
 
   const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
     setCurrentPage(nextPage);
@@ -211,12 +224,17 @@ const ReaderScreen: React.FC = () => {
   }, [navigate, currentView]);
 
   const handleListeningClick = useCallback(() => {
+    const result = narration.togglePlayback();
+    if (result.ok) return;
+
     showToast(
       lang === 'en'
-        ? 'Audio narration is not available for this title yet.'
-        : 'السرد الصوتي غير متاح لهذا العنوان حالياً.'
+        ? result.reason || 'Narration could not start from the visible text.'
+        : result.reason?.includes('browser')
+          ? 'المتصفح الحالي لا يدعم السرد الصوتي.'
+          : 'النص الظاهر غير جاهز للسرد بعد.'
     );
-  }, [lang, showToast]);
+  }, [lang, narration, showToast]);
 
   useEffect(() => {
     if (isOffline && hasOfflineCopy && offlineRecord && !readerSession) {
@@ -270,7 +288,21 @@ const ReaderScreen: React.FC = () => {
     setHighlightOverrides({});
     setOfflineRecord(bookId ? getOfflineRecord(bookId) : null);
     setPendingHighlightSelection(null);
+    setNarrationSnapshot(null);
   }, [bookId]);
+
+  useEffect(() => {
+    if (!narration.error) {
+      lastNarrationErrorRef.current = '';
+      return;
+    }
+
+    if (lastNarrationErrorRef.current === narration.error) return;
+    lastNarrationErrorRef.current = narration.error;
+    showToast(
+      lang === 'en' ? narration.error : 'تعذّر تشغيل السرد الصوتي لهذا الجزء.'
+    );
+  }, [lang, narration.error, showToast]);
 
   useEffect(() => {
     if (!sessionError) return;
@@ -545,6 +577,7 @@ const ReaderScreen: React.FC = () => {
       percentage: number;
       format: ReaderFormat;
       readingMode: 'scroll' | 'page';
+      paragraphIndex: number | null;
     }) => {
       try {
         const fn = httpsCallable(getFunctions(), 'recordReadingProgress');
@@ -558,6 +591,7 @@ const ReaderScreen: React.FC = () => {
             totalPages: payload.totalPages,
             format: payload.format,
             mode: payload.readingMode,
+            paragraphIndex: payload.paragraphIndex,
           },
           ...(recommendationContext ? { recommendationContext } : {}),
         });
@@ -585,6 +619,7 @@ const ReaderScreen: React.FC = () => {
             totalPages: payload.totalPages,
             format: payload.format,
             mode: payload.readingMode,
+            paragraphIndex: payload.paragraphIndex,
           },
         });
       }
@@ -667,9 +702,10 @@ const ReaderScreen: React.FC = () => {
       percentage,
       format,
       readingMode,
+      paragraphIndex: narration.paragraphIndex,
     };
     latestProgressPayloadRef.current = payload;
-    const fingerprint = `${bookId}:${safePage}:${safeTotal}:${format}:${readingMode}`;
+    const fingerprint = `${bookId}:${safePage}:${safeTotal}:${format}:${readingMode}:${narration.paragraphIndex ?? 'none'}`;
 
     if (lastProgressFingerprintRef.current === fingerprint) return;
 
@@ -696,6 +732,7 @@ const ReaderScreen: React.FC = () => {
     persistProgress,
     readerSession,
     readingMode,
+    narration.paragraphIndex,
     effectiveFormat,
     renderError,
     totalPages,
@@ -720,7 +757,7 @@ const ReaderScreen: React.FC = () => {
       const payload = latestProgressPayloadRef.current;
       if (!payload) return;
 
-      const fingerprint = `${payload.bookId}:${payload.currentPage}:${payload.totalPages}:${payload.format}:${payload.readingMode}`;
+      const fingerprint = `${payload.bookId}:${payload.currentPage}:${payload.totalPages}:${payload.format}:${payload.readingMode}:${payload.paragraphIndex ?? 'none'}`;
       if (lastProgressFingerprintRef.current === fingerprint) return;
 
       void persistProgress(payload);
@@ -827,6 +864,7 @@ const ReaderScreen: React.FC = () => {
         totalPages={totalPages}
         onSettingsClick={() => setIsSettingsVisible(true)}
         onListeningClick={handleListeningClick}
+        narrationState={narration.status}
         isBookmarked={Boolean(activeBookmark)}
         onBookmarkToggle={handleBookmarkToggle}
         isHighlighted={Boolean(selectedHighlight || pendingHighlightSelection)}
@@ -859,6 +897,7 @@ const ReaderScreen: React.FC = () => {
             onPdfLoadError={handlePdfLoadError}
             onEpubLoadError={handleEpubLoadError}
             onTextSelection={setPendingHighlightSelection}
+            onNarrationSnapshotChange={setNarrationSnapshot}
             renderUnsupported={() =>
               renderOpenFileFallback(
                 lang === 'en'
@@ -869,6 +908,18 @@ const ReaderScreen: React.FC = () => {
           />
         )}
       </div>
+
+      <NarrationMicroPlayer
+        isVisible={narration.status !== 'idle'}
+        title={lang === 'en' ? book.titleEn : book.titleAr}
+        status={narration.status}
+        playbackRate={narration.playbackRate}
+        onPrevious={narration.jumpToPreviousParagraph}
+        onPlayPause={handleListeningClick}
+        onNext={narration.jumpToNextParagraph}
+        onSpeedChange={narration.cyclePlaybackRate}
+        onClose={narration.stop}
+      />
 
       {pendingHighlightSelection && (
         <QuoteBubble

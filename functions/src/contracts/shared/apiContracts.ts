@@ -187,6 +187,24 @@ const canonicalAnchorV1Schema = z.discriminatedUnion("kind", [
     .strict(),
 ]);
 
+const readerLastPositionSchema = z
+  .object({
+    page: z.number().int().positive(),
+    totalPages: z.number().int().positive().nullable().optional(),
+    format: z.enum(["pdf", "epub", "unknown"]).nullable().optional(),
+    mode: z.enum(["scroll", "page"]).nullable().optional(),
+    paragraphIndex: z.number().int().nonnegative().nullable().optional(),
+  })
+  .strict();
+
+const readerNarrationSessionStateSchema = z
+  .object({
+    provider: z.literal("browser_speech_synthesis"),
+    playbackRate: z.number().min(0.5).max(3),
+    paused: z.boolean(),
+  })
+  .strict();
+
 const searchBookSchema = z
   .object({
     id: z.string().min(1),
@@ -1807,7 +1825,9 @@ export const apiContracts = {
           signedUrl: z.string().url(),
           resumePage: z.number().int().nonnegative(),
           format: z.enum(["pdf", "epub", "unknown"]),
+          lastPosition: readerLastPositionSchema.nullable().optional(),
           resumeAnchor: canonicalAnchorV1Schema.nullable().optional(),
+          narration: readerNarrationSessionStateSchema.nullable().optional(),
         })
         .strict(),
       "httpsCallable",
@@ -1857,6 +1877,24 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useReaderManifest.ts"],
+      }
+    ),
+
+    updateReadingSessionNarration: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          narration: readerNarrationSessionStateSchema,
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.literal(true),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useReaderNarration.ts"],
       }
     ),
 
@@ -2894,7 +2932,7 @@ export const apiContracts = {
           exists: z.boolean(),
           bookId: z.string().min(1),
           progress: z.number().min(0).max(1),
-          lastPosition: z.unknown().nullable(),
+          lastPosition: readerLastPositionSchema.nullable(),
           lastAnchor: canonicalAnchorV1Schema.nullable().optional(),
           anchorManifestVersion: z.number().int().positive().nullable().optional(),
           updatedAt: z.unknown().optional(),
@@ -2975,7 +3013,7 @@ export const apiContracts = {
           currentPage: z.number().int().nonnegative(),
           totalPages: z.number().int().positive(),
           percentage: z.number().min(0).max(1),
-          lastPosition: z.unknown().optional(),
+          lastPosition: readerLastPositionSchema.optional(),
           lastAnchor: canonicalAnchorV1Schema.optional(),
           status_state: z.enum(["reading", "paused", "completed"]).optional(),
           recommendationContext: recommendationOriginSchema.optional(),

@@ -2,6 +2,7 @@ import React, { Suspense } from 'react';
 import type { FontSize, FontStyle } from '../../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
+  ReaderNarrationSnapshot,
   ReaderRuntimeSelection,
   ReaderTextSelection,
 } from '../../../lib/reader/runtime/contracts.ts';
@@ -25,6 +26,7 @@ interface ReaderSurfaceProps {
   onPdfLoadError: (message: string) => void;
   onEpubLoadError: (message: string) => void;
   onTextSelection?: (selection: ReaderTextSelection | null) => void;
+  onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
   onPdfDocumentLoadSuccess?: (numPages: number) => void;
   onPdfFirstPageRender?: () => void;
   renderUnsupported: () => React.ReactNode;
@@ -43,6 +45,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   onPdfLoadError,
   onEpubLoadError,
   onTextSelection,
+  onNarrationSnapshotChange,
   onPdfDocumentLoadSuccess,
   onPdfFirstPageRender,
   renderUnsupported,
@@ -67,6 +70,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           onPageChange={onPageChange}
           onLoadError={onEpubLoadError}
           onTextSelection={onTextSelection}
+          onNarrationSnapshotChange={onNarrationSnapshotChange}
         />
       </Suspense>
     );
@@ -85,6 +89,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           onPageChange={onPageChange}
           onLoadError={onPdfLoadError}
           onTextSelection={onTextSelection}
+          onNarrationSnapshotChange={onNarrationSnapshotChange}
           onDocumentLoadSuccess={onPdfDocumentLoadSuccess}
           onFirstPageRender={onPdfFirstPageRender}
         />

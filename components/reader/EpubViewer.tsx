@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FontSize, FontStyle } from '../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
+  ReaderNarrationSnapshot,
   ReaderTextSelection,
 } from '../../lib/reader/runtime/contracts.ts';
 
@@ -19,6 +20,7 @@ type EpubViewerProps = {
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
   onTextSelection?: (selection: ReaderTextSelection | null) => void;
+  onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
 };
 
 type EpubThemeStyles = Record<string, Record<string, string>>;
@@ -170,6 +172,74 @@ function normalizeSelectionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
 }
 
+function hashNarrationParagraph(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+function collectEpubNarrationSnapshot(
+  container: HTMLElement,
+  currentPage: number
+): ReaderNarrationSnapshot | null {
+  const viewportRect = container.getBoundingClientRect();
+  const targetY = viewportRect.top + Math.min(viewportRect.height * 0.3, 180);
+  const paragraphs: ReaderNarrationSnapshot['paragraphs'] = [];
+  let currentParagraphIndex = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  const frames = Array.from(container.querySelectorAll('iframe')) as HTMLIFrameElement[];
+  for (const [frameIndex, frame] of frames.entries()) {
+    const frameRect = frame.getBoundingClientRect();
+    if (frameRect.bottom < viewportRect.top || frameRect.top > viewportRect.bottom) {
+      continue;
+    }
+
+    const doc = frame.contentDocument;
+    const elements = Array.from(
+      doc?.body?.querySelectorAll('p, li, blockquote, h1, h2, h3, h4, h5, h6') || []
+    ) as HTMLElement[];
+
+    for (const element of elements) {
+      const text = normalizeSelectionText(element.textContent || '');
+      if (!text) continue;
+
+      const rect = element.getBoundingClientRect();
+      if (rect.height <= 0 || rect.width <= 0) continue;
+
+      const top = frameRect.top + rect.top;
+      const bottom = frameRect.top + rect.bottom;
+      if (bottom < viewportRect.top + 4 || top > viewportRect.bottom - 4) continue;
+
+      const paragraphIndex = paragraphs.length;
+      const centerY = top + rect.height / 2;
+      const distance = Math.abs(centerY - targetY);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        currentParagraphIndex = paragraphIndex;
+      }
+
+      paragraphs.push({
+        id: `epub:${currentPage}:${frameIndex}:${paragraphIndex}:${hashNarrationParagraph(text)}`,
+        text,
+        page: currentPage,
+      });
+    }
+  }
+
+  if (paragraphs.length === 0) {
+    return null;
+  }
+
+  return {
+    paragraphs,
+    currentParagraphIndex,
+    capturedAtMs: Date.now(),
+  };
+}
+
 function toViewportRect(rect: DOMRect, frame: HTMLElement | null): DOMRect {
   if (!frame) {
     return new DOMRect(rect.x, rect.y, rect.width, rect.height);
@@ -211,6 +281,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   onPageChange,
   onLoadError,
   onTextSelection,
+  onNarrationSnapshotChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const renditionRef = useRef<ReturnType<EpubBook['renderTo']> | null>(null);
@@ -218,9 +289,13 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   const onPageChangeRef = useRef<EpubViewerProps["onPageChange"]>(onPageChange);
   const onLoadErrorRef = useRef<EpubViewerProps["onLoadError"]>(onLoadError);
   const onTextSelectionRef = useRef<EpubViewerProps["onTextSelection"]>(onTextSelection);
+  const onNarrationSnapshotChangeRef =
+    useRef<EpubViewerProps["onNarrationSnapshotChange"]>(onNarrationSnapshotChange);
   const appliedHighlightCfisRef = useRef<string[]>([]);
   const lastWheelNavAtRef = useRef<number>(0);
   const isRenditionReadyRef = useRef<boolean>(false);
+  const pageStateRef = useRef<{ current: number; total: number }>({ current: 1, total: 1 });
+  const narrationFrameRef = useRef<number | null>(null);
   const [pageState, setPageState] = useState({ current: 1, total: 1 });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -236,15 +311,40 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     onTextSelectionRef.current = onTextSelection;
   }, [onTextSelection]);
 
+  useEffect(() => {
+    onNarrationSnapshotChangeRef.current = onNarrationSnapshotChange;
+  }, [onNarrationSnapshotChange]);
+
   const emitPage = useCallback(
     (current: number, total: number) => {
       const safeTotal = Math.max(1, Math.trunc(total));
       const safeCurrent = clamp(Math.trunc(current), 1, safeTotal);
       setPageState({ current: safeCurrent, total: safeTotal });
+      pageStateRef.current = { current: safeCurrent, total: safeTotal };
       onPageChangeRef.current?.(safeCurrent, safeTotal);
     },
     []
   );
+
+  const scheduleNarrationSnapshot = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (narrationFrameRef.current !== null) {
+      window.cancelAnimationFrame(narrationFrameRef.current);
+    }
+
+    narrationFrameRef.current = window.requestAnimationFrame(() => {
+      narrationFrameRef.current = null;
+      const container = containerRef.current;
+      if (!container) {
+        onNarrationSnapshotChangeRef.current?.(null);
+        return;
+      }
+
+      onNarrationSnapshotChangeRef.current?.(
+        collectEpubNarrationSnapshot(container, pageStateRef.current.current)
+      );
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -300,6 +400,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         isRenditionReadyRef.current = true;
 
         emitPage(effectiveRequestedPage, totalLocations);
+        scheduleNarrationSnapshot();
 
         rendition.on('relocated', (location: any) => {
           if (cancelled) return;
@@ -313,6 +414,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
           );
 
           emitPage(current, totalLocations);
+          scheduleNarrationSnapshot();
         });
 
         rendition.on('selected', (cfiRange: string, contents: any) => {
@@ -352,6 +454,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         const message = error?.message || 'Failed to load EPUB.';
         if (cancelled) return;
         setLoadError(message);
+        onNarrationSnapshotChangeRef.current?.(null);
         onLoadErrorRef.current?.(message);
       }
     }
@@ -381,8 +484,13 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       bookRef.current = null;
       isRenditionReadyRef.current = false;
       appliedHighlightCfisRef.current = [];
+      if (narrationFrameRef.current !== null && typeof window !== 'undefined') {
+        window.cancelAnimationFrame(narrationFrameRef.current);
+        narrationFrameRef.current = null;
+      }
+      onNarrationSnapshotChangeRef.current?.(null);
     };
-  }, [emitPage, fontSize, fontStyle, initialPage, readingMode, theme, url]);
+  }, [emitPage, fontSize, fontStyle, initialPage, readingMode, scheduleNarrationSnapshot, theme, url]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -417,6 +525,15 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
 
     appliedHighlightCfisRef.current = nextCfis;
   }, [highlights, theme]);
+
+  useEffect(() => {
+    if (loadError) {
+      onNarrationSnapshotChangeRef.current?.(null);
+      return;
+    }
+
+    scheduleNarrationSnapshot();
+  }, [fontSize, fontStyle, loadError, pageState.current, readingMode, scheduleNarrationSnapshot, theme]);
 
   const navigateRendition = useCallback(
     (direction: 'prev' | 'next') => {

@@ -5,6 +5,7 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import { FontSize } from '../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
+  ReaderNarrationSnapshot,
   ReaderTextSelection,
 } from '../../lib/reader/runtime/contracts.ts';
 import {
@@ -27,6 +28,7 @@ interface PdfViewerProps {
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
   onTextSelection?: (selection: ReaderTextSelection | null) => void;
+  onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
   onDocumentLoadSuccess?: (numPages: number) => void;
   onFirstPageRender?: () => void;
 }
@@ -55,6 +57,166 @@ function clampPage(page: number, total: number): number {
 
 function normalizeSelectionText(value: string): string {
   return value.replace(/\s+/g, ' ').trim();
+}
+
+function hashNarrationParagraph(value: string): string {
+  let hash = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    hash = (hash * 31 + value.charCodeAt(index)) | 0;
+  }
+  return Math.abs(hash).toString(36);
+}
+
+type PdfTextLine = {
+  page: number;
+  top: number;
+  bottom: number;
+  left: number;
+  textParts: string[];
+};
+
+type PdfTextParagraph = {
+  page: number;
+  top: number;
+  bottom: number;
+  textParts: string[];
+};
+
+function collectPdfNarrationSnapshot(params: {
+  container: HTMLElement;
+  viewport: HTMLElement;
+  currentPage: number;
+  readingMode: 'scroll' | 'page';
+}): ReaderNarrationSnapshot | null {
+  const { container, viewport, currentPage, readingMode } = params;
+  const viewportRect = viewport.getBoundingClientRect();
+  const targetY = viewportRect.top + Math.min(viewportRect.height * 0.3, 180);
+  const paragraphs: ReaderNarrationSnapshot['paragraphs'] = [];
+  let currentParagraphIndex = 0;
+  let closestDistance = Number.POSITIVE_INFINITY;
+
+  const pageNodes = Array.from(
+    container.querySelectorAll('[data-reader-pdf-page]')
+  ) as HTMLElement[];
+
+  const relevantPageNodes = pageNodes.filter((pageNode) => {
+    const page = Number(pageNode.dataset.readerPdfPage || '');
+    if (!Number.isFinite(page) || page <= 0) return false;
+    if (readingMode === 'page') return page === currentPage;
+    const rect = pageNode.getBoundingClientRect();
+    return rect.bottom >= viewportRect.top && rect.top <= viewportRect.bottom;
+  });
+
+  for (const pageNode of relevantPageNodes) {
+    const page = Number(pageNode.dataset.readerPdfPage || '');
+    const textLayer = pageNode.querySelector('.react-pdf__Page__textContent') as HTMLElement | null;
+    if (!Number.isFinite(page) || !textLayer) continue;
+
+    const lines: PdfTextLine[] = [];
+    const spans = Array.from(textLayer.querySelectorAll('span')) as HTMLElement[];
+
+    for (const span of spans) {
+      const text = normalizeSelectionText(span.textContent || '');
+      if (!text) continue;
+
+      const rect = span.getBoundingClientRect();
+      if (rect.height <= 0 || rect.width <= 0) continue;
+      if (rect.bottom < viewportRect.top + 2 || rect.top > viewportRect.bottom - 2) continue;
+
+      const lastLine = lines[lines.length - 1];
+      if (!lastLine) {
+        lines.push({
+          page,
+          top: rect.top,
+          bottom: rect.bottom,
+          left: rect.left,
+          textParts: [text],
+        });
+        continue;
+      }
+
+      const lineMid = (lastLine.top + lastLine.bottom) / 2;
+      const spanMid = rect.top + rect.height / 2;
+      const sameLine =
+        Math.abs(spanMid - lineMid) <= Math.max(8, (lastLine.bottom - lastLine.top) * 0.75);
+
+      if (sameLine) {
+        lastLine.bottom = Math.max(lastLine.bottom, rect.bottom);
+        lastLine.left = Math.min(lastLine.left, rect.left);
+        lastLine.textParts.push(text);
+        continue;
+      }
+
+      lines.push({
+        page,
+        top: rect.top,
+        bottom: rect.bottom,
+        left: rect.left,
+        textParts: [text],
+      });
+    }
+
+    const paragraphGroups: PdfTextParagraph[] = [];
+    for (const line of lines) {
+      const lineText = normalizeSelectionText(line.textParts.join(' '));
+      if (!lineText) continue;
+
+      const lastParagraph = paragraphGroups[paragraphGroups.length - 1];
+      if (!lastParagraph) {
+        paragraphGroups.push({
+          page,
+          top: line.top,
+          bottom: line.bottom,
+          textParts: [lineText],
+        });
+        continue;
+      }
+
+      const lineHeight = Math.max(12, lastParagraph.bottom - lastParagraph.top);
+      const gap = line.top - lastParagraph.bottom;
+      if (gap > lineHeight * 1.4) {
+        paragraphGroups.push({
+          page,
+          top: line.top,
+          bottom: line.bottom,
+          textParts: [lineText],
+        });
+        continue;
+      }
+
+      lastParagraph.bottom = Math.max(lastParagraph.bottom, line.bottom);
+      lastParagraph.textParts.push(lineText);
+    }
+
+    for (const group of paragraphGroups) {
+      const text = normalizeSelectionText(group.textParts.join(' '));
+      if (!text) continue;
+
+      const paragraphIndex = paragraphs.length;
+      const centerY = group.top + (group.bottom - group.top) / 2;
+      const distance = Math.abs(centerY - targetY);
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        currentParagraphIndex = paragraphIndex;
+      }
+
+      paragraphs.push({
+        id: `pdf:${page}:${paragraphIndex}:${hashNarrationParagraph(text)}`,
+        text,
+        page,
+      });
+    }
+  }
+
+  if (paragraphs.length === 0) {
+    return null;
+  }
+
+  return {
+    paragraphs,
+    currentParagraphIndex,
+    capturedAtMs: Date.now(),
+  };
 }
 
 function hashSelectionAnchor(value: string): string {
@@ -163,6 +325,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   onPageChange,
   onLoadError,
   onTextSelection,
+  onNarrationSnapshotChange,
   onDocumentLoadSuccess,
   onFirstPageRender,
 }) => {
@@ -173,6 +336,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const pageNumberRef = useRef<number>(1);
   const lastWheelNavAtRef = useRef<number>(0);
   const onTextSelectionRef = useRef<PdfViewerProps['onTextSelection']>(onTextSelection);
+  const onNarrationSnapshotChangeRef =
+    useRef<PdfViewerProps['onNarrationSnapshotChange']>(onNarrationSnapshotChange);
+  const narrationFrameRef = useRef<number | null>(null);
 
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [numPages, setNumPages] = useState<number>(0);
@@ -188,6 +354,36 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   useEffect(() => {
     onTextSelectionRef.current = onTextSelection;
   }, [onTextSelection]);
+
+  useEffect(() => {
+    onNarrationSnapshotChangeRef.current = onNarrationSnapshotChange;
+  }, [onNarrationSnapshotChange]);
+
+  const scheduleNarrationSnapshot = useCallback(() => {
+    if (typeof window === 'undefined') return;
+    if (narrationFrameRef.current !== null) {
+      window.cancelAnimationFrame(narrationFrameRef.current);
+    }
+
+    narrationFrameRef.current = window.requestAnimationFrame(() => {
+      narrationFrameRef.current = null;
+      const container = containerRef.current;
+      const viewport = scrollViewportRef.current;
+      if (!container || !viewport || useIframeFallback) {
+        onNarrationSnapshotChangeRef.current?.(null);
+        return;
+      }
+
+      onNarrationSnapshotChangeRef.current?.(
+        collectPdfNarrationSnapshot({
+          container,
+          viewport,
+          currentPage: pageNumberRef.current,
+          readingMode,
+        })
+      );
+    });
+  }, [readingMode, useIframeFallback]);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -213,6 +409,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     pageRefs.current = [];
     pageOffsetsRef.current = [];
     hasReportedFirstPageRenderRef.current = false;
+    onNarrationSnapshotChangeRef.current?.(null);
   }, [url, initialPage]);
 
   const rebuildPageOffsets = useCallback(() => {
@@ -314,7 +511,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       setPageNumber(current);
       onPageChange?.(current, numPages);
     }
-  }, [numPages, onPageChange, readingMode, rebuildPageOffsets]);
+    scheduleNarrationSnapshot();
+  }, [numPages, onPageChange, readingMode, rebuildPageOffsets, scheduleNarrationSnapshot]);
 
   useEffect(() => {
     if (readingMode !== 'scroll') return;
@@ -333,10 +531,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       pageNumberRef.current = targetPage;
       setPageNumber(targetPage);
       onPageChange?.(targetPage, numPages);
+      scheduleNarrationSnapshot();
     });
 
     return () => window.cancelAnimationFrame(raf);
-  }, [initialPage, numPages, onPageChange, readingMode, url]);
+  }, [initialPage, numPages, onPageChange, readingMode, scheduleNarrationSnapshot, url]);
 
   const basePageWidth = useMemo(() => {
     if (!containerWidth) return undefined;
@@ -461,6 +660,15 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [highlights]);
 
   useEffect(() => {
+    if (loadError || useIframeFallback) {
+      onNarrationSnapshotChangeRef.current?.(null);
+      return;
+    }
+
+    scheduleNarrationSnapshot();
+  }, [fontSize, loadError, pageNumber, readingMode, scheduleNarrationSnapshot, theme, useIframeFallback]);
+
+  useEffect(() => {
     const raf = window.requestAnimationFrame(() => {
       rehydratePdfHighlights();
     });
@@ -523,6 +731,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                         onRenderSuccess={() => {
                           window.requestAnimationFrame(() => {
                             rehydratePdfHighlights();
+                            scheduleNarrationSnapshot();
                           });
                         }}
                       />
@@ -541,6 +750,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                     handleFirstPageRender();
                     window.requestAnimationFrame(() => {
                       rehydratePdfHighlights();
+                      scheduleNarrationSnapshot();
                     });
                   }}
                 />

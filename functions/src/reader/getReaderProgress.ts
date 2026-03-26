@@ -110,6 +110,41 @@ function sanitizeCanonicalAnchor(value: unknown): Record<string, unknown> | null
   }
 }
 
+function sanitizeReaderLastPosition(
+  value: unknown
+): {
+  page: number;
+  totalPages?: number | null;
+  format?: "pdf" | "epub" | "unknown" | null;
+  mode?: "scroll" | "page" | null;
+  paragraphIndex?: number | null;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const page = asPositiveInt(record.page);
+  if (page === null) return null;
+
+  const totalPages = record.totalPages === null ? null : asPositiveInt(record.totalPages);
+  const format =
+    record.format === "pdf" || record.format === "epub" || record.format === "unknown"
+      ? record.format
+      : null;
+  const mode = record.mode === "scroll" || record.mode === "page" ? record.mode : null;
+  const paragraphIndex =
+    record.paragraphIndex === null ? null : asNonNegativeInt(record.paragraphIndex);
+
+  return {
+    page,
+    ...(totalPages !== undefined ? { totalPages } : {}),
+    ...(format !== null ? { format } : {}),
+    ...(mode !== null ? { mode } : {}),
+    ...(paragraphIndex !== null ? { paragraphIndex } : {}),
+  };
+}
+
 /**
  * getReaderProgress
  *
@@ -187,6 +222,7 @@ export const getReaderProgressHandler = async (request: any) => {
   }
 
   const lastAnchor = sanitizeCanonicalAnchor(data.lastAnchor);
+  const lastPosition = sanitizeReaderLastPosition(data.lastPosition);
   const anchorManifestVersion =
     lastAnchor?.manifestVersion ??
     asPositiveInt(data.anchorManifestVersion) ??
@@ -196,7 +232,7 @@ export const getReaderProgressHandler = async (request: any) => {
     exists: true,
     bookId: data.bookId,
     progress: data.progress ?? 0,
-    lastPosition: data.lastPosition ?? null,
+    lastPosition,
     lastAnchor,
     anchorManifestVersion,
     updatedAt: data.updatedAt ?? null,

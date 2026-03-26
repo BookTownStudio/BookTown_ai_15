@@ -1,4 +1,5 @@
 export type ReaderFormat = 'pdf' | 'epub' | 'unknown';
+export type NarrationProviderKind = 'browser_speech_synthesis';
 export type ReaderEngineKind =
   | 'web_pdf'
   | 'web_epub'
@@ -72,7 +73,9 @@ export interface ReaderSessionSnapshot {
   signedUrl: string;
   resumePage: number;
   format: ReaderFormat;
+  lastPosition?: ReaderLastPosition | null;
   resumeAnchor?: CanonicalAnchorV1 | null;
+  narration?: ReaderNarrationSessionState | null;
 }
 
 export interface ReaderShellBootstrapResult {
@@ -83,6 +86,32 @@ export interface ReaderShellBootstrapResult {
 export interface ReaderRuntimeSelection {
   engine: ReaderEngineKind;
   format: ReaderFormat;
+}
+
+export interface ReaderNarrationSessionState {
+  provider: NarrationProviderKind;
+  playbackRate: number;
+  paused: boolean;
+}
+
+export interface ReaderLastPosition {
+  page: number;
+  totalPages?: number | null;
+  format?: ReaderFormat | null;
+  mode?: 'scroll' | 'page' | null;
+  paragraphIndex?: number | null;
+}
+
+export interface ReaderNarrationParagraph {
+  id: string;
+  text: string;
+  page: number;
+}
+
+export interface ReaderNarrationSnapshot {
+  paragraphs: ReaderNarrationParagraph[];
+  currentParagraphIndex: number;
+  capturedAtMs: number;
 }
 
 export interface ReaderTextSelection {

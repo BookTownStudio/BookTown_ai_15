@@ -30,6 +30,7 @@ import { getReaderBookmarks as getReaderBookmarksRaw } from "./reader/getReaderB
 import { getReaderHighlights as getReaderHighlightsRaw } from "./reader/getReaderHighlights";
 import { getReaderInsights as getReaderInsightsRaw } from "./reader/getReaderInsights";
 import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "./reader/getOrCreateReadingSession";
+import { updateReadingSessionNarration as updateReadingSessionNarrationRaw } from "./reader/updateReadingSessionNarration";
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "./reader/requestEbookOfflineAccess";
 import { getReaderManifest as getReaderManifestRaw } from "./reader/getReaderManifest";
 import { syncReaderOperations as syncReaderOperationsRaw } from "./reader/syncReaderOperations";
@@ -399,6 +400,10 @@ export const getReaderInsights = wrapCallableV2(
 export const getOrCreateReadingSession = wrapCallableV2(
   "getOrCreateReadingSession",
   getOrCreateReadingSessionRaw
+);
+export const updateReadingSessionNarration = wrapCallableV2(
+  "updateReadingSessionNarration",
+  updateReadingSessionNarrationRaw
 );
 export const getReaderManifest = wrapCallableV2(
   "getReaderManifest",

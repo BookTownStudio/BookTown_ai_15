@@ -12,7 +12,8 @@ import { HighlightIcon } from '../icons/HighlightIcon.tsx';
 import { SettingsIcon } from '../icons/SettingsIcon.tsx';
 import { ViewListIcon } from '../icons/ViewListIcon.tsx';
 import { BookOpenIcon } from '../icons/BookOpenIcon.tsx';
-import { PlayIcon } from '../icons/PlayIcon.tsx'; 
+import { PlayIcon } from '../icons/PlayIcon.tsx';
+import { PauseIcon } from '../icons/PauseIcon.tsx';
 
 interface ReaderChromeProps {
     isVisible: boolean;
@@ -23,6 +24,7 @@ interface ReaderChromeProps {
     totalPages: number;
     onSettingsClick: () => void;
     onListeningClick?: () => void;
+    narrationState?: 'idle' | 'playing' | 'paused';
     isBookmarked?: boolean;
     onBookmarkToggle?: () => void;
     isHighlighted?: boolean;
@@ -41,6 +43,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
     totalPages,
     onSettingsClick,
     onListeningClick,
+    narrationState = 'idle',
     isBookmarked = false,
     onBookmarkToggle,
     isHighlighted = false,
@@ -54,6 +57,12 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
 
     const bgStyles = theme === 'light' ? 'bg-white/90' : (theme === 'sepia' ? 'bg-[#F3E9D2]/90' : 'bg-slate-900/90');
     const textStyles = theme === 'light' ? 'text-slate-900' : (theme === 'sepia' ? 'text-[#433422]' : 'text-white');
+    const listenLabel =
+        narrationState === 'playing'
+            ? (lang === 'en' ? 'Pause narration' : 'إيقاف السرد مؤقتاً')
+            : narrationState === 'paused'
+                ? (lang === 'en' ? 'Resume narration' : 'استئناف السرد')
+                : (lang === 'en' ? 'Start narration' : 'بدء السرد');
 
     const chromeClass = cn(
         'fixed left-0 w-full z-20 transition-all duration-300 ease-in-out backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm',
@@ -73,8 +82,12 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                     </div>
                     <div className="flex items-center gap-1">
                         {onListeningClick && (
-                            <Button variant="ghost" onClick={onListeningClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10" aria-label="Listen">
-                                <PlayIcon className="h-5 w-5" /> 
+                            <Button variant="ghost" onClick={onListeningClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10" aria-label={listenLabel}>
+                                {narrationState === 'playing' ? (
+                                    <PauseIcon className="h-5 w-5" />
+                                ) : (
+                                    <PlayIcon className="h-5 w-5" />
+                                )}
                             </Button>
                         )}
                         {onBookmarkToggle && (
@@ -120,7 +133,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                         <span>{readingMode === 'page' ? `${lang === 'en' ? 'Page' : 'صفحة'} ${currentPage} / ${totalPages}` : (lang === 'en' ? 'Scroll' : 'تمرير')}</span>
                         <span>{Math.round(progress)}%</span>
                     </div>
-                    
+
                     {/* Progress Bar Visual */}
                     <div className="w-full h-1 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
                         <div className="h-full bg-accent transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />

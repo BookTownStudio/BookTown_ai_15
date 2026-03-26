@@ -218,6 +218,28 @@ function isWriteContentDoc(value: unknown): value is WriteContentDoc {
   return doc.type === "doc" && doc.version === 1 && Array.isArray(doc.content);
 }
 
+function pruneNullValuesDeep<T>(value: T): T {
+  if (value === null) {
+    return undefined as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => pruneNullValuesDeep(item))
+      .filter((item) => item !== undefined) as T;
+  }
+
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .map(([key, fieldValue]) => [key, pruneNullValuesDeep(fieldValue)])
+        .filter(([, fieldValue]) => fieldValue !== undefined)
+    ) as T;
+  }
+
+  return value;
+}
+
 function sanitizeContentDoc(value: unknown): WriteContentDoc | undefined {
   if (!isWriteContentDoc(value)) {
     return undefined;
@@ -226,7 +248,7 @@ function sanitizeContentDoc(value: unknown): WriteContentDoc | undefined {
   const contentDocForWrite = {
     version: value.version,
     type: value.type,
-    content: value.content,
+    content: pruneNullValuesDeep(value.content),
   };
 
   const serialized = JSON.stringify(contentDocForWrite);

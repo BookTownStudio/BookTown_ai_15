@@ -112,6 +112,72 @@ function sanitizeCanonicalAnchor(value: unknown): Record<string, unknown> | null
   }
 }
 
+function sanitizeNarrationSessionState(
+  value: unknown
+): { provider: "browser_speech_synthesis"; playbackRate: number; paused: boolean } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const provider =
+    record.provider === "browser_speech_synthesis" ? "browser_speech_synthesis" : null;
+  const playbackRateRaw = record.playbackRate;
+  const playbackRate =
+    typeof playbackRateRaw === "number" &&
+    Number.isFinite(playbackRateRaw) &&
+    playbackRateRaw >= 0.5 &&
+    playbackRateRaw <= 3
+      ? Math.round(playbackRateRaw * 100) / 100
+      : null;
+  const paused = typeof record.paused === "boolean" ? record.paused : null;
+
+  if (!provider || playbackRate === null || paused === null) {
+    return null;
+  }
+
+  return {
+    provider,
+    playbackRate,
+    paused,
+  };
+}
+
+function sanitizeReaderLastPosition(
+  value: unknown
+): {
+  page: number;
+  totalPages?: number | null;
+  format?: "pdf" | "epub" | "unknown" | null;
+  mode?: "scroll" | "page" | null;
+  paragraphIndex?: number | null;
+} | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const record = value as Record<string, unknown>;
+  const page = asPositiveInt(record.page);
+  if (page === null) return null;
+
+  const totalPages = record.totalPages === null ? null : asPositiveInt(record.totalPages);
+  const format =
+    record.format === "pdf" || record.format === "epub" || record.format === "unknown"
+      ? record.format
+      : null;
+  const mode = record.mode === "scroll" || record.mode === "page" ? record.mode : null;
+  const paragraphIndex =
+    record.paragraphIndex === null ? null : asNonNegativeInt(record.paragraphIndex);
+
+  return {
+    page,
+    ...(totalPages !== undefined ? { totalPages } : {}),
+    ...(format !== null ? { format } : {}),
+    ...(mode !== null ? { mode } : {}),
+    ...(paragraphIndex !== null ? { paragraphIndex } : {}),
+  };
+}
+
 function resolveResumePage(lastPosition: unknown): number {
   if (typeof lastPosition === "number" && Number.isFinite(lastPosition)) {
     return Math.max(1, Math.trunc(lastPosition));
@@ -200,13 +266,15 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       ? (progressSnap.data() as { lastPosition?: unknown; lastAnchor?: unknown } | undefined)
       : null;
     const sessionData = sessionSnap.exists
-      ? (sessionSnap.data() as { resumeAnchor?: unknown } | undefined)
+      ? (sessionSnap.data() as { resumeAnchor?: unknown; narration?: unknown } | undefined)
       : null;
 
-    const resumePage = resolveResumePage(progressData?.lastPosition);
+    const lastPosition = sanitizeReaderLastPosition(progressData?.lastPosition);
+    const resumePage = resolveResumePage(lastPosition);
     const progressResumeAnchor = sanitizeCanonicalAnchor(progressData?.lastAnchor);
     const storedResumeAnchor = sanitizeCanonicalAnchor(sessionData?.resumeAnchor);
     const resumeAnchor = progressResumeAnchor ?? storedResumeAnchor ?? null;
+    const narration = sanitizeNarrationSessionState(sessionData?.narration);
     const now = FieldValue.serverTimestamp();
 
     const sessionPayload: Record<string, unknown> = {
@@ -242,7 +310,9 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       signedUrl,
       resumePage,
       format: manifest.format,
+      lastPosition,
       resumeAnchor,
+      narration,
     };
   } catch (error: any) {
     logger.error("[READER][SESSION_INIT_FAILED]", {
