@@ -33,6 +33,7 @@ import ProfileStrengthBar from '../../components/ui/ProfileStrengthBar.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import PostCard from '../../components/content/PostCard.tsx';
 import ReviewCard from '../../components/content/ReviewCard.tsx';
+import CanonicalCoverArtwork from '../../components/content/CanonicalCoverArtwork.tsx';
 import type { ProfilePublicationRecord } from '../../services/db.types.ts';
 
 type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'publications';
@@ -801,15 +802,14 @@ const ProfileScreen: React.FC = () => {
                         className="flex min-w-0 flex-1 items-center gap-4 text-left"
                       >
                         <div className="flex h-20 w-16 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-slate-100 dark:bg-slate-700/60">
-                          {publication.coverUrl ? (
-                            <img
-                              src={publication.coverUrl}
-                              alt={publication.title}
-                              className="h-full w-full object-cover"
-                            />
-                          ) : (
-                            <BookIcon className="h-7 w-7 text-slate-400" />
-                          )}
+                          <CanonicalCoverArtwork
+                            title={publication.title}
+                            coverUrl={publication.coverUrl}
+                            coverMode={publication.coverMode}
+                            fallbackCover={publication.fallbackCover}
+                            variant="posterCompact"
+                            imageClassName="h-full w-full object-cover"
+                          />
                         </div>
 
                         <div className="min-w-0 flex-1">

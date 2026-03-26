@@ -687,6 +687,16 @@ const writeProjectUpdatesSchema = z
     message: "At least one writable field must be provided.",
   });
 
+const canonicalCoverModeSchema = z.enum(["uploaded", "fallback_metadata"]);
+
+const canonicalFallbackCoverSchema = z
+  .object({
+    title: z.string().min(1).max(180),
+    author: z.string().min(1).max(180).optional(),
+    theme: z.enum(["ink", "emerald", "gold", "plum"]),
+  })
+  .strict();
+
 const directConversationSchema = z
   .object({
     id: z.string().min(1),
@@ -2776,6 +2786,8 @@ export const apiContracts = {
           title: z.string().min(1),
           author: z.string().min(1),
           coverUrl: z.string().max(2048).optional(),
+          coverMode: canonicalCoverModeSchema.optional(),
+          fallbackCover: canonicalFallbackCoverSchema.optional(),
           excerpt: z.string(),
           estimatedReadingMinutes: z.number().int().positive(),
           normalizedContent: normalizedManuscriptSchema,
@@ -2807,6 +2819,8 @@ export const apiContracts = {
                 publicationType: z.string().min(1),
                 canonicalSlug: z.string().min(1).optional(),
                 coverUrl: z.string().max(2048).optional(),
+                coverMode: canonicalCoverModeSchema.optional(),
+                fallbackCover: canonicalFallbackCoverSchema.optional(),
               })
               .strict()
           ),

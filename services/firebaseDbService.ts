@@ -472,6 +472,35 @@ const normalizeOptionalString = (
   return normalized || undefined;
 };
 
+const normalizeFallbackCover = (
+  value: unknown
+): Book["fallbackCover"] | ProfilePublicationRecord["fallbackCover"] | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const title = normalizeOptionalString(raw.title, 180);
+  const theme =
+    raw.theme === "ink" ||
+    raw.theme === "emerald" ||
+    raw.theme === "gold" ||
+    raw.theme === "plum"
+      ? raw.theme
+      : undefined;
+
+  if (!title || !theme) {
+    return undefined;
+  }
+
+  const author = normalizeOptionalString(raw.author, 180);
+  return {
+    title,
+    ...(author ? { author } : {}),
+    theme,
+  };
+};
+
 const normalizeIsoDate = (value: unknown, fieldName: string): string => {
   const input = ensureNonEmptyString(value, fieldName, 64);
   const parsed = new Date(input);
@@ -697,6 +726,12 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
     descriptionEn: normalizeString(source.descriptionEn, 5000),
     descriptionAr: normalizeString(source.descriptionAr, 5000),
     coverUrl: normalizeString(source.coverUrl, 2048),
+    ...(source.coverMode === "uploaded" || source.coverMode === "fallback_metadata"
+      ? { coverMode: source.coverMode }
+      : {}),
+    ...(normalizeFallbackCover(source.fallbackCover)
+      ? { fallbackCover: normalizeFallbackCover(source.fallbackCover) }
+      : {}),
     rating:
       typeof source.rating === "number" && Number.isFinite(source.rating)
         ? Math.max(0, source.rating)
@@ -744,6 +779,12 @@ const toProfilePublication = (
     publishedAt,
     ...(normalizeString(source.coverUrl, 2048)
       ? { coverUrl: normalizeString(source.coverUrl, 2048) }
+      : {}),
+    ...(source.coverMode === "uploaded" || source.coverMode === "fallback_metadata"
+      ? { coverMode: source.coverMode }
+      : {}),
+    ...(normalizeFallbackCover(source.fallbackCover)
+      ? { fallbackCover: normalizeFallbackCover(source.fallbackCover) }
       : {}),
     ...(normalizeString(source.canonicalSlug, 160)
       ? { canonicalSlug: normalizeString(source.canonicalSlug, 160) }

@@ -31,6 +31,10 @@ import {
   Ebook,
   ExternalSource
 } from '../types/entities.ts';
+import type {
+  CanonicalCoverMode,
+  CanonicalFallbackCover,
+} from '../types/entities.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 
 /* =========================
@@ -82,6 +86,8 @@ export interface LongformPublicationRecord {
   title: string;
   author: string;
   coverUrl?: string;
+  coverMode?: CanonicalCoverMode;
+  fallbackCover?: CanonicalFallbackCover;
   excerpt: string;
   estimatedReadingMinutes: number;
   normalizedContent: {
@@ -108,6 +114,8 @@ export interface OwnedLongformPublicationRecord {
   publicationType: string;
   canonicalSlug?: string;
   coverUrl?: string;
+  coverMode?: CanonicalCoverMode;
+  fallbackCover?: CanonicalFallbackCover;
 }
 
 export interface ProfilePublicationRecord {
@@ -117,6 +125,8 @@ export interface ProfilePublicationRecord {
   publicationType: string;
   publishedAt: string;
   coverUrl?: string;
+  coverMode?: CanonicalCoverMode;
+  fallbackCover?: CanonicalFallbackCover;
   canonicalSlug?: string;
   publicationId?: string;
   bookId?: string;

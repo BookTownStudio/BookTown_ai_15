@@ -6,6 +6,7 @@ import {
   buildSearchFieldsFromTextParts,
   normalizeSearchText,
 } from "../search/normalization";
+import { readCanonicalFallbackCover } from "../covers/canonicalFallbackCover";
 import { canonicalizeRoleClaim } from "../shared/auth";
 import { canUserReadBook } from "../rights/bookRights";
 
@@ -117,6 +118,12 @@ type ProfileBook = {
   descriptionEn: string;
   descriptionAr: string;
   coverUrl: string;
+  coverMode?: "uploaded" | "fallback_metadata";
+  fallbackCover?: {
+    title: string;
+    author?: string;
+    theme: "ink" | "emerald" | "gold" | "plum";
+  };
   rating: number;
   ratingsCount: number;
   isEbookAvailable: boolean;
@@ -135,6 +142,12 @@ type ProfilePublication = {
   publishedAt: string;
   updatedAt: string;
   coverUrl?: string;
+  coverMode?: "uploaded" | "fallback_metadata";
+  fallbackCover?: {
+    title: string;
+    author?: string;
+    theme: "ink" | "emerald" | "gold" | "plum";
+  };
   canonicalSlug?: string;
   publicationId?: string;
   bookId?: string;
@@ -631,6 +644,12 @@ function normalizeProfileBook(docId: string, source: Record<string, unknown>): P
     coverUrl: normalizeUrlForRead(
       source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
     ),
+    ...((source.coverMode === "uploaded" || source.coverMode === "fallback_metadata")
+      ? { coverMode: source.coverMode }
+      : {}),
+    ...(readCanonicalFallbackCover(source.fallbackCover)
+      ? { fallbackCover: readCanonicalFallbackCover(source.fallbackCover) }
+      : {}),
     rating:
       typeof source.rating === "number" && Number.isFinite(source.rating)
         ? Math.max(0, source.rating)
@@ -701,6 +720,12 @@ function normalizeProfileBlogPublication(
     ...(normalizeUrlForRead(source.coverUrl)
       ? { coverUrl: normalizeUrlForRead(source.coverUrl) }
       : {}),
+    ...((source.coverMode === "uploaded" || source.coverMode === "fallback_metadata")
+      ? { coverMode: source.coverMode }
+      : {}),
+    ...(readCanonicalFallbackCover(source.fallbackCover)
+      ? { fallbackCover: readCanonicalFallbackCover(source.fallbackCover) }
+      : {}),
     ...(sanitizeString(source.canonicalSlug ?? source.slug, 160)
       ? { canonicalSlug: sanitizeString(source.canonicalSlug ?? source.slug, 160) }
       : {}),
@@ -751,6 +776,12 @@ function normalizeProfileEbookPublication(
             source.coverUrl ?? toRecord(source.cover).medium ?? toRecord(source.cover).original
           ),
         }
+      : {}),
+    ...((source.coverMode === "uploaded" || source.coverMode === "fallback_metadata")
+      ? { coverMode: source.coverMode }
+      : {}),
+    ...(readCanonicalFallbackCover(source.fallbackCover)
+      ? { fallbackCover: readCanonicalFallbackCover(source.fallbackCover) }
       : {}),
     bookId: sanitizeString(docId, 128),
   };

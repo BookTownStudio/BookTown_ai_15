@@ -228,6 +228,8 @@ const PublicationReaderScreen: React.FC = () => {
                         title={publication.title}
                         author={publication.author}
                         coverUrl={publication.coverUrl}
+                        coverMode={publication.coverMode}
+                        fallbackCover={publication.fallbackCover}
                         excerpt={publication.excerpt}
                         estimatedReadingMinutes={publication.estimatedReadingMinutes}
                         normalizedContent={publication.normalizedContent}

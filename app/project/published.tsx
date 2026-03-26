@@ -1,4 +1,5 @@
 import React, { useMemo } from 'react';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -199,21 +200,33 @@ const ProjectPublishedScreen: React.FC = () => {
             </button>
 
             <div className="relative z-10 flex w-full max-w-2xl flex-col items-center">
-                <div className="relative mb-8 h-28 w-28">
-                    <div className="absolute inset-0 rounded-full bg-emerald-400/12 blur-3xl" />
+                <div className="relative mb-8 flex w-full flex-col items-center">
+                    <div className="pointer-events-none absolute left-1/2 top-[-5.5rem] z-[1] w-[min(48vw,220px)] -translate-x-1/2 opacity-95 sm:w-[240px]">
+                        <DotLottieReact
+                            src="/animations/publish-success-party.lottie"
+                            autoplay
+                            loop={false}
+                            className="h-full w-full"
+                            renderConfig={{ autoResize: true }}
+                        />
+                    </div>
+
+                    <div className="relative mb-8 h-28 w-28 z-[2]">
+                        <div className="absolute inset-0 rounded-full bg-emerald-400/12 blur-3xl" />
+                    </div>
+
+                    <BilingualText role="H1" className="relative z-[2] !mb-2 !text-4xl !text-white text-center drop-shadow-lg">
+                        {isRepublish
+                            ? (lang === 'en' ? 'Published Updated' : 'تم تحديث النشر')
+                            : (lang === 'en' ? 'Published!' : 'تم النشر!')}
+                    </BilingualText>
+
+                    <BilingualText role="Body" className="relative z-[2] text-center text-white/70">
+                        {subtitleText}
+                    </BilingualText>
                 </div>
 
-                <BilingualText role="H1" className="!mb-2 !text-4xl !text-white text-center drop-shadow-lg">
-                    {isRepublish
-                        ? (lang === 'en' ? 'Published Updated' : 'تم تحديث النشر')
-                        : (lang === 'en' ? 'Published!' : 'تم النشر!')}
-                </BilingualText>
-
-                <BilingualText role="Body" className="mb-8 text-center text-white/70">
-                    {subtitleText}
-                </BilingualText>
-
-                <GlassCard className="mb-8 flex w-full flex-col items-center border border-white/10 bg-white/5 p-6">
+                <GlassCard className="relative z-[2] mb-8 flex w-full flex-col items-center border border-white/10 bg-white/5 p-6">
                     <div className="mb-4 h-48 w-32 overflow-hidden rounded bg-slate-800 shadow-2xl">
                         {coverUrl ? (
                             <img src={coverUrl} alt="Cover" className="h-full w-full object-cover" />
@@ -230,7 +243,7 @@ const ProjectPublishedScreen: React.FC = () => {
                     </BilingualText>
                 </GlassCard>
 
-                <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="relative z-[2] grid w-full grid-cols-1 gap-3 sm:grid-cols-2">
                     <Button variant="primary" onClick={handlePrimaryAction} className="w-full">
                         <EyeIcon className="mr-2 h-5 w-5" />
                         {publishTarget === 'ebook'

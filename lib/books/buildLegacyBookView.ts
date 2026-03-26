@@ -21,6 +21,33 @@ function readStringArray(value: unknown): string[] | undefined {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function readFallbackCover(value: unknown): Book["fallbackCover"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const raw = value as Record<string, unknown>;
+  const title = readString(raw.title);
+  const theme =
+    raw.theme === "ink" ||
+    raw.theme === "emerald" ||
+    raw.theme === "gold" ||
+    raw.theme === "plum"
+      ? raw.theme
+      : undefined;
+
+  if (!title || !theme) {
+    return undefined;
+  }
+
+  const author = readString(raw.author);
+  return {
+    title,
+    ...(author ? { author } : {}),
+    theme,
+  };
+}
+
 export function buildLegacyBookView(seed: LegacyBookSeed): Book {
   const id =
     readString(seed.id)
@@ -34,6 +61,12 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     seed.cover && typeof seed.cover === "object" && !Array.isArray(seed.cover)
       ? (seed.cover as Record<string, unknown>)
       : null;
+  const fallbackCover = readFallbackCover((seed as { fallbackCover?: unknown }).fallbackCover);
+  const coverMode =
+    (seed as { coverMode?: unknown }).coverMode === "uploaded" ||
+    (seed as { coverMode?: unknown }).coverMode === "fallback_metadata"
+      ? ((seed as { coverMode: Book["coverMode"] }).coverMode)
+      : undefined;
 
   const titleEn =
     readString(seed.titleEn)
@@ -70,6 +103,8 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
         || readString(coverRecord?.original)
         || readString(coverRecord?.small)
         || "",
+    ...(coverMode ? { coverMode } : {}),
+    ...(fallbackCover ? { fallbackCover } : {}),
     descriptionEn:
       typeof seed.descriptionEn === "string"
         ? seed.descriptionEn

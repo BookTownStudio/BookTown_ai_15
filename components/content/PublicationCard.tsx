@@ -1,7 +1,7 @@
 import React from 'react';
 import { ClockIcon } from '../icons/ClockIcon.tsx';
-import { BookIcon } from '../icons/BookIcon.tsx';
 import type { OwnedLongformPublicationRecord } from '../../services/db.types.ts';
+import CanonicalCoverArtwork from './CanonicalCoverArtwork.tsx';
 
 interface PublicationCardProps {
     publication: OwnedLongformPublicationRecord;
@@ -36,17 +36,15 @@ const PublicationCard: React.FC<PublicationCardProps> = ({ publication, onPress 
             className="group flex h-full w-full flex-col overflow-hidden rounded-[26px] border border-[#d8ccb7] bg-[#f3ead9] text-left shadow-[0_12px_36px_rgba(0,0,0,0.08)] transition-transform duration-200 hover:-translate-y-1"
         >
             <div className="aspect-[16/8] w-full overflow-hidden bg-[#ddd1bc]">
-                {publication.coverUrl ? (
-                    <img
-                        src={publication.coverUrl}
-                        alt={publication.title}
-                        className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                    />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center">
-                        <BookIcon className="h-10 w-10 text-[#9c8b75]" />
-                    </div>
-                )}
+                <CanonicalCoverArtwork
+                    title={publication.title}
+                    coverUrl={publication.coverUrl}
+                    coverMode={publication.coverMode}
+                    fallbackCover={publication.fallbackCover}
+                    variant="landscape"
+                    className="transition-transform duration-300 group-hover:scale-[1.03]"
+                    imageClassName="transition-transform duration-300 group-hover:scale-[1.03]"
+                />
             </div>
 
             <div className="flex flex-1 flex-col px-5 py-5">

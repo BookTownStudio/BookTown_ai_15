@@ -16,6 +16,7 @@ import {
   publicationVisibilityForRightsMode,
   type PublicationVisibility,
 } from "./rights/bookRights";
+import { resolveCanonicalCoverState } from "./covers/canonicalFallbackCover";
 
 type ReadyRelease = {
   releaseId: string;
@@ -288,6 +289,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       ]);
       const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedTitle || normalizeSearchText(title)}`;
       const coverUrl = release.coverUrl;
+      const resolvedCover = resolveCanonicalCoverState({
+        coverUrl,
+        title,
+        author: authorName,
+        kind: "ebook",
+      });
       const now = FieldValue.serverTimestamp();
       const existingPublicationVersion =
         normalizePositiveInteger(existingBook.publicationVersion) ??
@@ -361,6 +368,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           canonicalLocked: true,
           rightsMode,
           visibility: effectiveVisibility,
+          coverMode: resolvedCover.coverMode,
+          ...(resolvedCover.fallbackCover
+            ? { fallbackCover: resolvedCover.fallbackCover }
+            : editionSnap.exists
+              ? { fallbackCover: FieldValue.delete() }
+              : {}),
           publicDomain: false,
           createdAt: existingEdition.createdAt || now,
           updatedAt: now,
@@ -418,6 +431,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             canonicalLocked: true,
             rightsMode,
             visibility: effectiveVisibility,
+            coverMode: resolvedCover.coverMode,
             createdAt: now,
             updatedAt: now,
             ...(coverUrl
@@ -430,7 +444,9 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
                     small: coverUrl,
                   },
                 }
-              : {}),
+              : {
+                  fallbackCover: resolvedCover.fallbackCover!,
+                }),
           },
           { merge: true }
         );
@@ -477,6 +493,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             canonicalLocked: true,
             rightsMode,
             visibility: effectiveVisibility,
+            coverMode: resolvedCover.coverMode,
             ...(coverUrl
               ? {
                   coverUrl,
@@ -486,10 +503,12 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
                     large: coverUrl,
                     small: coverUrl,
                   },
+                  fallbackCover: FieldValue.delete(),
                 }
               : {
                   coverUrl: FieldValue.delete(),
                   cover: FieldValue.delete(),
+                  fallbackCover: resolvedCover.fallbackCover!,
                 }),
             updatedAt: now,
           },

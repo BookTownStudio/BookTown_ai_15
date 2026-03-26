@@ -228,6 +228,8 @@ export interface Book {
     authors?: string[];
     bookCovers?: string[];
     coverUrl: string;
+    coverMode?: CanonicalCoverMode;
+    fallbackCover?: CanonicalFallbackCover;
     descriptionEn: string;
     descriptionAr: string;
     description?: string;
@@ -242,6 +244,20 @@ export interface Book {
     createdAt?: number;
     rawBook?: any; // preserved provider response
     ebookAttachmentId?: string; // Reference to secure binary attachment
+}
+
+export type CanonicalCoverMode = 'uploaded' | 'fallback_metadata';
+
+export type CanonicalFallbackCoverTheme =
+  | 'ink'
+  | 'emerald'
+  | 'gold'
+  | 'plum';
+
+export interface CanonicalFallbackCover {
+    title: string;
+    author?: string;
+    theme: CanonicalFallbackCoverTheme;
 }
 
 export type WriteDirection = 'ltr' | 'rtl';

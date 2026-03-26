@@ -2,6 +2,7 @@ import { onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { readCanonicalFallbackCover } from "./covers/canonicalFallbackCover";
 
 function asNonEmptyString(value: unknown, max = 512): string {
   if (typeof value !== "string") return "";
@@ -40,6 +41,11 @@ export const listOwnLongformPublications = onCall({ cors: true }, async (request
 
     const publications = snap.docs.map((docSnap) => {
       const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+      const coverMode =
+        data.coverMode === "uploaded" || data.coverMode === "fallback_metadata"
+          ? data.coverMode
+          : undefined;
+      const fallbackCover = readCanonicalFallbackCover(data.fallbackCover);
       return {
         publicationId:
           asNonEmptyString(data.publicationId, 256) || docSnap.id,
@@ -61,6 +67,8 @@ export const listOwnLongformPublications = onCall({ cors: true }, async (request
         ...(asNonEmptyString(data.coverUrl, 2048)
           ? { coverUrl: asNonEmptyString(data.coverUrl, 2048) }
           : {}),
+        ...(coverMode ? { coverMode } : {}),
+        ...(fallbackCover ? { fallbackCover } : {}),
       };
     });
 

@@ -9,6 +9,7 @@ import {
   deriveWordCount,
 } from "./publishing/releaseDerivedFields";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { readCanonicalFallbackCover } from "./covers/canonicalFallbackCover";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -103,6 +104,11 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
     }
 
     const coverUrl = asNonEmptyString(publication.coverUrl, 2048) || undefined;
+    const coverMode =
+      publication.coverMode === "uploaded" || publication.coverMode === "fallback_metadata"
+        ? publication.coverMode
+        : undefined;
+    const fallbackCover = readCanonicalFallbackCover(publication.fallbackCover);
     const excerpt =
       asNonEmptyString(publication.excerpt, 220) || deriveExcerpt(normalizedContent);
     const wordCount =
@@ -142,6 +148,8 @@ export const getLongformPublication = onCall({ cors: true }, async (request) => 
       title,
       author,
       ...(coverUrl ? { coverUrl } : {}),
+      ...(coverMode ? { coverMode } : {}),
+      ...(fallbackCover ? { fallbackCover } : {}),
       excerpt,
       estimatedReadingMinutes,
       normalizedContent,

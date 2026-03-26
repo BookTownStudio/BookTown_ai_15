@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
@@ -6,6 +6,7 @@ import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import {
     useCreateProjectRelease,
     usePublishProjectRelease,
+    useUpdateProject,
 } from '../../lib/hooks/useProjectMutations.ts';
 import { useProjectPublicationSettings } from '../../lib/hooks/useProjectPublicationSettings.ts';
 import Button from '../../components/ui/Button.tsx';
@@ -14,8 +15,11 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
 import { EyeIcon } from '../../components/icons/EyeIcon.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
+import { EditIcon } from '../../components/icons/EditIcon.tsx';
+import { UploadIcon } from '../../components/icons/UploadIcon.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
+import { useMediaUpload } from '../../lib/hooks/useMediaUpload.ts';
 
 type PublishTarget = 'blog' | 'ebook';
 type PublicationVisibility = 'public' | 'private';
@@ -87,6 +91,8 @@ const ProjectPublishScreen: React.FC = () => {
     );
     const createReleaseMutation = useCreateProjectRelease();
     const publishReleaseMutation = usePublishProjectRelease();
+    const updateProjectMutation = useUpdateProject();
+    const { upload, isUploading: isCoverUploading } = useMediaUpload();
     const [selectedTarget, setSelectedTarget] = useState<PublishTarget | null>(
         publishTargetFromRoute ?? null
     );
@@ -101,6 +107,7 @@ const ProjectPublishScreen: React.FC = () => {
     });
     const [preflightError, setPreflightError] = useState<string | null>(null);
     const [activeAction, setActiveAction] = useState<PublishAction>('idle');
+    const coverInputRef = useRef<HTMLInputElement>(null);
 
     const suggestedTarget = useMemo(
         () => suggestTargetByWordCount(project?.wordCount ?? 0),
@@ -158,6 +165,7 @@ const ProjectPublishScreen: React.FC = () => {
 
     const handleBack = () => navigate({ type: 'tab', id: 'write' });
     const isBusy = createReleaseMutation.isLoading || publishReleaseMutation.isLoading;
+    const isCoverMutating = isCoverUploading || updateProjectMutation.isLoading;
     const matchingReleaseId =
         selectedTarget && publishTargetFromRoute === selectedTarget
             ? releaseIdFromRoute
@@ -278,6 +286,42 @@ const ProjectPublishScreen: React.FC = () => {
         }
     };
 
+    const handleCoverPickerOpen = () => {
+        if (!projectId || isCoverMutating) {
+            return;
+        }
+        coverInputRef.current?.click();
+    };
+
+    const handleCoverUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        event.target.value = '';
+
+        if (!file || !projectId) {
+            return;
+        }
+
+        try {
+            const url = await upload(file, 'cover', projectId);
+            if (!url) {
+                return;
+            }
+
+            await updateProjectMutation.mutateAsync({
+                projectId,
+                updates: {
+                    coverUrl: url,
+                },
+            });
+        } catch (error) {
+            const message =
+                error instanceof Error && error.message.trim()
+                    ? error.message.trim()
+                    : (lang === 'en' ? 'Unable to update cover.' : 'تعذّر تحديث الغلاف.');
+            showToast(message);
+        }
+    };
+
     const handlePreview = async () => {
         if (!selectedTarget) {
             showToast(lang === 'en' ? 'Choose how you want to publish first.' : 'اختر طريقة النشر أولاً.');
@@ -381,15 +425,47 @@ const ProjectPublishScreen: React.FC = () => {
                 <div className="container mx-auto max-w-4xl px-4 md:px-8">
                     <div className="mb-4 rounded-2xl border border-white/5 bg-slate-800/50 p-4">
                         <div className="flex items-start gap-4">
-                            <div className="w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 md:w-24">
+                            <button
+                                type="button"
+                                onClick={handleCoverPickerOpen}
+                                disabled={isCoverMutating || !projectId}
+                                className="group relative w-20 shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 text-left transition hover:border-white/20 disabled:cursor-not-allowed disabled:opacity-80 md:w-24"
+                                aria-label={lang === 'en' ? 'Add or replace cover' : 'إضافة أو استبدال الغلاف'}
+                            >
                                 {project.coverUrl ? (
-                                    <img src={project.coverUrl} alt="Cover" className="aspect-[2/3] h-full w-full object-cover" />
+                                    <>
+                                        <img src={project.coverUrl} alt="Cover" className="aspect-[2/3] h-full w-full object-cover" />
+                                        <div className="pointer-events-none absolute bottom-2 right-2 flex h-7 w-7 items-center justify-center rounded-full border border-white/15 bg-black/55 text-white shadow-lg transition group-hover:bg-black/65">
+                                            {isCoverMutating ? (
+                                                <LoadingSpinner />
+                                            ) : (
+                                                <EditIcon className="h-3.5 w-3.5" />
+                                            )}
+                                        </div>
+                                    </>
                                 ) : (
-                                    <div className="flex aspect-[2/3] items-center justify-center text-slate-500">
-                                        <BookIcon className="h-8 w-8" />
+                                    <div className="flex aspect-[2/3] h-full w-full flex-col items-center justify-center gap-2 px-2 text-center text-slate-400">
+                                        {isCoverMutating ? (
+                                            <LoadingSpinner />
+                                        ) : (
+                                            <>
+                                                <BookIcon className="h-7 w-7 text-slate-500" />
+                                                <div className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-200">
+                                                    <UploadIcon className="h-3 w-3" />
+                                                    <span>{lang === 'en' ? 'Add Cover' : 'أضف غلافاً'}</span>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 )}
-                            </div>
+                                <input
+                                    ref={coverInputRef}
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={handleCoverUpload}
+                                    className="hidden"
+                                />
+                            </button>
                             <div className="min-w-0 flex-1">
                                 <BilingualText role="H1" className="!mb-2 !text-2xl">
                                     {lang === 'en' ? project.titleEn : project.titleAr}

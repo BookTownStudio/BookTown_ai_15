@@ -14,6 +14,7 @@ import {
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
 import { normalizePublicationVisibility, type PublicationVisibility } from "./rights/bookRights";
+import { resolveCanonicalCoverState } from "./covers/canonicalFallbackCover";
 
 type ReadyLongformRelease = {
   releaseId: string;
@@ -191,6 +192,12 @@ export const bridgeReleaseToLongformPublication = onCall(
         const title = release.title;
         const language = release.language;
         const coverUrl = release.coverUrl;
+        const resolvedCover = resolveCanonicalCoverState({
+          coverUrl,
+          title,
+          author: release.authorDisplayName,
+          kind: "blog",
+        });
         const excerpt = deriveExcerpt(release.normalizedContent);
         const wordCount = deriveWordCount(release.normalizedContent);
         const estimatedReadingMinutes = deriveEstimatedReadingMinutes(wordCount);
@@ -256,6 +263,10 @@ export const bridgeReleaseToLongformPublication = onCall(
               language,
               status: "published",
               visibility: requestedVisibility,
+              coverMode: resolvedCover.coverMode,
+              ...(resolvedCover.fallbackCover
+                ? { fallbackCover: resolvedCover.fallbackCover }
+                : {}),
               publicationVersion,
               publishVersion: 1,
               wordCount,
@@ -295,6 +306,10 @@ export const bridgeReleaseToLongformPublication = onCall(
               language,
               status: "published",
               visibility: requestedVisibility,
+              coverMode: resolvedCover.coverMode,
+              ...(resolvedCover.fallbackCover
+                ? { fallbackCover: resolvedCover.fallbackCover }
+                : { fallbackCover: FieldValue.delete() }),
               publicationVersion,
               publishVersion: publicationVersion,
               wordCount,

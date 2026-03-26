@@ -9,12 +9,13 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { EyeIcon } from '../icons/EyeIcon.tsx';
 import { BasketIcon } from '../icons/BasketIcon.tsx';
 import { EllipsisIcon } from '../icons/EllipsisIcon.tsx';
-import { generateColorFromText, cn } from '../../lib/utils.ts';
+import { cn } from '../../lib/utils.ts';
 import { Book } from '../../types/entities.ts';
 import { BookCardSkeleton } from '../ui/Skeletons.tsx';
 import { usePrefetch } from '../../lib/hooks/usePrefetch.ts';
 import { useRemoveBookFromShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
 import MoveBookModal from '../modals/MoveBookModal.tsx';
+import CanonicalCoverArtwork from './CanonicalCoverArtwork.tsx';
 
 interface BookCardProps {
   bookId: string;
@@ -80,11 +81,6 @@ const BookCard: React.FC<BookCardProps> = ({
     [book, lang]
   );
 
-  const fallbackColorClass = useMemo(
-    () => generateColorFromText(book?.titleEn || 'book'),
-    [book?.titleEn]
-  );
-
   const hasInAppEbook = !!book?.ebookAttachmentId || !!book?.isEbookAvailable;
   const hasExternalBuy = !!book?.isEbookAvailable;
 
@@ -141,16 +137,14 @@ const BookCard: React.FC<BookCardProps> = ({
     return (
       <div className="relative w-full h-full overflow-hidden rounded-card shadow-md bg-slate-800">
         {imageError || !book.coverUrl ? (
-          <div
-            className={cn(
-              'w-full h-full flex items-center justify-center p-2',
-              fallbackColorClass
-            )}
-          >
-            <p className="text-white font-bold text-[10px] leading-tight line-clamp-3">
-              {title}
-            </p>
-          </div>
+          <CanonicalCoverArtwork
+            title={title}
+            author={author}
+            coverUrl={imageError ? undefined : book.coverUrl}
+            coverMode={book.coverMode}
+            fallbackCover={book.fallbackCover}
+            variant="posterCompact"
+          />
         ) : (
           <img
             src={book.coverUrl}
@@ -231,8 +225,8 @@ const BookCard: React.FC<BookCardProps> = ({
   }, [
     book,
     imageError,
-    fallbackColorClass,
     title,
+    author,
     handleImageError,
     menuOpen,
     lang,

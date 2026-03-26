@@ -2,6 +2,11 @@ import React from 'react';
 import { ShareIcon } from '../icons/ShareIcon.tsx';
 import { ClockIcon } from '../icons/ClockIcon.tsx';
 import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
+import CanonicalCoverArtwork from './CanonicalCoverArtwork.tsx';
+import type {
+    CanonicalCoverMode,
+    CanonicalFallbackCover,
+} from '../../types/entities.ts';
 
 type LongformBlockNode = {
     type: 'paragraph' | 'heading' | 'blockquote' | 'bulletList' | 'orderedList' | 'listItem' | 'text';
@@ -28,6 +33,8 @@ type LongformReadingSurfaceProps = {
         }>;
     };
     coverUrl?: string;
+    coverMode?: CanonicalCoverMode;
+    fallbackCover?: CanonicalFallbackCover;
     excerpt?: string;
     eyebrow?: string;
     authorInteractive?: boolean;
@@ -50,25 +57,6 @@ const formatReadingTime = (estimatedReadingMinutes: number): string => {
         : 1;
     return `${minutes} min read`;
 };
-
-const CoverFallback: React.FC<{ title: string; author?: string }> = ({ title, author }) => (
-    <div className="relative aspect-[16/7] w-full overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(237,202,150,0.35),_transparent_40%),linear-gradient(135deg,_#30261d_0%,_#6f5640_45%,_#d6c2a3_100%)]">
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,_rgba(10,10,10,0.08)_0%,_rgba(10,10,10,0.3)_100%)]" />
-        <div className="relative flex h-full flex-col justify-end px-8 py-7 md:px-10 md:py-9">
-            <div className="mb-3 text-[11px] uppercase tracking-[0.28em] text-white/70">
-                BookTown Longform
-            </div>
-            <h2 className="max-w-2xl text-2xl font-semibold leading-tight tracking-tight text-white md:text-[2.2rem]">
-                {title}
-            </h2>
-            {author ? (
-                <p className="mt-3 text-sm tracking-[0.14em] text-white/72 uppercase">
-                    {author}
-                </p>
-            ) : null}
-        </div>
-    </div>
-);
 
 const renderInlineNodes = (nodes: LongformBlockNode[]): React.ReactNode =>
     nodes.map((node, index) => {
@@ -153,6 +141,8 @@ const LongformReadingSurface: React.FC<LongformReadingSurfaceProps> = ({
     estimatedReadingMinutes,
     normalizedContent,
     coverUrl,
+    coverMode,
+    fallbackCover,
     excerpt,
     eyebrow = 'BookTown Longform',
     authorInteractive = false,
@@ -165,10 +155,27 @@ const LongformReadingSurface: React.FC<LongformReadingSurfaceProps> = ({
     <article className="mx-auto max-w-3xl overflow-hidden rounded-[32px] border border-white/8 bg-[#f4ecdd] shadow-[0_40px_120px_rgba(0,0,0,0.45)]">
         {coverUrl ? (
             <div className="aspect-[16/7] w-full overflow-hidden bg-[#ddd1bc]">
-                <img src={coverUrl} alt={title} className="h-full w-full object-cover" />
+                <CanonicalCoverArtwork
+                    title={title}
+                    author={author}
+                    coverUrl={coverUrl}
+                    coverMode={coverMode}
+                    fallbackCover={fallbackCover}
+                    variant="landscape"
+                    eyebrow={eyebrow}
+                />
             </div>
         ) : (
-            <CoverFallback title={title} author={author} />
+            <CanonicalCoverArtwork
+                title={title}
+                author={author}
+                coverUrl={coverUrl}
+                coverMode={coverMode}
+                fallbackCover={fallbackCover}
+                variant="landscape"
+                eyebrow={eyebrow}
+                className="aspect-[16/7] w-full"
+            />
         )}
 
         <div className="px-6 py-8 md:px-12 md:py-12">

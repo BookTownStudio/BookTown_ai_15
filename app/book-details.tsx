@@ -23,6 +23,7 @@ import ReviewCard from '../components/content/ReviewCard.tsx';
 import SelectShelfModal from '../components/modals/SelectShelfModal.tsx';
 import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import GlassCard from '../components/ui/GlassCard.tsx';
+import CanonicalCoverArtwork from '../components/content/CanonicalCoverArtwork.tsx';
 
 import {
   XIcon,
@@ -461,7 +462,15 @@ const BookDetailsScreen: React.FC = () => {
         {/* Hero */}
         <section className={cn('flex items-start gap-5', isRTL && 'flex-row-reverse')}>
           <div className="w-32 md:w-56 aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-slate-800 flex-shrink-0">
-            {book.coverUrl && <img src={book.coverUrl} className="w-full h-full object-cover" alt="" />}
+            <CanonicalCoverArtwork
+              title={lang === 'en' ? book.titleEn : book.titleAr}
+              author={lang === 'en' ? book.authorEn : book.authorAr}
+              coverUrl={book.coverUrl}
+              coverMode={book.coverMode}
+              fallbackCover={book.fallbackCover}
+              variant="poster"
+              imageClassName="w-full h-full object-cover"
+            />
           </div>
           <div className={cn('flex-grow flex flex-col pt-1', isRTL && 'text-right')}>
             <BilingualText role="H1" className="!text-2xl md:!text-4xl !font-bold leading-tight">
