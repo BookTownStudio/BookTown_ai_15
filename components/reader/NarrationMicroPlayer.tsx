@@ -44,79 +44,85 @@ const NarrationMicroPlayer: React.FC<NarrationMicroPlayerProps> = ({
   return (
     <AnimatePresence>
       {isVisible && (
-        <motion.div
-          initial={{ opacity: 0, y: 18 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 18 }}
-          transition={motionTransition}
-          className="fixed left-1/2 z-[15] h-[72px] w-[78%] max-w-[440px] -translate-x-1/2 rounded-[20px] border border-white/14 bg-[linear-gradient(180deg,rgba(27,38,63,0.82),rgba(17,25,44,0.88))] shadow-[0_14px_34px_rgba(8,12,20,0.18)] backdrop-blur-2xl sm:h-20"
+        <div
+          className="fixed left-1/2 z-[15] w-[72%] max-w-[72vw] -translate-x-1/2 md:w-[420px] md:max-w-[420px]"
           style={{ bottom: 'calc(env(safe-area-inset-bottom) + 88px)' }}
           onClick={(event) => event.stopPropagation()}
         >
-          <div className="grid h-full grid-rows-[18px_1fr] px-3 pb-2 pt-2 sm:px-4">
-            <p
-              className="mx-auto max-w-[88%] truncate text-center text-[12px] font-medium tracking-[0.01em] text-white/68"
-              title={title}
-            >
-              {title}
-            </p>
+          <motion.div
+            initial={{ opacity: 0, y: 18 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 18 }}
+            transition={motionTransition}
+            className="h-[72px] rounded-[20px] border border-white/14 bg-[linear-gradient(180deg,rgba(27,38,63,0.82),rgba(17,25,44,0.88))] shadow-[0_14px_34px_rgba(8,12,20,0.18)] backdrop-blur-2xl md:h-20"
+          >
+            <div className="grid h-full grid-rows-[18px_1fr] px-3 pb-2 pt-2 md:px-4">
+              <div className="w-full overflow-hidden px-3 md:px-5">
+                <p
+                  className="w-full truncate whitespace-nowrap text-center text-[12px] font-medium tracking-[0.01em] text-white/68"
+                  title={title}
+                >
+                  {title}
+                </p>
+              </div>
 
-            <div className="flex items-center justify-center gap-2.5 sm:gap-3.5">
-              <button
-                type="button"
-                onClick={onPrevious}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/84 transition hover:bg-white/10"
-                aria-label={lang === 'en' ? 'Previous paragraph' : 'الفقرة السابقة'}
-              >
-                <SkipBackIcon className="h-4.5 w-4.5" />
-              </button>
+              <div className="flex items-center justify-center gap-2.5 md:gap-3.5">
+                <button
+                  type="button"
+                  onClick={onPrevious}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/84 transition hover:bg-white/10"
+                  aria-label={lang === 'en' ? 'Previous paragraph' : 'الفقرة السابقة'}
+                >
+                  <SkipBackIcon className="h-4.5 w-4.5" />
+                </button>
 
-              <button
-                type="button"
-                onClick={onPlayPause}
-                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#0f1830] shadow-[0_8px_18px_rgba(255,255,255,0.16)] transition hover:scale-[1.02]"
-                aria-label={
-                  status === 'playing'
-                    ? (lang === 'en' ? 'Pause narration' : 'إيقاف السرد مؤقتاً')
-                    : (lang === 'en' ? 'Play narration' : 'تشغيل السرد')
-                }
-              >
-                {status === 'playing' ? (
-                  <PauseIcon className="h-5 w-5" />
-                ) : (
-                  <PlayIcon className="h-5 w-5" />
-                )}
-              </button>
+                <button
+                  type="button"
+                  onClick={onPlayPause}
+                  className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[#0f1830] shadow-[0_8px_18px_rgba(255,255,255,0.16)] transition hover:scale-[1.02]"
+                  aria-label={
+                    status === 'playing'
+                      ? (lang === 'en' ? 'Pause narration' : 'إيقاف السرد مؤقتاً')
+                      : (lang === 'en' ? 'Play narration' : 'تشغيل السرد')
+                  }
+                >
+                  {status === 'playing' ? (
+                    <PauseIcon className="h-5 w-5" />
+                  ) : (
+                    <PlayIcon className="h-5 w-5" />
+                  )}
+                </button>
 
-              <button
-                type="button"
-                onClick={onNext}
-                className="flex h-9 w-9 items-center justify-center rounded-full text-white/84 transition hover:bg-white/10"
-                aria-label={lang === 'en' ? 'Next paragraph' : 'الفقرة التالية'}
-              >
-                <SkipForwardIcon className="h-4.5 w-4.5" />
-              </button>
+                <button
+                  type="button"
+                  onClick={onNext}
+                  className="flex h-9 w-9 items-center justify-center rounded-full text-white/84 transition hover:bg-white/10"
+                  aria-label={lang === 'en' ? 'Next paragraph' : 'الفقرة التالية'}
+                >
+                  <SkipForwardIcon className="h-4.5 w-4.5" />
+                </button>
 
-              <button
-                type="button"
-                onClick={onSpeedChange}
-                className="flex h-9 min-w-[60px] items-center justify-center rounded-full border border-white/10 bg-white/10 px-3 text-sm font-semibold text-white/90 transition hover:bg-white/14"
-                aria-label={lang === 'en' ? 'Change speed' : 'تغيير السرعة'}
-              >
-                {formatPlaybackRate(playbackRate)}
-              </button>
+                <button
+                  type="button"
+                  onClick={onSpeedChange}
+                  className="flex h-9 min-w-[60px] items-center justify-center rounded-full border border-white/10 bg-white/10 px-3 text-sm font-semibold text-white/90 transition hover:bg-white/14"
+                  aria-label={lang === 'en' ? 'Change speed' : 'تغيير السرعة'}
+                >
+                  {formatPlaybackRate(playbackRate)}
+                </button>
 
-              <button
-                type="button"
-                onClick={onClose}
-                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
-                aria-label={lang === 'en' ? 'Close narration controls' : 'إغلاق عناصر تحكم السرد'}
-              >
-                <XIcon className="h-4.5 w-4.5" />
-              </button>
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-white/72 transition hover:bg-white/10 hover:text-white"
+                  aria-label={lang === 'en' ? 'Close narration controls' : 'إغلاق عناصر تحكم السرد'}
+                >
+                  <XIcon className="h-4.5 w-4.5" />
+                </button>
+              </div>
             </div>
-          </div>
-        </motion.div>
+          </motion.div>
+        </div>
       )}
     </AnimatePresence>
   );

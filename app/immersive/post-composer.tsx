@@ -1,29 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { useDebounce } from 'use-debounce';
-import { motion, AnimatePresence } from 'framer-motion';
 
 import Button from '../../components/ui/Button.tsx';
-import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Modal from '../../components/ui/Modal.tsx';
 
 import {
-  XIcon,
   BookIcon,
   QuoteIcon,
   MediaIcon,
   ShelvesIcon,
   AuthorsIcon,
-  GlobeIcon,
-  UsersIcon,
-  LockIcon,
-  TrashIcon,
-  // FIX: Replaced non-existent LocationIcon with MapPinIcon which is exported in components/icons
-  MapPinIcon
+  MapPinIcon,
 } from '../../components/icons';
 
 import SelectBookModal from '../../components/modals/SelectBookModal.tsx';
@@ -35,48 +27,70 @@ import { PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
 import { AttachmentListV1 } from '../../components/content/AttachmentRendererV1.tsx';
 import { useAttachmentUpload } from '../../lib/hooks/useAttachmentUpload.ts';
 import { useCreatePost } from '../../lib/hooks/useCreatePost.ts';
+import { useDraft, useDrafts, useDeleteDraft, useSaveDraft } from '../../lib/hooks/useDrafts.ts';
 import { cn } from '../../lib/utils.ts';
 
 const TEXT_LIMIT = 500;
-const DRAFTS_KEY = 'booktown_drafts_v2';
 const AUTOSAVE_DEBOUNCE = 800;
 
-interface PostDraftV2 {
-  id: string;
-  text: string;
-  visibility: PostVisibilityScope;
-  attachment: PostAttachment | null;
-  updatedAt: string;
-  createdAt: string;
-}
+const buildDraftSignature = (
+  text: string,
+  visibility: PostVisibilityScope,
+  attachment: PostAttachment | null
+): string =>
+  JSON.stringify({
+    text: text.trim(),
+    visibility,
+    attachment: attachment ?? null,
+  });
 
 const PostComposerScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
-  const { lang, isRTL } = useI18n();
+  const { lang } = useI18n();
   const { user, isGuest } = useAuth();
   const { showToast } = useToast();
 
   const [text, setText] = useState('');
   const [attachment, setAttachment] = useState<PostAttachment | null>(null);
   const [visibility, setVisibility] = useState<PostVisibilityScope>('public');
-  const [drafts, setDrafts] = useState<PostDraftV2[]>([]);
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
-  const [showDrafts, setShowDrafts] = useState(false);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
   const [isAutosaving, setIsAutosaving] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modals, setModals] = useState({ book: false, author: false, shelf: false, quote: false });
+  const attachedBookRef = useRef<string>('');
+  const attachedPublicationRef = useRef<string>('');
+  const prefillTextRef = useRef<string>('');
+  const appliedRouteDraftIdRef = useRef<string | null>(null);
+  const previousRouteDraftIdRef = useRef<string>('');
+  const lastPersistedDraftSignatureRef = useRef<string>('');
+  const handledDraftErrorIdRef = useRef<string | null>(null);
+  const previousUidRef = useRef<string | null>(null);
 
   const { upload, isUploading } = useAttachmentUpload();
   const { mutate: createPost, isLoading: isPosting } = useCreatePost();
+  const { data: drafts } = useDrafts();
+  const { mutateAsync: saveDraftAsync } = useSaveDraft();
+  const { mutateAsync: deleteDraftAsync, isLoading: isDeletingDraft } = useDeleteDraft();
 
   const [debouncedText] = useDebounce(text, AUTOSAVE_DEBOUNCE);
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);
   const [debouncedAttachment] = useDebounce(attachment, AUTOSAVE_DEBOUNCE);
-  const attachedBookRef = useRef<string>('');
-  const attachedPublicationRef = useRef<string>('');
-  const prefillTextRef = useRef<string>('');
+
+  const routeDraftId =
+    currentView.type === 'immersive' &&
+    currentView.id === 'postComposer' &&
+    typeof currentView.params?.draftId === 'string'
+      ? currentView.params.draftId.trim()
+      : '';
+
+  const {
+    data: routeDraft,
+    isLoading: isRouteDraftLoading,
+    isError: isRouteDraftError,
+  } = useDraft(routeDraftId || undefined);
+
   const cancelTarget =
     currentView.type === 'immersive' &&
     currentView.id === 'postComposer' &&
@@ -86,11 +100,71 @@ const PostComposerScreen: React.FC = () => {
       : { type: 'tab', id: 'social' as const };
 
   useEffect(() => {
-    const stored = localStorage.getItem(DRAFTS_KEY);
-    if (stored) setDrafts(JSON.parse(stored));
-  }, []);
+    const nextUid = user?.uid ?? null;
+    if (previousUidRef.current === null) {
+      previousUidRef.current = nextUid;
+      return;
+    }
+
+    if (previousUidRef.current === nextUid) {
+      return;
+    }
+
+    previousUidRef.current = nextUid;
+    setText('');
+    setAttachment(null);
+    setVisibility('public');
+    setActiveDraftId(null);
+    lastPersistedDraftSignatureRef.current = '';
+    appliedRouteDraftIdRef.current = null;
+    handledDraftErrorIdRef.current = null;
+  }, [user?.uid]);
 
   useEffect(() => {
+    if (previousRouteDraftIdRef.current === routeDraftId) return;
+
+    const previousRouteDraftId = previousRouteDraftIdRef.current;
+    previousRouteDraftIdRef.current = routeDraftId;
+    appliedRouteDraftIdRef.current = null;
+    handledDraftErrorIdRef.current = null;
+
+    if (!routeDraftId && previousRouteDraftId) {
+      setText('');
+      setAttachment(null);
+      setVisibility('public');
+      setActiveDraftId(null);
+      lastPersistedDraftSignatureRef.current = '';
+    }
+  }, [routeDraftId]);
+
+  useEffect(() => {
+    if (!routeDraftId || !routeDraft) return;
+    if (appliedRouteDraftIdRef.current === routeDraft.id) return;
+
+    appliedRouteDraftIdRef.current = routeDraft.id;
+    setActiveDraftId(routeDraft.id);
+    setText(routeDraft.content || '');
+    setAttachment(routeDraft.attachment || null);
+    setVisibility(routeDraft.visibility || 'public');
+    lastPersistedDraftSignatureRef.current = buildDraftSignature(
+      routeDraft.content || '',
+      routeDraft.visibility || 'public',
+      routeDraft.attachment || null
+    );
+  }, [routeDraft, routeDraftId]);
+
+  useEffect(() => {
+    if (!routeDraftId || !isRouteDraftError) return;
+    if (handledDraftErrorIdRef.current === routeDraftId) return;
+
+    handledDraftErrorIdRef.current = routeDraftId;
+    setActiveDraftId(null);
+    showToast(lang === 'en' ? 'Draft unavailable.' : 'المسودة غير متاحة.');
+  }, [isRouteDraftError, lang, routeDraftId, showToast]);
+
+  useEffect(() => {
+    if (routeDraftId) return;
+
     const prefillText =
       currentView.type === 'immersive' &&
       currentView.id === 'postComposer' &&
@@ -102,9 +176,11 @@ const PostComposerScreen: React.FC = () => {
 
     prefillTextRef.current = prefillText;
     setText(prefillText);
-  }, [currentView, text]);
+  }, [currentView, routeDraftId, text]);
 
   useEffect(() => {
+    if (routeDraftId) return;
+
     const attachedBook =
       currentView.type === 'immersive' &&
       currentView.id === 'postComposer' &&
@@ -118,8 +194,7 @@ const PostComposerScreen: React.FC = () => {
         ? attachedBook.id.trim()
         : '';
 
-    if (!attachedBookId) return;
-    if (attachedBookRef.current === attachedBookId) return;
+    if (!attachedBookId || attachedBookRef.current === attachedBookId) return;
 
     attachedBookRef.current = attachedBookId;
     setAttachment({
@@ -128,9 +203,11 @@ const PostComposerScreen: React.FC = () => {
       bookId: attachedBookId,
     } as PostAttachment);
     showToast(lang === 'en' ? 'Book attached.' : 'تم إرفاق الكتاب.');
-  }, [currentView, lang, showToast]);
+  }, [currentView, lang, routeDraftId, showToast]);
 
   useEffect(() => {
+    if (routeDraftId) return;
+
     const attachedPublication =
       currentView.type === 'immersive' &&
       currentView.id === 'postComposer' &&
@@ -144,8 +221,7 @@ const PostComposerScreen: React.FC = () => {
         ? attachedPublication.id.trim()
         : '';
 
-    if (!attachedPublicationId) return;
-    if (attachedPublicationRef.current === attachedPublicationId) return;
+    if (!attachedPublicationId || attachedPublicationRef.current === attachedPublicationId) return;
 
     attachedPublicationRef.current = attachedPublicationId;
     setAttachment({
@@ -163,37 +239,129 @@ const PostComposerScreen: React.FC = () => {
         : {}),
     } as PostAttachment);
     showToast(lang === 'en' ? 'Publication attached.' : 'تم إرفاق المنشور.');
-  }, [currentView, lang, showToast]);
+  }, [currentView, lang, routeDraftId, showToast]);
 
   useEffect(() => {
-    if (!debouncedText.trim() && !debouncedAttachment) return;
-    setIsAutosaving(true);
+    if (!user || isGuest) return;
+    if (routeDraftId && isRouteDraftLoading) return;
+    if (routeDraftId && !routeDraft && !isRouteDraftError) return;
 
-    const now = new Date().toISOString();
-    const id = activeDraftId || crypto.randomUUID();
+    const normalizedText = debouncedText.trim();
+    const hasDraftContent = normalizedText.length > 0 || !!debouncedAttachment;
+    const nextSignature = buildDraftSignature(
+      normalizedText,
+      debouncedVisibility,
+      debouncedAttachment ?? null
+    );
 
-    const draft: PostDraftV2 = {
-      id,
-      text: debouncedText,
-      visibility: debouncedVisibility,
-      attachment: debouncedAttachment,
-      updatedAt: now,
-      createdAt: drafts.find(d => d.id === id)?.createdAt || now
+    let cancelled = false;
+    const finishAutosave = () => {
+      window.setTimeout(() => {
+        if (!cancelled) setIsAutosaving(false);
+      }, 500);
     };
 
-    const updated = activeDraftId
-      ? drafts.map(d => d.id === id ? draft : d)
-      : [draft, ...drafts];
+    if (!hasDraftContent) {
+      if (!activeDraftId) {
+        lastPersistedDraftSignatureRef.current = '';
+        setIsAutosaving(false);
+        return () => {
+          cancelled = true;
+        };
+      }
 
-    localStorage.setItem(DRAFTS_KEY, JSON.stringify(updated));
-    setDrafts(updated);
-    if (!activeDraftId) setActiveDraftId(id);
+      setIsAutosaving(true);
+      void deleteDraftAsync(activeDraftId)
+        .then(() => {
+          if (cancelled) return;
+          setActiveDraftId(null);
+          lastPersistedDraftSignatureRef.current = '';
+        })
+        .catch(() => {
+          if (cancelled) return;
+          showToast(lang === 'en' ? 'Failed to clear draft.' : 'تعذر حذف المسودة.');
+        })
+        .finally(finishAutosave);
 
-    setTimeout(() => setIsAutosaving(false), 500);
-  }, [debouncedText, debouncedVisibility, debouncedAttachment]);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    if (nextSignature === lastPersistedDraftSignatureRef.current) {
+      setIsAutosaving(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setIsAutosaving(true);
+    void saveDraftAsync({
+      draftId: activeDraftId || undefined,
+      content: normalizedText,
+      attachment: debouncedAttachment ?? null,
+      visibility: debouncedVisibility,
+    })
+      .then((savedDraft) => {
+        if (cancelled) return;
+        setActiveDraftId(savedDraft.id);
+        lastPersistedDraftSignatureRef.current = nextSignature;
+      })
+      .catch(() => {
+        if (cancelled) return;
+        showToast(lang === 'en' ? 'Failed to save draft.' : 'تعذر حفظ المسودة.');
+      })
+      .finally(finishAutosave);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeDraftId,
+    debouncedAttachment,
+    debouncedText,
+    debouncedVisibility,
+    deleteDraftAsync,
+    isGuest,
+    isRouteDraftError,
+    isRouteDraftLoading,
+    lang,
+    routeDraft,
+    routeDraftId,
+    saveDraftAsync,
+    showToast,
+    user,
+  ]);
+
+  const handleOpenDrafts = useCallback(() => {
+    navigate({
+      type: 'immersive',
+      id: 'drafts',
+      params: { from: currentView },
+    });
+  }, [currentView, navigate]);
+
+  const handleDiscard = useCallback(async () => {
+    setShowCancelPrompt(false);
+
+    if (activeDraftId) {
+      try {
+        await deleteDraftAsync(activeDraftId);
+      } catch {
+        showToast(lang === 'en' ? 'Failed to clear draft.' : 'تعذر حذف المسودة.');
+      }
+    }
+
+    setActiveDraftId(null);
+    setText('');
+    setAttachment(null);
+    setVisibility('public');
+    lastPersistedDraftSignatureRef.current = '';
+    navigate(cancelTarget);
+  }, [activeDraftId, cancelTarget, deleteDraftAsync, lang, navigate, showToast]);
 
   const handlePublish = () => {
-    if (isGuest || isPosting || isUploading) return;
+    if (isGuest || isPosting || isUploading || isRouteDraftLoading) return;
     if (!text.trim() && !attachment) {
       showToast(lang === 'en' ? 'Empty post' : 'منشور فارغ');
       return;
@@ -204,7 +372,16 @@ const PostComposerScreen: React.FC = () => {
       attachment &&
       typeof (attachment as { type?: unknown }).type === 'string' &&
       structuredTypes.has(String((attachment as { type?: unknown }).type).toLowerCase())
-        ? (attachment as { type: string; entityId?: string; bookId?: string; authorId?: string; quoteId?: string; shelfId?: string; venueId?: string; publicationId?: string })
+        ? (attachment as {
+            type: string;
+            entityId?: string;
+            bookId?: string;
+            authorId?: string;
+            quoteId?: string;
+            shelfId?: string;
+            venueId?: string;
+            publicationId?: string;
+          })
         : null;
     const structuredEntityId = structuredAttachment
       ? (typeof structuredAttachment.entityId === 'string' && structuredAttachment.entityId.trim()) ||
@@ -226,97 +403,125 @@ const PostComposerScreen: React.FC = () => {
       return;
     }
 
-    createPost({
-      content: { text: text.trim() },
-      attachments: attachment ? [attachment] : [],
-      visibility,
-      publishToken: crypto.randomUUID()
-    }, {
-      onSuccess: (createdPost: any) => {
-        if (structuredAttachment) {
-          const persistedType =
-            typeof createdPost?.primaryEntityType === 'string'
-              ? createdPost.primaryEntityType.trim().toLowerCase()
-              : '';
-          const persistedId =
-            typeof createdPost?.primaryEntityId === 'string'
-              ? createdPost.primaryEntityId.trim()
-              : '';
-          const expectedType = structuredAttachment.type.trim().toLowerCase();
-          if (persistedType !== expectedType || persistedId !== structuredEntityId) {
-            console.error('[POST_COMPOSER][STRUCTURED_ATTACHMENT_DROPPED]', {
-              expectedType,
-              expectedId: structuredEntityId,
-              persistedType,
-              persistedId,
-              postId: createdPost?.id || null,
-            });
+    createPost(
+      {
+        content: { text: text.trim() },
+        attachments: attachment ? [attachment] : [],
+        visibility,
+        publishToken: crypto.randomUUID(),
+      },
+      {
+        onSuccess: async (createdPost: any) => {
+          if (structuredAttachment) {
+            const persistedType =
+              typeof createdPost?.primaryEntityType === 'string'
+                ? createdPost.primaryEntityType.trim().toLowerCase()
+                : '';
+            const persistedId =
+              typeof createdPost?.primaryEntityId === 'string'
+                ? createdPost.primaryEntityId.trim()
+                : '';
+            const expectedType = structuredAttachment.type.trim().toLowerCase();
+            if (persistedType !== expectedType || persistedId !== structuredEntityId) {
+              console.error('[POST_COMPOSER][STRUCTURED_ATTACHMENT_DROPPED]', {
+                expectedType,
+                expectedId: structuredEntityId,
+                persistedType,
+                persistedId,
+                postId: createdPost?.id || null,
+              });
+            }
           }
-        }
-        showToast(lang === 'en' ? 'Published' : 'تم النشر');
-        navigate(currentView.params?.from || { type: 'tab', id: 'social' });
+
+          if (activeDraftId) {
+            try {
+              await deleteDraftAsync(activeDraftId);
+            } catch {
+              showToast(
+                lang === 'en'
+                  ? 'Published, but draft cleanup failed.'
+                  : 'تم النشر ولكن تعذر حذف المسودة.'
+              );
+            }
+          }
+
+          setActiveDraftId(null);
+          lastPersistedDraftSignatureRef.current = '';
+          showToast(lang === 'en' ? 'Published' : 'تم النشر');
+          navigate(currentView.params?.from || { type: 'tab', id: 'social' });
+        },
       }
-    });
+    );
   };
 
   const attachmentTypes = [
-    { id: 'book', icon: BookIcon, label: 'Book', action: () => setModals(m => ({ ...m, book: true })) },
-    { id: 'author', icon: AuthorsIcon, label: 'Author', action: () => setModals(m => ({ ...m, author: true })) },
-    { id: 'shelf', icon: ShelvesIcon, label: 'Shelf', action: () => setModals(m => ({ ...m, shelf: true })) },
-    { id: 'quote', icon: QuoteIcon, label: 'Quote', action: () => setModals(m => ({ ...m, quote: true })) },
-    // FIX: Replaced LocationIcon with MapPinIcon
+    { id: 'book', icon: BookIcon, label: 'Book', action: () => setModals((current) => ({ ...current, book: true })) },
+    { id: 'author', icon: AuthorsIcon, label: 'Author', action: () => setModals((current) => ({ ...current, author: true })) },
+    { id: 'shelf', icon: ShelvesIcon, label: 'Shelf', action: () => setModals((current) => ({ ...current, shelf: true })) },
+    { id: 'quote', icon: QuoteIcon, label: 'Quote', action: () => setModals((current) => ({ ...current, quote: true })) },
     { id: 'venue', icon: MapPinIcon, label: 'Venue', action: () => showToast('Venue coming soon') },
-    { id: 'media', icon: MediaIcon, label: 'Media', action: () => fileInputRef.current?.click() }
+    { id: 'media', icon: MediaIcon, label: 'Media', action: () => fileInputRef.current?.click() },
   ];
+
+  const isDraftAvailable = !isGuest && (drafts?.length || 0) > 0;
+  const footerDraftLabel = isAutosaving
+    ? (lang === 'en' ? 'Saving draft...' : 'جارٍ حفظ المسودة...')
+    : activeDraftId
+      ? (lang === 'en' ? 'Draft saved' : 'تم حفظ المسودة')
+      : '';
 
   return (
     <div className="h-screen bg-[#0f172a] text-white flex flex-col">
-      {/* Header */}
       <header className="flex items-center justify-between px-4 h-16 border-b border-white/5">
-        <button onClick={() => setShowCancelPrompt(true)}>Cancel</button>
+        <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft}>
+          Cancel
+        </button>
         <div className="flex gap-2">
-          {drafts.length > 0 && (
-            <button onClick={() => setShowDrafts(true)} className="px-3 py-1 text-xs rounded-full bg-white/5">
+          {isDraftAvailable && (
+            <button onClick={handleOpenDrafts} className="px-3 py-1 text-xs rounded-full bg-white/5">
               Drafts
             </button>
           )}
-          <Button onClick={handlePublish} disabled={isPosting || isUploading}>
+          <Button onClick={handlePublish} disabled={isPosting || isUploading || isRouteDraftLoading}>
             {isPosting ? <LoadingSpinner /> : 'Post'}
           </Button>
         </div>
       </header>
 
-      {/* INLINE ATTACHMENT SELECTOR (LOCKED) */}
       <div className="grid grid-cols-6 gap-2 px-4 py-4 border-b border-white/5">
-        {attachmentTypes.map(t => (
+        {attachmentTypes.map((type) => (
           <button
-            key={t.id}
-            onClick={t.action}
+            key={type.id}
+            onClick={type.action}
             className="flex flex-col items-center gap-1 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+            disabled={isRouteDraftLoading}
           >
-            <t.icon className="h-6 w-6" />
-            <span className="text-[10px]">{t.label}</span>
+            <type.icon className="h-6 w-6" />
+            <span className="text-[10px]">{type.label}</span>
           </button>
         ))}
       </div>
 
-      {/* TEXT */}
       <textarea
         value={text}
-        onChange={(e) => setText(e.target.value.slice(0, TEXT_LIMIT))}
+        onChange={(event) => setText(event.target.value.slice(0, TEXT_LIMIT))}
         placeholder="What's happening?"
         className="flex-grow px-6 py-6 bg-transparent text-2xl font-serif resize-none focus:outline-none"
+        disabled={isRouteDraftLoading}
       />
 
       {attachment && (
         <div className="px-6 pb-4">
-          <AttachmentListV1 attachments={[attachment]} onRemove={() => setAttachment(null)} surface="write" />
+          <AttachmentListV1
+            attachments={[attachment]}
+            onRemove={() => setAttachment(null)}
+            surface="write"
+          />
         </div>
       )}
 
-      {/* FOOTER */}
       <footer className="h-14 px-4 flex items-center justify-between border-t border-white/5">
-        {isAutosaving && <span className="text-xs opacity-40">Draft saved</span>}
+        <span className="text-xs opacity-40">{footerDraftLabel}</span>
         <span className={cn('text-xs', TEXT_LIMIT - text.length < 50 && 'text-amber-400')}>
           {TEXT_LIMIT - text.length} / {TEXT_LIMIT}
         </span>
@@ -327,45 +532,61 @@ const PostComposerScreen: React.FC = () => {
         ref={fileInputRef}
         hidden
         accept="image/*"
-        onChange={async e => {
-          const file = e.target.files?.[0];
+        onChange={async (event) => {
+          const file = event.target.files?.[0];
           if (!file) return;
-          const att = await upload({ file, type: 'IMAGE', parentId: 'draft', parentType: 'drafts' });
-          if (att) setAttachment(att);
+
+          const attachmentRecord = await upload({
+            file,
+            type: 'IMAGE',
+            parentId: activeDraftId || 'draft',
+            parentType: 'drafts',
+          });
+          if (attachmentRecord) {
+            setAttachment(attachmentRecord);
+          }
         }}
       />
 
       <SelectBookModal
         isOpen={modals.book}
-        onClose={() => setModals(m => ({ ...m, book: false }))}
-        onBookSelect={(b) => setAttachment({ type: 'book', entityId: b.id, bookId: b.id } as PostAttachment)}
+        onClose={() => setModals((current) => ({ ...current, book: false }))}
+        onBookSelect={(book) =>
+          setAttachment({ type: 'book', entityId: book.id, bookId: book.id } as PostAttachment)
+        }
       />
       <AttachAuthorModal
         isOpen={modals.author}
-        onClose={() => setModals(m => ({ ...m, author: false }))}
-        onSelect={(a) => setAttachment({ type: 'author', entityId: a.id, authorId: a.id } as PostAttachment)}
+        onClose={() => setModals((current) => ({ ...current, author: false }))}
+        onSelect={(author) =>
+          setAttachment({ type: 'author', entityId: author.id, authorId: author.id } as PostAttachment)
+        }
       />
       <AttachShelfModal
         isOpen={modals.shelf}
-        onClose={() => setModals(m => ({ ...m, shelf: false }))}
-        onSelect={(s) => setAttachment({ type: 'shelf', entityId: s.id, shelfId: s.id } as PostAttachment)}
+        onClose={() => setModals((current) => ({ ...current, shelf: false }))}
+        onSelect={(shelf) =>
+          setAttachment({ type: 'shelf', entityId: shelf.id, shelfId: shelf.id } as PostAttachment)
+        }
       />
       <AttachQuoteModal
         isOpen={modals.quote}
-        onClose={() => setModals(m => ({ ...m, quote: false }))}
-        onSelect={(q) => {
-          const canonicalQuoteId = q.canonicalQuoteId || q.id;
+        onClose={() => setModals((current) => ({ ...current, quote: false }))}
+        onSelect={(quote) => {
+          const canonicalQuoteId = quote.canonicalQuoteId || quote.id;
           setAttachment({
             type: 'quote',
             entityId: canonicalQuoteId,
             quoteId: canonicalQuoteId,
-            quoteOwnerId: q.ownerId,
+            quoteOwnerId: quote.ownerId,
           } as PostAttachment);
         }}
       />
 
       <Modal isOpen={showCancelPrompt} onClose={() => setShowCancelPrompt(false)}>
-        <Button onClick={() => navigate(cancelTarget)}>Discard</Button>
+        <Button onClick={handleDiscard} disabled={isDeletingDraft}>
+          {isDeletingDraft ? <LoadingSpinner /> : 'Discard'}
+        </Button>
       </Modal>
     </div>
   );

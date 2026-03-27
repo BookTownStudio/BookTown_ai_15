@@ -26,9 +26,11 @@ import { useRecommendedShelves } from '../../lib/hooks/useRecommendedShelves.ts'
 import PageShell from '../../components/layout/PageShell.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useUserStats } from '../../lib/hooks/useUserStats.ts';
-
-const SYSTEM_ORDER = ['currently-reading', 'want-to-read', 'finished'];
-const ORGANIZATIONAL_SYSTEM_ORDER = ['want-to-read', 'finished'];
+import {
+  getSystemShelfSortRank,
+  isCurrentlyReadingShelf,
+  isSystemShelf,
+} from '../../lib/shelves/systemShelves.ts';
 
 const ReadScreen: React.FC = () => {
   const { lang } = useI18n();
@@ -145,14 +147,15 @@ const ReadScreen: React.FC = () => {
   const sortedShelves = useMemo(() => {
     if (!shelves) return [];
     return shelves
-      .filter((shelf) => shelf.id !== 'currently-reading')
+      .filter((shelf) => !isCurrentlyReadingShelf(shelf))
       .sort((a, b) => {
-      const ai = ORGANIZATIONAL_SYSTEM_ORDER.indexOf(a.id);
-      const bi = ORGANIZATIONAL_SYSTEM_ORDER.indexOf(b.id);
+      const ai = getSystemShelfSortRank(a);
+      const bi = getSystemShelfSortRank(b);
 
-      if (ai !== -1 && bi !== -1) return ai - bi;
-      if (ai !== -1) return -1;
-      if (bi !== -1) return 1;
+      if (ai !== bi) return ai - bi;
+      if (isSystemShelf(a) && isSystemShelf(b)) {
+        return a.titleEn.localeCompare(b.titleEn);
+      }
 
       return a.titleEn.localeCompare(b.titleEn);
     });
@@ -174,15 +177,15 @@ const ReadScreen: React.FC = () => {
 
       <main
         ref={mainContentRef}
-        className="flex-grow overflow-y-auto pt-24 pb-32"
+        className="flex-grow overflow-y-auto pt-20 pb-32"
       >
         <LiteraryShell>
-          <header className="mb-8 flex items-center justify-between">
+          <header className="mb-5 flex items-center justify-between">
             <div>
-              <BilingualText role="H1" className="!text-3xl font-bold">
+              <BilingualText role="H1" className="!text-2xl md:!text-3xl font-bold">
                 {lang === 'en' ? 'Your Library' : 'مكتبتك'}
               </BilingualText>
-              <BilingualText role="Caption" className="mt-1">
+              <BilingualText role="Caption" className="mt-0.5">
                 {lang === 'en'
                   ? `${bookCount} books on ${shelfCount} shelves`
                   : `${bookCount} كتابًا على ${shelfCount} رفوف`}
@@ -190,11 +193,12 @@ const ReadScreen: React.FC = () => {
             </div>
 
             <Button
-              variant="primary"
+              variant="secondary"
+              size="sm"
               onClick={() => setCreateShelfModalOpen(true)}
-              className="rounded-full !px-6"
+              className="rounded-full !px-4"
             >
-              <PlusIcon className="h-5 w-5 sm:mr-2" />
+              <PlusIcon className="h-4 w-4 sm:mr-2" />
               <span className="hidden sm:inline">
                 {lang === 'en' ? 'New Shelf' : 'رف جديد'}
               </span>
@@ -243,7 +247,7 @@ const ReadScreen: React.FC = () => {
                     }))
                   }
                   layout={shelfLayouts[shelf.id] || 'carousel'}
-                  isDeletable={!ORGANIZATIONAL_SYSTEM_ORDER.includes(shelf.id)}
+                  isDeletable={!isSystemShelf(shelf)}
                 />
               ))}
             </div>

@@ -968,6 +968,37 @@ export const apiContracts = {
       }
     ),
 
+    moveBookBetweenShelves: defineContract(
+      z
+        .object({
+          fromShelfId: z.string().min(1),
+          toShelfId: z.string().min(1),
+          bookId: z.string().min(1),
+          snapshot: z
+            .object({
+              titleEn: z.string().nullable().optional(),
+              titleAr: z.string().nullable().optional(),
+              coverUrl: z.string().nullable().optional(),
+            })
+            .strict()
+            .optional(),
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "services/firebaseDbService.ts",
+          "lib/actions/shelfActions.ts",
+          "lib/hooks/useMoveBookBetweenShelves.ts",
+        ],
+      }
+    ),
+
     createDirectConversation: defineContract(
       z
         .object({

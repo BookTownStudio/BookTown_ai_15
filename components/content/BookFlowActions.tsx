@@ -14,6 +14,7 @@ import { useFollowUser } from '../../lib/hooks/useFollowUser.ts';
 import { useFollowAuthor } from '../../lib/hooks/useFollowAuthor.ts';
 import { BookmarkIcon } from '../icons/BookmarkIcon.tsx';
 import { useI18n } from '../../store/i18n.tsx';
+import { getSemanticSystemShelfId } from '../../lib/shelves/systemShelves.ts';
 
 interface BookFlowActionsProps {
     entityType: 'book' | 'user' | 'quote' | 'venue' | 'event' | 'bookfair' | 'author';
@@ -46,7 +47,9 @@ const BookFlowActions: React.FC<BookFlowActionsProps> = ({ entityType, entityId 
         e.stopPropagation();
         switch (entityType) {
             case 'book':
-                const wantToReadShelf = shelves?.find(s => s.id === 'want-to-read');
+                const wantToReadShelf = shelves?.find(
+                    s => getSemanticSystemShelfId(s) === 'want-to-read'
+                );
                 if (wantToReadShelf) {
                     // FIX: Pass object with shelfId and bookId.
                     toggleBookOnShelf({ shelfId: wantToReadShelf.id, bookId: entityId });

@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
+import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
 
 const db = admin.firestore();
 
@@ -45,6 +46,10 @@ export const removeBookFromShelf = onCall<RemoveBookFromShelfRequest>(
       if (!ownerId || ownerId !== uid) {
         throw new HttpsError("permission-denied", "You do not own this shelf.");
       }
+      assertShelfAllowsEntryMutation({
+        physicalShelfId: shelfSnap.id,
+        shelfData,
+      });
 
       tx.set(
         shelfRef,

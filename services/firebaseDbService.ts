@@ -1947,6 +1947,39 @@ class FirebaseShelfService {
     });
   }
 
+  async moveBookBetweenShelves(
+    uid: string,
+    fromShelfId: string,
+    toShelfId: string,
+    bookId: string,
+    book?: Book
+  ): Promise<void> {
+    const snapshot = book ? {
+      titleEn: book.titleEn || null,
+      titleAr: book.titleAr || null,
+      coverUrl: book.coverUrl || null,
+    } : null;
+
+    await callEndpoint<
+      {
+        fromShelfId: string;
+        toShelfId: string;
+        bookId: string;
+        snapshot: {
+          titleEn: string | null;
+          titleAr: string | null;
+          coverUrl: string | null;
+        } | null;
+      },
+      { ok: boolean }
+    >("moveBookBetweenShelves", {
+      fromShelfId,
+      toShelfId,
+      bookId,
+      snapshot,
+    });
+  }
+
   async followShelf(uid: string, shelfId: string): Promise<void> {
     const db = getDb();
     if (!db) return;
@@ -3605,11 +3638,19 @@ class FirebaseSocialService {
 
     return draftSnap.docs.map((draftDoc) => {
       const data = draftDoc.data() as Record<string, unknown>;
+      const visibility =
+        data.visibility === "public" ||
+        data.visibility === "followers" ||
+        data.visibility === "private" ||
+        data.visibility === "restricted"
+          ? data.visibility
+          : "public";
       return {
         id: draftDoc.id,
         userId: normalizedUid,
         content: normalizeString(data.content, 5000),
         attachment: (data.attachment as any) || undefined,
+        visibility,
         updatedAt: toIsoString(data.updatedAt),
       };
     });
@@ -3627,11 +3668,19 @@ class FirebaseSocialService {
       throw new Error("NOT_FOUND: Draft not found.");
     }
     const data = snap.data() as Record<string, unknown>;
+    const visibility =
+      data.visibility === "public" ||
+      data.visibility === "followers" ||
+      data.visibility === "private" ||
+      data.visibility === "restricted"
+        ? data.visibility
+        : "public";
     return {
       id: snap.id,
       userId: normalizedUid,
       content: normalizeString(data.content, 5000),
       attachment: (data.attachment as any) || undefined,
+      visibility,
       updatedAt: toIsoString(data.updatedAt),
     };
   }
@@ -3646,6 +3695,13 @@ class FirebaseSocialService {
         ? draft.id.trim()
         : doc(collection(db, "users", normalizedUid, "drafts")).id;
     const content = normalizeString(draft?.content, 5000);
+    const visibility =
+      draft?.visibility === "public" ||
+      draft?.visibility === "followers" ||
+      draft?.visibility === "private" ||
+      draft?.visibility === "restricted"
+        ? draft.visibility
+        : "public";
 
     await setDoc(
       doc(db, "users", normalizedUid, "drafts", draftId),
@@ -3653,6 +3709,7 @@ class FirebaseSocialService {
         userId: normalizedUid,
         content,
         attachment: draft?.attachment || null,
+        visibility,
         updatedAt: nowIso,
         createdAt: nowIso,
       },
@@ -3664,6 +3721,7 @@ class FirebaseSocialService {
       userId: normalizedUid,
       content,
       attachment: draft?.attachment,
+      visibility,
       updatedAt: nowIso,
     };
   }

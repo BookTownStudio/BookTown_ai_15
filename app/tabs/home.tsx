@@ -5,7 +5,6 @@ import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import DiscoveryEntryCard from '../../components/content/DiscoveryEntryCard.tsx';
-import { useUserShelves, useShelfEntries } from '../../lib/hooks/useUserShelves.ts';
 import BookCard from '../../components/content/BookCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
@@ -23,7 +22,8 @@ import { useToast } from '../../store/toast.tsx';
 import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
 import { cn } from '../../lib/utils.ts';
-import { useCurrentlyReading } from '../../lib/hooks/useCurrentlyReading.ts';
+import { useContinueReading } from '../../lib/hooks/useContinueReading.ts';
+import { useQuickRecs } from '../../lib/hooks/useQuickRecs.ts';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
@@ -33,7 +33,6 @@ import { trackSearchClick } from '../../services/searchTelemetryService.ts';
    Constants
 -------------------------------- */
 const EBOOK_ONLY_STORAGE_KEY = 'booktown.search.ebookOnly';
-const CURRENTLY_READING_ID = 'currently-reading';
 
 /* -------------------------------
    Home Screen
@@ -42,15 +41,8 @@ const HomeScreen: React.FC = () => {
   const { lang } = useI18n();
   const { navigate, currentView, resetTokens } = useNavigation();
   const { showToast } = useToast();
-
-  useUserShelves(); 
-
-  /** 
-   * 🔒 Mirror Membership Authority
-   * We use reading_progress for recency-sorted items but 
-   * logically it represents the 'currently-reading' shelf.
-   */
-  const { items: continueReadingItems, isLoading: isProgressLoading } = useCurrentlyReading(8);
+  const { items: continueReadingItems, isLoading: isContinueLoading } = useContinueReading(8);
+  const { bookIds: recommendedBookIds, isLoading: isRecommendationsLoading } = useQuickRecs();
   const { addToHistory } = useSearchHistory();
 
   const [isSearching, setIsSearching] = useState(false);
@@ -63,6 +55,7 @@ const HomeScreen: React.FC = () => {
      Collapsible section state
   -------------------------------- */
   const [isContinueOpen, setIsContinueOpen] = useState(true);
+  const [isRecommendationsOpen, setIsRecommendationsOpen] = useState(true);
 
   /* -------------------------------
      🔒 HOME RESET CONTRACT
@@ -274,18 +267,14 @@ const HomeScreen: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-12 mt-8">
-                <DiscoveryEntryCard
-                  onClick={() => navigate({ type: 'stack', id: 'discovery' })}
-                />
-
-                {/* 📖 Continue Reading (Mirror of currently-reading shelf) */}
+                {/* 📖 Continue Reading (canonical currently-reading shelf) */}
                 <CollapsibleSection
                   titleEn="Continue Reading"
                   titleAr="أكمل القراءة"
                   isOpen={isContinueOpen}
                   onToggle={() => setIsContinueOpen(v => !v)}
                 >
-                  {isProgressLoading ? (
+                  {isContinueLoading ? (
                     <div className="flex gap-4 py-4 overflow-hidden">
                       {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
                     </div>
@@ -316,6 +305,7 @@ const HomeScreen: React.FC = () => {
                             bookId={item.bookId}
                             layout="list"
                             progress={Math.round(item.progress * 100)}
+                            className="w-40 sm:w-44"
                           />
                         </motion.div>
                       ))}
@@ -330,6 +320,53 @@ const HomeScreen: React.FC = () => {
                     </div>
                   )}
                 </CollapsibleSection>
+
+                <DiscoveryEntryCard
+                  onClick={() => navigate({ type: 'stack', id: 'discovery' })}
+                />
+
+                <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
+                  <CollapsibleSection
+                    titleEn="Trending Now"
+                    titleAr="الرائج الآن"
+                    isOpen={isRecommendationsOpen}
+                    onToggle={() => setIsRecommendationsOpen(v => !v)}
+                  >
+                    {isRecommendationsLoading ? (
+                      <div className="flex gap-4 py-4 overflow-hidden">
+                        {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
+                      </div>
+                    ) : recommendedBookIds.length > 0 ? (
+                      <motion.div
+                        className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
+                        variants={staggerContainer}
+                        initial="hidden"
+                        animate="show"
+                      >
+                        {recommendedBookIds.map(bookId => (
+                          <motion.div
+                            key={bookId}
+                            variants={listItemVariants}
+                            className="snap-start"
+                          >
+                            <BookCard
+                              bookId={bookId}
+                              layout="list"
+                            />
+                          </motion.div>
+                        ))}
+                      </motion.div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
+                        <span className="text-sm italic text-slate-500 text-center">
+                          {lang === 'en'
+                            ? 'Recommendations will appear here soon.'
+                            : 'ستظهر التوصيات هنا قريباً.'}
+                        </span>
+                      </div>
+                    )}
+                  </CollapsibleSection>
+                </div>
 
               </div>
             )}

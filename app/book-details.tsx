@@ -120,7 +120,7 @@ const BookDetailsScreen: React.FC = () => {
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
-  const { isSaved = false } = useBookShelfStatus(bookId);
+  const { isSavedOnPhysicalShelf = false } = useBookShelfStatus(bookId);
   
   useRelatedBooks(book || undefined);
   const submitReview = useSubmitReview();
@@ -489,10 +489,28 @@ const BookDetailsScreen: React.FC = () => {
 
         {/* Action Row */}
         <section className="grid grid-cols-4 gap-3">
-          <button onClick={() => setIsShelfModalOpen(true)} className={cn('flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10', isSaved && 'text-accent bg-accent/10')}><ShelvesIcon className="h-6 w-6" /></button>
+          <button onClick={() => setIsShelfModalOpen(true)} className={cn('flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10', isSavedOnPhysicalShelf && 'text-accent bg-accent/10')}><ShelvesIcon className="h-6 w-6" /></button>
           <button className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><QuoteIcon className="h-6 w-6" /></button>
           <button onClick={handleShare} className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><ShareIcon className="h-6 w-6" /></button>
-              <button onClick={() => hasReadableEbook && navigate({ type: 'immersive', id: 'reader', params: { bookId, from: currentView, recommendationContext } })} disabled={!hasReadableEbook} className={cn('flex items-center justify-center aspect-square rounded-2xl border bg-white/5 border-white/10', !hasReadableEbook && 'opacity-20')}><EyeIcon className="h-6 w-6" /></button>
+              <button
+                onClick={() =>
+                  hasReadableEbook
+                    && navigate({
+                      type: 'immersive',
+                      id: 'reader',
+                      params: { bookId, from: currentView, recommendationContext }
+                    })
+                }
+                disabled={!hasReadableEbook}
+                className={cn(
+                  'flex items-center justify-center aspect-square rounded-2xl border transition-all',
+                  hasReadableEbook
+                    ? 'bg-accent text-black border-accent shadow-lg shadow-accent/25 ring-1 ring-accent/40'
+                    : 'bg-white/5 border-white/10 opacity-20'
+                )}
+              >
+                <EyeIcon className={cn('h-6 w-6', hasReadableEbook && 'h-6.5 w-6.5')} />
+              </button>
         </section>
 
         {/* Summary */}

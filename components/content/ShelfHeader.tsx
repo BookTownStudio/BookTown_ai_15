@@ -14,6 +14,7 @@ import { ShareIcon } from '../icons/ShareIcon.tsx';
 import { DuplicateIcon } from '../icons/DuplicateIcon.tsx';
 import { TrashIcon } from '../icons/TrashIcon.tsx';
 import { cn } from '../../lib/utils.ts';
+import { isSystemShelf } from '../../lib/shelves/systemShelves.ts';
 
 interface ShelfHeaderProps {
   shelf: Shelf;
@@ -38,8 +39,6 @@ interface ShelfHeaderProps {
   books?: Book[];
 }
 
-const SYSTEM_SHELVES = ['currently-reading', 'want-to-read', 'finished'];
-
 const ShelfHeader: React.FC<ShelfHeaderProps> = ({
   shelf,
   bookCount,
@@ -61,7 +60,7 @@ const ShelfHeader: React.FC<ShelfHeaderProps> = ({
   const [imageError, setImageError] = useState(false);
   const menuRef = useRef<HTMLDivElement | null>(null);
 
-  const isSystemShelf = SYSTEM_SHELVES.includes(shelf.id);
+  const isProtectedSystemShelf = isSystemShelf(shelf);
 
   useEffect(() => {
     setImageError(false);
@@ -92,7 +91,7 @@ const ShelfHeader: React.FC<ShelfHeaderProps> = ({
       action: onAddBookRequest,
     },
 
-    onEditRequest && {
+    !isProtectedSystemShelf && onEditRequest && {
       labelEn: 'Edit',
       labelAr: 'تعديل',
       icon: EditIcon,
@@ -122,7 +121,7 @@ const ShelfHeader: React.FC<ShelfHeaderProps> = ({
     },
 
     // 🔒 Delete disabled for system shelves
-    !isSystemShelf && isDeletable && onDeleteRequest && {
+    !isProtectedSystemShelf && isDeletable && onDeleteRequest && {
       labelEn: 'Delete',
       labelAr: 'حذف',
       icon: TrashIcon,

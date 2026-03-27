@@ -8,6 +8,9 @@ import { moveBookBetweenShelves } from '../actions/shelfActions.ts';
 import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useUserShelves } from './useUserShelves.ts';
+import { isCurrentlyReadingShelf } from '../shelves/systemShelves.ts';
+
+const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
 
 export const useMoveBookBetweenShelves = () => {
   const queryClient = useQueryClient();
@@ -29,6 +32,24 @@ export const useMoveBookBetweenShelves = () => {
     }) => {
       if (!uid) throw new Error('User not authenticated');
       if (!book) throw new Error('BOOK_REQUIRED');
+      if (fromShelfId === toShelfId) {
+        throw new Error('SOURCE_AND_DESTINATION_MUST_DIFFER');
+      }
+
+      const sourceShelf = shelves?.find(shelf => shelf.id === fromShelfId);
+      const destinationShelf = shelves?.find(shelf => shelf.id === toShelfId);
+      if (
+        isCurrentlyReadingShelf(sourceShelf) ||
+        (!sourceShelf && fromShelfId === SYSTEM_CURRENTLY_READING_SHELF_ID)
+      ) {
+        throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
+      }
+      if (
+        isCurrentlyReadingShelf(destinationShelf) ||
+        (!destinationShelf && toShelfId === SYSTEM_CURRENTLY_READING_SHELF_ID)
+      ) {
+        throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
+      }
 
       return moveBookBetweenShelves({
         uid,
@@ -143,21 +164,27 @@ export const useMoveBookBetweenShelves = () => {
      * -----------------------------
      */
     onError: (_err, vars, context: any) => {
-      if (!uid || !context) return;
+      if (uid && context) {
+        queryClient.setQueryData(
+          queryKeys.user.shelfEntries(uid, vars.fromShelfId) as unknown as any[],
+          context.previousFromEntries
+        );
 
-      queryClient.setQueryData(
-        queryKeys.user.shelfEntries(uid, vars.fromShelfId) as unknown as any[],
-        context.previousFromEntries
-      );
+        queryClient.setQueryData(
+          queryKeys.user.shelfEntries(uid, vars.toShelfId) as unknown as any[],
+          context.previousToEntries
+        );
 
-      queryClient.setQueryData(
-        queryKeys.user.shelfEntries(uid, vars.toShelfId) as unknown as any[],
-        context.previousToEntries
-      );
+        queryClient.setQueryData(
+          [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[],
+          context.previousShelves
+        );
+      }
 
-      queryClient.setQueryData(
-        [...queryKeys.user.shelves(uid), { ownerId: uid }] as unknown as any[],
-        context.previousShelves
+      showToast(
+        lang === 'en'
+          ? 'Book move failed. Original shelf membership was preserved.'
+          : 'فشل نقل الكتاب. تم الحفاظ على العضوية الأصلية للرف.'
       );
     },
 

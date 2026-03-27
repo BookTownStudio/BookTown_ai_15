@@ -13,6 +13,7 @@ import { useToast } from '../../store/toast.tsx';
 import { BookIcon } from '../icons/BookIcon.tsx';
 import { ChevronRightIcon as ArrowRightIcon } from '../icons/ChevronRightIcon.tsx';
 import { Book } from '../../types/entities.ts';
+import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
 
 interface MoveBookModalProps {
   isOpen: boolean;
@@ -35,6 +36,13 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
   const { data: shelves, isLoading } = useUserShelves();
   const { mutate: moveBook, isLoading: isMoving } =
     useMoveBookBetweenShelves();
+  const legalDestinationShelves = React.useMemo(
+    () =>
+      (shelves || []).filter(
+        shelf => shelf.id !== fromShelfId && !isCurrentlyReadingShelf(shelf)
+      ),
+    [fromShelfId, shelves]
+  );
 
   const handleMove = (e: React.MouseEvent, toShelfId: string) => {
     // 🔒 Stop propagation to prevent triggering parent onClick (Book Details navigation)
@@ -90,9 +98,15 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
           </div>
         ) : (
           <div className="space-y-2 max-h-64 overflow-y-auto">
-            {shelves
-              ?.filter(shelf => shelf.id !== fromShelfId)
-              .map(shelf => (
+            {legalDestinationShelves.length === 0 && (
+              <BilingualText role="Caption" className="text-center py-6 text-slate-500">
+                {lang === 'en'
+                  ? 'No eligible shelves available.'
+                  : 'لا توجد رفوف صالحة للنقل.'}
+              </BilingualText>
+            )}
+
+            {legalDestinationShelves.map(shelf => (
                 <button
                   key={shelf.id}
                   onClick={(e) => handleMove(e, shelf.id)}

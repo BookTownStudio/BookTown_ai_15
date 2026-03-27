@@ -75,10 +75,14 @@ export const useBookShelfStatus = (bookId?: string) => {
    * A book is considered saved if it belongs
    * to ANY shelf (physical or virtual)
    */
+  const isSavedOnPhysicalShelf = shelvesWithBook.length > 0;
+  const isCurrentlyReadingFromProgress = isCurrentlyReading;
   const isSaved = shelvesWithBook.length > 0 || isCurrentlyReading;
 
   return {
     shelvesWithBook,
+    isSavedOnPhysicalShelf,
+    isCurrentlyReadingFromProgress,
     isSaved,
     isOnShelf,
     isLoading: isLoadingShelves || isLoadingProgress,

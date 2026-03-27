@@ -500,6 +500,13 @@ export interface ShelfDataService {
     recommendationContext?: LibrarianRecommendationContext
   ): Promise<void>;
   removeBookFromShelf(uid: string, shelfId: string, bookId: string): Promise<void>;
+  moveBookBetweenShelves(
+    uid: string,
+    fromShelfId: string,
+    toShelfId: string,
+    bookId: string,
+    book?: Book
+  ): Promise<void>;
 
   followShelf(uid: string, shelfId: string): Promise<void>;
   getStats(shelfId: string): Promise<ShelfStats>;

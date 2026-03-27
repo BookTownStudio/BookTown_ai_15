@@ -557,6 +557,7 @@ export interface PostDraft {
     userId: string;
     content: string;
     attachment?: PostAttachment;
+    visibility?: PostVisibilityScope;
     updatedAt: string; // ISO string
 }
 

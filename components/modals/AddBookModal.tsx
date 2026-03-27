@@ -26,6 +26,7 @@ import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
+import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -91,6 +92,8 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const targetShelfDisplayName = targetShelf
     ? (lang === 'en' ? targetShelf.titleEn : targetShelf.titleAr)
     : '';
+  const isProgressManagedShelf =
+    isCurrentlyReadingShelf(targetShelf) || (!targetShelf && targetShelfId === 'currently-reading');
 
   const resolveUploadFileType = (file: File): 'epub' | 'pdf' | null => {
     const lowerName = file.name.toLowerCase();
@@ -149,7 +152,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
    */
   const handleAdd = async (result: SearchResultDTO) => {
     if (!targetShelfId || busyId) return;
-    if (targetShelfId === 'currently-reading') {
+    if (isProgressManagedShelf) {
       showToast(
         lang === 'en'
           ? 'Reading continuity is managed automatically.'

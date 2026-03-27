@@ -6,6 +6,7 @@ import {
   resolveAuthoritativeRecommendationOrigin,
   sanitizeRecommendationOrigin,
 } from "../attribution/recommendationOrigin";
+import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
 
 const db = admin.firestore();
 
@@ -86,6 +87,10 @@ export const addBookToShelf = onCall<AddBookToShelfRequest>({ cors: true }, asyn
     if (!ownerId || ownerId !== uid) {
       throw new HttpsError("permission-denied", "You do not own this shelf.");
     }
+    assertShelfAllowsEntryMutation({
+      physicalShelfId: shelfSnap.id,
+      shelfData,
+    });
 
     const entries =
       shelfData.entries && typeof shelfData.entries === "object"

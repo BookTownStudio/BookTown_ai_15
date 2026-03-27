@@ -27,25 +27,25 @@ const DiscoveryEntryCard: React.FC = () => {
       <button
         onClick={handleClick}
         className={cn(
-          "w-full rounded-2xl border px-6 py-5 text-left transition-all",
+          "w-full rounded-2xl border px-6 py-4 text-left transition-all",
           "bg-white/5 dark:bg-white/5",
           "border-black/5 dark:border-white/10",
           "hover:bg-white/10 dark:hover:bg-white/10",
           "active:scale-[0.98]"
         )}
       >
-        <div className="flex flex-col gap-2">
+        <div className="flex flex-col gap-1.5">
           <h3 className="text-lg font-semibold">
             {lang === 'en' ? 'Explore New Directions' : 'استكشف مسارات جديدة'}
           </h3>
 
-          <p className="text-sm text-slate-500">
+          <p className="text-sm text-slate-500 line-clamp-1">
             {lang === 'en'
-              ? 'Discover themes and paths beyond direct search.'
-              : 'اكتشف موضوعات ومسارات تتجاوز البحث المباشر.'}
+              ? 'Discover paths beyond search.'
+              : 'اكتشف مسارات تتجاوز البحث.'}
           </p>
 
-          <span className="text-sm font-semibold text-primary pt-1">
+          <span className="text-sm font-semibold text-primary pt-0.5">
             {lang === 'en' ? 'Explore →' : 'استكشف ←'}
           </span>
         </div>

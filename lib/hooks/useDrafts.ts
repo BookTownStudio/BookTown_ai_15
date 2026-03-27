@@ -28,6 +28,7 @@ interface SaveDraftVariables {
     draftId?: string;
     content: string;
     attachment?: PostAttachment | null;
+    visibility?: PostDraft['visibility'];
 }
 
 export const useSaveDraft = () => {
@@ -36,13 +37,14 @@ export const useSaveDraft = () => {
     const uid = user?.uid;
 
     return useMutation({
-        mutationFn: async ({ draftId, content, attachment }: SaveDraftVariables) => {
+        mutationFn: async ({ draftId, content, attachment, visibility }: SaveDraftVariables) => {
             if (!uid) throw new Error("Not authenticated");
             return dataService.social.saveDraft(uid, {
                 id: draftId || `draft_${Date.now()}`,
                 userId: uid,
                 content,
-                attachment: attachment || undefined
+                attachment: attachment || undefined,
+                visibility: visibility || 'public'
             });
         },
         onSuccess: (data) => {
@@ -63,9 +65,10 @@ export const useDeleteDraft = () => {
             if (!uid) throw new Error("Not authenticated");
             return dataService.social.deleteDraft(uid, draftId);
         },
-        onSuccess: () => {
+        onSuccess: (_, draftId) => {
             // FIX: Use invalidateQueries instead of invalidate.
             queryClient.invalidateQueries(['drafts', uid]);
+            queryClient.invalidateQueries(['draft', uid, draftId]);
         },
     });
 };

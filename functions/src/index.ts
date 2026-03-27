@@ -130,6 +130,7 @@ import { ssrPublicPage as ssrPublicPageRaw } from "./ssr/ssrPublicPage";
 import { duplicateShelf as duplicateShelfRaw } from "./shelves/duplicateShelf";
 import { addBookToShelf as addBookToShelfRaw } from "./shelves/addBookToShelf";
 import { removeBookFromShelf as removeBookFromShelfRaw } from "./shelves/removeBookFromShelf";
+import { moveBookBetweenShelves as moveBookBetweenShelvesRaw } from "./shelves/moveBookBetweenShelves";
 import {
   listUserShelves as listUserShelvesRaw,
   getShelf as getShelfRaw,
@@ -572,6 +573,10 @@ export const addBookToShelf = wrapCallableV2(
 export const removeBookFromShelf = wrapCallableV2(
   "removeBookFromShelf",
   removeBookFromShelfRaw
+);
+export const moveBookBetweenShelves = wrapCallableV2(
+  "moveBookBetweenShelves",
+  moveBookBetweenShelvesRaw
 );
 
 // Quotes

@@ -26,6 +26,7 @@ import { useReaderSessionBootstrap } from '../lib/hooks/useReaderSessionBootstra
 import { useReaderNarration } from '../lib/hooks/useReaderNarration.ts';
 import { resolveReaderEngine } from '../lib/reader/runtime/engineSelection.ts';
 import { useOffline } from '../lib/offline/OfflineProvider.tsx';
+import { useQueryClient } from '../lib/react-query.ts';
 import {
   clearOfflineEbook,
   getOfflineBookObjectUrl,
@@ -105,6 +106,7 @@ const ReaderScreen: React.FC = () => {
   const { showToast } = useToast();
   const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
   const { isOffline } = useOffline();
+  const queryClient = useQueryClient();
 
   const bookId =
     currentView.type === 'immersive' && currentView.params?.bookId
@@ -144,6 +146,7 @@ const ReaderScreen: React.FC = () => {
   const [isOfflineAssetBusy, setIsOfflineAssetBusy] = useState(false);
   const [pendingHighlightSelection, setPendingHighlightSelection] = useState<ReaderTextSelection | null>(null);
   const [narrationSnapshot, setNarrationSnapshot] = useState<ReaderNarrationSnapshot | null>(null);
+  const [hasObservedRuntimePagination, setHasObservedRuntimePagination] = useState(false);
   const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressFingerprintRef = useRef<string>('');
   const lastNarrationErrorRef = useRef<string>('');
@@ -180,6 +183,16 @@ const ReaderScreen: React.FC = () => {
       ),
     [manifestEstimatedPageCount, readerManifest?.locationMap?.checkpointUnit]
   );
+  const hasTrustedPagination = useMemo(
+    () =>
+      Boolean(
+        shouldUseManifestContinuityEstimate &&
+        manifestEstimatedPageCount &&
+        totalPages === manifestEstimatedPageCount
+      ),
+    [manifestEstimatedPageCount, shouldUseManifestContinuityEstimate, totalPages]
+  );
+  const canPersistProgress = hasTrustedPagination || hasObservedRuntimePagination;
   const narration = useReaderNarration({
     bookId,
     progressParagraphIndex: readerSession?.lastPosition?.paragraphIndex ?? null,
@@ -191,6 +204,7 @@ const ReaderScreen: React.FC = () => {
   const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
     setCurrentPage(nextPage);
     setTotalPages(Math.max(1, pagesCount));
+    setHasObservedRuntimePagination(true);
     setPendingHighlightSelection(null);
   }, []);
 
@@ -289,6 +303,9 @@ const ReaderScreen: React.FC = () => {
     setOfflineRecord(bookId ? getOfflineRecord(bookId) : null);
     setPendingHighlightSelection(null);
     setNarrationSnapshot(null);
+    setHasObservedRuntimePagination(false);
+    latestProgressPayloadRef.current = null;
+    lastProgressFingerprintRef.current = '';
   }, [bookId]);
 
   useEffect(() => {
@@ -606,6 +623,10 @@ const ReaderScreen: React.FC = () => {
               : 'Progress write rejected.';
           throw new Error(`[${errorCode}] ${errorMessage}`);
         }
+
+        queryClient.invalidateQueries({
+          queryKey: ['currentlyReading'],
+        });
       } catch (error) {
         console.warn('[READER][PROGRESS_PERSIST_FAILED]', error);
         enqueueProgressSyncOperation({
@@ -624,7 +645,7 @@ const ReaderScreen: React.FC = () => {
         });
       }
     },
-    [recommendationContext]
+    [queryClient, recommendationContext]
   );
 
   useEffect(() => {
@@ -690,6 +711,10 @@ const ReaderScreen: React.FC = () => {
 
   useEffect(() => {
     if (!bookId || loadingSession || renderError || (!readerSession && !hasOfflineCopy)) return;
+    if (!canPersistProgress) {
+      latestProgressPayloadRef.current = null;
+      return;
+    }
 
     const format = effectiveFormat;
     const safeTotal = Math.max(1, Math.trunc(totalPages || 1));
@@ -736,6 +761,7 @@ const ReaderScreen: React.FC = () => {
     effectiveFormat,
     renderError,
     totalPages,
+    canPersistProgress,
   ]);
 
   useEffect(() => {

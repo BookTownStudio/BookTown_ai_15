@@ -113,15 +113,9 @@ export async function moveBookBetweenShelves(params: {
 
   await ensureBookMaterialized(book);
 
-  // Remove → Add (order matters)
-  await dataService.shelves.removeBookFromShelf(
+  await dataService.shelves.moveBookBetweenShelves(
     uid,
     fromShelfId,
-    book.id
-  );
-
-  await dataService.shelves.addBookToShelf(
-    uid,
     toShelfId,
     book.id,
     book

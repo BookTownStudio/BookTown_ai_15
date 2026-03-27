@@ -9,6 +9,7 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useUserShelves } from './useUserShelves.ts';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { buildLegacyBookView } from '../books/buildLegacyBookView.ts';
+import { isCurrentlyReadingShelf } from '../shelves/systemShelves.ts';
 
 import {
   addBookToShelf,
@@ -36,6 +37,7 @@ const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
 export const useToggleBookOnShelf = () => {
   const queryClient = useQueryClient();
   const { effectiveUid } = useAuth();
+  const { data: shelves } = useUserShelves();
   const uid = effectiveUid;
 
   return useMutation({
@@ -52,7 +54,11 @@ export const useToggleBookOnShelf = () => {
     }) => {
       if (!uid) throw new Error('User not authenticated');
       if (!book) throw new Error('BOOK_REQUIRED');
-      if (shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID) {
+      const targetShelf = shelves?.find(shelf => shelf.id === shelfId);
+      if (
+        isCurrentlyReadingShelf(targetShelf) ||
+        (!targetShelf && shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID)
+      ) {
         throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
       }
 
@@ -207,7 +213,11 @@ export const useRemoveBookFromShelf = () => {
   return useMutation({
     mutationFn: ({ shelfId, bookId }: { shelfId: string; bookId: string }) => {
       if (!uid) throw new Error('User not authenticated');
-      if (shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID) {
+      const targetShelf = shelves?.find(shelf => shelf.id === shelfId);
+      if (
+        isCurrentlyReadingShelf(targetShelf) ||
+        (!targetShelf && shelfId === SYSTEM_CURRENTLY_READING_SHELF_ID)
+      ) {
         throw new Error('CURRENTLY_READING_IS_PROGRESS_MANAGED');
       }
 
