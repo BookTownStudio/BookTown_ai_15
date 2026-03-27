@@ -56,6 +56,7 @@ const PostComposerScreen: React.FC = () => {
   const [activeDraftId, setActiveDraftId] = useState<string | null>(null);
   const [showCancelPrompt, setShowCancelPrompt] = useState(false);
   const [isAutosaving, setIsAutosaving] = useState(false);
+  const [exitAction, setExitAction] = useState<'save' | 'discard' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [modals, setModals] = useState({ book: false, author: false, shelf: false, quote: false });
@@ -341,23 +342,61 @@ const PostComposerScreen: React.FC = () => {
     });
   }, [currentView, navigate]);
 
-  const handleDiscard = useCallback(async () => {
-    setShowCancelPrompt(false);
-
-    if (activeDraftId) {
-      try {
-        await deleteDraftAsync(activeDraftId);
-      } catch {
-        showToast(lang === 'en' ? 'Failed to clear draft.' : 'تعذر حذف المسودة.');
-      }
+  const flushDraftNow = useCallback(async () => {
+    if (!user || isGuest) {
+      throw new Error('Draft save requires an authenticated user.');
     }
 
-    setActiveDraftId(null);
-    setText('');
-    setAttachment(null);
-    setVisibility('public');
-    lastPersistedDraftSignatureRef.current = '';
-    navigate(cancelTarget);
+    const normalizedText = text.trim();
+    const nextSignature = buildDraftSignature(normalizedText, visibility, attachment);
+    const savedDraft = await saveDraftAsync({
+      draftId: activeDraftId || undefined,
+      content: normalizedText,
+      attachment,
+      visibility,
+    });
+
+    setActiveDraftId(savedDraft.id);
+    lastPersistedDraftSignatureRef.current = nextSignature;
+    return savedDraft.id;
+  }, [activeDraftId, attachment, isGuest, saveDraftAsync, text, user, visibility]);
+
+  const handleSaveDraftAndExit = useCallback(async () => {
+    setExitAction('save');
+
+    try {
+      await flushDraftNow();
+      setShowCancelPrompt(false);
+      navigate(cancelTarget);
+    } catch {
+      showToast(lang === 'en' ? 'Failed to save draft.' : 'تعذر حفظ المسودة.');
+    } finally {
+      setExitAction(null);
+    }
+  }, [cancelTarget, flushDraftNow, lang, navigate, showToast]);
+
+  const handleDiscard = useCallback(async () => {
+    setExitAction('discard');
+
+    try {
+      if (activeDraftId) {
+        try {
+          await deleteDraftAsync(activeDraftId);
+        } catch {
+          showToast(lang === 'en' ? 'Failed to clear draft.' : 'تعذر حذف المسودة.');
+        }
+      }
+
+      setShowCancelPrompt(false);
+      setActiveDraftId(null);
+      setText('');
+      setAttachment(null);
+      setVisibility('public');
+      lastPersistedDraftSignatureRef.current = '';
+      navigate(cancelTarget);
+    } finally {
+      setExitAction(null);
+    }
   }, [activeDraftId, cancelTarget, deleteDraftAsync, lang, navigate, showToast]);
 
   const handlePublish = () => {
@@ -464,6 +503,8 @@ const PostComposerScreen: React.FC = () => {
   ];
 
   const isDraftAvailable = !isGuest && (drafts?.length || 0) > 0;
+  const hasDraftableContent = text.trim().length > 0 || !!attachment;
+  const canSaveDraftOnExit = hasDraftableContent && !!user && !isGuest;
   const footerDraftLabel = isAutosaving
     ? (lang === 'en' ? 'Saving draft...' : 'جارٍ حفظ المسودة...')
     : activeDraftId
@@ -473,7 +514,7 @@ const PostComposerScreen: React.FC = () => {
   return (
     <div className="h-screen bg-[#0f172a] text-white flex flex-col">
       <header className="flex items-center justify-between px-4 h-16 border-b border-white/5">
-        <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft}>
+        <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft || !!exitAction}>
           Cancel
         </button>
         <div className="flex gap-2">
@@ -583,10 +624,62 @@ const PostComposerScreen: React.FC = () => {
         }}
       />
 
-      <Modal isOpen={showCancelPrompt} onClose={() => setShowCancelPrompt(false)}>
-        <Button onClick={handleDiscard} disabled={isDeletingDraft}>
-          {isDeletingDraft ? <LoadingSpinner /> : 'Discard'}
-        </Button>
+      <Modal
+        isOpen={showCancelPrompt}
+        onClose={() => {
+          if (!exitAction && !isDeletingDraft) {
+            setShowCancelPrompt(false);
+          }
+        }}
+      >
+        <div className="space-y-4">
+          <div className="space-y-2 pr-8">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              {lang === 'en' ? 'Leave composer?' : 'مغادرة المحرر؟'}
+            </h2>
+            <p className="text-sm text-slate-600 dark:text-slate-300">
+              {canSaveDraftOnExit
+                ? (lang === 'en'
+                    ? 'Save this draft before leaving, discard it, or keep editing.'
+                    : 'احفظ هذه المسودة قبل المغادرة، أو تجاهلها، أو واصل التحرير.')
+                : (lang === 'en'
+                    ? 'Discard this composer or keep editing.'
+                    : 'تجاهل هذا المحرر أو واصل التحرير.')}
+            </p>
+          </div>
+
+          <div className="flex flex-col gap-3">
+            {canSaveDraftOnExit && (
+              <Button
+                onClick={() => void handleSaveDraftAndExit()}
+                disabled={!!exitAction || isDeletingDraft}
+                className="w-full"
+              >
+                {exitAction === 'save'
+                  ? <LoadingSpinner />
+                  : (lang === 'en' ? 'Save Draft' : 'حفظ المسودة')}
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              onClick={() => void handleDiscard()}
+              disabled={!!exitAction || isDeletingDraft}
+              className="w-full"
+            >
+              {exitAction === 'discard' || isDeletingDraft
+                ? <LoadingSpinner />
+                : (lang === 'en' ? 'Discard' : 'تجاهل')}
+            </Button>
+            <Button
+              variant="ghost"
+              onClick={() => setShowCancelPrompt(false)}
+              disabled={!!exitAction || isDeletingDraft}
+              className="w-full"
+            >
+              {lang === 'en' ? 'Keep Editing' : 'متابعة التحرير'}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

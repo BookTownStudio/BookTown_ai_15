@@ -75,6 +75,11 @@ type NormalizedPost = {
     edited: boolean;
     hasAttachments: boolean;
   };
+  viewerState?: {
+    liked: boolean;
+    bookmarked: boolean;
+    reposted: boolean;
+  };
   primaryEntityType?: StructuredEntityType | null;
   primaryEntityId?: string | null;
   hydratedEntity?: HydratedEntity | null;
@@ -296,7 +301,12 @@ function normalizePostDoc(
   docId: string,
   source: Record<string, unknown>,
   stats?: Record<string, unknown>,
-  hydratedEntity?: HydratedEntity | null
+  hydratedEntity?: HydratedEntity | null,
+  viewerState?: {
+    liked: boolean;
+    bookmarked: boolean;
+    reposted: boolean;
+  } | null
 ): NormalizedPost {
   const content =
     source.content && typeof source.content === "object"
@@ -357,6 +367,7 @@ function normalizePostDoc(
       edited: flags.edited === true || source.isEdited === true,
       hasAttachments: flags.hasAttachments === true || attachments.length > 0,
     },
+    ...(viewerState ? { viewerState } : {}),
     ...(primaryEntityType ? { primaryEntityType } : {}),
     ...(primaryEntityId ? { primaryEntityId } : {}),
     ...(hydratedEntity === undefined ? {} : { hydratedEntity }),
@@ -482,6 +493,76 @@ async function readPostStatsMap(
   });
 
   return statsMap;
+}
+
+async function readViewerInteractionStateMap(
+  viewerUid: string,
+  postIds: string[]
+): Promise<Map<string, { liked: boolean; bookmarked: boolean; reposted: boolean }>> {
+  const uniqueIds = Array.from(new Set(postIds.filter((value) => value.length > 0)));
+  const viewerStateMap = new Map<
+    string,
+    { liked: boolean; bookmarked: boolean; reposted: boolean }
+  >();
+
+  uniqueIds.forEach((postId) => {
+    viewerStateMap.set(postId, {
+      liked: false,
+      bookmarked: false,
+      reposted: false,
+    });
+  });
+
+  if (!viewerUid || uniqueIds.length === 0) {
+    return viewerStateMap;
+  }
+
+  const idChunks = chunk(uniqueIds, FOLLOWING_BATCH_SIZE);
+
+  await Promise.all(
+    idChunks.map(async (postIdBatch) => {
+      const [likesSnap, bookmarksSnap, repostsSnap] = await Promise.all([
+        db
+          .collection("users")
+          .doc(viewerUid)
+          .collection("likes")
+          .where(FieldPath.documentId(), "in", postIdBatch)
+          .get(),
+        db
+          .collection("users")
+          .doc(viewerUid)
+          .collection("post_bookmarks")
+          .where(FieldPath.documentId(), "in", postIdBatch)
+          .get(),
+        db
+          .collection("users")
+          .doc(viewerUid)
+          .collection("reposts")
+          .where(FieldPath.documentId(), "in", postIdBatch)
+          .get(),
+      ]);
+
+      likesSnap.docs.forEach((docSnap) => {
+        const current = viewerStateMap.get(docSnap.id);
+        if (!current) return;
+        viewerStateMap.set(docSnap.id, { ...current, liked: true });
+      });
+
+      bookmarksSnap.docs.forEach((docSnap) => {
+        const current = viewerStateMap.get(docSnap.id);
+        if (!current) return;
+        viewerStateMap.set(docSnap.id, { ...current, bookmarked: true });
+      });
+
+      repostsSnap.docs.forEach((docSnap) => {
+        const current = viewerStateMap.get(docSnap.id);
+        if (!current) return;
+        viewerStateMap.set(docSnap.id, { ...current, reposted: true });
+      });
+    })
+  );
+
+  return viewerStateMap;
 }
 
 async function hydratePrimaryEntities(
@@ -643,11 +724,22 @@ async function hydratePrimaryEntities(
 }
 
 async function buildNormalizedPosts(
-  posts: Array<{ id: string; authorId: string; raw: Record<string, unknown> }>
+  posts: Array<{ id: string; authorId: string; raw: Record<string, unknown> }>,
+  viewerUid = ""
 ): Promise<NormalizedPost[]> {
-  const statsMap = await readPostStatsMap(posts.map((post) => post.id));
+  const postIds = posts.map((post) => post.id);
+  const [statsMap, viewerStateMap] = await Promise.all([
+    readPostStatsMap(postIds),
+    readViewerInteractionStateMap(viewerUid, postIds),
+  ]);
   const basePosts = posts.map((post) =>
-    normalizePostDoc(post.id, post.raw, statsMap.get(post.id))
+    normalizePostDoc(
+      post.id,
+      post.raw,
+      statsMap.get(post.id),
+      undefined,
+      viewerStateMap.get(post.id) ?? null
+    )
   );
   const hydrationMap = await hydratePrimaryEntities(posts, basePosts);
 
@@ -656,7 +748,8 @@ async function buildNormalizedPosts(
       post.id,
       post.raw,
       statsMap.get(post.id),
-      hydrationMap.get(post.id) ?? null
+      hydrationMap.get(post.id) ?? null,
+      viewerStateMap.get(post.id) ?? null
     )
   );
 }
@@ -784,7 +877,7 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
     });
 
     const page = sorted.slice(0, FEED_PAGE_SIZE);
-    const posts = await buildNormalizedPosts(page);
+    const posts = await buildNormalizedPosts(page, viewerUid);
     const hasMore =
       sorted.length > FEED_PAGE_SIZE ||
       batchSnapshots.some((snap) => snap.docs.length === perBatchLimit);
@@ -876,7 +969,7 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
   }
 
   const page = Array.from(collected.values()).slice(0, FEED_PAGE_SIZE);
-  const posts = await buildNormalizedPosts(page);
+  const posts = await buildNormalizedPosts(page, viewerUid);
   const hasMore = page.length === FEED_PAGE_SIZE && lastFetchedDocs === FEED_QUERY_BATCH_SIZE && cursor;
 
   if (!hasMore || !cursor) {
@@ -918,7 +1011,7 @@ export const getSocialPost = onCall({ cors: true }, async (request) => {
       authorId: readTrimmedString(raw.authorId, 128),
       raw,
     },
-  ]);
+  ], viewerUid);
 
   if (posts.length === 0) {
     throw new HttpsError("not-found", "Post not found.");
@@ -956,8 +1049,8 @@ export const listSocialComments = onCall({ cors: true }, async (request) => {
     .doc(postId)
     .collection("comments")
     .where("status", "==", "published")
-    .orderBy("timestamp", "asc")
-    .orderBy(FieldPath.documentId(), "asc")
+    .orderBy("timestamp", "desc")
+    .orderBy(FieldPath.documentId(), "desc")
     .limit(COMMENT_PAGE_SIZE);
 
   if (decodedCursor) {

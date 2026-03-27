@@ -353,6 +353,14 @@ const hydratedSocialEntitySchema = z
   })
   .strict();
 
+const postViewerStateSchema = z
+  .object({
+    liked: z.boolean(),
+    bookmarked: z.boolean(),
+    reposted: z.boolean(),
+  })
+  .strict();
+
 const profilePostSchema = z
   .object({
     id: z.string().min(1),
@@ -392,6 +400,7 @@ const profilePostSchema = z
     primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
     primaryEntityId: z.string().min(1).nullable().optional(),
     hydratedEntity: hydratedSocialEntitySchema.nullable().optional(),
+    viewerState: postViewerStateSchema.optional(),
   })
   .strict();
 

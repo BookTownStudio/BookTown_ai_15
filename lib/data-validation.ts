@@ -118,6 +118,14 @@ export function normalizePost(data: any): Post {
             data.hydratedEntity && typeof data.hydratedEntity === 'object'
                 ? data.hydratedEntity
                 : null,
+        viewerState:
+            data.viewerState && typeof data.viewerState === 'object'
+                ? {
+                    liked: data.viewerState.liked === true,
+                    bookmarked: data.viewerState.bookmarked === true,
+                    reposted: data.viewerState.reposted === true,
+                }
+                : undefined,
         attachments: data.attachments,
         comments: data.comments,
         isFeatured: !!data.isFeatured

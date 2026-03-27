@@ -1,139 +1,307 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useCallback } from 'react';
 import { ThreadComment } from '../../types/entities.ts';
 import { dataService } from '../../services/dataService.ts';
-import { useQuery, useMutation, useQueryClient } from '../react-query.ts';
+import { useInfiniteQuery, useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { callCallableEndpoint } from '../callable.ts';
 
-interface UseThreadCommentsResult {
-    comments: ThreadComment[];
-    status: 'loading' | 'success' | 'error';
-    hasMore: boolean;
-    fetchNextPage: () => Promise<void>;
-    retry: () => void;
-    addComment: (text: string, parentId?: string) => Promise<void>;
-    likeComment: (commentId: string) => Promise<void>;
-    deleteComment: (commentId: string) => Promise<void>;
-    editComment: (commentId: string, text: string) => Promise<void>;
-    isSubmitting: boolean;
+interface CommentsPage {
+  comments: ThreadComment[];
+  hasMore: boolean;
+  nextCursor?: string;
 }
+
+interface InfiniteCommentsData {
+  pages: CommentsPage[];
+  pageParams: unknown[];
+}
+
+interface UseThreadCommentsResult {
+  comments: ThreadComment[];
+  status: 'loading' | 'success' | 'error';
+  hasMore: boolean;
+  fetchNextPage: () => Promise<void>;
+  retry: () => void;
+  addComment: (text: string, parentId?: string) => Promise<void>;
+  likeComment: (commentId: string) => Promise<void>;
+  deleteComment: (commentId: string) => Promise<void>;
+  editComment: (commentId: string, text: string) => Promise<void>;
+  isSubmitting: boolean;
+}
+
+const buildOptimisticComment = ({
+  authorAvatar,
+  authorHandle,
+  authorId,
+  authorName,
+  parentId,
+  text,
+  tempId,
+}: {
+  authorAvatar: string;
+  authorHandle: string;
+  authorId: string;
+  authorName: string;
+  parentId?: string;
+  text: string;
+  tempId: string;
+}): ThreadComment => ({
+  id: tempId,
+  authorId,
+  authorName,
+  authorHandle,
+  authorAvatar,
+  createdAt: new Date().toISOString(),
+  text: text.trim(),
+  parentId: parentId?.trim() || null,
+  liked: false,
+  likesCount: 0,
+});
+
+const flattenPages = (data?: { pages?: CommentsPage[] }): ThreadComment[] =>
+  Array.isArray(data?.pages)
+    ? data!.pages.flatMap((page) => page.comments)
+    : [];
+
+const patchCommentPages = (
+  old: InfiniteCommentsData | undefined,
+  updater: (comment: ThreadComment) => ThreadComment | null
+): InfiniteCommentsData | undefined => {
+  if (!old) return old;
+
+  return {
+    ...old,
+    pages: old.pages.map((page) => ({
+      ...page,
+      comments: page.comments.reduce<ThreadComment[]>((accumulator, comment) => {
+        const nextComment = updater(comment);
+        if (nextComment) {
+          accumulator.push(nextComment);
+        }
+        return accumulator;
+      }, []),
+    })),
+  };
+};
+
+const prependCommentToFirstPage = (
+  old: InfiniteCommentsData | undefined,
+  comment: ThreadComment
+): InfiniteCommentsData => {
+  if (!old || old.pages.length === 0) {
+    return {
+      pages: [{ comments: [comment], hasMore: false }],
+      pageParams: [undefined],
+    };
+  }
+
+  const firstPage = old.pages[0];
+  const dedupedFirstPageComments = firstPage.comments.filter(
+    (existingComment) => existingComment.id !== comment.id
+  );
+
+  return {
+    ...old,
+    pages: [
+      {
+        ...firstPage,
+        comments: [comment, ...dedupedFirstPageComments],
+      },
+      ...old.pages.slice(1),
+    ],
+  };
+};
+
+const restoreCommentsSnapshot = (
+  queryClient: ReturnType<typeof useQueryClient>,
+  queryKey: string[],
+  previousComments: InfiniteCommentsData | undefined
+) => {
+  if (previousComments) {
+    queryClient.setQueryData(queryKey, previousComments);
+    return;
+  }
+
+  queryClient.removeQueries(queryKey);
+};
 
 /**
  * useThreadComments
  * Authoritative implementation of POST_DISCUSSION_DATA_FLOW_V1 and INTERACTIONS_V1.
  */
 export const useThreadComments = (postId: string): UseThreadCommentsResult => {
-    const queryClient = useQueryClient();
-    const { user } = useAuth();
-    const [comments, setComments] = useState<ThreadComment[]>([]);
-    const [hasMore, setHasMore] = useState(false);
-    const cursorRef = useRef<string | undefined>(undefined);
-    const isFetchingRef = useRef(false);
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const queryKey = ['comments', 'byPostId', postId];
 
-    const queryKey = ['comments', 'byPostId', postId];
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    hasNextPage,
+    fetchNextPage: fetchNextPageRaw,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey,
+    queryFn: ({ pageParam }) => dataService.social.getComments(postId, pageParam),
+    getNextPageParam: (lastPage: CommentsPage) =>
+      lastPage.hasMore ? lastPage.nextCursor : undefined,
+    staleTime: 30000,
+    enabled: !!postId,
+  } as any);
 
-    const { isLoading, isError, refetch } = useQuery<any>({
-        queryKey,
-        queryFn: async () => {
-            const result = await dataService.social.getComments(postId);
-            setComments(result.comments);
-            setHasMore(result.hasMore);
-            cursorRef.current = result.nextCursor;
-            return result;
-        },
-        staleTime: 30000,
-    });
+  const comments = flattenPages(data);
 
-    useEffect(() => {
-        return () => {
-            queryClient.invalidateQueries(queryKey);
-        };
-    }, [postId]);
+  const fetchNextPage = useCallback(async () => {
+    if (!hasNextPage || isFetchingNextPage || isError || isLoading) return;
+    await fetchNextPageRaw();
+  }, [fetchNextPageRaw, hasNextPage, isError, isFetchingNextPage, isLoading]);
 
-    const fetchNextPage = async () => {
-        if (!hasMore || isFetchingRef.current || isError || isLoading) return;
-        isFetchingRef.current = true;
-        try {
-            const result = await dataService.social.getComments(postId, cursorRef.current);
-            setComments(prev => [...prev, ...result.comments]);
-            setHasMore(result.hasMore);
-            cursorRef.current = result.nextCursor;
-        } finally {
-            isFetchingRef.current = false;
-        }
-    };
+  const addCommentMutation = useMutation({
+    mutationFn: async ({ parentId, text }: { text: string; parentId?: string }) =>
+      callCallableEndpoint<
+        { postId: string; text: string; parentId?: string },
+        { success: boolean; commentId?: string }
+      >('addSocialComment', { postId, text, parentId }),
+    onMutate: async ({ parentId, text }) => {
+      if (!user) {
+        throw new Error('AUTH_REQUIRED');
+      }
 
-    // --- Write Handlers (Interactions V1) ---
+      await queryClient.cancelQueries(queryKey);
 
-    const { mutateAsync: submitComment, isLoading: isSubmitting } = useMutation({
-        mutationFn: async ({ text, parentId }: { text: string; parentId?: string }) => {
-            return callCallableEndpoint<
-                { postId: string; text: string; parentId?: string },
-                { success: boolean; commentId?: string }
-            >('addSocialComment', { postId, text, parentId });
-        },
-        onSuccess: () => {
-            queryClient.invalidateQueries(queryKey);
-        }
-    });
+      const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
+      const tempId = `temp_comment_${Date.now()}`;
+      const optimisticComment = buildOptimisticComment({
+        authorAvatar: user.photoURL || `https://api.dicebear.com/8.x/lorelei/svg?seed=${user.uid}`,
+        authorHandle: `@${(user.email || 'user').split('@')[0]}`,
+        authorId: user.uid,
+        authorName: user.displayName || (user.email || 'Anonymous').split('@')[0],
+        parentId,
+        text,
+        tempId,
+      });
 
-    const likeComment = useCallback(async (commentId: string) => {
-        if (!user) return;
-        // Optimistic UI for like toggle
-        setComments(prev => prev.map(c => 
-            c.id === commentId 
-                ? { ...c, liked: !c.liked, likesCount: (c.likesCount || 0) + (c.liked ? -1 : 1) } 
-                : c
-        ));
-        
-        try {
-            await callCallableEndpoint<
-                { postId: string; commentId: string },
-                { success: boolean; liked?: boolean }
-            >('likeSocialComment', { postId, commentId });
-        } catch (e) {
-            // Rollback on failure
-            queryClient.invalidateQueries(queryKey);
-        }
-    }, [user, queryKey, queryClient]);
+      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
+        prependCommentToFirstPage(old, optimisticComment)
+      );
 
-    const deleteComment = useCallback(async (commentId: string) => {
-        // Optimistic hide
-        setComments(prev => prev.filter(c => c.id !== commentId));
-        try {
-            await callCallableEndpoint<
-                { postId: string; commentId: string },
-                { success: boolean }
-            >('deleteSocialComment', { postId, commentId });
-        } catch (e) {
-            queryClient.invalidateQueries(queryKey);
-        }
-    }, [queryKey, queryClient]);
+      return { optimisticComment, previousComments, tempId };
+    },
+    onError: (_error, _variables, context) => {
+      restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+    onSuccess: (result, _variables, context) => {
+      if (!context) return;
 
-    const editComment = useCallback(async (commentId: string, text: string) => {
-        try {
-            await callCallableEndpoint<
-                { postId: string; commentId: string; text: string },
-                { success: boolean }
-            >('editSocialComment', { postId, commentId, text });
-            queryClient.invalidateQueries(queryKey);
-        } catch (e) {
-            console.error("Edit failed", e);
-        }
-    }, [queryKey, queryClient]);
+      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
+        patchCommentPages(old, (comment) => {
+          if (comment.id !== context.tempId) return comment;
+          return {
+            ...comment,
+            id: result.commentId || comment.id,
+          };
+        })
+      );
+    },
+  });
 
-    return {
-        comments,
-        status: isError ? 'error' : isLoading ? 'loading' : 'success',
-        hasMore,
-        fetchNextPage,
-        retry: refetch,
-        addComment: async (text: string, parentId?: string) => {
-            await submitComment({ text, parentId });
-        },
-        likeComment,
-        deleteComment,
-        editComment,
-        isSubmitting
-    };
+  const likeCommentMutation = useMutation({
+    mutationFn: async ({ commentId }: { commentId: string }) =>
+      callCallableEndpoint<
+        { postId: string; commentId: string },
+        { success: boolean; liked?: boolean }
+      >('likeSocialComment', { postId, commentId }),
+    onMutate: async ({ commentId }) => {
+      await queryClient.cancelQueries(queryKey);
+
+      const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
+      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
+        patchCommentPages(old, (comment) => {
+          if (comment.id !== commentId) return comment;
+          const currentlyLiked = comment.liked === true;
+          return {
+            ...comment,
+            liked: !currentlyLiked,
+            likesCount: Math.max(0, (comment.likesCount || 0) + (currentlyLiked ? -1 : 1)),
+          };
+        })
+      );
+
+      return { previousComments };
+    },
+    onError: (_error, _variables, context) => {
+      restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+  });
+
+  const deleteCommentMutation = useMutation({
+    mutationFn: async ({ commentId }: { commentId: string }) =>
+      callCallableEndpoint<
+        { postId: string; commentId: string },
+        { success: boolean }
+      >('deleteSocialComment', { postId, commentId }),
+    onMutate: async ({ commentId }) => {
+      await queryClient.cancelQueries(queryKey);
+
+      const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
+      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
+        patchCommentPages(old, (comment) => (comment.id === commentId ? null : comment))
+      );
+
+      return { previousComments };
+    },
+    onError: (_error, _variables, context) => {
+      restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+  });
+
+  const editCommentMutation = useMutation({
+    mutationFn: async ({ commentId, text }: { commentId: string; text: string }) =>
+      callCallableEndpoint<
+        { postId: string; commentId: string; text: string },
+        { success: boolean }
+      >('editSocialComment', { postId, commentId, text }),
+    onMutate: async ({ commentId, text }) => {
+      await queryClient.cancelQueries(queryKey);
+
+      const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
+      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
+        patchCommentPages(old, (comment) =>
+          comment.id === commentId
+            ? { ...comment, text: text.trim() }
+            : comment
+        )
+      );
+
+      return { previousComments };
+    },
+    onError: (_error, _variables, context) => {
+      restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+  });
+
+  return {
+    comments,
+    status: isError ? 'error' : isLoading ? 'loading' : 'success',
+    hasMore: hasNextPage === true,
+    fetchNextPage,
+    retry: () => {
+      void refetch();
+    },
+    addComment: async (text: string, parentId?: string) => {
+      await addCommentMutation.mutateAsync({ text, parentId });
+    },
+    likeComment: async (commentId: string) => {
+      await likeCommentMutation.mutateAsync({ commentId });
+    },
+    deleteComment: async (commentId: string) => {
+      await deleteCommentMutation.mutateAsync({ commentId });
+    },
+    editComment: async (commentId: string, text: string) => {
+      await editCommentMutation.mutateAsync({ commentId, text });
+    },
+    isSubmitting: addCommentMutation.isLoading,
+  };
 };

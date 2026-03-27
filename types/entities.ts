@@ -507,6 +507,12 @@ export interface HydratedSocialEntity {
     data: Record<string, unknown>;
 }
 
+export interface PostViewerState {
+    liked: boolean;
+    bookmarked: boolean;
+    reposted: boolean;
+}
+
 export interface Post {
     id: string;
     authorId: string;
@@ -544,6 +550,7 @@ export interface Post {
     primaryEntityType?: 'book' | 'author' | 'quote' | 'shelf' | 'venue' | 'publication' | null;
     primaryEntityId?: string | null;
     hydratedEntity?: HydratedSocialEntity | null;
+    viewerState?: PostViewerState;
 
     attachments?: PostAttachment[];
     comments?: PostComment[];
