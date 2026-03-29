@@ -11,6 +11,7 @@ import { canonicalizeRoleClaim } from "../shared/auth";
 import { canUserReadBook } from "../rights/bookRights";
 
 const db = admin.firestore();
+const storage = admin.storage();
 
 const MAX_UID_LENGTH = 128;
 const MAX_NAME_LENGTH = 80;
@@ -291,6 +292,76 @@ function sanitizeUrlForUpdate(value: unknown, fieldName: string): string {
     throw new HttpsError("invalid-argument", `${fieldName} must use http/https.`);
   }
   return normalized;
+}
+
+function extractInternalUserAssetPath(
+  value: unknown,
+  uid: string,
+  category: "avatar" | "banner"
+): string {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim();
+  if (!normalized) return "";
+
+  const rawPrefix = `users/${uid}/${category}/`;
+  if (normalized.startsWith(rawPrefix)) {
+    return normalized;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.hostname === "firebasestorage.googleapis.com") {
+      const marker = "/o/";
+      const markerIndex = parsed.pathname.indexOf(marker);
+      if (markerIndex === -1) {
+        return "";
+      }
+      const objectPath = decodeURIComponent(
+        parsed.pathname.slice(markerIndex + marker.length)
+      );
+      return objectPath.startsWith(rawPrefix) ? objectPath : "";
+    }
+
+    if (parsed.hostname === "storage.googleapis.com") {
+      const segments = parsed.pathname.split("/").filter(Boolean);
+      if (segments.length >= 4 && segments[1] === "users") {
+        const objectPath = segments.slice(1).join("/");
+        return objectPath.startsWith(rawPrefix) ? objectPath : "";
+      }
+      if (segments.length >= 3) {
+        const objectPath = segments.join("/");
+        return objectPath.startsWith(rawPrefix) ? objectPath : "";
+      }
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+async function deleteReplacedProfileAsset(params: {
+  uid: string;
+  category: "avatar" | "banner";
+  previousUrl: string;
+  nextUrl: string;
+}): Promise<void> {
+  const previousPath = extractInternalUserAssetPath(
+    params.previousUrl,
+    params.uid,
+    params.category
+  );
+  const nextPath = extractInternalUserAssetPath(
+    params.nextUrl,
+    params.uid,
+    params.category
+  );
+
+  if (!previousPath || !nextPath || previousPath === nextPath) {
+    return;
+  }
+
+  await storage.bucket().file(previousPath).delete({ ignoreNotFound: true });
 }
 
 function toNonNegativeInt(value: unknown): number {
@@ -830,38 +901,88 @@ async function resolveWordsWritten(uid: string): Promise<number> {
 
 async function readOrCreatePublicProfile(uid: string): Promise<PublicProfile | null> {
   const publicRef = db.collection("public_profiles").doc(uid);
-  const publicSnap = await publicRef.get();
+  const [publicSnap, userSnap] = await Promise.all([
+    publicRef.get(),
+    db.collection("users").doc(uid).get(),
+  ]);
 
-  if (publicSnap.exists) {
-    return normalizePublicProfile(uid, publicSnap.data() || {});
-  }
-
-  const userSnap = await db.collection("users").doc(uid).get();
-  if (!userSnap.exists) {
+  if (!userSnap.exists && !publicSnap.exists) {
     return null;
   }
 
-  const profile = normalizePublicProfile(uid, userSnap.data() || {});
-  const searchFields = buildProfileSearchFields(profile);
+  const userProfile = userSnap.exists
+    ? normalizePublicProfile(uid, userSnap.data() || {})
+    : null;
+
+  if (publicSnap.exists) {
+    const publicProfile = normalizePublicProfile(uid, publicSnap.data() || {});
+    if (!userProfile) {
+      return publicProfile;
+    }
+
+    const needsRefresh =
+      publicProfile.name !== userProfile.name ||
+      publicProfile.handle !== userProfile.handle ||
+      publicProfile.avatarUrl !== userProfile.avatarUrl ||
+      publicProfile.bannerUrl !== userProfile.bannerUrl ||
+      publicProfile.bioEn !== userProfile.bioEn ||
+      publicProfile.bioAr !== userProfile.bioAr ||
+      publicProfile.joinDate !== userProfile.joinDate;
+
+    if (!needsRefresh) {
+      return publicProfile;
+    }
+
+    const searchFields = buildProfileSearchFields(userProfile);
+    await publicRef.set(
+      {
+        uid: userProfile.uid,
+        name: userProfile.name,
+        handle: userProfile.handle,
+        avatarUrl: userProfile.avatarUrl,
+        bannerUrl: userProfile.bannerUrl,
+        bioEn: userProfile.bioEn,
+        bioAr: userProfile.bioAr,
+        joinDate: userProfile.joinDate,
+        updatedAt: userProfile.updatedAt,
+        followerCount: publicProfile.followers,
+        followingCount: publicProfile.following,
+        ...searchFields,
+      },
+      { merge: true }
+    );
+
+    return {
+      ...userProfile,
+      followers: publicProfile.followers,
+      following: publicProfile.following,
+    };
+  }
+
+  if (!userProfile) {
+    return null;
+  }
+
+  const searchFields = buildProfileSearchFields(userProfile);
   await publicRef.set(
     {
-      uid: profile.uid,
-      name: profile.name,
-      handle: profile.handle,
-      avatarUrl: profile.avatarUrl,
-      bannerUrl: profile.bannerUrl,
-      bioEn: profile.bioEn,
-      bioAr: profile.bioAr,
-      joinDate: profile.joinDate,
-      updatedAt: profile.updatedAt,
-      followerCount: profile.followers,
-      followingCount: profile.following,
+      uid: userProfile.uid,
+      name: userProfile.name,
+      handle: userProfile.handle,
+      avatarUrl: userProfile.avatarUrl,
+      bannerUrl: userProfile.bannerUrl,
+      bioEn: userProfile.bioEn,
+      bioAr: userProfile.bioAr,
+      joinDate: userProfile.joinDate,
+      updatedAt: userProfile.updatedAt,
+      followerCount: userProfile.followers,
+      followingCount: userProfile.following,
       ...searchFields,
     },
     { merge: true }
   );
 
-  return profile;
+  return userProfile;
 }
 
 async function isViewerFollowingTarget(
@@ -1010,6 +1131,10 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
 
   const userRef = db.collection("users").doc(uid);
   const publicRef = db.collection("public_profiles").doc(uid);
+  let previousAvatarUrl = "";
+  let previousBannerUrl = "";
+  let nextAvatarUrl = "";
+  let nextBannerUrl = "";
 
   await db.runTransaction(async (tx) => {
     const userSnap = await tx.get(userRef);
@@ -1019,6 +1144,8 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
 
     const current = userSnap.data() || {};
     const normalizedCurrent = normalizePublicProfile(uid, current);
+    previousAvatarUrl = normalizedCurrent.avatarUrl;
+    previousBannerUrl = normalizedCurrent.bannerUrl;
     const resolvedName =
       "name" in publicUpdates
         ? String(publicUpdates.name)
@@ -1037,6 +1164,14 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
       bioEn: resolvedBioEn,
       bioAr: resolvedBioAr,
     });
+    nextAvatarUrl =
+      "avatarUrl" in publicUpdates
+        ? String(publicUpdates.avatarUrl)
+        : normalizedCurrent.avatarUrl;
+    nextBannerUrl =
+      "bannerUrl" in publicUpdates
+        ? String(publicUpdates.bannerUrl)
+        : normalizedCurrent.bannerUrl;
     tx.set(userRef, userUpdates, { merge: true });
     tx.set(
       publicRef,
@@ -1044,14 +1179,8 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
         uid,
         name: ("name" in publicUpdates ? publicUpdates.name : normalizedCurrent.name),
         handle: normalizedCurrent.handle,
-        avatarUrl:
-          "avatarUrl" in publicUpdates
-            ? publicUpdates.avatarUrl
-            : normalizedCurrent.avatarUrl,
-        bannerUrl:
-          "bannerUrl" in publicUpdates
-            ? publicUpdates.bannerUrl
-            : normalizedCurrent.bannerUrl,
+        avatarUrl: nextAvatarUrl,
+        bannerUrl: nextBannerUrl,
         bioEn: "bioEn" in publicUpdates ? publicUpdates.bioEn : normalizedCurrent.bioEn,
         bioAr: "bioAr" in publicUpdates ? publicUpdates.bioAr : normalizedCurrent.bioAr,
         joinDate: normalizedCurrent.joinDate,
@@ -1061,6 +1190,25 @@ export const updateOwnProfile = onCall({ cors: true }, async (request) => {
       { merge: true }
     );
   });
+
+  try {
+    await Promise.all([
+      deleteReplacedProfileAsset({
+        uid,
+        category: "avatar",
+        previousUrl: previousAvatarUrl,
+        nextUrl: nextAvatarUrl,
+      }),
+      deleteReplacedProfileAsset({
+        uid,
+        category: "banner",
+        previousUrl: previousBannerUrl,
+        nextUrl: nextBannerUrl,
+      }),
+    ]);
+  } catch (error) {
+    logger.error("[PROFILE][ASSET_CLEANUP_FAILED]", { uid, error });
+  }
 
   if (
     changedFields.includes("bioEn") ||

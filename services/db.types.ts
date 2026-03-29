@@ -240,6 +240,8 @@ export interface UserDataService {
   ): Promise<{ items: Review[]; hasMore: boolean; nextCursor?: string; revision?: string }>;
   getProfileBooks(uid: string, limit?: number): Promise<Book[]>;
   getProfilePublications(uid: string, limit?: number): Promise<ProfilePublicationRecord[]>;
+  listFollowers(uid: string): Promise<User[]>;
+  listFollowing(uid: string): Promise<User[]>;
   followUser(followerId: string, targetId: string): Promise<void>;
   unfollowUser(followerId: string, targetId: string): Promise<void>;
 

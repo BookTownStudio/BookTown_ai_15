@@ -55,6 +55,13 @@ export const queryKeys = {
     ) =>
       [...sessionRoot(sessionUid), 'user', 'profilePublications', safe({ profileUid })] as const,
 
+    followList: (
+      sessionUid: string | null | undefined,
+      profileUid: string | undefined,
+      listType: 'followers' | 'following' | undefined
+    ) =>
+      [...sessionRoot(sessionUid), 'user', 'followList', safe({ profileUid, listType })] as const,
+
     // FIX: Added 'stats' to user query keys for authoritative read path.
     stats: (uid: string | null | undefined) =>
       [...sessionRoot(uid), 'user', 'stats'] as const,

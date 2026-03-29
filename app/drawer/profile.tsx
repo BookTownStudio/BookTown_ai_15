@@ -4,6 +4,7 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { useUserProfile } from '../../lib/hooks/useUserProfile.ts';
 import { useUserStats } from '../../lib/hooks/useUserStats.ts';
+import { useUserFollowList } from '../../lib/hooks/useUserFollowList.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useUserProfilePosts } from '../../lib/hooks/useUserProfilePosts.ts';
 import { useUserProfileReviews } from '../../lib/hooks/useUserProfileReviews.ts';
@@ -28,6 +29,7 @@ import EditProfileModal, {
   ProfileEditData,
 } from '../../components/modals/EditProfileModal.tsx';
 import ConfirmDeleteModal from '../../components/modals/ConfirmDeleteModal.tsx';
+import ProfileConnectionsModal from '../../components/modals/ProfileConnectionsModal.tsx';
 import PageShell from '../../components/layout/PageShell.tsx';
 import ProfileStrengthBar from '../../components/ui/ProfileStrengthBar.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
@@ -227,7 +229,9 @@ const ProfileScreen: React.FC = () => {
   const { mutate: unfollowUser, isLoading: isUnfollowingUser } = useUnfollowUser();
 
   const [isEditModalOpen, setEditModalOpen] = useState(false);
+  const [activeConnectionList, setActiveConnectionList] = useState<'followers' | 'following' | null>(null);
   const [bannerError, setBannerError] = useState(false);
+  const [avatarError, setAvatarError] = useState(false);
 
   const [editData, setEditData] = useState<ProfileEditData>({
     name: '',
@@ -235,6 +239,10 @@ const ProfileScreen: React.FC = () => {
     avatarUrl: '',
     bannerUrl: '',
   });
+  const {
+    data: followListUsers,
+    isLoading: isFollowListLoading,
+  } = useUserFollowList(effectiveProfileUserId, activeConnectionList);
 
   /* -----------------------------------------------------
      Scroll listener (v10 refined)
@@ -264,6 +272,14 @@ const ProfileScreen: React.FC = () => {
     const restoredTab = readPersistedProfileTab(effectiveProfileUserId) ?? 'shelves';
     setActiveTab(restoredTab);
   }, [effectiveProfileUserId]);
+
+  useEffect(() => {
+    setBannerError(false);
+  }, [profile?.bannerUrl]);
+
+  useEffect(() => {
+    setAvatarError(false);
+  }, [profile?.avatarUrl]);
 
   useEffect(() => {
     if (!activePublicationMenuId) {
@@ -368,6 +384,9 @@ const ProfileScreen: React.FC = () => {
   const statDisplay = (value: number | undefined): string =>
     userStatsError ? '--' : String(value ?? 0);
   const showProfileStrength = false;
+  const fallbackAvatarUrl = `https://api.dicebear.com/8.x/lorelei/svg?seed=${effectiveProfileUserId || 'profile-user'}`;
+  const resolvedAvatarUrl =
+    !avatarError && profile.avatarUrl ? profile.avatarUrl : fallbackAvatarUrl;
   const profileStatItems = [
     {
       key: 'books',
@@ -390,6 +409,22 @@ const ProfileScreen: React.FC = () => {
       value: statDisplay(userStats?.following),
     },
   ];
+  const connectionTitle =
+    activeConnectionList === 'followers'
+      ? lang === 'en'
+        ? 'Followers'
+        : 'المتابعون'
+      : lang === 'en'
+        ? 'Following'
+        : 'يتابع';
+  const connectionEmptyLabel =
+    activeConnectionList === 'followers'
+      ? lang === 'en'
+        ? 'No followers yet.'
+        : 'لا يوجد متابعون بعد.'
+      : lang === 'en'
+        ? 'Not following anyone yet.'
+        : 'لا يتابع أحدًا بعد.';
   const handleOpenReviewedBook = (
     bookId: string,
     reviewId: string,
@@ -529,9 +564,10 @@ const ProfileScreen: React.FC = () => {
             <div className="flex items-start gap-4 md:gap-5">
               <div className="h-24 w-24 md:h-28 md:w-28 rounded-full overflow-hidden border-4 border-gray-50 dark:border-slate-900 bg-slate-200 dark:bg-slate-800 shadow-lg flex-shrink-0">
                 <img
-                  src={profile.avatarUrl}
+                  src={resolvedAvatarUrl}
                   className="h-full w-full object-cover object-center"
                   alt="Avatar"
+                  onError={() => setAvatarError(true)}
                 />
               </div>
 
@@ -581,12 +617,27 @@ const ProfileScreen: React.FC = () => {
                 <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500 dark:text-slate-400 justify-center md:justify-start">
                   {profileStatItems.map((item, index) => (
                     <React.Fragment key={item.key}>
-                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
-                        <span className="font-semibold text-slate-900 dark:text-white">
-                          {item.value}
+                      {item.key === 'followers' || item.key === 'following' ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setActiveConnectionList(item.key as 'followers' | 'following')
+                          }
+                          className="inline-flex items-center gap-2 whitespace-nowrap rounded-full transition-colors hover:text-slate-900 dark:hover:text-white"
+                        >
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {item.value}
+                          </span>
+                          <span>{item.label}</span>
+                        </button>
+                      ) : (
+                        <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                          <span className="font-semibold text-slate-900 dark:text-white">
+                            {item.value}
+                          </span>
+                          <span>{item.label}</span>
                         </span>
-                        <span>{item.label}</span>
-                      </span>
+                      )}
                       {index < profileStatItems.length - 1 && (
                         <span className="text-slate-400 dark:text-slate-500">·</span>
                       )}
@@ -674,9 +725,10 @@ const ProfileScreen: React.FC = () => {
                   className="flex items-center gap-2 min-w-0"
                 >
                   <motion.img
-                    src={profile.avatarUrl}
+                    src={resolvedAvatarUrl}
                     alt=""
                     className="h-5 w-5 rounded-full object-cover"
+                    onError={() => setAvatarError(true)}
                   />
                   <span className="text-sm font-medium truncate text-slate-900 dark:text-white">
                     {profile.name}
@@ -931,6 +983,25 @@ const ProfileScreen: React.FC = () => {
             : 'سيؤدي هذا إلى إزالة هذا المنشور من ملفك العام ومن وصول القراء. وسيبقى مشروع الكتابة في قسم الكتابة.'
         }
         confirmLabel={lang === 'en' ? 'Confirm Unpublish' : 'تأكيد إلغاء النشر'}
+      />
+      <ProfileConnectionsModal
+        isOpen={activeConnectionList !== null}
+        onClose={() => setActiveConnectionList(null)}
+        title={connectionTitle}
+        users={followListUsers}
+        isLoading={isFollowListLoading}
+        emptyLabel={connectionEmptyLabel}
+        onSelectUser={(selectedUser) => {
+          setActiveConnectionList(null);
+          navigate({
+            type: 'immersive',
+            id: 'profile',
+            params: {
+              userId: selectedUser.uid,
+              from: currentView,
+            },
+          });
+        }}
       />
     </>
   );

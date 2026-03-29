@@ -36,6 +36,12 @@ export const useFollowUser = () => {
             queryClient.invalidateQueries(['suggestedProfiles', uid]);
             queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
             queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
+            queryClient.invalidateQueries(
+                queryKeys.user.followList(uid, userId, 'followers') as unknown as any[]
+            );
+            queryClient.invalidateQueries(
+                queryKeys.user.followList(uid, uid, 'following') as unknown as any[]
+            );
         },
     });
 };
@@ -55,6 +61,12 @@ export const useUnfollowUser = () => {
             queryClient.invalidateQueries(['suggestedProfiles', uid]);
             queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
             queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
+            queryClient.invalidateQueries(
+                queryKeys.user.followList(uid, userId, 'followers') as unknown as any[]
+            );
+            queryClient.invalidateQueries(
+                queryKeys.user.followList(uid, uid, 'following') as unknown as any[]
+            );
         },
     });
 };

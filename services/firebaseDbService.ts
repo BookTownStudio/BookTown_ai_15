@@ -868,6 +868,99 @@ const toShelf = (source: Record<string, unknown>): Shelf => {
    USERS
 ========================= */
 class FirebaseUserService {
+  private chunkIds(ids: string[], size = 10): string[][] {
+    const chunks: string[][] = [];
+    for (let index = 0; index < ids.length; index += size) {
+      chunks.push(ids.slice(index, index + size));
+    }
+    return chunks;
+  }
+
+  private async fetchProfileSourcesByIds(
+    db: ReturnType<typeof getDb>,
+    ids: string[]
+  ): Promise<Map<string, Record<string, unknown>>> {
+    const normalizedIds = Array.from(
+      new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))
+    );
+    const sources = new Map<string, Record<string, unknown>>();
+    if (normalizedIds.length === 0) {
+      return sources;
+    }
+
+    const publicSnapshots = await Promise.all(
+      this.chunkIds(normalizedIds).map((chunk) =>
+        getDocs(
+          query(
+            collection(db, "public_profiles"),
+            where(documentId(), "in", chunk)
+          )
+        )
+      )
+    );
+
+    for (const snap of publicSnapshots) {
+      for (const docSnap of snap.docs) {
+        sources.set(docSnap.id, docSnap.data() as Record<string, unknown>);
+      }
+    }
+
+    const missingIds = normalizedIds.filter((id) => !sources.has(id));
+    if (missingIds.length === 0) {
+      return sources;
+    }
+
+    const userSnapshots = await Promise.all(
+      this.chunkIds(missingIds).map((chunk) =>
+        getDocs(
+          query(
+            collection(db, "users"),
+            where(documentId(), "in", chunk)
+          )
+        )
+      )
+    );
+
+    for (const snap of userSnapshots) {
+      for (const docSnap of snap.docs) {
+        sources.set(docSnap.id, docSnap.data() as Record<string, unknown>);
+      }
+    }
+
+    return sources;
+  }
+
+  private async listFollowUsers(
+    uid: string,
+    listType: "followers" | "following"
+  ): Promise<User[]> {
+    const db = getDb();
+    if (!db) return [];
+
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const relationSnap = await getDocs(
+      query(
+        collection(db, "users", normalizedUid, listType),
+        orderBy("createdAt", "desc"),
+        limit(50)
+      )
+    );
+
+    const orderedIds = relationSnap.docs
+      .map((docSnap) => docSnap.id.trim())
+      .filter((id) => id.length > 0);
+
+    if (orderedIds.length === 0) {
+      return [];
+    }
+
+    const sources = await this.fetchProfileSourcesByIds(db, orderedIds);
+
+    return orderedIds.map((id) =>
+      toProfileUser(id, sources.get(id) || { uid: id, handle: `@${id.slice(0, 12)}` })
+    );
+  }
+
   async getProfile(uid: string): Promise<User> {
     const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
     const profile = await callEndpoint<{ uid: string }, Record<string, unknown>>(
@@ -1092,6 +1185,14 @@ class FirebaseUserService {
         }
       })
       .filter((publication): publication is ProfilePublicationRecord => publication !== null);
+  }
+
+  async listFollowers(uid: string): Promise<User[]> {
+    return this.listFollowUsers(uid, "followers");
+  }
+
+  async listFollowing(uid: string): Promise<User[]> {
+    return this.listFollowUsers(uid, "following");
   }
 
   async followUser(followerId: string, targetId: string): Promise<void> {

@@ -179,12 +179,62 @@ async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Prom
   const email = identity.email ?? "";
   const bootstrapName = identity.displayName ?? "New User";
   const bootstrapHandle = `@${email.split("@")[0] || "user"}`;
-  const avatarUrl =
+  const bootstrapAvatarUrl =
     identity.photoURL ||
     `https://api.dicebear.com/8.x/lorelei/svg?seed=${uid}`;
+  const [userSnap, publicSnap] = await Promise.all([
+    userRef.get(),
+    db.doc(`public_profiles/${uid}`).get(),
+  ]);
+  const existingUser = (userSnap.exists ? userSnap.data() : {}) || {};
+  const existingPublic = (publicSnap.exists ? publicSnap.data() : {}) || {};
+  const resolvedName =
+    typeof existingUser.name === "string" && existingUser.name.trim()
+      ? existingUser.name.trim()
+      : typeof existingPublic.name === "string" && existingPublic.name.trim()
+        ? existingPublic.name.trim()
+        : bootstrapName;
+  const resolvedHandle =
+    typeof existingUser.handle === "string" && existingUser.handle.trim()
+      ? existingUser.handle.trim()
+      : typeof existingPublic.handle === "string" && existingPublic.handle.trim()
+        ? existingPublic.handle.trim()
+        : bootstrapHandle;
+  const resolvedAvatarUrl =
+    typeof existingUser.avatarUrl === "string" && existingUser.avatarUrl.trim()
+      ? existingUser.avatarUrl.trim()
+      : typeof existingPublic.avatarUrl === "string" && existingPublic.avatarUrl.trim()
+        ? existingPublic.avatarUrl.trim()
+        : bootstrapAvatarUrl;
+  const resolvedBannerUrl =
+    typeof existingUser.bannerUrl === "string" && existingUser.bannerUrl.trim()
+      ? existingUser.bannerUrl.trim()
+      : typeof existingPublic.bannerUrl === "string" && existingPublic.bannerUrl.trim()
+        ? existingPublic.bannerUrl.trim()
+        : "";
+  const resolvedBioEn =
+    typeof existingUser.bioEn === "string"
+      ? existingUser.bioEn
+      : typeof existingPublic.bioEn === "string"
+        ? existingPublic.bioEn
+        : "";
+  const resolvedBioAr =
+    typeof existingUser.bioAr === "string"
+      ? existingUser.bioAr
+      : typeof existingPublic.bioAr === "string"
+        ? existingPublic.bioAr
+        : "";
+  const resolvedJoinDate =
+    typeof existingUser.joinDate === "string" && existingUser.joinDate.trim()
+      ? existingUser.joinDate.trim()
+      : typeof existingPublic.joinDate === "string" && existingPublic.joinDate.trim()
+        ? existingPublic.joinDate.trim()
+        : new Date().toISOString();
   const bootstrapSearchFields = buildSearchFieldsFromTextParts([
-    bootstrapName,
-    bootstrapHandle,
+    resolvedName,
+    resolvedHandle,
+    resolvedBioEn,
+    resolvedBioAr,
   ]);
 
   logger.info("[BOOTSTRAP][START]", {
@@ -210,11 +260,14 @@ async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Prom
     {
       uid,
       email: email || null,
-      name: bootstrapName,
-      handle: bootstrapHandle,
-      avatarUrl,
+      name: resolvedName,
+      handle: resolvedHandle,
+      avatarUrl: resolvedAvatarUrl,
+      bannerUrl: resolvedBannerUrl,
+      bioEn: resolvedBioEn,
+      bioAr: resolvedBioAr,
       createdAt: now,
-      joinDate: now,
+      joinDate: resolvedJoinDate,
       lastActive: now,
       status: "active",
       isSuspended: false,
@@ -228,19 +281,25 @@ async function bootstrapUserProfileAndShelves(identity: BootstrapIdentity): Prom
     db.doc(`public_profiles/${uid}`),
     {
       uid,
-      name: bootstrapName,
-      handle: bootstrapHandle,
-      avatarUrl,
-      bannerUrl: "",
-      bioEn: "",
-      bioAr: "",
-      joinDate: bootstrapJoinDate,
+      name: resolvedName,
+      handle: resolvedHandle,
+      avatarUrl: resolvedAvatarUrl,
+      bannerUrl: resolvedBannerUrl,
+      bioEn: resolvedBioEn,
+      bioAr: resolvedBioAr,
+      joinDate: resolvedJoinDate || bootstrapJoinDate,
       updatedAt: bootstrapJoinDate,
-      followerCount: 0,
-      followingCount: 0,
-      nameNormalized: normalizeSearchText(bootstrapName),
-      handleNormalized: normalizeSearchText(bootstrapHandle),
-      bioNormalized: "",
+      followerCount:
+        typeof existingPublic.followerCount === "number"
+          ? existingPublic.followerCount
+          : 0,
+      followingCount:
+        typeof existingPublic.followingCount === "number"
+          ? existingPublic.followingCount
+          : 0,
+      nameNormalized: normalizeSearchText(resolvedName),
+      handleNormalized: normalizeSearchText(resolvedHandle),
+      bioNormalized: normalizeSearchText([resolvedBioEn, resolvedBioAr].join(" ")),
       searchTokens: bootstrapSearchFields.tokens,
       searchPrefixes: bootstrapSearchFields.prefixes,
     },
