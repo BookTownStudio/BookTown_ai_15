@@ -8,7 +8,6 @@ import InputField from '../ui/InputField.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import { useToggleBookOnShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
 import { useBookUpload } from '../../lib/hooks/useBookUpload.ts';
 import { useQueryClient } from '../../lib/react-query.ts';
@@ -27,6 +26,8 @@ import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
 import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
+import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
+import UnifiedSearchFilterToggle from '../content/UnifiedSearchFilterToggle.tsx';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -54,11 +55,13 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const [isUploadBusy, setIsUploadBusy] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const { data: searchResponse, isLoading: isSearching, error: searchError } = useBookSearch(searchQuery, {
-    ebookOnly: false,
-    lang,
-    limit: 15,
-  });
+  const {
+    data: searchResponse,
+    isLoading: isSearching,
+    error: searchError,
+    ebookOnly,
+    toggleEbookOnly,
+  } = useUnifiedBookSearch(searchQuery);
   const normalizedResults: SearchResultDTO[] = searchResponse?.results || [];
   const clickedRankFor = (id: string): number => {
     const index = normalizedResults.findIndex((entry) => entry.id === id);
@@ -213,7 +216,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
             authorEn: result.authorEn,
             authorAr: result.authorAr,
             coverUrl: result.coverUrl,
-            isEbookAvailable: result.isEbookAvailable,
+            isEbookAvailable: result.ebookClass === 'in_app',
           })
         },
         {
@@ -523,6 +526,13 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+
+            <div className="mt-3 flex items-center justify-start">
+              <UnifiedSearchFilterToggle
+                ebookOnly={ebookOnly}
+                onToggle={toggleEbookOnly}
+              />
+            </div>
 
             <BilingualText role="Caption" className="text-center mt-2">
               {lang === 'en'

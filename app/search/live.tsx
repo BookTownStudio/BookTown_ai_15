@@ -3,7 +3,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
@@ -20,6 +19,8 @@ import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
+import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
+import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
 
 const LiveSearchScreen: React.FC = () => {
   const { navigate, currentView } = useNavigation();
@@ -32,11 +33,13 @@ const LiveSearchScreen: React.FC = () => {
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
 
   const { history, addToHistory } = useSearchHistory();
-  const { data: searchResponse, isLoading, error: searchError } = useBookSearch(query, {
-    ebookOnly: false,
-    lang,
-    limit: 15,
-  });
+  const {
+    data: searchResponse,
+    isLoading,
+    error: searchError,
+    ebookOnly,
+    toggleEbookOnly,
+  } = useUnifiedBookSearch(query);
   const validResults: SearchResultDTO[] = searchResponse?.results || [];
   const searchErrorMessage =
     searchError instanceof Error && searchError.message.trim().length > 0
@@ -89,8 +92,8 @@ const LiveSearchScreen: React.FC = () => {
     }
   };
 
-  const handleAddResult = async (result: SearchResultDTO) => {
-    if (busyId) return;
+  const handleReadResult = async (result: SearchResultDTO) => {
+    if (busyId || result.ebookClass !== 'in_app') return;
 
     try {
       setBusyId(result.id);
@@ -104,20 +107,18 @@ const LiveSearchScreen: React.FC = () => {
       });
       navigate({
         type: 'immersive',
-        id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView, {
-          pendingAction: 'NONE',
-          searchQuery: query.trim(),
-          clickedRank: clickedRankFor(result.id),
-          clickTracked: true,
-        }),
+        id: 'reader',
+        params: {
+          bookId: result.bookId,
+          from: currentView,
+        },
       });
     } catch (err) {
-      console.error('[LIVE_SEARCH][ADD_OPEN_FAILED]', err);
+      console.error('[LIVE_SEARCH][READ_OPEN_FAILED]', err);
       showToast(
         lang === 'en'
-          ? 'Failed to add book.'
-          : 'فشل إضافة الكتاب.'
+          ? 'Failed to open ebook.'
+          : 'فشل فتح الكتاب الإلكتروني.'
       );
     } finally {
       setBusyId(null);
@@ -162,6 +163,13 @@ const LiveSearchScreen: React.FC = () => {
       </header>
 
       <main className="flex-grow overflow-y-auto p-4">
+        <div className="mb-4">
+          <UnifiedSearchFilterToggle
+            ebookOnly={ebookOnly}
+            onToggle={toggleEbookOnly}
+          />
+        </div>
+
         {(isLoading || isAnalyzingImage) && (
           <div className="flex justify-center py-12">
             <LoadingSpinner />
@@ -183,7 +191,7 @@ const LiveSearchScreen: React.FC = () => {
                 lang={lang}
                 isBusy={busyId === r.id}
                 onOpen={handleOpenResult}
-                onAdd={handleAddResult}
+                onRead={handleReadResult}
               />
             ))}
           </div>

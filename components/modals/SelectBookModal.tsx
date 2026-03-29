@@ -10,7 +10,6 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 
-import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import {
   buildBookDetailsParams,
   resolveIngestionSource,
@@ -23,6 +22,8 @@ import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import { Book } from '../../types/entities.ts';
 import SearchResultCard from '../content/SearchResultCard.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
+import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
+import UnifiedSearchFilterToggle from '../content/UnifiedSearchFilterToggle.tsx';
 
 interface SelectBookModalProps {
   isOpen: boolean;
@@ -44,11 +45,13 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const { data: searchResponse, isLoading: isSearching, error: searchError } = useBookSearch(searchQuery, {
-    ebookOnly: false,
-    lang,
-    limit: 15,
-  });
+  const {
+    data: searchResponse,
+    isLoading: isSearching,
+    error: searchError,
+    ebookOnly,
+    toggleEbookOnly,
+  } = useUnifiedBookSearch(searchQuery);
   const searchResults: SearchResultDTO[] = searchResponse?.results || [];
   const clickedRankFor = (id: string): number => {
     const index = searchResults.findIndex((entry) => entry.id === id);
@@ -81,7 +84,7 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
       genresAr: [],
       rating: 0,
       ratingsCount: 0,
-      isEbookAvailable: result.isEbookAvailable,
+      isEbookAvailable: result.ebookClass === 'in_app',
     });
 
   const resolveCanonicalBookId = async (
@@ -215,6 +218,13 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
           autoFocus
         />
 
+        <div className="mt-3 flex items-center justify-start">
+          <UnifiedSearchFilterToggle
+            ebookOnly={ebookOnly}
+            onToggle={toggleEbookOnly}
+          />
+        </div>
+
         <div className="mt-4 space-y-2">
           {(isSearching || busyId !== null) && (
             <div className="flex justify-center pt-8">
@@ -247,7 +257,6 @@ const SelectBookModal: React.FC<SelectBookModalProps> = ({
                 key={result.id}
                 result={result}
                 lang={lang}
-                onAdd={() => handleSelect(result)}
                 onOpen={() => handleSelect(result)}
                 isBusy={busyId === result.id}
               />

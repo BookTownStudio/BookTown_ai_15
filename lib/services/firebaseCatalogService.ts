@@ -571,22 +571,10 @@ export const firebaseCatalogService = {
   },
 
   async searchBooks(queryText: string): Promise<Book[]> {
-    const qText = normalizeSearchText(queryText || "");
-    if (!qText || qText.length < 2) return [];
-
-    const db = getDbOrThrow();
-    const booksRef = collection(db, "books");
-
-    const prefixQuery = query(
-      booksRef,
-      orderBy("titleEnNormalized"),
-      startAt(qText),
-      endAt(`${qText}\uf8ff`),
-      limit(30)
+    void queryText;
+    throw new Error(
+      "LEGACY_BOOK_SEARCH_DISABLED: Use bookSearchService.searchBooks() for the unified search authority."
     );
-
-    const snap = await getDocs(prefixQuery);
-    return snap.docs.map((d) => mapBook(d.data(), d.id));
   },
 
   async getRelatedBooks(bookId: string): Promise<Book[]> {

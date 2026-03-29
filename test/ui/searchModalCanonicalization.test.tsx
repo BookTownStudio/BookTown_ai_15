@@ -21,12 +21,18 @@ const {
   },
 }));
 
-vi.mock("../../lib/hooks/useBookSearch.ts", () => ({
-  useBookSearch: () => ({
+vi.mock("../../lib/hooks/useUnifiedBookSearch.ts", () => ({
+  useUnifiedBookSearch: () => ({
     data: mockedSearchState.response,
     isLoading: false,
     error: null,
+    ebookOnly: false,
+    toggleEbookOnly: vi.fn(),
   }),
+}));
+
+vi.mock("../../components/content/UnifiedSearchFilterToggle.tsx", () => ({
+  default: () => <div>filter-toggle</div>,
 }));
 
 vi.mock("../../store/navigation.tsx", () => ({
@@ -155,15 +161,17 @@ vi.mock("../../components/content/SearchResultCard.tsx", () => ({
   }: {
     result: SearchResultDTO;
     onOpen?: (result: SearchResultDTO) => void;
-    onAdd: (result: SearchResultDTO) => void;
+    onAdd?: (result: SearchResultDTO) => void;
   }) => (
     <div>
       <button type="button" onClick={() => onOpen?.(result)}>
         open-{result.id}
       </button>
-      <button type="button" onClick={() => onAdd(result)}>
-        add-{result.id}
-      </button>
+      {onAdd ? (
+        <button type="button" onClick={() => onAdd(result)}>
+          add-{result.id}
+        </button>
+      ) : null}
     </div>
   ),
 }));
@@ -173,9 +181,15 @@ function buildExternalResult(overrides?: Partial<SearchResultDTO>): SearchResult
     id: "gb_external_book",
     editionId: "gb_external_book",
     bookId: "gb_external_book",
+    workId: null,
     externalId: "external_123",
     source: "googleBooks",
     resultType: "external",
+    workType: "edition",
+    editionPresence: "edition",
+    ebookClass: "unavailable",
+    sourceClass: "external_provider",
+    languageTruth: "unknown",
     title: "External Book",
     titleEn: "External Book",
     titleAr: "",
@@ -271,7 +285,7 @@ describe("search modal canonicalization guards", () => {
     fireEvent.change(screen.getByLabelText("book-search-modal"), {
       target: { value: "external" },
     });
-    fireEvent.click(screen.getByText("add-gb_external_book"));
+    fireEvent.click(screen.getByText("open-gb_external_book"));
 
     await waitFor(() => {
       expect(ensureCanonicalBookMock).toHaveBeenCalledWith(

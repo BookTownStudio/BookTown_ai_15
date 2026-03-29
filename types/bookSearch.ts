@@ -1,13 +1,24 @@
 export type BookSearchSource = "booktown" | "googleBooks" | "openLibrary";
 export type BookSearchResultType = "canonical" | "external";
+export type BookSearchWorkType = "work" | "edition";
+export type BookSearchEditionPresence = "single" | "grouped" | "edition";
+export type BookSearchEbookClass = "in_app" | "external_link" | "unavailable";
+export type BookSearchSourceClass = "canonical_catalog" | "external_provider";
+export type BookSearchLanguageTruth = "match" | "mismatch" | "unknown";
 
 export interface SearchResultDTO {
   id: string;
   editionId: string;
   bookId: string;
+  workId: string | null;
   externalId: string;
   source: BookSearchSource;
   resultType: BookSearchResultType;
+  workType: BookSearchWorkType;
+  editionPresence: BookSearchEditionPresence;
+  ebookClass: BookSearchEbookClass;
+  sourceClass: BookSearchSourceClass;
+  languageTruth: BookSearchLanguageTruth;
   title: string;
   titleEn: string;
   titleAr: string;

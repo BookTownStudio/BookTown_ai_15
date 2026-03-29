@@ -17,9 +17,15 @@ type SearchBookResponse = {
   id: string;
   editionId: string;
   bookId: string;
+  workId: string | null;
   externalId: string;
   source: "booktown" | "googleBooks" | "openLibrary";
   resultType: "canonical" | "external";
+  workType: "work" | "edition";
+  editionPresence: "single" | "grouped" | "edition";
+  ebookClass: "in_app" | "external_link" | "unavailable";
+  sourceClass: "canonical_catalog" | "external_provider";
+  languageTruth: "match" | "mismatch" | "unknown";
   title: string;
   titleEn: string;
   titleAr: string;
@@ -345,6 +351,7 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
 
   const editionId = String(raw?.editionId || raw?.id || "").trim();
   const bookId = String(raw?.bookId || raw?.id || "").trim();
+  const workIdRaw = typeof raw?.workId === "string" ? raw.workId.trim() : "";
   if (!editionId || !bookId) return null;
 
   const authors = Array.isArray(raw?.authors)
@@ -360,6 +367,36 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     String(raw?.resultType || "").trim() === "external"
       ? "external"
       : "canonical";
+  const workType =
+    String(raw?.workType || "").trim() === "edition"
+      ? "edition"
+      : "work";
+  const editionPresenceRaw = String(raw?.editionPresence || "").trim();
+  const editionPresence =
+    editionPresenceRaw === "grouped" || editionPresenceRaw === "edition"
+      ? editionPresenceRaw
+      : "single";
+  const ebookClassRaw = String(raw?.ebookClass || "").trim();
+  const ebookClass =
+    ebookClassRaw === "in_app" ||
+    ebookClassRaw === "external_link" ||
+    ebookClassRaw === "unavailable"
+      ? ebookClassRaw
+      : downloadable
+      ? "in_app"
+      : "unavailable";
+  const sourceClassRaw = String(raw?.sourceClass || "").trim();
+  const sourceClass =
+    sourceClassRaw === "external_provider"
+      ? "external_provider"
+      : "canonical_catalog";
+  const languageTruthRaw = String(raw?.languageTruth || "").trim();
+  const languageTruth =
+    languageTruthRaw === "match" ||
+    languageTruthRaw === "mismatch" ||
+    languageTruthRaw === "unknown"
+      ? languageTruthRaw
+      : "unknown";
   const confidenceRaw = Number(raw?.confidence);
   const rankRaw = Number(raw?.rank);
 
@@ -367,9 +404,15 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     id: String(raw?.id || editionId),
     editionId,
     bookId,
+    workId: workIdRaw || null,
     externalId,
     source,
     resultType,
+    workType,
+    editionPresence,
+    ebookClass,
+    sourceClass,
+    languageTruth,
     title,
     titleEn: String(raw?.titleEn || title),
     titleAr: String(raw?.titleAr || ""),

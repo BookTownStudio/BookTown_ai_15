@@ -332,7 +332,18 @@ const BookDetailsScreen: React.FC = () => {
     setIsEditingReview(true);
   }, [reviewAction, existingUserReview]);
 
-  const hasReadableEbook = Boolean(book?.ebookAttachmentId || book?.isEbookAvailable);
+  const bookSearchTruth = book as
+    | (Record<string, unknown> & {
+        ebookAttachmentId?: unknown;
+        ebookStoragePath?: unknown;
+        downloadable?: unknown;
+      })
+    | null;
+  const hasReadableEbook = Boolean(
+    bookSearchTruth?.ebookAttachmentId ||
+      bookSearchTruth?.ebookStoragePath ||
+      bookSearchTruth?.downloadable
+  );
 
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;

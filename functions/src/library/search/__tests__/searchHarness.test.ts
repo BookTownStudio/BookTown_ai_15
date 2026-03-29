@@ -221,10 +221,25 @@ describe("Search Harness — Canonical Local Engine", () => {
       expect(Boolean(entry.downloadable)).toBe(true);
       expect(Boolean(entry.hasEbook)).toBe(true);
       expect(Boolean(entry.isEbookAvailable)).toBe(true);
+      expect(entry.ebookClass).toBe("in_app");
     });
 
     const titles = results.map((entry: any) => normalize(entry.title || ""));
     expect(titles.some((title) => title.includes("print edition"))).toBe(false);
+  });
+
+  it("ebookOnly blocks external fallback entirely when no in-app ebook exists", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy as any);
+
+    const response = await unifiedSearch("rare fallback term", { ebookOnly: true });
+
+    expect(response.results).toHaveLength(0);
+    expect(response.canonicalCount).toBe(0);
+    expect(response.externalCount).toBe(0);
+    expect(response.telemetry?.externalFallbackTriggered).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 
   it("external fallback only when canonicalCount < threshold", async () => {
@@ -275,12 +290,65 @@ describe("Search Harness — Canonical Local Engine", () => {
     const lowCanonical = await unifiedSearch("rare fallback term", {});
     expect(lowCanonical.canonicalCount).toBeLessThan(5);
     expect(lowCanonical.externalCount).toBeGreaterThan(0);
+    expect(lowCanonical.results[0]?.workType).toBe("work");
+    expect(lowCanonical.results[0]?.resultType).toBe("canonical");
 
     const firstExternalIndex = lowCanonical.results.findIndex((entry: any) => entry.resultType === "external");
     const lastCanonicalIndex = Math.max(
       ...lowCanonical.results.map((entry: any, index: number) => (entry.resultType === "canonical" ? index : -1))
     );
     expect(firstExternalIndex).toBeGreaterThan(lastCanonicalIndex);
+  });
+
+  it("returns grouped canonical metadata for multi-source canonical works", async () => {
+    const response = await unifiedSearch("9780747532743", {});
+    expect(response.results[0]?.editionPresence).toBe("grouped");
+    expect(response.results[0]?.workType).toBe("work");
+    expect(response.results[0]?.workId).toBe(response.results[0]?.bookId);
+  });
+
+  it("keeps language behavior parity across canonical and external results", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("googleapis")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: "gb-lang-1",
+                  volumeInfo: {
+                    title: "Rare Fallback Term External",
+                    authors: ["Provider Author"],
+                    printType: "BOOK",
+                    language: "en",
+                  },
+                },
+              ],
+            }),
+          } as any;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({ docs: [] }),
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("rare fallback term", { language: "ar" });
+
+    expect(response.canonicalCount).toBeGreaterThan(0);
+    expect(response.externalCount).toBeGreaterThan(0);
+    expect(response.results.some((entry: any) => entry.resultType === "canonical")).toBe(true);
+    expect(response.results.some((entry: any) => entry.resultType === "external")).toBe(true);
+    expect(
+      response.results.every((entry: any) => entry.languageTruth === "mismatch")
+    ).toBe(true);
   });
 
   it("non-book filtering: excluded types never appear in external results", async () => {
@@ -373,5 +441,62 @@ describe("Search Harness — Canonical Local Engine", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it("keeps the clean canonical work above derivative Pride and Prejudice rows", async () => {
+    const response = await unifiedSearch("Pride and Prejudice", {});
+    const results = response.results;
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.title).toBe("Pride and Prejudice");
+    expect(results[0]?.authors?.[0]).toBe("Jane Austen");
+    expect(results[0]?.rank).toBe(1);
+
+    const derivativeRows = results.filter((entry: any) => {
+      const normalizedTitle = normalize(entry.title || "");
+      return normalizedTitle.includes("study guide") || normalizedTitle.includes("analysis");
+    });
+
+    expect(derivativeRows.length).toBe(2);
+    derivativeRows.forEach((entry: any) => {
+      expect(entry.rank).toBeGreaterThan(results[0]?.rank ?? 0);
+      expect(normalize(entry.authors?.[0] || "")).toBe("unknown");
+    });
+  });
+
+  it("penalizes unknown-author Frankenstein rows below the canonical author", async () => {
+    const response = await unifiedSearch("Frankenstein", {});
+    const results = response.results;
+
+    expect(results.length).toBeGreaterThan(1);
+    expect(results[0]?.title).toBe("Frankenstein");
+    expect(results[0]?.authors?.[0]).toBe("Mary Shelley");
+
+    const unknownIndex = results.findIndex(
+      (entry: any) =>
+        normalize(entry.title || "") === "frankenstein" &&
+        normalize(entry.authors?.[0] || "") === "unknown"
+    );
+    expect(unknownIndex).toBeGreaterThan(0);
+  });
+
+  it("gives Arabic title scoring parity for رجال في الشمس", async () => {
+    const response = await unifiedSearch("رجال في الشمس", {});
+    const results = response.results;
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.titleAr).toBe("رجال في الشمس");
+    expect(results[0]?.authors?.[0]).toBe("Ghassan Kanafani");
+    expect(results[0]?.resultType).toBe("canonical");
+  });
+
+  it("recalls الأيام as the top canonical Arabic exact-title match", async () => {
+    const response = await unifiedSearch("الأيام", {});
+    const results = response.results;
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.titleAr).toBe("الأيام");
+    expect(results[0]?.authors?.[0]).toBe("Taha Hussein");
+    expect(results[0]?.resultType).toBe("canonical");
   });
 });

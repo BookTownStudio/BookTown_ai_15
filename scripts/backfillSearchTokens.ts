@@ -277,6 +277,10 @@ function printSampleUpdates(sampleUpdates: SampleUpdate[]): void {
 }
 
 async function main(): Promise<void> {
+  throw new Error(
+    "LEGACY_BOOK_SEARCH_BACKFILL_DISABLED: Use the backend-maintained book search index trigger and admin backfillSearchFields utility."
+  );
+
   const checkpoint = await readCheckpoint();
   const cliArgs = parseCliArgs(process.argv.slice(2));
   const options = resolveOptions(cliArgs, checkpoint);

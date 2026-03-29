@@ -7,7 +7,6 @@ import { useI18n } from '../../store/i18n.tsx';
 import DiscoveryEntryCard from '../../components/content/DiscoveryEntryCard.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useBookSearch } from '../../lib/hooks/useBookSearch.ts';
 import CollapsibleSection from '../../components/ui/CollapsibleSection.tsx';
 import HomeSearchBar from '../../components/content/HomeSearchBar.tsx';
 import CameraCaptureModal from '../../components/modals/CameraCaptureModal.tsx';
@@ -28,14 +27,11 @@ import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
+import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
+import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
 
 /* -------------------------------
    Constants
--------------------------------- */
-const EBOOK_ONLY_STORAGE_KEY = 'booktown.search.ebookOnly';
-
-/* -------------------------------
-   Home Screen
 -------------------------------- */
 const HomeScreen: React.FC = () => {
   const { lang } = useI18n();
@@ -66,32 +62,13 @@ const HomeScreen: React.FC = () => {
     setBusyId(null);
   }, [resetTokens.home]);
 
-  /* -------------------------------
-     Ebook-only filter (persisted)
-  -------------------------------- */
-  const [ebookOnly, setEbookOnly] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(EBOOK_ONLY_STORAGE_KEY) === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(EBOOK_ONLY_STORAGE_KEY, String(ebookOnly));
-    } catch {}
-  }, [ebookOnly]);
-
   const {
     data: searchResponse,
     isLoading: isSearchingBooks,
     error: searchError,
-  } = useBookSearch(searchQuery, {
     ebookOnly,
-    lang,
-    limit: 15
-  });
+    toggleEbookOnly,
+  } = useUnifiedBookSearch(searchQuery);
 
   const { isLoading: isAnalyzingImage } = useIdentifyBook();
   const searchResults = searchResponse?.results || [];
@@ -152,8 +129,8 @@ const HomeScreen: React.FC = () => {
     }
   };
 
-  const handleAddResult = async (result: SearchResultDTO) => {
-    if (busyId) return;
+  const handleReadResult = async (result: SearchResultDTO) => {
+    if (busyId || result.ebookClass !== 'in_app') return;
 
     try {
       setBusyId(result.id);
@@ -165,19 +142,18 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
+
       navigate({
         type: 'immersive',
-        id: 'bookDetails',
-        params: buildBookDetailsParams(result, currentView, {
-          pendingAction: 'NONE',
-          searchQuery: searchQuery.trim(),
-          clickedRank: clickedRankFor(result.id),
-          clickTracked: true,
-        }),
+        id: 'reader',
+        params: {
+          bookId: result.bookId,
+          from: currentView,
+        },
       });
     } catch (err) {
-      console.error('[HOME][ADD_OPEN_FAILED]', err);
-      showToast(lang === 'en' ? 'Failed to add book.' : 'فشل إضافة الكتاب.');
+      console.error('[HOME][READ_OPEN_FAILED]', err);
+      showToast(lang === 'en' ? 'Failed to open ebook.' : 'فشل فتح الكتاب الإلكتروني.');
     } finally {
       setBusyId(null);
     }
@@ -217,9 +193,15 @@ const HomeScreen: React.FC = () => {
                 lang={lang}
                 isBusy={busyId === result.id}
                 onOpen={handleOpenResult}
-                onAdd={handleAddResult}
+                onRead={handleReadResult}
               />
             ))}
+          </div>
+        )}
+
+        {!isSearchingBooks && !searchError && searchQuery.trim().length >= 2 && validResults.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-sm text-white/60">
+            {lang === 'en' ? 'No books matched this search.' : 'لا توجد كتب تطابق هذا البحث.'}
           </div>
         )}
       </div>
@@ -251,17 +233,10 @@ const HomeScreen: React.FC = () => {
             {isSearching ? (
               <div className="animate-fade-in">
                 <div className="mt-4 flex items-center justify-start">
-                  <button
-                    onClick={() => setEbookOnly(v => !v)}
-                    className={cn(
-                      "px-4 py-2 rounded-full border text-sm font-semibold transition-all active:scale-95 shadow-sm",
-                      ebookOnly
-                        ? "bg-primary text-white border-primary"
-                        : "bg-white/5 text-slate-500 border-black/10 dark:border-white/10"
-                    )}
-                  >
-                    {lang === 'en' ? 'Ebooks' : 'كتب إلكترونية'}
-                  </button>
+                  <UnifiedSearchFilterToggle
+                    ebookOnly={ebookOnly}
+                    onToggle={toggleEbookOnly}
+                  />
                 </div>
                 {renderSearchResults()}
               </div>

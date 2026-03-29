@@ -67,6 +67,32 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     resultType === 'canonical'
       ? asString(record.bookId) || id
       : '';
+  const workId = asString(record.workId) || null;
+  const workType = asString(record.workType) === 'edition' ? 'edition' : 'work';
+  const editionPresenceRaw = asString(record.editionPresence);
+  const editionPresence =
+    editionPresenceRaw === 'grouped' || editionPresenceRaw === 'edition'
+      ? editionPresenceRaw
+      : 'single';
+  const ebookClassRaw = asString(record.ebookClass);
+  const ebookClass =
+    ebookClassRaw === 'in_app' ||
+    ebookClassRaw === 'external_link' ||
+    ebookClassRaw === 'unavailable'
+      ? ebookClassRaw
+      : Boolean(record.downloadable)
+      ? 'in_app'
+      : 'unavailable';
+  const sourceClass = asString(record.sourceClass) === 'external_provider'
+    ? 'external_provider'
+    : 'canonical_catalog';
+  const languageTruthRaw = asString(record.languageTruth);
+  const languageTruth =
+    languageTruthRaw === 'match' ||
+    languageTruthRaw === 'mismatch' ||
+    languageTruthRaw === 'unknown'
+      ? languageTruthRaw
+      : 'unknown';
 
   if (!id || !editionId || (resultType === 'canonical' && !canonicalBookId)) {
     return null;
@@ -85,9 +111,15 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     id,
     editionId,
     bookId: canonicalBookId,
+    workId,
     externalId: asString(record.externalId),
     source,
     resultType,
+    workType,
+    editionPresence,
+    ebookClass,
+    sourceClass,
+    languageTruth,
     title,
     titleEn: asString(record.titleEn) || title,
     titleAr: asString(record.titleAr),
@@ -151,9 +183,14 @@ async function buildSearchHeaders(): Promise<Record<string, string>> {
 
 function normalizeResponse(payload: unknown): SearchResponseDTO {
   const response = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
-
-  const envelope = response as Partial<SuccessEnvelope<SearchResponseDTO>> & FailureEnvelope;
-  const data = envelope.success === true && envelope.data ? envelope.data : (response as SearchResponseDTO);
+  const envelope = response as {
+    success?: boolean;
+    data?: unknown;
+  };
+  const data =
+    envelope.success === true && envelope.data && typeof envelope.data === 'object'
+      ? (envelope.data as Record<string, unknown>)
+      : response;
 
   const rawResults = Array.isArray((data as any)?.results) ? (data as any).results : [];
   const results = rawResults

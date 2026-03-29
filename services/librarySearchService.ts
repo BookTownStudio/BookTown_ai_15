@@ -192,8 +192,9 @@ export class LibrarySearchService implements LibrarySearchDataService {
             : result.source === 'openLibrary'
             ? 'open_library'
             : 'booktown';
-        const downloadable = Boolean(result.downloadable);
-        const ebookAvailable = Boolean(result.isEbookAvailable);
+        const downloadable = result.ebookClass === 'in_app';
+        const ebookAvailable = downloadable;
+        const editionFormat = downloadable ? 'ebook' : 'paperback';
 
         return {
             editionId: result.editionId || result.id,
@@ -209,7 +210,7 @@ export class LibrarySearchService implements LibrarySearchDataService {
             dimensions: {},
             coverImages: { medium: result.coverUrl || null },
             description: result.description || result.descriptionEn || '',
-            editionFormat: 'ebook',
+            editionFormat,
             ebookAvailable,
             otherIdentifiers: [],
             source: normalizedSource as any,

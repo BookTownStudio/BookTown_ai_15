@@ -766,6 +766,7 @@ export * from "./triggers/aggregationTriggers";
 export * from "./triggers/notificationTriggers";
 export * from "./triggers/activityTriggers";
 export * from "./triggers/searchTriggers";
+export { syncBookSearchIndex } from "./library/search/syncBookSearchIndex";
 export { processUserUploadCoverJobs };
 
 // REST API (CRITICAL WIRING)

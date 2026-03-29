@@ -11,12 +11,18 @@ import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 
+type SemanticChip = {
+  key: string;
+  label: string;
+  className: string;
+};
+
 interface SearchResultCardProps {
   result: SearchResultDTO;
   lang: 'en' | 'ar';
 
   /** Canonical actions */
-  onAdd: (result: SearchResultDTO) => void;
+  onAdd?: (result: SearchResultDTO) => void;
   onOpen?: (result: SearchResultDTO) => void;
   onRead?: (result: SearchResultDTO) => void;
 
@@ -76,13 +82,62 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       ? result.authorEn || ''
       : result.authorAr || result.authorEn || '';
 
-  const ebookAvailable = !!result.isEbookAvailable;
+  const canReadInApp = result.ebookClass === 'in_app' && !!onRead;
+  const canAdd = typeof onAdd === 'function';
+  const groupedEditionText =
+    result.editionPresence === 'grouped'
+      ? lang === 'en'
+        ? 'Other editions available'
+        : 'إصدارات أخرى متاحة'
+      : '';
+
+  const semanticChips: SemanticChip[] = [];
+
+  if (result.workType === 'work') {
+    semanticChips.push({
+      key: 'canonical',
+      label: lang === 'en' ? 'Canonical' : 'أساسي',
+      className: 'border-emerald-400/25 bg-emerald-400/10 text-emerald-200',
+    });
+  }
+
+  if (result.workType === 'edition') {
+    semanticChips.push({
+      key: 'edition',
+      label: lang === 'en' ? 'Edition' : 'طبعة',
+      className: 'border-sky-400/25 bg-sky-400/10 text-sky-200',
+    });
+  }
+
+  if (result.ebookClass === 'in_app') {
+    semanticChips.push({
+      key: 'ebook',
+      label: lang === 'en' ? 'In-App Ebook' : 'كتاب داخل التطبيق',
+      className: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
+    });
+  }
+
+  if (result.sourceClass === 'external_provider') {
+    semanticChips.push({
+      key: 'external',
+      label: lang === 'en' ? 'External' : 'مصدر خارجي',
+      className: 'border-fuchsia-400/25 bg-fuchsia-400/10 text-fuchsia-200',
+    });
+  }
+
+  if (result.languageTruth === 'mismatch') {
+    semanticChips.push({
+      key: 'language',
+      label: lang === 'en' ? 'Other language' : 'لغة أخرى',
+      className: 'border-white/15 bg-white/5 text-white/70',
+    });
+  }
 
   const handlePrimaryAction = () => {
     if (isBusy) return;
 
     if (mode === 'insertion') {
-      onAdd(result);
+      onAdd?.(result);
     } else {
       onOpen?.(result);
     }
@@ -147,6 +202,35 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
             {author}
           </BilingualText>
         )}
+
+        {(semanticChips.length > 0 || groupedEditionText) && (
+          <div className="mt-2 space-y-1.5">
+            {semanticChips.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {semanticChips.map((chip) => (
+                  <span
+                    key={chip.key}
+                    className={cn(
+                      'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                      chip.className
+                    )}
+                  >
+                    {chip.label}
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {groupedEditionText && (
+              <BilingualText
+                role="Caption"
+                className="text-white/55 text-[11px] leading-tight"
+              >
+                {groupedEditionText}
+              </BilingualText>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Actions */}
@@ -154,62 +238,50 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
         {mode === 'discovery' && (
           <>
             {/* 👁 Ebook indicator / Read */}
-            <button
-              type="button"
-              disabled={!ebookAvailable || !onRead || isBusy}
-              title={
-                ebookAvailable
-                  ? (lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب')
-                  : (lang === 'en'
-                      ? 'No ebook available'
-                      : 'لا يوجد كتاب إلكتروني')
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                if (ebookAvailable && onRead) {
-                  onRead(result);
-                }
-              }}
-              className={cn(
-                'p-2 rounded-full border transition-colors',
-                'bg-white/5 border-white/10',
-                ebookAvailable && onRead
-                  ? 'hover:bg-white/10 cursor-pointer'
-                  : 'opacity-30 cursor-default'
-              )}
-              aria-disabled={!ebookAvailable || !onRead}
-            >
-              <EyeIcon
+            {canReadInApp && (
+              <button
+                type="button"
+                disabled={isBusy}
+                title={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRead?.(result);
+                }}
                 className={cn(
-                  'h-4 w-4',
-                  ebookAvailable ? 'text-white/90' : 'text-white/70'
+                  'p-2 rounded-full border transition-colors',
+                  'bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer'
                 )}
-              />
-            </button>
+                aria-label={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
+              >
+                <EyeIcon className="h-4 w-4 text-white/90" />
+              </button>
+            )}
 
             {/* ➕ Add */}
-            <Button
-              variant="icon"
-              aria-label="Add book"
-              className={cn(
-                "!h-9 !w-9 transition-all",
-                didAdd && "!bg-accent/20 !border !border-accent/40"
-              )}
-              disabled={isBusy}
-              onClick={(e) => {
-                e.stopPropagation();
-                onAdd(result);
-                triggerAddFeedback();
-              }}
-            >
-              {isBusy ? (
-                <LoadingSpinner className="!h-4 !w-4" />
-              ) : didAdd ? (
-                <CheckCircleIcon className="h-5 w-5 text-accent" />
-              ) : (
-                <PlusIcon className="h-5 w-5" />
-              )}
-            </Button>
+            {canAdd && (
+              <Button
+                variant="icon"
+                aria-label="Add book"
+                className={cn(
+                  "!h-9 !w-9 transition-all",
+                  didAdd && "!bg-accent/20 !border !border-accent/40"
+                )}
+                disabled={isBusy}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onAdd?.(result);
+                  triggerAddFeedback();
+                }}
+              >
+                {isBusy ? (
+                  <LoadingSpinner className="!h-4 !w-4" />
+                ) : didAdd ? (
+                  <CheckCircleIcon className="h-5 w-5 text-accent" />
+                ) : (
+                  <PlusIcon className="h-5 w-5" />
+                )}
+              </Button>
+            )}
           </>
         )}
 
