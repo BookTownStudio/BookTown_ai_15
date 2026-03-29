@@ -47,13 +47,38 @@
   width: min(320px, 88vw);
 }
 
+.app-drawer-panel--desktop {
+  width: min(320px, calc(100% - var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px))));
+}
+
+.social-desktop-canvas {
+  position: relative;
+}
+
+.social-feed-shell {
+  position: relative;
+}
+
 @media screen and (min-width: 1024px) {
-  .app-drawer-panel--ltr {
-    left: calc(max((100vw - var(--app-shell-max, 1280px)) / 2, 0px) + var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px)));
+  .social-desktop-canvas {
+    background:
+      radial-gradient(circle at center top, rgba(26, 41, 64, 0.42), transparent 42%),
+      linear-gradient(180deg, #04070d 0%, #050a12 58%, #020308 100%);
   }
 
-  .app-drawer-panel--rtl {
-    right: calc(max((100vw - var(--app-shell-max, 1280px)) / 2, 0px) + var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px)));
+  .social-feed-shell {
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+    border-right: 1px solid rgba(255, 255, 255, 0.08);
+    background: linear-gradient(180deg, rgba(9, 14, 22, 0.72), rgba(3, 5, 9, 0.9));
+    box-shadow: 0 24px 72px -52px rgba(0, 0, 0, 0.92);
+  }
+
+  .social-feed-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.03), transparent 16%, transparent 84%, rgba(255, 255, 255, 0.03));
   }
 }
 

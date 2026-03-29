@@ -122,24 +122,126 @@ const Drawer: React.FC = () => {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="fixed inset-0 z-30 bg-black/50"
+                        className="fixed inset-0 z-30 bg-black/50 lg:bg-black/42"
                         onClick={closeDrawer}
                     />
 
-                    {/* Drawer Panel */}
-                    <motion.div 
+                    {/* Mobile Drawer Panel */}
+                    <motion.div
                         custom={isRTL}
                         variants={drawerVariants}
                         initial="hidden"
                         animate="visible"
                         exit="exit"
                         className={`
-                            app-drawer-panel fixed top-0 bottom-0 z-40 
+                            app-drawer-panel fixed top-0 bottom-0 z-40 lg:hidden
                             bg-gray-100/80 dark:bg-slate-800/50 backdrop-blur-xl border-black/10 dark:border-white/10
                             flex flex-col
-                            ${isRTL ? 'right-0 border-l app-drawer-panel--rtl' : 'left-0 border-r app-drawer-panel--ltr'}
+                            ${isRTL ? 'right-0 border-l' : 'left-0 border-r'}
                         `}
                     >
+                        <button
+                            className={`w-full p-4 text-left transition-colors duration-200 hover:bg-black/5 dark:hover:bg-white/5`}
+                            onClick={() => handleNavigate('profile')}
+                            aria-label={lang === 'en' ? 'View Profile' : 'عرض الملف الشخصي'}
+                        >
+                        {profile ? (
+                            <div className="flex items-center gap-3">
+                                <img src={profile.avatarUrl} alt="User Avatar" className="h-12 w-12 rounded-full border border-black/10 dark:border-white/10" />
+                                <div className="overflow-hidden">
+                                    <BilingualText className="font-bold text-lg leading-tight truncate">{profile.name}</BilingualText>
+                                    <BilingualText role="Caption" className="text-slate-500 dark:text-white/60 truncate">{profile.handle}</BilingualText>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="h-[68px] flex items-center gap-3 animate-pulse">
+                                <div className="h-12 w-12 rounded-full bg-black/10 dark:bg-white/10"></div>
+                                <div className="space-y-2">
+                                    <div className="h-4 w-24 bg-black/10 dark:bg-white/10 rounded"></div>
+                                    <div className="h-3 w-16 bg-black/10 dark:bg-white/10 rounded"></div>
+                                </div>
+                            </div>
+                        )}
+                        </button>
+
+                        <div className="flex-grow overflow-y-auto px-4 pt-2">
+                            <nav>{renderList(MAIN_ITEMS)}</nav>
+
+                            <div className="my-1 border-t border-black/10 dark:border-white/10"></div>
+                            
+                            <div className="space-y-1">
+                                {/* Dark Mode Toggle */}
+                                <div className={`flex items-center justify-between px-3 py-1.5 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                                    <div className={`flex items-center ${isRTL ? 'flex-row-reverse' : ''}`}>
+                                        <MoonIcon className={`h-6 w-6 text-slate-600 dark:text-white/80 ${isRTL ? 'ml-4' : 'mr-4'}`} />
+                                        <BilingualText role="Body">{lang === 'en' ? 'Dark Mode' : 'الوضع الداكن'}</BilingualText>
+                                    </div>
+                                    <label htmlFor="dark-mode-toggle" className="relative inline-flex items-center cursor-pointer">
+                                        <input 
+                                            type="checkbox" 
+                                            id="dark-mode-toggle" 
+                                            className="sr-only peer"
+                                            checked={theme === 'dark'}
+                                            onChange={toggleTheme}
+                                        />
+                                        <div className="w-11 h-6 bg-slate-400 dark:bg-slate-600 rounded-full peer peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-accent/50 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-primary"></div>
+                                    </label>
+                                </div>
+                                {/* Feedback Button */}
+                                <Button
+                                    variant="ghost"
+                                    className={`w-full !justify-start !text-inherit !font-normal !px-3 !py-1 ${isRTL ? '!flex-row-reverse' : ''} ${currentView.type === 'immersive' && currentView.id === 'feedback' ? 'bg-accent/20' : ''}`}
+                                    onClick={() => handleNavigate('feedback')}
+                                >
+                                    <FeedbackIcon className={`h-6 w-6 ${isRTL ? 'ml-4' : 'mr-4'}`} />
+                                    {lang === 'en' ? 'Feedback' : 'ملاحظات'}
+                                </Button>
+                            </div>
+
+                            <div className="my-1 border-t border-black/10 dark:border-white/10"></div>
+
+                            <nav>{renderList(SETTINGS_ITEMS)}</nav>
+
+                            {!isStandalone && (deviceType === 'android-chrome' || deviceType === 'desktop-pwa' || deviceType === 'ios-safari') && (
+                                <div className="space-y-1">
+                                    <div className="my-1 border-t border-black/10 dark:border-white/10"></div>
+                                    <Button
+                                        variant="ghost"
+                                        className={`w-full !justify-start !text-inherit !font-normal !px-3 !py-1 ${isRTL ? '!flex-row-reverse' : ''}`}
+                                        onClick={handleInstallClick}
+                                    >
+                                        <DownloadIcon className={`h-6 w-6 ${isRTL ? 'ml-4' : 'mr-4'}`} />
+                                        {lang === 'en' ? 'Install App' : 'تثبيت التطبيق'}
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+                        
+                        <div className="p-2 border-t border-black/10 dark:border-white/10">
+                            <Button variant="ghost" onClick={logout} className={`w-full !justify-start !text-inherit !font-normal !px-3 !py-1 ${isRTL ? '!flex-row-reverse' : ''}`}>
+                                <LogoutIcon className={`h-6 w-6 ${isRTL ? 'ml-4' : 'mr-4'}`} />
+                                {lang === 'en' ? 'Sign Out' : 'تسجيل الخروج'}
+                            </Button>
+                        </div>
+                    </motion.div>
+
+                    {/* Desktop Drawer Root */}
+                    <div className="pointer-events-none fixed inset-0 z-40 hidden lg:block">
+                        <div className="app-frame__inner h-full">
+                            <div className="relative h-full">
+                                <motion.div
+                                    custom={isRTL}
+                                    variants={drawerVariants}
+                                    initial="hidden"
+                                    animate="visible"
+                                    exit="exit"
+                                    className={`
+                                        app-drawer-panel app-drawer-panel--desktop absolute top-0 bottom-0 pointer-events-auto
+                                        bg-gray-100/86 dark:bg-slate-800/62 backdrop-blur-xl border-black/10 dark:border-white/10
+                                        flex flex-col shadow-[0_30px_80px_-48px_rgba(0,0,0,0.85)]
+                                        ${isRTL ? 'right-0 border-l' : 'left-0 border-r'}
+                                    `}
+                                >
                         <button
                             className={`w-full p-4 text-left transition-colors duration-200 hover:bg-black/5 dark:hover:bg-white/5`}
                             onClick={() => handleNavigate('profile')}
@@ -223,7 +325,10 @@ const Drawer: React.FC = () => {
                                 {lang === 'en' ? 'Sign Out' : 'تسجيل الخروج'}
                             </Button>
                         </div>
-                    </motion.div>
+                                </motion.div>
+                            </div>
+                        </div>
+                    </div>
                 </>
             )}
             <IosInstallSheet isOpen={isIosSheetOpen} onClose={() => setIosSheetOpen(false)} />

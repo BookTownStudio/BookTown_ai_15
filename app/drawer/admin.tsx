@@ -1133,10 +1133,16 @@ const ControlCenterScreen: React.FC = () => {
     return (
       <div className="h-screen flex flex-col">
         <ScreenHeader titleEn="Control Center" titleAr="مركز التحكم" onBack={handleBack} />
-        <main className="flex-grow flex items-center justify-center text-center p-4">
-          <BilingualText role="H1" className="text-white/70">
-            {lang === 'en' ? 'You do not have permission to access this area.' : 'ليس لديك إذن للوصول إلى هذه المنطقة.'}
-          </BilingualText>
+        <main className="flex-grow overflow-y-auto pt-24 pb-8">
+          <div className="app-frame__inner">
+            <div className="mx-auto w-full max-w-[var(--app-rail-admin)] px-4 md:px-0">
+              <div className="min-h-[20rem] flex items-start justify-center pt-12 text-center">
+                <BilingualText role="H1" className="text-white/70">
+                  {lang === 'en' ? 'You do not have permission to access this area.' : 'ليس لديك إذن للوصول إلى هذه المنطقة.'}
+                </BilingualText>
+              </div>
+            </div>
+          </div>
         </main>
       </div>
     );
@@ -1147,8 +1153,10 @@ const ControlCenterScreen: React.FC = () => {
       <ScreenHeader titleEn="Control Center" titleAr="مركز التحكم" onBack={handleBack} />
 
       <div className="pt-20 flex flex-col flex-grow overflow-hidden">
+        <div className="app-frame__inner h-full">
+          <div className="mx-auto flex h-full w-full max-w-[var(--app-rail-admin)] flex-col overflow-hidden px-4 md:px-0">
         {/* --- Role Visibility Strip --- */}
-        <div className="flex items-center justify-between px-6 py-2 bg-black/20 border-b border-white/10">
+        <div className="flex items-center justify-between rounded-t-2xl border border-white/10 border-b-0 px-6 py-2 bg-black/20">
           <span className="text-xs text-slate-400">
             Signed in as: <span className="font-semibold text-white uppercase">{role}</span>
           </span>
@@ -1173,7 +1181,7 @@ const ControlCenterScreen: React.FC = () => {
         </div>
         {/* --- End Role Visibility Strip --- */}
 
-        <main className="flex-grow overflow-hidden flex flex-col md:flex-row">
+        <main className="flex-grow overflow-hidden flex flex-col md:flex-row rounded-b-2xl border border-white/10 bg-slate-900/55">
           <nav
             className={cn(
               'bg-slate-800/50 backdrop-blur-md border-b md:border-b-0 md:border-r border-white/10',
@@ -1300,6 +1308,8 @@ const ControlCenterScreen: React.FC = () => {
             </div>
           </div>
         </main>
+          </div>
+        </div>
       </div>
     </div>
   );

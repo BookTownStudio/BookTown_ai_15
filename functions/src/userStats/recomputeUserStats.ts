@@ -34,7 +34,7 @@ export async function recomputeUserStats(uid: string): Promise<void> {
       shelvesCreated: counters.totalShelves || 0,
       posts: counters.posts || 0,
       reviews: counters.reviews || 0,
-      booksRead: counters.booksRead || 0,
+      booksRead: counters.totalBooks || counters.booksRead || 0,
       wordsWritten: counters.wordsWritten || 0
     });
 

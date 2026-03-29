@@ -29,6 +29,7 @@ import { useAttachmentUpload } from '../../lib/hooks/useAttachmentUpload.ts';
 import { useCreatePost } from '../../lib/hooks/useCreatePost.ts';
 import { useDraft, useDrafts, useDeleteDraft, useSaveDraft } from '../../lib/hooks/useDrafts.ts';
 import { cn } from '../../lib/utils.ts';
+import ContentRail from '../../components/layout/ContentRail.tsx';
 
 const TEXT_LIMIT = 500;
 const AUTOSAVE_DEBOUNCE = 800;
@@ -513,60 +514,72 @@ const PostComposerScreen: React.FC = () => {
 
   return (
     <div className="h-screen bg-[#0f172a] text-white flex flex-col">
-      <header className="flex items-center justify-between px-4 h-16 border-b border-white/5">
-        <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft || !!exitAction}>
-          Cancel
-        </button>
-        <div className="flex gap-2">
-          {isDraftAvailable && (
-            <button onClick={handleOpenDrafts} className="px-3 py-1 text-xs rounded-full bg-white/5">
-              Drafts
-            </button>
-          )}
-          <Button onClick={handlePublish} disabled={isPosting || isUploading || isRouteDraftLoading}>
-            {isPosting ? <LoadingSpinner /> : 'Post'}
-          </Button>
-        </div>
-      </header>
+      <div className="app-frame__inner h-full">
+        <div className="mx-auto flex h-full w-full max-w-[var(--app-rail-wide)] flex-col bg-[#0f172a]/86 backdrop-blur-sm md:border-x md:border-white/6 md:shadow-[0_24px_72px_-48px_rgba(0,0,0,0.9)]">
+          <header className="border-b border-white/5">
+            <ContentRail variant="default" className="flex h-16 items-center justify-between px-0">
+              <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft || !!exitAction}>
+                Cancel
+              </button>
+              <div className="flex gap-2">
+                {isDraftAvailable && (
+                  <button onClick={handleOpenDrafts} className="px-3 py-1 text-xs rounded-full bg-white/5">
+                    Drafts
+                  </button>
+                )}
+                <Button onClick={handlePublish} disabled={isPosting || isUploading || isRouteDraftLoading}>
+                  {isPosting ? <LoadingSpinner /> : 'Post'}
+                </Button>
+              </div>
+            </ContentRail>
+          </header>
 
-      <div className="grid grid-cols-6 gap-2 px-4 py-4 border-b border-white/5">
-        {attachmentTypes.map((type) => (
-          <button
-            key={type.id}
-            onClick={type.action}
-            className="flex flex-col items-center gap-1 py-2 rounded-xl bg-white/5 hover:bg-white/10"
-            disabled={isRouteDraftLoading}
-          >
-            <type.icon className="h-6 w-6" />
-            <span className="text-[10px]">{type.label}</span>
-          </button>
-        ))}
+          <div className="border-b border-white/5">
+            <ContentRail variant="default" className="grid grid-cols-6 gap-2 py-4 px-0">
+              {attachmentTypes.map((type) => (
+                <button
+                  key={type.id}
+                  onClick={type.action}
+                  className="flex flex-col items-center gap-1 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                  disabled={isRouteDraftLoading}
+                >
+                  <type.icon className="h-6 w-6" />
+                  <span className="text-[10px]">{type.label}</span>
+                </button>
+              ))}
+            </ContentRail>
+          </div>
+
+          <ContentRail variant="default" className="flex flex-1 flex-col px-0">
+            <textarea
+              value={text}
+              onChange={(event) => setText(event.target.value.slice(0, TEXT_LIMIT))}
+              placeholder="What's happening?"
+              className="flex-grow py-6 bg-transparent text-2xl font-serif resize-none focus:outline-none"
+              disabled={isRouteDraftLoading}
+            />
+
+            {attachment && (
+              <div className="pb-4">
+                <AttachmentListV1
+                  attachments={[attachment]}
+                  onRemove={() => setAttachment(null)}
+                  surface="write"
+                />
+              </div>
+            )}
+          </ContentRail>
+
+          <footer className="border-t border-white/5">
+            <ContentRail variant="default" className="flex h-14 items-center justify-between px-0">
+              <span className="text-xs opacity-40">{footerDraftLabel}</span>
+              <span className={cn('text-xs', TEXT_LIMIT - text.length < 50 && 'text-amber-400')}>
+                {TEXT_LIMIT - text.length} / {TEXT_LIMIT}
+              </span>
+            </ContentRail>
+          </footer>
+        </div>
       </div>
-
-      <textarea
-        value={text}
-        onChange={(event) => setText(event.target.value.slice(0, TEXT_LIMIT))}
-        placeholder="What's happening?"
-        className="flex-grow px-6 py-6 bg-transparent text-2xl font-serif resize-none focus:outline-none"
-        disabled={isRouteDraftLoading}
-      />
-
-      {attachment && (
-        <div className="px-6 pb-4">
-          <AttachmentListV1
-            attachments={[attachment]}
-            onRemove={() => setAttachment(null)}
-            surface="write"
-          />
-        </div>
-      )}
-
-      <footer className="h-14 px-4 flex items-center justify-between border-t border-white/5">
-        <span className="text-xs opacity-40">{footerDraftLabel}</span>
-        <span className={cn('text-xs', TEXT_LIMIT - text.length < 50 && 'text-amber-400')}>
-          {TEXT_LIMIT - text.length} / {TEXT_LIMIT}
-        </span>
-      </footer>
 
       <input
         type="file"

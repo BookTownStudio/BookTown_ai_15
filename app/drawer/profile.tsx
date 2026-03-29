@@ -367,6 +367,29 @@ const ProfileScreen: React.FC = () => {
       : 'UNKNOWN';
   const statDisplay = (value: number | undefined): string =>
     userStatsError ? '--' : String(value ?? 0);
+  const showProfileStrength = false;
+  const profileStatItems = [
+    {
+      key: 'books',
+      label: lang === 'en' ? 'Books' : 'الكتب',
+      value: statDisplay(userStats?.booksRead),
+    },
+    {
+      key: 'words',
+      label: lang === 'en' ? 'Words' : 'الكلمات',
+      value: statDisplay(userStats?.wordsWritten),
+    },
+    {
+      key: 'followers',
+      label: lang === 'en' ? 'Followers' : 'المتابعون',
+      value: statDisplay(userStats?.followers),
+    },
+    {
+      key: 'following',
+      label: lang === 'en' ? 'Following' : 'يتابع',
+      value: statDisplay(userStats?.following),
+    },
+  ];
   const handleOpenReviewedBook = (
     bookId: string,
     reviewId: string,
@@ -482,75 +505,96 @@ const ProfileScreen: React.FC = () => {
     <>
       <PageShell scrollable ref={scrollRef}>
         <ScreenHeader onBack={() => navigate({ type: 'tab', id: 'home' })} />
+        <div className="pt-10 md:pt-14">
+          {/* HERO */}
+          <div className="app-rail app-rail--default">
+            <div className="relative h-32 overflow-hidden rounded-[28px] md:h-36">
+              {profile.bannerUrl && !bannerError ? (
+                <img
+                  src={profile.bannerUrl}
+                  className="h-full w-full object-cover"
+                  onError={() => setBannerError(true)}
+                  alt=""
+                />
+              ) : (
+                <div className="h-full w-full bg-[linear-gradient(135deg,#111827_0%,#172554_46%,#0f172a_100%)]" />
+              )}
 
-        {/* HERO */}
-        <div className="relative h-40">
-          {profile.bannerUrl && !bannerError ? (
-            <img
-              src={profile.bannerUrl}
-              className="h-full w-full object-cover"
-              onError={() => setBannerError(true)}
-              alt=""
-            />
-          ) : (
-            <div className="h-full w-full bg-slate-200 dark:bg-slate-800" />
-          )}
-
-          <div className="absolute inset-0 bg-gradient-to-t from-gray-50/95 dark:from-slate-900/95 via-transparent to-transparent" />
-
-          <div className="absolute -bottom-14 left-4">
-            <div className="h-28 w-28 rounded-full overflow-hidden border-4 border-gray-50 dark:border-slate-900">
-              <img
-                src={profile.avatarUrl}
-                className="h-full w-full object-cover"
-                alt="Avatar"
-              />
+              <div className="absolute inset-0 bg-gradient-to-t from-gray-50/95 dark:from-slate-900/95 via-transparent to-transparent" />
             </div>
           </div>
 
-          {isOwnProfile && (
-            <div className="absolute top-4 right-4">
-              <Button
-                variant="icon"
-                onClick={() => {
-                  setEditData({
-                    name: profile.name,
-                    bio: profile.bioEn || profile.bioAr,
-                    avatarUrl: profile.avatarUrl,
-                    bannerUrl: profile.bannerUrl,
-                  });
-                  setEditModalOpen(true);
-                }}
-                className="bg-black/40 backdrop-blur-md border border-white/20 !text-white"
-              >
-                <EditIcon className="h-4 w-4" />
-              </Button>
+          {/* IDENTITY */}
+          <div className="app-rail app-rail--default max-w-2xl -mt-4 pb-4 relative z-10">
+            <div className="flex items-start gap-4 md:gap-5">
+              <div className="h-24 w-24 md:h-28 md:w-28 rounded-full overflow-hidden border-4 border-gray-50 dark:border-slate-900 bg-slate-200 dark:bg-slate-800 shadow-lg flex-shrink-0">
+                <img
+                  src={profile.avatarUrl}
+                  className="h-full w-full object-cover object-center"
+                  alt="Avatar"
+                />
+              </div>
+
+              <div className="min-w-0 flex-grow pt-2">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <BilingualText role="H1" className="!text-3xl font-semibold leading-tight">
+                      {profile.name}
+                    </BilingualText>
+
+                    <BilingualText role="Caption" className="mt-1 text-slate-500 truncate">
+                      {profile.handle}
+                    </BilingualText>
+
+                    <div className="mt-2 flex items-center gap-2 text-slate-500">
+                      <CalendarIcon className="h-4 w-4" />
+                      <BilingualText role="Caption">
+                        {lang === 'en' ? `Joined ${joinDate}` : `انضم في ${joinDate}`}
+                      </BilingualText>
+                    </div>
+                  </div>
+
+                  {isOwnProfile && (
+                    <Button
+                      variant="icon"
+                      onClick={() => {
+                        setEditData({
+                          name: profile.name,
+                          bio: profile.bioEn || profile.bioAr,
+                          avatarUrl: profile.avatarUrl,
+                          bannerUrl: profile.bannerUrl,
+                        });
+                        setEditModalOpen(true);
+                      }}
+                      className="bg-black/5 dark:bg-white/5 border border-black/10 dark:border-white/14 !text-slate-700 dark:!text-white flex-shrink-0"
+                    >
+                      <EditIcon className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
+
+                <div className="mt-3 max-w-xl">
+                  <BilingualText role="Body" className="text-slate-600 dark:text-slate-300">
+                    {profileBio || (lang === 'en' ? 'No bio yet.' : 'لا توجد نبذة بعد.')}
+                  </BilingualText>
+                </div>
+                <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500 dark:text-slate-400 justify-center md:justify-start">
+                  {profileStatItems.map((item, index) => (
+                    <React.Fragment key={item.key}>
+                      <span className="inline-flex items-center gap-2 whitespace-nowrap">
+                        <span className="font-semibold text-slate-900 dark:text-white">
+                          {item.value}
+                        </span>
+                        <span>{item.label}</span>
+                      </span>
+                      {index < profileStatItems.length - 1 && (
+                        <span className="text-slate-400 dark:text-slate-500">·</span>
+                      )}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
-
-        {/* IDENTITY */}
-        <div className="app-rail app-rail--default max-w-2xl pt-20 pb-6">
-          <BilingualText role="H1" className="!text-3xl font-semibold">
-            {profile.name}
-          </BilingualText>
-
-          <BilingualText role="Caption" className="text-slate-500">
-            {profile.handle}
-          </BilingualText>
-
-          <div className="flex items-center gap-2 text-slate-500 mt-1">
-            <CalendarIcon className="h-4 w-4" />
-            <BilingualText role="Caption">
-              {lang === 'en' ? `Joined ${joinDate}` : `انضم في ${joinDate}`}
-            </BilingualText>
-          </div>
-
-          <div className="mt-4 rounded-xl bg-slate-100 dark:bg-slate-800 p-4">
-            <BilingualText role="Body">
-              {profileBio || (lang === 'en' ? 'No bio yet.' : 'لا توجد نبذة بعد.')}
-            </BilingualText>
-          </div>
 
           {!isOwnProfile && authUser?.uid && effectiveProfileUserId && (
             <div className="mt-3 flex items-center gap-2">
@@ -597,7 +641,7 @@ const ProfileScreen: React.FC = () => {
             </div>
           )}
 
-          {isOwnProfile && userStats?.profileCompletionScore !== undefined && (
+          {showProfileStrength && isOwnProfile && userStats?.profileCompletionScore !== undefined && (
             <div className="mt-3">
               <ProfileStrengthBar score={userStats.profileCompletionScore} />
             </div>
@@ -618,67 +662,36 @@ const ProfileScreen: React.FC = () => {
               : '0 0 0 rgba(0,0,0,0)',
           }}
         >
-        <div className="app-rail app-rail--default h-10 flex items-center justify-center">
-  <AnimatePresence mode="wait">
-    {!showCompactProfileBar && (
-     <motion.div
-  key="stats"
-  initial={{ opacity: 0 }}
-  animate={{ opacity: 1 }}
-  exit={{ opacity: 0 }}
-  transition={{ duration: 0.15 }}
-  className="text-xs text-slate-500 flex items-center gap-2"
->
-  <span className="font-medium text-slate-700 dark:text-slate-200">
-    {statDisplay(userStats?.booksRead)}
-  </span>
-  Books
-  <span>·</span>
-  <span className="font-medium text-slate-700 dark:text-slate-200">
-    {statDisplay(userStats?.wordsWritten)}
-  </span>
-  Words
-  <span>·</span>
-  <span className="font-medium text-slate-700 dark:text-slate-200">
-    {statDisplay(userStats?.followers)}
-  </span>
-  Followers
-  <span>·</span>
-  <span className="font-medium text-slate-700 dark:text-slate-200">
-    {statDisplay(userStats?.following)}
-  </span>
-  Following
-</motion.div>
-    )}
-
-    {showCompactProfileBar && (
-      <motion.div
-        key="identity"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.95 }}
-        transition={{ duration: 0.15, ease: 'easeOut' }}
-        className="flex items-center gap-2 min-w-0"
-      >
-        <motion.img
-          src={profile.avatarUrl}
-          alt=""
-          className="h-5 w-5 rounded-full object-cover"
-        />
-        <span className="text-sm font-medium truncate text-slate-900 dark:text-white">
-          {profile.name}
-        </span>
-      </motion.div>
-    )}
-  </AnimatePresence>
-</div>
+          {showCompactProfileBar ? (
+            <div className="app-rail app-rail--default h-9 flex items-center justify-center">
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key="identity"
+                  initial={{ opacity: 0, scale: 0.95 }}
+                  animate={{ opacity: 1, scale: 1 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.15, ease: 'easeOut' }}
+                  className="flex items-center gap-2 min-w-0"
+                >
+                  <motion.img
+                    src={profile.avatarUrl}
+                    alt=""
+                    className="h-5 w-5 rounded-full object-cover"
+                  />
+                  <span className="text-sm font-medium truncate text-slate-900 dark:text-white">
+                    {profile.name}
+                  </span>
+                </motion.div>
+              </AnimatePresence>
+            </div>
+          ) : null}
 
           <div className="app-rail app-rail--default flex">
             {TABS.map(tab => (
-              <button
-                key={tab}
-                onClick={() => switchTab(tab)}
-                className={`relative flex-1 py-3 text-sm font-medium capitalize ${
+                  <button
+                    key={tab}
+                    onClick={() => switchTab(tab)}
+                    className={`relative flex-1 py-2.5 text-sm font-medium capitalize ${
                   activeTab === tab
                     ? 'text-slate-900 dark:text-white'
                     : 'text-slate-500'
@@ -705,7 +718,7 @@ const ProfileScreen: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18 }}
-              className="app-rail app-rail--default py-10 space-y-4"
+              className="app-rail app-rail--default py-8 space-y-4"
             >
               {activeTab === 'shelves' &&
                 (shelvesLoading ? (
@@ -878,6 +891,7 @@ const ProfileScreen: React.FC = () => {
             </motion.div>
           </AnimatePresence>
         </div>
+      </div>
       </PageShell>
 
       {isOwnProfile && (

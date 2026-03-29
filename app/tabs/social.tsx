@@ -35,7 +35,7 @@ const TextIcon = (props: any) => (
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
-    const socialShellClassName = 'app-rail app-rail--wide';
+    const socialShellClassName = 'app-rail app-rail--wide social-feed-shell';
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 
@@ -238,25 +238,29 @@ const SocialScreen: React.FC = () => {
 
         if (isError) {
             return (
-                <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-900 p-8">
-                    <ErrorState 
-                        onRetry={() => refetch()} 
-                        title={lang === 'en' ? "Feed Unavailable" : "التغذية غير متوفرة"}
-                    />
+                <div className="app-rail app-rail--wide min-h-[70dvh] flex items-start justify-center pt-24 text-center">
+                    <div className="w-full max-w-xl">
+                        <ErrorState 
+                            onRetry={() => refetch()} 
+                            title={lang === 'en' ? "Feed Unavailable" : "التغذية غير متوفرة"}
+                        />
+                    </div>
                 </div>
             );
         }
         
         if (posts.length === 0) {
              return (
-                <div className="h-[100dvh] w-full flex flex-col items-center justify-center text-center p-8 bg-black">
-                    <EmptyState 
-                        icon={FeedIcon}
-                        titleEn={scope === 'following' ? "No posts from follows" : "Quiet in the library"}
-                        titleAr={scope === 'following' ? "لا توجد منشورات ممن تتابعهم" : "هدوء في المكتبة"}
-                        messageEn={scope === 'following' ? "Try following some more authors to fill your feed!" : "We couldn't find any posts matching your current filters."}
-                        messageAr={scope === 'following' ? "جرب متابعة المزيد من المؤلفين لملء التغذية الخاصة بك!" : "لم نتمكن من العثور على أي منشورات تطابق الفلاتر الحالية."}
-                    />
+                <div className="app-rail app-rail--wide min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24">
+                    <div className="w-full max-w-xl">
+                        <EmptyState 
+                            icon={FeedIcon}
+                            titleEn={scope === 'following' ? "No posts from follows" : "Quiet in the library"}
+                            titleAr={scope === 'following' ? "لا توجد منشورات ممن تتابعهم" : "هدوء في المكتبة"}
+                            messageEn={scope === 'following' ? "Try following some more authors to fill your feed!" : "We couldn't find any posts matching your current filters."}
+                            messageAr={scope === 'following' ? "جرب متابعة المزيد من المؤلفين لملء التغذية الخاصة بك!" : "لم نتمكن من العثور على أي منشورات تطابق الفلاتر الحالية."}
+                        />
+                    </div>
                 </div>
             );
         }
@@ -506,7 +510,7 @@ const SocialScreen: React.FC = () => {
             <div 
                 ref={mainContentRef} 
                 className={cn(
-                    "h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overflow-x-hidden overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
+                    "social-desktop-canvas h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overflow-x-hidden overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
                     isSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 )}
                 style={{

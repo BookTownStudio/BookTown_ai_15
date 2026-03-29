@@ -791,25 +791,41 @@ async function resolveFollowStats(uid: string, fallback: PublicProfile): Promise
   followers: number;
   following: number;
 }> {
-  const statsSnap = await db.collection("user_stats").doc(uid).get();
-  if (!statsSnap.exists) {
-    return {
-      followers: fallback.followers,
-      following: fallback.following,
-    };
-  }
-
-  const stats = statsSnap.data() || {};
-  const counters = (stats.counters || {}) as Record<string, unknown>;
+  const [followersSnap, followingSnap] = await Promise.all([
+    db.collection("users").doc(uid).collection("followers").count().get(),
+    db.collection("users").doc(uid).collection("following").count().get(),
+  ]);
 
   return {
-    followers: toNonNegativeInt(
-      stats.followers ?? counters.followers ?? fallback.followers
-    ),
-    following: toNonNegativeInt(
-      stats.following ?? counters.following ?? fallback.following
-    ),
+    followers: toNonNegativeInt(followersSnap.data().count ?? fallback.followers),
+    following: toNonNegativeInt(followingSnap.data().count ?? fallback.following),
   };
+}
+
+async function resolveBooksRead(uid: string): Promise<number> {
+  const booksSnap = await db
+    .collection("user_library_books")
+    .where("uid", "==", uid)
+    .count()
+    .get();
+
+  return toNonNegativeInt(booksSnap.data().count);
+}
+
+async function resolveWordsWritten(uid: string): Promise<number> {
+  const projectsSnap = await db
+    .collection("users")
+    .doc(uid)
+    .collection("projects")
+    .select("wordCount")
+    .get();
+
+  let totalWords = 0;
+  for (const projectDoc of projectsSnap.docs) {
+    totalWords += toNonNegativeInt(projectDoc.data()?.wordCount);
+  }
+
+  return totalWords;
 }
 
 async function readOrCreatePublicProfile(uid: string): Promise<PublicProfile | null> {
@@ -891,7 +907,11 @@ export const getProfileStats = onCall({ cors: true }, async (request) => {
   const statsSnap = await db.collection("user_stats").doc(uid).get();
   const stats = (statsSnap.exists ? statsSnap.data() : {}) || {};
   const counters = (stats.counters || {}) as Record<string, unknown>;
-  const followStats = await resolveFollowStats(uid, profile);
+  const [followStats, booksRead, wordsWritten] = await Promise.all([
+    resolveFollowStats(uid, profile),
+    resolveBooksRead(uid),
+    resolveWordsWritten(uid),
+  ]);
 
   return {
     followers: followStats.followers,
@@ -901,9 +921,9 @@ export const getProfileStats = onCall({ cors: true }, async (request) => {
     quotesAuthored: toNonNegativeInt(stats.quotesAuthored ?? counters.quotesAuthored),
     posts: toNonNegativeInt(stats.posts ?? counters.posts),
     reviews: toNonNegativeInt(stats.reviews ?? counters.reviews),
-    booksRead: toNonNegativeInt(stats.booksRead ?? counters.totalBooks),
+    booksRead,
     booksPublished: toNonNegativeInt(stats.booksPublished ?? counters.booksPublished),
-    wordsWritten: toNonNegativeInt(stats.wordsWritten ?? counters.wordsWritten),
+    wordsWritten,
     ...(viewerUid === uid &&
     typeof stats.profileCompletionScore === "number" &&
     Number.isFinite(stats.profileCompletionScore)

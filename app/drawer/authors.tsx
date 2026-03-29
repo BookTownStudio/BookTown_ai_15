@@ -40,20 +40,24 @@ const AuthorsScreen: React.FC = () => {
 
         if (!searchQuery.trim()) {
             return (
-                <div className="flex-grow flex items-center justify-center h-full text-center">
-                    <BilingualText>
-                        {lang === 'en'
-                            ? 'Search authors, then open an author card to load it into BookTown.'
-                            : 'ابحث عن المؤلفين ثم افتح بطاقة المؤلف لتحميله إلى بوك تاون.'}
-                    </BilingualText>
+                <div className="min-h-[22rem] flex items-start justify-center pt-10 text-center">
+                    <div className="max-w-xl">
+                        <BilingualText>
+                            {lang === 'en'
+                                ? 'Search authors, then open an author card to load it into BookTown.'
+                                : 'ابحث عن المؤلفين ثم افتح بطاقة المؤلف لتحميله إلى بوك تاون.'}
+                        </BilingualText>
+                    </div>
                 </div>
             );
         }
         
         if (authors.length === 0 && searchQuery) {
              return (
-                <div className="flex-grow flex items-center justify-center h-full text-center">
-                    <BilingualText>{lang === 'en' ? `No authors found for "${searchQuery}"` : `لم يتم العثور على مؤلفين لـ "${searchQuery}"`}</BilingualText>
+                <div className="min-h-[22rem] flex items-start justify-center pt-10 text-center">
+                    <div className="max-w-xl">
+                        <BilingualText>{lang === 'en' ? `No authors found for "${searchQuery}"` : `لم يتم العثور على مؤلفين لـ "${searchQuery}"`}</BilingualText>
+                    </div>
                 </div>
             );
         }
