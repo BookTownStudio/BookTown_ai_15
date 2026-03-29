@@ -407,7 +407,7 @@ const AgentChatUI: React.FC<{ agent: Agent, sessionId: string }> = ({ agent, ses
 
              {/* Input Footer */}
              <footer className="absolute bottom-0 left-0 right-0 z-30 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10 pb-[env(safe-area-inset-bottom)]">
-                <div className="container mx-auto p-3 md:p-4">
+                <div className="app-rail app-rail--default py-3 md:py-4">
                     <div className="relative flex items-end">
                         <textarea
                             ref={textareaRef}
@@ -476,7 +476,7 @@ const HistoryView: React.FC<{ onClose: () => void, onSelectSession: (sessionId: 
 
     return (
         <div className="absolute inset-0 z-40 bg-gray-50 dark:bg-slate-900 flex flex-col">
-            <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+            <div className="app-rail app-rail--default flex items-center justify-between py-4">
                 <BilingualText role="H1" className="!text-2xl">
                     {lang === 'en' ? 'History' : 'السجل'}
                 </BilingualText>
@@ -486,7 +486,7 @@ const HistoryView: React.FC<{ onClose: () => void, onSelectSession: (sessionId: 
             </div>
             
             <div className="flex-grow overflow-y-auto px-4 pb-20">
-                <div className="container mx-auto space-y-6">
+                <div className="app-rail app-rail--default space-y-6">
                     {isLoading && <div className="flex justify-center py-10"><LoadingSpinner /></div>}
                     
                     {/* Pinned Section */}
@@ -557,7 +557,7 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
     return (
         <PageShell scrollable={false}>
             <header ref={headerRef} className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-                <div className="container mx-auto flex h-20 items-center justify-between px-4">
+                <div className="app-rail app-rail--default flex h-20 items-center justify-between px-0">
                     <Button variant="ghost" onClick={onBack} aria-label={lang === 'en' ? 'Back to Agents' : 'العودة للمساعدين'}>
                         <ChevronLeftIcon className="h-6 w-6" />
                     </Button>
@@ -573,7 +573,7 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
                 className="fixed left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-b border-black/10 dark:border-white/10"
                 style={{ top: `${chromeHeight.header}px` }}
             >
-                <div className="container mx-auto p-2">
+                <div className="app-rail app-rail--default py-2">
                     <div className="grid grid-cols-4 gap-2">
                         {mockAgents.map(a => {
                             const isActive = agent.id === a.id;

@@ -17,8 +17,11 @@ const FloatingActionPanel: React.FC<FloatingActionPanelProps> = ({ isOpen, onClo
             />
             {/* Panel */}
             <div 
-                className={`fixed z-30 left-1/2 -translate-x-1/2 w-[90vw] max-w-md transition-all duration-300 ease-in-out ${isOpen ? 'bottom-28 opacity-100' : 'bottom-16 opacity-0 pointer-events-none'}`}
-                style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
+                className={`fixed z-30 left-1/2 -translate-x-1/2 w-[90vw] transition-all duration-300 ease-in-out ${isOpen ? 'bottom-28 opacity-100' : 'bottom-16 opacity-0 pointer-events-none'}`}
+                style={{
+                    maxWidth: 'min(var(--app-rail-narrow, 760px), calc(100vw - 2rem))',
+                    paddingBottom: 'env(safe-area-inset-bottom)',
+                }}
             >
                 <div>
                     {children}

@@ -1,5 +1,5 @@
 import React, { forwardRef } from 'react';
-import { cn } from '../../lib/utils.ts';
+import ContentRail from './ContentRail.tsx';
 
 interface LiteraryShellProps extends React.HTMLAttributes<HTMLDivElement> {
   children: React.ReactNode;
@@ -8,13 +8,14 @@ interface LiteraryShellProps extends React.HTMLAttributes<HTMLDivElement> {
 const LiteraryShell = forwardRef<HTMLDivElement, LiteraryShellProps>(
   ({ className, children, ...props }, ref) => {
     return (
-      <div
+      <ContentRail
         ref={ref}
-        className={cn('mx-auto w-full max-w-[920px] px-4 md:px-6', className)}
+        variant="default"
+        className={className}
         {...props}
       >
         {children}
-      </div>
+      </ContentRail>
     );
   }
 );

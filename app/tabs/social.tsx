@@ -35,7 +35,7 @@ const TextIcon = (props: any) => (
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
-    const socialShellClassName = 'mx-auto w-full max-w-[1040px]';
+    const socialShellClassName = 'app-rail app-rail--wide';
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 

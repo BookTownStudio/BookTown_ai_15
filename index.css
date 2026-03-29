@@ -7,6 +7,56 @@
   color-scheme: dark light;
 }
 
+.app-frame {
+  position: relative;
+  min-width: 0;
+}
+
+.app-frame__inner {
+  box-sizing: border-box;
+  width: min(100%, var(--app-shell-max, 1280px));
+  margin-inline: auto;
+  padding-inline: var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px));
+}
+
+.app-rail {
+  --app-rail-current: var(--app-rail-default, 920px);
+  box-sizing: border-box;
+  width: min(100%, var(--app-rail-current));
+  margin-inline: auto;
+  padding-inline: var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px));
+}
+
+.app-rail--default {
+  --app-rail-current: var(--app-rail-default, 920px);
+}
+
+.app-rail--narrow {
+  --app-rail-current: var(--app-rail-narrow, 760px);
+}
+
+.app-rail--wide {
+  --app-rail-current: var(--app-rail-wide, 1040px);
+}
+
+.app-rail--admin {
+  --app-rail-current: var(--app-rail-admin, 1160px);
+}
+
+.app-drawer-panel {
+  width: min(320px, 88vw);
+}
+
+@media screen and (min-width: 1024px) {
+  .app-drawer-panel--ltr {
+    left: calc(max((100vw - var(--app-shell-max, 1280px)) / 2, 0px) + var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px)));
+  }
+
+  .app-drawer-panel--rtl {
+    right: calc(max((100vw - var(--app-shell-max, 1280px)) / 2, 0px) + var(--app-shell-padding-inline, clamp(16px, 2.5vw, 32px)));
+  }
+}
+
 body {
   -webkit-tap-highlight-color: transparent;
   @apply bg-slate-50 dark:bg-slate-900 text-slate-900 dark:text-slate-100 antialiased;

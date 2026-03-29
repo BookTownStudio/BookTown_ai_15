@@ -125,7 +125,7 @@ const ScreenHeader: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   return (
     <header className="fixed top-0 left-0 right-0 z-30 pointer-events-none">
       <div
-        className={`container mx-auto flex h-20 items-center px-2 ${
+        className={`app-rail app-rail--default flex h-20 items-center px-0 ${
           isRTL ? 'flex-row-reverse' : ''
         }`}
       >
@@ -530,7 +530,7 @@ const ProfileScreen: React.FC = () => {
         </div>
 
         {/* IDENTITY */}
-        <div className="container mx-auto px-4 pt-20 pb-6 max-w-2xl">
+        <div className="app-rail app-rail--default max-w-2xl pt-20 pb-6">
           <BilingualText role="H1" className="!text-3xl font-semibold">
             {profile.name}
           </BilingualText>
@@ -618,7 +618,7 @@ const ProfileScreen: React.FC = () => {
               : '0 0 0 rgba(0,0,0,0)',
           }}
         >
-        <div className="container mx-auto px-4 h-10 flex items-center justify-center">
+        <div className="app-rail app-rail--default h-10 flex items-center justify-center">
   <AnimatePresence mode="wait">
     {!showCompactProfileBar && (
      <motion.div
@@ -673,7 +673,7 @@ const ProfileScreen: React.FC = () => {
   </AnimatePresence>
 </div>
 
-          <div className="container mx-auto px-4 flex">
+          <div className="app-rail app-rail--default flex">
             {TABS.map(tab => (
               <button
                 key={tab}
@@ -705,7 +705,7 @@ const ProfileScreen: React.FC = () => {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
               transition={{ duration: 0.18 }}
-              className="container mx-auto px-4 py-10 space-y-4"
+              className="app-rail app-rail--default py-10 space-y-4"
             >
               {activeTab === 'shelves' &&
                 (shelvesLoading ? (

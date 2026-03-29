@@ -12,7 +12,7 @@ import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
 import { XIcon } from '../../components/icons/XIcon.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
-import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
+import ContentRail from '../../components/layout/ContentRail.tsx';
 
 const FEEDBACK_TYPES: { id: FeedbackType; en: string; ar: string }[] = [
     { id: 'action-required', en: 'Action Required', ar: 'يتطلب إجراء' },
@@ -76,7 +76,7 @@ const FeedbackScreen: React.FC = () => {
             <div className="h-screen flex flex-col">
                 <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
                 <main className="flex-grow overflow-y-auto pt-24 pb-8 flex items-center justify-center">
-                    <LiteraryShell className="text-center">
+                    <ContentRail variant="narrow" className="text-center">
                         <CheckCircleIcon className="h-16 w-16 text-accent mx-auto mb-4" />
                         <BilingualText role="H1" className="!text-2xl">
                             {lang === 'en' ? 'Thank You!' : 'شكراً لك!'}
@@ -87,7 +87,7 @@ const FeedbackScreen: React.FC = () => {
                         <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="mt-8">
                              {lang === 'en' ? 'Submit another response' : 'إرسال رد آخر'}
                         </Button>
-                    </LiteraryShell>
+                    </ContentRail>
                 </main>
             </div>
         )
@@ -97,7 +97,7 @@ const FeedbackScreen: React.FC = () => {
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-24 pb-8">
-                <LiteraryShell>
+                <ContentRail variant="narrow">
                     <form onSubmit={handleSubmit} className="space-y-6">
                         <div>
                             <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-2 block">
@@ -164,7 +164,7 @@ const FeedbackScreen: React.FC = () => {
                             {isSubmitting ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
                         </Button>
                     </form>
-                </LiteraryShell>
+                </ContentRail>
             </main>
         </div>
     );

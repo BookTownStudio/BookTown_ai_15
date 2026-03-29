@@ -134,10 +134,10 @@ const Drawer: React.FC = () => {
                         animate="visible"
                         exit="exit"
                         className={`
-                            fixed top-0 bottom-0 z-40 w-80 max-w-[85vw] 
+                            app-drawer-panel fixed top-0 bottom-0 z-40 
                             bg-gray-100/80 dark:bg-slate-800/50 backdrop-blur-xl border-black/10 dark:border-white/10
                             flex flex-col
-                            ${isRTL ? 'right-0 border-l' : 'left-0 border-r'}
+                            ${isRTL ? 'right-0 border-l app-drawer-panel--rtl' : 'left-0 border-r app-drawer-panel--ltr'}
                         `}
                     >
                         <button

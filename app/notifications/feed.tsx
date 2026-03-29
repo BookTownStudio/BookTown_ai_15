@@ -222,7 +222,7 @@ const NotificationsFeedScreen: React.FC = () => {
         <div className="h-screen flex flex-col bg-gray-50 dark:bg-slate-900 overflow-hidden">
             <ScreenHeader titleEn="Notifications" titleAr="الإشعارات" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto pt-20">
-                <div className="container mx-auto max-w-2xl min-h-full flex flex-col px-0 md:px-4">
+                <div className="app-rail app-rail--default max-w-2xl min-h-full flex flex-col">
                     <div className="flex flex-col border-b border-black/5 dark:border-white/5 sticky top-0 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-md z-10">
                         <div className="flex justify-between items-center p-4">
                             <BilingualText role="Caption" className="uppercase tracking-widest font-bold !text-slate-400">

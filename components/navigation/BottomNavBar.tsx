@@ -106,23 +106,25 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
             )}
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
-            <div className="mx-auto flex h-[66px] w-full max-w-[920px] items-center justify-around px-4 md:px-6 lg:justify-center lg:gap-14">
-                {TABS.map((tab) => {
-                    const isActive = activeTab === tab.id;
-                    return (
-                        <button
-                            key={tab.id}
-                            onClick={() => handleTabClick(tab.id)}
-                            className={`flex flex-col items-center gap-1 transition-colors duration-300 ${isActive ? 'text-accent' : 'text-slate-500 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'}`}
-                            aria-current={isActive ? 'page' : undefined}
-                        >
-                            <tab.icon className={`h-6 w-6 transform transition-transform ${tab.id === 'discover' ? 'scale-125' : ''}`} />
-                            <BilingualText role="Caption" className={`!text-xs ${isActive ? '!text-accent' : '!text-slate-500 dark:!text-white/60'}`}>
-                                {lang === 'en' ? tab.en : tab.ar}
-                            </BilingualText>
-                        </button>
-                    );
-                })}
+            <div className="app-frame__inner">
+                <div className="app-rail app-rail--default flex h-[66px] items-center justify-around px-0 lg:justify-center lg:gap-14">
+                    {TABS.map((tab) => {
+                        const isActive = activeTab === tab.id;
+                        return (
+                            <button
+                                key={tab.id}
+                                onClick={() => handleTabClick(tab.id)}
+                                className={`flex flex-col items-center gap-1 transition-colors duration-300 ${isActive ? 'text-accent' : 'text-slate-500 dark:text-white/60 hover:text-slate-900 dark:hover:text-white'}`}
+                                aria-current={isActive ? 'page' : undefined}
+                            >
+                                <tab.icon className={`h-6 w-6 transform transition-transform ${tab.id === 'discover' ? 'scale-125' : ''}`} />
+                                <BilingualText role="Caption" className={`!text-xs ${isActive ? '!text-accent' : '!text-slate-500 dark:!text-white/60'}`}>
+                                    {lang === 'en' ? tab.en : tab.ar}
+                                </BilingualText>
+                            </button>
+                        );
+                    })}
+                </div>
             </div>
         </div>
     );

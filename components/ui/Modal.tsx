@@ -46,9 +46,10 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, children }) => {
 
             <motion.div
                 className={cn(
-                "relative z-10 w-full max-w-lg rounded-card bg-gray-100/90 dark:bg-slate-800/90 p-6 shadow-2xl shadow-black/50",
+                "relative z-10 w-full rounded-card bg-gray-100/90 dark:bg-slate-800/90 p-6 shadow-2xl shadow-black/50",
                 "border border-black/5 dark:border-white/10"
                 )}
+                style={{ maxWidth: 'min(var(--app-rail-narrow, 760px), calc(100vw - 2rem))' }}
                 initial="hidden"
                 animate="visible"
                 exit="exit"

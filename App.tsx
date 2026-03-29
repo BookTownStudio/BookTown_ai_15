@@ -14,6 +14,7 @@ import SplashScreen from './components/ui/SplashScreen.tsx';
 import { AttachmentViewerProvider } from './store/attachment-viewer.tsx';
 import AttachmentViewerOverlay from './components/content/AttachmentViewerOverlay.tsx';
 import { cn } from './lib/utils.ts';
+import AppFrame from './components/layout/AppFrame.tsx';
 
 // Lazy Load Major Screens
 const HomeScreen = lazy(() => import('./app/tabs/home.tsx'));
@@ -216,7 +217,7 @@ const AppContent: React.FC = () => {
     const isImmersive = currentView.type === 'immersive' || currentView.type === 'stack';
 
     return (
-        <div className={cn(
+        <AppFrame className={cn(
             "h-[100dvh] w-full selection:bg-accent selection:text-white relative overflow-hidden",
             isSocialTabActive ? "bg-black" : "bg-gray-50 dark:bg-slate-900"
         )}>
@@ -244,7 +245,7 @@ const AppContent: React.FC = () => {
             </div>
             
             <AttachmentViewerOverlay />
-        </div>
+        </AppFrame>
     );
 };
 

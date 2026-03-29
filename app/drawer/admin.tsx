@@ -1229,7 +1229,7 @@ const ControlCenterScreen: React.FC = () => {
           </nav>
 
           <div className="flex-grow overflow-y-auto p-4 md:p-8 bg-slate-900/50">
-            <div className="max-w-5xl mx-auto">
+            <div className="app-rail app-rail--admin px-0">
               {activeSection === 'users' && (
                 <UsersTab
                   onRaiseDeleteRequest={handleRaiseDeleteRequest}

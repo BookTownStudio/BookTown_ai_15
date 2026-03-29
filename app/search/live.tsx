@@ -137,7 +137,7 @@ const LiveSearchScreen: React.FC = () => {
   return (
     <div className="h-screen w-full flex flex-col bg-slate-900">
       <header className="sticky top-0 z-10 backdrop-blur border-b border-white/10">
-        <div className="container mx-auto flex h-20 items-center gap-2 px-4">
+        <div className="app-rail app-rail--default flex h-20 items-center gap-2 px-0">
           <Button
             variant="ghost"
             onClick={() => navigate({ type: 'tab', id: 'home' })}
@@ -162,13 +162,14 @@ const LiveSearchScreen: React.FC = () => {
         </div>
       </header>
 
-      <main className="flex-grow overflow-y-auto p-4">
-        <div className="mb-4">
-          <UnifiedSearchFilterToggle
-            ebookOnly={ebookOnly}
-            onToggle={toggleEbookOnly}
-          />
-        </div>
+      <main className="flex-grow overflow-y-auto">
+        <div className="app-rail app-rail--default py-4">
+          <div className="mb-4">
+            <UnifiedSearchFilterToggle
+              ebookOnly={ebookOnly}
+              onToggle={toggleEbookOnly}
+            />
+          </div>
 
         {(isLoading || isAnalyzingImage) && (
           <div className="flex justify-center py-12">
@@ -197,11 +198,12 @@ const LiveSearchScreen: React.FC = () => {
           </div>
         )}
 
-        {!isLoading && !searchError && query && validResults.length === 0 && (
-          <BilingualText className="text-center text-white/60 mt-12">
-            {lang === 'en' ? 'No results found.' : 'لا توجد نتائج.'}
-          </BilingualText>
-        )}
+          {!isLoading && !searchError && query && validResults.length === 0 && (
+            <BilingualText className="text-center text-white/60 mt-12">
+              {lang === 'en' ? 'No results found.' : 'لا توجد نتائج.'}
+            </BilingualText>
+          )}
+        </div>
       </main>
 
       {isCameraOpen && (

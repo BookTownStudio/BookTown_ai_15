@@ -86,7 +86,7 @@ const VenueDetailsScreen: React.FC = () => {
     return (
         <div className="h-screen flex flex-col bg-slate-900">
             <header className="fixed top-0 left-0 right-0 z-20 bg-transparent">
-                <div className="container mx-auto flex h-20 items-center justify-start px-4">
+                <div className="app-rail app-rail--default flex h-20 items-center justify-start px-0">
                     <Button variant="icon" onClick={handleBack} className="bg-black/40 backdrop-blur-sm !text-white" aria-label={lang === 'en' ? 'Back' : 'رجوع'}>
                         <ChevronLeftIcon className="h-6 w-6" />
                     </Button>
@@ -98,7 +98,7 @@ const VenueDetailsScreen: React.FC = () => {
                     <div className="absolute inset-0 bg-gradient-to-t from-slate-900 to-transparent"></div>
                 </div>
 
-                <div className="container mx-auto px-4 md:px-8 -mt-16 relative z-10">
+                <div className="app-rail app-rail--default -mt-16 relative z-10">
                     <BilingualText role="H1" className="!text-4xl text-white drop-shadow-lg">{name}</BilingualText>
                     <BilingualText role="Body" className="!text-lg !text-accent mt-1">{venue.type}</BilingualText>
 

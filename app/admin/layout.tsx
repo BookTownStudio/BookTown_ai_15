@@ -73,11 +73,10 @@ const AdminLayout: React.FC<AdminLayoutProps> = ({
     <div className="h-screen flex flex-col bg-slate-900">
       <ScreenHeader titleEn={titleEn} titleAr={titleAr} onBack={handleBack} />
       <main className="flex-grow overflow-y-auto pt-24 pb-10">
-        <div className="container mx-auto px-4 md:px-8">{children}</div>
+        <div className="app-rail app-rail--admin">{children}</div>
       </main>
     </div>
   );
 };
 
 export default AdminLayout;
-
