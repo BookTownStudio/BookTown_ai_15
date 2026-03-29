@@ -395,6 +395,14 @@ const profilePostSchema = z
         hasAttachments: z.boolean(),
       })
       .strict(),
+    viewerState: z
+      .object({
+        liked: z.boolean(),
+        bookmarked: z.boolean(),
+        reposted: z.boolean(),
+      })
+      .strict()
+      .optional(),
     primaryEntityType: primaryStructuredEntityTypeSchema.nullable().optional(),
     primaryEntityId: z.string().min(1).nullable().optional(),
     hydratedEntity: hydratedSocialEntitySchema.nullable().optional(),
