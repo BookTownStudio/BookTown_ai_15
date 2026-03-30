@@ -21,6 +21,7 @@ import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import MiniBookCard from '../../components/books/MiniBookCard.tsx';
+import { cn } from '../../lib/utils.ts';
 
 // --- Icons ---
 // If PinIcon doesn't exist, create a simple inline one or import if available.
