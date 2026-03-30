@@ -7,8 +7,10 @@ import React, {
   useCallback
 } from 'react';
 import AppNav from '../../components/navigation/AppNav.tsx';
+import BookCard from '../../components/content/BookCard.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import { useI18n } from '../../store/i18n.tsx';
+import { useContinueReading } from '../../lib/hooks/useContinueReading.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -36,7 +38,8 @@ const ReadScreen: React.FC = () => {
   const { lang } = useI18n();
   const { data: shelves, isLoading, isError } = useUserShelves();
   const { data: userStats } = useUserStats();
-  const { resetTokens } = useNavigation();
+  const { navigate, currentView, resetTokens } = useNavigation();
+  const { items: continueReadingItems } = useContinueReading(8);
 
   useRecommendedShelves();
 
@@ -204,6 +207,45 @@ const ReadScreen: React.FC = () => {
               </span>
             </Button>
           </header>
+
+          {continueReadingItems.length > 0 && (
+            <section className="mb-8">
+              <div className="mb-4">
+                <BilingualText
+                  role="H2"
+                  className="!text-lg md:!text-xl font-semibold"
+                >
+                  {lang === 'en' ? 'Currently Reading' : 'تقرأ الآن'}
+                </BilingualText>
+              </div>
+
+              <div className="flex overflow-x-auto scrollbar-hide snap-x pt-1 pb-2">
+                {continueReadingItems.map(item => (
+                  <div
+                    key={item.bookId}
+                    className="cursor-pointer snap-start text-left"
+                    onClick={() =>
+                      navigate({
+                        type: 'immersive',
+                        id: 'reader',
+                        params: {
+                          bookId: item.bookId,
+                          from: currentView
+                        }
+                      })
+                    }
+                  >
+                    <BookCard
+                      bookId={item.bookId}
+                      layout="list"
+                      progress={Math.round(item.progress * 100)}
+                      className="w-40 sm:w-44"
+                    />
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
 
           {isLoading ? (
             <div className="flex justify-center py-20">
