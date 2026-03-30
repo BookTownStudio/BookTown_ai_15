@@ -458,6 +458,47 @@ const profileBookSchema = z
   })
   .strict();
 
+const catalogCanonicalCoverModeSchema = z.enum(["uploaded", "fallback_metadata"]);
+
+const catalogCanonicalFallbackCoverSchema = z
+  .object({
+    title: z.string().min(1).max(180),
+    author: z.string().max(180).optional(),
+    theme: z.enum(["ink", "emerald", "gold", "plum"]),
+  })
+  .strict();
+
+const catalogBookSchema = z
+  .object({
+    id: z.string().min(1),
+    authorId: z.string(),
+    title: z.string().max(300).optional(),
+    titleEn: z.string().max(300),
+    titleAr: z.string().max(300),
+    authorEn: z.string().max(300),
+    authorAr: z.string().max(300),
+    authors: z.array(z.string().max(300)).optional(),
+    bookCovers: z.array(z.string().max(2048)).optional(),
+    coverUrl: z.string().max(2048),
+    coverMode: catalogCanonicalCoverModeSchema.optional(),
+    fallbackCover: catalogCanonicalFallbackCoverSchema.optional(),
+    descriptionEn: z.string().max(5000),
+    descriptionAr: z.string().max(5000),
+    description: z.string().max(5000).optional(),
+    genresEn: z.array(z.string().max(120)).max(30),
+    genresAr: z.array(z.string().max(120)).max(30),
+    rating: z.number().nonnegative(),
+    ratingsCount: z.number().int().nonnegative(),
+    reviewCount: z.number().int().nonnegative().optional(),
+    isEbookAvailable: z.boolean(),
+    publicationDate: z.string().max(64).optional(),
+    pageCount: z.number().int().nonnegative().optional(),
+    createdAt: z.number().int().nonnegative().optional(),
+    rawBook: z.record(z.string(), z.unknown()).optional(),
+    ebookAttachmentId: z.string().max(256).optional(),
+  })
+  .strict();
+
 const profilePublicationSchema = z
   .object({
     id: z.string().min(1),
@@ -1110,6 +1151,19 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useMessenger.ts", "app/messenger/[id].tsx"],
+      }
+    ),
+
+    getAccessibleBook: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      catalogBookSchema,
+      "httpsCallable",
+      {
+        callSites: ["lib/services/firebaseCatalogService.ts"],
       }
     ),
 

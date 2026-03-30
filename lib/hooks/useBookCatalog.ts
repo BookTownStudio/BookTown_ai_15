@@ -64,10 +64,7 @@ export const useBookCatalog = (
          * Only propagate *real* failures.
          * Materialization-related conditions must not throw.
          */
-        if (
-          err?.message === 'BOOK_NOT_READY' ||
-          err?.message === 'FIRESTORE_NOT_AVAILABLE'
-        ) {
+        if (err?.message === 'BOOK_NOT_READY') {
           return null; // PREPARING
         }
 
@@ -128,10 +125,7 @@ export const useBookCatalog = (
             if (!isActive) return;
             queryClient.setQueryData(queryKey, liveBook ?? null);
           } catch (err: any) {
-            if (
-              err?.message === 'BOOK_NOT_READY' ||
-              err?.message === 'FIRESTORE_NOT_AVAILABLE'
-            ) {
+            if (err?.message === 'BOOK_NOT_READY') {
               queryClient.setQueryData(queryKey, null);
               return;
             }

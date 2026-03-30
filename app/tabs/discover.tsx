@@ -32,6 +32,8 @@ const PinIconSvg = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
+const DISCOVER_CONVERSATION_RAIL_CLASS = 'mx-auto w-full max-w-[760px] px-4 md:px-0';
+
 
 const LibrarianResponse: React.FC<{ text: string; sourceQuery?: string }> = ({ text, sourceQuery = '' }) => {
     const { navigate, currentView } = useNavigation();
@@ -337,46 +339,48 @@ const AgentChatUI: React.FC<{ agent: Agent, sessionId: string }> = ({ agent, ses
     }
 
     return (
-        <div className="flex flex-col h-full relative">
+        <div className="relative flex h-full flex-col">
             
             {/* Messages Area */}
-            <div className="flex-grow overflow-y-auto px-4 pb-32 pt-4 space-y-4">
-                {isLoading && (!messages || messages.length === 0) && <div className="flex justify-center pt-10"><LoadingSpinner /></div>}
-                
-                {messages?.map(msg => (
-                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                        <div className={`max-w-[85%] p-3 rounded-2xl ${
-                            msg.role === 'user' 
-                                ? 'bg-primary text-white rounded-br-lg' 
-                                : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white/90 rounded-bl-lg'
-                        }`}>
-                            {msg.role === 'model' && agent.id === 'librarian' ? (
-                                <LibrarianResponse text={msg.text} sourceQuery={modelSourceQueries.get(msg.id) || ''} />
-                            ) : (
-                                <p className={`whitespace-pre-wrap ${isRTL ? 'text-right' : 'text-left'}`}>{msg.text}</p>
-                            )}
-                        </div>
-                    </div>
-                ))}
-                
-                {isSending && (
-                    <div className="flex justify-start">
-                        <div className="p-3 rounded-2xl bg-slate-200 dark:bg-slate-700 rounded-bl-lg">
-                            <div className="flex space-x-1">
-                                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                                <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+            <div className="flex-grow overflow-y-auto px-0 pb-32 pt-3 md:pt-2">
+                <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'space-y-4')}>
+                    {isLoading && (!messages || messages.length === 0) && <div className="flex justify-center pt-8"><LoadingSpinner /></div>}
+                    
+                    {messages?.map(msg => (
+                        <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                            <div className={`max-w-[85%] p-3 rounded-2xl ${
+                                msg.role === 'user' 
+                                    ? 'bg-primary text-white rounded-br-lg' 
+                                    : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-white/90 rounded-bl-lg'
+                            }`}>
+                                {msg.role === 'model' && agent.id === 'librarian' ? (
+                                    <LibrarianResponse text={msg.text} sourceQuery={modelSourceQueries.get(msg.id) || ''} />
+                                ) : (
+                                    <p className={`whitespace-pre-wrap ${isRTL ? 'text-right' : 'text-left'}`}>{msg.text}</p>
+                                )}
                             </div>
                         </div>
-                    </div>
-                )}
-                <div ref={messagesEndRef} />
+                    ))}
+                    
+                    {isSending && (
+                        <div className="flex justify-start">
+                            <div className="rounded-2xl rounded-bl-lg bg-slate-200 p-3 dark:bg-slate-700">
+                                <div className="flex space-x-1">
+                                    <div className="h-2 w-2 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: '0ms' }}></div>
+                                    <div className="h-2 w-2 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: '150ms' }}></div>
+                                    <div className="h-2 w-2 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: '300ms' }}></div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <div ref={messagesEndRef} />
+                </div>
             </div>
 
             {/* Centered Examples (Only show if not loading AND no messages) */}
             {!isLoading && (!messages || messages.length === 0) && (
                 <div className="absolute inset-0 flex flex-col justify-center items-center p-4 pointer-events-none">
-                    <div className="pointer-events-auto w-full max-w-xl flex flex-col items-center">
+                    <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'pointer-events-auto flex flex-col items-center')}>
                         {/* Example Cards */}
                         <div className={`w-full space-y-3 transition-all duration-500 ease-in-out ${examplesVisible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4 pointer-events-none'}`}>
                              <div className="flex justify-center mb-4">
@@ -407,7 +411,7 @@ const AgentChatUI: React.FC<{ agent: Agent, sessionId: string }> = ({ agent, ses
 
              {/* Input Footer */}
              <footer className="absolute bottom-0 left-0 right-0 z-30 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10 pb-[env(safe-area-inset-bottom)]">
-                <div className="app-rail app-rail--default py-3 md:py-4">
+                <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'py-3 md:py-4')}>
                     <div className="relative flex items-end">
                         <textarea
                             ref={textareaRef}
@@ -557,7 +561,7 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
     return (
         <PageShell scrollable={false}>
             <header ref={headerRef} className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-                <div className="app-rail app-rail--default flex h-20 items-center justify-between px-0">
+                <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'flex h-20 items-center justify-between')}>
                     <Button variant="ghost" onClick={onBack} aria-label={lang === 'en' ? 'Back to Agents' : 'العودة للمساعدين'}>
                         <ChevronLeftIcon className="h-6 w-6" />
                     </Button>
@@ -573,7 +577,7 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
                 className="fixed left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-b border-black/10 dark:border-white/10"
                 style={{ top: `${chromeHeight.header}px` }}
             >
-                <div className="app-rail app-rail--default py-2">
+                <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'py-2')}>
                     <div className="grid grid-cols-4 gap-2">
                         {mockAgents.map(a => {
                             const isActive = agent.id === a.id;

@@ -96,6 +96,7 @@ import { updatePublishedBookVisibility as updatePublishedBookVisibilityRaw } fro
 import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getProjectReleasePreview";
 import { getProjectReleaseEbookPreviewSession as getProjectReleaseEbookPreviewSessionRaw } from "./getProjectReleaseEbookPreviewSession";
 import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
+import { getAccessibleBook as getAccessibleBookRaw } from "./getAccessibleBook";
 import { listOwnLongformPublications as listOwnLongformPublicationsRaw } from "./listOwnLongformPublications";
 import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
 import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
@@ -744,6 +745,10 @@ export const getProjectReleaseEbookPreviewSession = wrapCallableV2(
 export const getLongformPublication = wrapCallableV2(
   "getLongformPublication",
   getLongformPublicationRaw
+);
+export const getAccessibleBook = wrapCallableV2(
+  "getAccessibleBook",
+  getAccessibleBookRaw
 );
 export const listOwnLongformPublications = wrapCallableV2(
   "listOwnLongformPublications",

@@ -88,7 +88,15 @@ service cloud.firestore {
         : (
             bookData.ownerId is string
               ? bookData.ownerId
-              : ""
+              : (
+                  bookData.createdBy is string
+                    ? bookData.createdBy
+                    : (
+                        bookData.uploadedByUid is string
+                          ? bookData.uploadedByUid
+                          : ""
+                      )
+                )
           );
     }
 

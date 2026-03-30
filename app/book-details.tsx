@@ -46,6 +46,7 @@ import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 
 const MAX_REVIEW_LENGTH = 750;
+const BOOK_PREPARE_TIMEOUT_MS = 12000;
 
 function parseRecommendationContext(
   value: unknown
@@ -104,6 +105,7 @@ const BookDetailsScreen: React.FC = () => {
   const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
   const [isResolvingExternal, setIsResolvingExternal] = useState(false);
   const [externalResolveFailed, setExternalResolveFailed] = useState(false);
+  const [prepareTimedOut, setPrepareTimedOut] = useState(false);
   const ingestionStartedRef = useRef<string>('');
   const pendingActionRef = useRef<string>('');
 
@@ -131,6 +133,7 @@ const BookDetailsScreen: React.FC = () => {
     setResolvedExternalBookId(null);
     setIsResolvingExternal(false);
     setExternalResolveFailed(false);
+    setPrepareTimedOut(false);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
 
   useEffect(() => {
@@ -228,6 +231,56 @@ const BookDetailsScreen: React.FC = () => {
     pendingSearchResult,
     showToast,
   ]);
+
+  const isPreparingBook =
+    (isResolvingExternal && !resolvedExternalBookId) ||
+    (!bookId && hasExternalPendingSearch && !externalResolveFailed) ||
+    (Boolean(bookId) && (isBookLoading || book === null) && !isError);
+
+  useEffect(() => {
+    if (!isPreparingBook || externalResolveFailed) {
+      setPrepareTimedOut(false);
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setPrepareTimedOut(true);
+      logBookEngineV2('BOOK_DETAILS_V2_PREPARE_TIMEOUT', {
+        bookId: bookId || null,
+        originalBookId: originalBookId || null,
+        clickedResultId: pendingSearchResult?.id || null,
+        resultType: pendingSearchResult?.resultType || 'canonical',
+        workType: pendingSearchResult?.workType || null,
+      });
+    }, BOOK_PREPARE_TIMEOUT_MS);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    bookId,
+    book,
+    externalResolveFailed,
+    hasExternalPendingSearch,
+    isBookLoading,
+    isError,
+    isPreparingBook,
+    isResolvingExternal,
+    originalBookId,
+    pendingSearchResult?.id,
+    pendingSearchResult?.resultType,
+    pendingSearchResult?.workType,
+    resolvedExternalBookId,
+  ]);
+
+  const handlePrepareTimeoutRetry = () => {
+    setPrepareTimedOut(false);
+    if (bookId) {
+      void refetch();
+      return;
+    }
+    handleBack();
+  };
 
   useEffect(() => {
     if (!book || !bookId) return;
@@ -381,6 +434,22 @@ const BookDetailsScreen: React.FC = () => {
   };
 
   if (isResolvingExternal && !resolvedExternalBookId) {
+    if (prepareTimedOut) {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+          <ErrorState
+            title={lang === 'en' ? 'Book timed out' : 'انتهت مهلة تحميل الكتاب'}
+            message={
+              lang === 'en'
+                ? 'This book took too long to prepare. Please try again or return to search.'
+                : 'استغرق تجهيز هذا الكتاب وقتًا طويلًا. حاول مرة أخرى أو ارجع إلى البحث.'
+            }
+            onRetry={handlePrepareTimeoutRetry}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
         <LoadingSpinner />
@@ -408,6 +477,22 @@ const BookDetailsScreen: React.FC = () => {
   }
 
   if (isBookLoading) {
+    if (prepareTimedOut) {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+          <ErrorState
+            title={lang === 'en' ? 'Book timed out' : 'انتهت مهلة تحميل الكتاب'}
+            message={
+              lang === 'en'
+                ? 'This book took too long to load. Please try again.'
+                : 'استغرق تحميل هذا الكتاب وقتًا طويلًا. حاول مرة أخرى.'
+            }
+            onRetry={handlePrepareTimeoutRetry}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
         <LoadingSpinner />
@@ -435,6 +520,22 @@ const BookDetailsScreen: React.FC = () => {
   }
 
   if (!bookId && hasExternalPendingSearch) {
+    if (prepareTimedOut) {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+          <ErrorState
+            title={lang === 'en' ? 'Book timed out' : 'انتهت مهلة تحميل الكتاب'}
+            message={
+              lang === 'en'
+                ? 'This book could not be prepared in time. Please try again or return to search.'
+                : 'تعذر تجهيز هذا الكتاب في الوقت المناسب. حاول مرة أخرى أو ارجع إلى البحث.'
+            }
+            onRetry={handlePrepareTimeoutRetry}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
         <LoadingSpinner />
@@ -446,6 +547,22 @@ const BookDetailsScreen: React.FC = () => {
   }
 
   if (book === null) {
+    if (prepareTimedOut) {
+      return (
+        <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+          <ErrorState
+            title={lang === 'en' ? 'Book unavailable' : 'الكتاب غير متاح'}
+            message={
+              lang === 'en'
+                ? 'This book did not finish materializing. Please try again from search.'
+                : 'لم يكتمل تجهيز هذا الكتاب. حاول مرة أخرى من البحث.'
+            }
+            onRetry={handlePrepareTimeoutRetry}
+          />
+        </div>
+      );
+    }
+
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4">
         <LoadingSpinner />
@@ -459,109 +576,145 @@ const BookDetailsScreen: React.FC = () => {
   const showComposer = isAddingReview || isEditingReview;
 
   return (
-    <PageTransition className="h-screen w-full bg-black text-white overflow-y-auto">
-      <header className="sticky top-0 z-50 flex items-center justify-between px-4 py-6 bg-gradient-to-b from-black to-transparent">
-        <Button variant="icon" onClick={handleBack} className="!bg-white/10 backdrop-blur-md !p-3">
-          <XIcon className="h-6 w-6" />
-        </Button>
-        <Button variant="icon" className="!bg-white/10 backdrop-blur-md !p-3">
-          <EllipsisIcon className="h-6 w-6" />
-        </Button>
+    <PageTransition className="h-screen w-full overflow-y-auto bg-black text-white">
+      <header className="sticky top-0 z-50 bg-gradient-to-b from-black via-black/90 to-transparent">
+        <div className="app-frame__inner px-4 md:px-0">
+          <div className="app-rail app-rail--default flex h-20 items-center justify-between">
+            <Button variant="icon" onClick={handleBack} className="!bg-white/10 backdrop-blur-md !p-3">
+              <XIcon className="h-6 w-6" />
+            </Button>
+            <Button variant="icon" className="!bg-white/10 backdrop-blur-md !p-3">
+              <EllipsisIcon className="h-6 w-6" />
+            </Button>
+          </div>
+        </div>
       </header>
 
-      <main className="relative z-10 px-6 pb-24 space-y-10">
-        {/* Hero */}
-        <section className={cn('flex items-start gap-5', isRTL && 'flex-row-reverse')}>
-          <div className="w-32 md:w-56 aspect-[2/3] rounded-xl overflow-hidden shadow-2xl border border-white/10 bg-slate-800 flex-shrink-0">
-            <CanonicalCoverArtwork
-              title={lang === 'en' ? book.titleEn : book.titleAr}
-              author={lang === 'en' ? book.authorEn : book.authorAr}
-              coverUrl={book.coverUrl}
-              coverMode={book.coverMode}
-              fallbackCover={book.fallbackCover}
-              variant="poster"
-              imageClassName="w-full h-full object-cover"
-            />
-          </div>
-          <div className={cn('flex-grow flex flex-col pt-1', isRTL && 'text-right')}>
-            <BilingualText role="H1" className="!text-2xl md:!text-4xl !font-bold leading-tight">
-              {lang === 'en' ? book.titleEn : book.titleAr}
-            </BilingualText>
-            <p className="text-base text-white/60 mt-1.5">{lang === 'en' ? book.authorEn : book.authorAr}</p>
-            <div className={cn('flex wrap items-center gap-2 mt-4', isRTL && 'justify-end')}>
-              <div className="flex items-center bg-white/5 border border-white/10 px-2.5 py-1 rounded-full">
-                <StarIcon className="h-3 w-3 text-yellow-400 fill-current mr-1.5" />
-                <span className="text-sm font-black mr-1.5">{(book.rating || 0).toFixed(1)}</span>
-                <span className="text-[10px] text-white/30 tracking-tighter">({(book.ratingsCount || 0).toLocaleString()})</span>
-              </div>
+      <div className="app-frame__inner px-6 md:px-0">
+        <main className="app-rail app-rail--default relative z-10 space-y-10 pb-24">
+          {/* Hero */}
+          <section className={cn('flex items-start gap-5 lg:gap-8', isRTL && 'flex-row-reverse')}>
+            <div className="w-32 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 shadow-2xl aspect-[2/3] lg:w-[180px]">
+              <CanonicalCoverArtwork
+                title={lang === 'en' ? book.titleEn : book.titleAr}
+                author={lang === 'en' ? book.authorEn : book.authorAr}
+                coverUrl={book.coverUrl}
+                coverMode={book.coverMode}
+                fallbackCover={book.fallbackCover}
+                variant="poster"
+                imageClassName="h-full w-full object-cover"
+              />
             </div>
-          </div>
-        </section>
-
-        {/* Action Row */}
-        <section className="grid grid-cols-4 gap-3">
-          <button onClick={() => setIsShelfModalOpen(true)} className={cn('flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10', isSavedOnPhysicalShelf && 'text-accent bg-accent/10')}><ShelvesIcon className="h-6 w-6" /></button>
-          <button className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><QuoteIcon className="h-6 w-6" /></button>
-          <button onClick={handleShare} className="flex items-center justify-center aspect-square rounded-2xl bg-white/5 border border-white/10"><ShareIcon className="h-6 w-6" /></button>
-              <button
-                onClick={() =>
-                  hasReadableEbook
-                    && navigate({
-                      type: 'immersive',
-                      id: 'reader',
-                      params: { bookId, from: currentView, recommendationContext }
-                    })
-                }
-                disabled={!hasReadableEbook}
-                className={cn(
-                  'flex items-center justify-center aspect-square rounded-2xl border transition-all',
-                  hasReadableEbook
-                    ? 'bg-accent text-black border-accent shadow-lg shadow-accent/25 ring-1 ring-accent/40'
-                    : 'bg-white/5 border-white/10 opacity-20'
-                )}
-              >
-                <EyeIcon className={cn('h-6 w-6', hasReadableEbook && 'h-6.5 w-6.5')} />
-              </button>
-        </section>
-
-        {/* Summary */}
-        <section className="space-y-3">
-          <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Summary' : 'الملخص'}</BilingualText>
-          <p className="text-base text-white/80 leading-relaxed font-serif">{lang === 'en' ? book.descriptionEn : book.descriptionAr || book.descriptionEn}</p>
-        </section>
-
-        {/* Reviews */}
-        <section className="space-y-6">
-          <div className="flex items-center justify-between">
-            <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Critiques' : 'المراجعات'}</BilingualText>
-            {user && !existingUserReview && !showComposer && (
-                <Button variant="ghost" onClick={() => setIsAddingReview(true)} className="!h-9 !px-4 !text-xs border border-white/10 rounded-full"><EditIcon className="h-3 w-3 mr-2" />{lang === 'en' ? 'Write a review' : 'اكتب مراجعة'}</Button>
-            )}
-          </div>
-
-          {user && showComposer && (
-            <GlassCard className="!p-0 !bg-white/5 border-white/10 overflow-hidden animate-fade-in-up">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-white/5">
-                <BilingualText className="text-[10px] uppercase font-black tracking-widest text-white/40">{isEditingReview ? 'Edit Review' : 'New Review'}</BilingualText>
-                <StarRatingInput rating={userRating} onRatingChange={setUserRating} size="sm" />
-              </div>
-              <div className="p-6">
-                <textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="..." className="w-full bg-transparent text-white text-base font-serif resize-none focus:outline-none" rows={3} autoFocus />
-                <div className="mt-4 flex justify-end gap-3">
-                  <Button variant="ghost" onClick={() => { setIsAddingReview(false); setIsEditingReview(false); }} className="!text-xs">Cancel</Button>
-                  <Button variant="primary" disabled={submitReview.isPending} onClick={handlePublishReview} className="rounded-full !px-6 !h-9 !text-sm">Save</Button>
+            <div className={cn('min-w-0 flex-1 self-start pt-1 lg:max-w-[calc(100%-212px)]', isRTL && 'text-right')}>
+              <BilingualText role="H1" className="!text-2xl !font-bold leading-tight md:!text-4xl">
+                {lang === 'en' ? book.titleEn : book.titleAr}
+              </BilingualText>
+              <p className="mt-1.5 text-base text-white/60">{lang === 'en' ? book.authorEn : book.authorAr}</p>
+              <div className={cn('mt-4 flex flex-wrap items-center gap-2', isRTL && 'justify-end')}>
+                <div className="flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
+                  <StarIcon className="mr-1.5 h-3 w-3 fill-current text-yellow-400" />
+                  <span className="mr-1.5 text-sm font-black">{(book.rating || 0).toFixed(1)}</span>
+                  <span className="text-[10px] tracking-tighter text-white/30">({(book.ratingsCount || 0).toLocaleString()})</span>
                 </div>
               </div>
-            </GlassCard>
-          )}
+            </div>
+          </section>
 
-          <div className="space-y-4">
-            {reviews.map(r => (
-              <ReviewCard key={`${r.bookId}_${r.userId}`} review={r} onEdit={() => setIsEditingReview(true)} />
-            ))}
-          </div>
-        </section>
-      </main>
+          {/* Action Row */}
+          <section className="grid grid-cols-4 gap-3 lg:gap-4">
+            <button
+              onClick={() => setIsShelfModalOpen(true)}
+              className={cn(
+                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                isSavedOnPhysicalShelf && 'bg-accent/10 text-accent'
+              )}
+            >
+              <ShelvesIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Shelf' : 'الرف'}
+              </span>
+            </button>
+            <button className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3">
+              <QuoteIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Quotes' : 'اقتباسات'}
+              </span>
+            </button>
+            <button
+              onClick={handleShare}
+              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
+            >
+              <ShareIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Share' : 'مشاركة'}
+              </span>
+            </button>
+            <button
+              onClick={() =>
+                hasReadableEbook
+                  && navigate({
+                    type: 'immersive',
+                    id: 'reader',
+                    params: { bookId, from: currentView, recommendationContext }
+                  })
+              }
+              disabled={!hasReadableEbook}
+              className={cn(
+                'flex aspect-square items-center justify-center rounded-2xl border transition-all lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                hasReadableEbook
+                  ? 'border-accent bg-accent text-black shadow-lg shadow-accent/25 ring-1 ring-accent/40'
+                  : 'border-white/10 bg-white/5 opacity-20'
+              )}
+            >
+              <EyeIcon className={cn('h-6 w-6', hasReadableEbook && 'h-6.5 w-6.5')} />
+              <span className={cn('hidden text-xs font-semibold tracking-wide lg:block', hasReadableEbook ? 'text-black/80' : 'text-white/70')}>
+                {lang === 'en' ? 'Read' : 'اقرأ'}
+              </span>
+            </button>
+          </section>
+
+          {/* Summary */}
+          <section className="space-y-3">
+            <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Summary' : 'الملخص'}</BilingualText>
+            <p className="text-base leading-relaxed text-white/80 font-serif">{lang === 'en' ? book.descriptionEn : book.descriptionAr || book.descriptionEn}</p>
+          </section>
+
+          {/* Reviews */}
+          <section className="space-y-6">
+            <div className="flex items-center justify-between gap-4">
+              <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Critiques' : 'المراجعات'}</BilingualText>
+              {user && !existingUserReview && !showComposer && (
+                <Button variant="ghost" onClick={() => setIsAddingReview(true)} className="!h-9 !shrink-0 !rounded-full border border-white/10 !px-4 !text-xs">
+                  <EditIcon className="mr-2 h-3 w-3" />
+                  {lang === 'en' ? 'Write a review' : 'اكتب مراجعة'}
+                </Button>
+              )}
+            </div>
+
+            {user && showComposer && (
+              <GlassCard className="!bg-white/5 !p-0 overflow-hidden border-white/10 animate-fade-in-up">
+                <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
+                  <BilingualText className="text-[10px] font-black uppercase tracking-widest text-white/40">{isEditingReview ? 'Edit Review' : 'New Review'}</BilingualText>
+                  <StarRatingInput rating={userRating} onRatingChange={setUserRating} size="sm" />
+                </div>
+                <div className="p-6">
+                  <textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="..." className="w-full resize-none bg-transparent text-base text-white font-serif focus:outline-none" rows={3} autoFocus />
+                  <div className="mt-4 flex justify-end gap-3">
+                    <Button variant="ghost" onClick={() => { setIsAddingReview(false); setIsEditingReview(false); }} className="!text-xs">Cancel</Button>
+                    <Button variant="primary" disabled={submitReview.isPending} onClick={handlePublishReview} className="!h-9 !rounded-full !px-6 !text-sm">Save</Button>
+                  </div>
+                </div>
+              </GlassCard>
+            )}
+
+            <div className="space-y-4">
+              {reviews.map(r => (
+                <ReviewCard key={`${r.bookId}_${r.userId}`} review={r} onEdit={() => setIsEditingReview(true)} />
+              ))}
+            </div>
+          </section>
+        </main>
+      </div>
 
       <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId!} book={book} recommendationContext={recommendationContext} />
     </PageTransition>

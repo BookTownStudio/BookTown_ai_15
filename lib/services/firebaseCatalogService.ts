@@ -41,6 +41,7 @@ const AUTHOR_BOOKS_LIMIT = 60;
 const RELATED_BOOKS_LIMIT = 12;
 const TRENDING_BOOKS_LIMIT = 20;
 const BOOK_LOOKUP_BATCH_SIZE = 10;
+const COVER_RESOLVE_INITIAL_BUDGET_MS = 400;
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const missingInternalCoverPathCache = new Set<string>();
 const loggedMissingInternalCoverPathCache = new Set<string>();
@@ -153,6 +154,12 @@ function mapBook(data: any, id: string): Book {
       typeof data.authorId === "string" && data.authorId.trim().length > 0
         ? data.authorId.trim()
         : buildAuthorId(authorSeed),
+  });
+}
+
+async function getAccessibleBook(bookId: string): Promise<Book> {
+  return callEndpoint<{ bookId: string }, Book>("getAccessibleBook", {
+    bookId,
   });
 }
 
@@ -348,8 +355,8 @@ function normalizeExternalCoverUrl(candidate: string): string {
   }
 }
 
-async function resolveCoverUrl(book: any): Promise<string> {
-  const orderedCandidates = [
+function getOrderedCoverCandidates(book: any): string[] {
+  return [
     typeof book?.cover?.medium === "string" ? book.cover.medium : "",
     typeof book?.cover?.original === "string" ? book.cover.original : "",
     typeof book?.cover?.large === "string" ? book.cover.large : "",
@@ -358,6 +365,18 @@ async function resolveCoverUrl(book: any): Promise<string> {
   ]
     .map((value) => value.trim())
     .filter((value) => value.length > 0);
+}
+
+function getImmediateRenderableCoverUrl(book: any): string {
+  return (
+    getOrderedCoverCandidates(book)
+      .map((candidate) => normalizeExternalCoverUrl(candidate))
+      .find((candidate) => candidate.length > 0) || ""
+  );
+}
+
+async function resolveCoverUrl(book: any): Promise<string> {
+  const orderedCandidates = getOrderedCoverCandidates(book);
 
   if (orderedCandidates.length === 0) {
     return "";
@@ -421,6 +440,41 @@ async function resolveCoverUrl(book: any): Promise<string> {
   }
 }
 
+async function resolveCoverUrlForInitialRender(book: any): Promise<string> {
+  const immediateRenderableCoverUrl = getImmediateRenderableCoverUrl(book);
+  const hasInternalCoverCandidate = getOrderedCoverCandidates(book).some(
+    (candidate) => extractInternalBookCoverPath(candidate).length > 0
+  );
+
+  if (!hasInternalCoverCandidate) {
+    return immediateRenderableCoverUrl;
+  }
+
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      resolveCoverUrl(book),
+      new Promise<string>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn("[CATALOG][COVER_RESOLVE_BUDGET_EXCEEDED]", {
+            budgetMs: COVER_RESOLVE_INITIAL_BUDGET_MS,
+            bookId:
+              typeof book?.id === "string" && book.id.trim().length > 0
+                ? book.id.trim()
+                : null,
+          });
+          resolve(immediateRenderableCoverUrl);
+        }, COVER_RESOLVE_INITIAL_BUDGET_MS);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
 export const firebaseCatalogService = {
   async getBook(bookId: string): Promise<Book> {
     if (!bookId) {
@@ -434,17 +488,33 @@ export const firebaseCatalogService = {
       }
 
       const mapped = mapBook(book, bookId);
-      const resolvedCoverUrl = await resolveCoverUrl(book);
-      return { ...mapped, coverUrl: resolvedCoverUrl };
+      const resolvedCoverUrl = await resolveCoverUrlForInitialRender(book);
+      return {
+        ...mapped,
+        coverUrl: resolvedCoverUrl,
+      };
     } catch (err: any) {
       const fbErr = err as FirebaseError;
-      if (
-        err?.message === "BOOK_NOT_READY" ||
-        fbErr?.code === "permission-denied" ||
-        fbErr?.code === "unavailable" ||
-        fbErr?.code === "not-found"
-      ) {
+      if (fbErr?.code === "permission-denied") {
+        try {
+          return await getAccessibleBook(bookId);
+        } catch (fallbackErr: any) {
+          const fallbackCode =
+            typeof fallbackErr?.code === "string" ? fallbackErr.code : "";
+          if (fallbackCode === "permission-denied") {
+            throw new Error("BOOK_ACCESS_DENIED");
+          }
+          if (fallbackCode === "not-found") {
+            throw new Error("BOOK_NOT_READY");
+          }
+          throw fallbackErr;
+        }
+      }
+      if (err?.message === "BOOK_NOT_READY" || fbErr?.code === "not-found") {
         throw new Error("BOOK_NOT_READY");
+      }
+      if (fbErr?.code === "unavailable") {
+        throw new Error("FIRESTORE_NOT_AVAILABLE");
       }
       throw err;
     }
