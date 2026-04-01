@@ -23,6 +23,8 @@ interface ThreadCommentsProps {
     composerRef?: React.RefObject<HTMLInputElement>;
 }
 
+const THREAD_DISCUSSION_RAIL_CLASS = 'w-full';
+
 const CommentItem: React.FC<{ 
     readonly comment: ThreadComment; 
     readonly postId: string;
@@ -195,52 +197,56 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
 
     return (
         <div className="flex flex-col min-h-full bg-transparent">
-            <div className="px-4 md:px-6 py-3 flex items-center justify-between border-b border-white/10 bg-[#070f1a]/80 backdrop-blur-sm sticky top-0 z-20">
-                <BilingualText role="Label" className="!text-white/45 !text-[9px] tracking-widest font-black uppercase">
-                    {lang === 'en' ? 'Replies' : 'الردود'}
-                </BilingualText>
-                {status === 'success' && (
-                    <span className="text-[9px] font-black text-white/45 uppercase tracking-tighter">
-                        {comments.length}
-                    </span>
-                )}
+            <div className="sticky top-0 z-20 border-b border-white/10 bg-[#070f1a]/80 px-4 py-3 backdrop-blur-sm md:px-0">
+                <div className={cn(THREAD_DISCUSSION_RAIL_CLASS, "flex items-center justify-between")}>
+                    <BilingualText role="Label" className="!text-white/45 !text-[9px] tracking-widest font-black uppercase">
+                        {lang === 'en' ? 'Replies' : 'الردود'}
+                    </BilingualText>
+                    {status === 'success' && (
+                        <span className="text-[9px] font-black text-white/45 uppercase tracking-tighter">
+                            {comments.length}
+                        </span>
+                    )}
+                </div>
             </div>
             
             <div className="flex-grow">
                 {status === 'loading' && <CommentSkeletonList count={8} />}
 
                 {status === 'error' && (
-                    <div className="py-20 px-8 text-center">
+                    <div className={cn(THREAD_DISCUSSION_RAIL_CLASS, "px-8 py-20 text-center")}>
                         <Button variant="ghost" onClick={retry} className="!text-accent !text-sm">
                             {lang === 'en' ? 'Retry loading comments' : 'إعادة تحميل التعليقات'}
                         </Button>
                     </div>
                 )}
 
-                <div className="flex flex-col">
-                    {comments.length > 0 ? (
-                        comments.map(comment => (
-                            <CommentItem 
-                                key={comment.id} 
-                                comment={comment} 
-                                postId={post.id} 
-                                onReply={handleReplyIntent}
-                                onLike={likeComment}
-                                onDelete={deleteComment}
-                                onEdit={handleEditIntent}
-                            />
-                        ))
-                    ) : status === 'success' && (
-                        <div className="py-24 text-center px-10 animate-fade-in opacity-45">
-                            <BilingualText role="Body" className="!text-sm">
-                                {lang === 'en' ? 'No comments yet. Start the conversation!' : 'لا توجد تعليقات بعد. ابدأ النقاش!'}
-                            </BilingualText>
-                        </div>
-                    )}
-                </div>
+                <div className={THREAD_DISCUSSION_RAIL_CLASS}>
+                    <div className="flex flex-col">
+                        {comments.length > 0 ? (
+                            comments.map(comment => (
+                                <CommentItem 
+                                    key={comment.id} 
+                                    comment={comment} 
+                                    postId={post.id} 
+                                    onReply={handleReplyIntent}
+                                    onLike={likeComment}
+                                    onDelete={deleteComment}
+                                    onEdit={handleEditIntent}
+                                />
+                            ))
+                        ) : status === 'success' && (
+                            <div className="animate-fade-in px-10 py-24 text-center opacity-45">
+                                <BilingualText role="Body" className="!text-sm">
+                                    {lang === 'en' ? 'No comments yet. Start the conversation!' : 'لا توجد تعليقات بعد. ابدأ النقاش!'}
+                                </BilingualText>
+                            </div>
+                        )}
+                    </div>
 
-                <div ref={loadMoreRef} className="h-10 flex items-center justify-center">
-                    {hasMore && status === 'success' && <LoadingSpinner className="h-4 w-4 opacity-20" />}
+                    <div ref={loadMoreRef} className="flex h-10 items-center justify-center">
+                        {hasMore && status === 'success' && <LoadingSpinner className="h-4 w-4 opacity-20" />}
+                    </div>
                 </div>
             </div>
 
@@ -260,7 +266,7 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
                     </div>
                 )}
                 
-                <div className="container mx-auto max-w-2xl p-4">
+                <div className={cn(THREAD_DISCUSSION_RAIL_CLASS, "p-4")}>
                     {!user ? (
                         <div className="bg-white/6 border border-white/10 rounded-full px-6 py-3 text-center opacity-75">
                             <p className="text-xs font-bold text-white/55">

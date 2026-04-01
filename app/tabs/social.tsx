@@ -33,6 +33,8 @@ const TextIcon = (props: any) => (
     </svg>
 );
 
+const MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS = 2;
+
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
     const socialShellClassName = 'app-rail app-rail--wide social-feed-shell';
@@ -51,7 +53,15 @@ const SocialScreen: React.FC = () => {
         refetch
     } = useSocialFeeds(scope, filters);
     
-    const { navigate, currentView, resetTokens, scrollToPost, clearScrollToPost } = useNavigation();
+    const {
+        navigate,
+        currentView,
+        resetTokens,
+        scrollToPost,
+        clearScrollToPost,
+        socialPostEntry,
+        clearSocialPostEntry,
+    } = useNavigation();
     const mainContentRef = useRef<HTMLDivElement>(null);
     const isInitialMount = useRef(true);
     const [isMoreFiltersOpen, setMoreFiltersOpen] = useState(false);
@@ -64,6 +74,12 @@ const SocialScreen: React.FC = () => {
     const [searchQuery, setSearchQuery] = useState('');
     const [debouncedQuery] = useDebounce(searchQuery, 300);
     const searchInputRef = useRef<HTMLInputElement>(null);
+    const socialEntryAttemptRef = useRef<{ entryId: number; fetchAttempts: number; discussionOpened: boolean; fallbackTriggered: boolean }>({
+        entryId: 0,
+        fetchAttempts: 0,
+        discussionOpened: false,
+        fallbackTriggered: false,
+    });
     const { user } = useAuth();
 
     const {
@@ -78,6 +94,12 @@ const SocialScreen: React.FC = () => {
 
     const posts = useMemo(() => data?.pages.flatMap(page => (page as any).posts) ?? [], [data]);
     const activePost = useMemo(() => posts.find(p => p.id === activePostId), [posts, activePostId]);
+    const socialAnchorPostId = useMemo(() => {
+        if (currentView.type !== 'tab' || currentView.id !== 'social') return '';
+        return typeof currentView.params?.anchorPostId === 'string'
+            ? currentView.params.anchorPostId.trim()
+            : '';
+    }, [currentView]);
 
     useEffect(() => {
         if (!activePostId && posts.length > 0) {
@@ -119,6 +141,25 @@ const SocialScreen: React.FC = () => {
     };
 
     useEffect(() => {
+        if (!socialPostEntry) {
+            socialEntryAttemptRef.current = {
+                entryId: 0,
+                fetchAttempts: 0,
+                discussionOpened: false,
+                fallbackTriggered: false,
+            };
+            return;
+        }
+
+        socialEntryAttemptRef.current = {
+            entryId: socialPostEntry.entryId,
+            fetchAttempts: 0,
+            discussionOpened: false,
+            fallbackTriggered: false,
+        };
+    }, [socialPostEntry]);
+
+    useEffect(() => {
         if (isInitialMount.current) {
             isInitialMount.current = false;
         } else {
@@ -143,6 +184,22 @@ const SocialScreen: React.FC = () => {
     }, [isMoreFiltersOpen]);
 
     useEffect(() => {
+        if (currentView.type !== 'tab' || currentView.id !== 'social' || !socialPostEntry) {
+            return;
+        }
+
+        if (socialPostEntry.preferredScope && scope !== socialPostEntry.preferredScope) {
+            setScope(socialPostEntry.preferredScope);
+        }
+        if (filters.length > 0) {
+            setFilters([]);
+        }
+        if (isSearchOpen) {
+            handleCloseSearch();
+        }
+    }, [currentView, socialPostEntry, scope, filters.length, isSearchOpen]);
+
+    useEffect(() => {
         if (scrollToPost && mainContentRef.current && !isLoading && !isSearchOpen) {
             setTimeout(() => {
                 const el = document.getElementById(`post-${scrollToPost}`);
@@ -157,6 +214,105 @@ const SocialScreen: React.FC = () => {
             }, 100);
         }
     }, [scrollToPost, clearScrollToPost, data, isLoading, isSearchOpen]);
+
+    useEffect(() => {
+        if (currentView.type !== 'tab' || currentView.id !== 'social' || !socialPostEntry) {
+            return;
+        }
+        if (isSearchOpen || isLoading || isFetchingNextPage) {
+            return;
+        }
+        if (socialPostEntry.preferredScope && scope !== socialPostEntry.preferredScope) {
+            return;
+        }
+        if (filters.length > 0) {
+            return;
+        }
+
+        const targetPostId = socialPostEntry.postId.trim();
+        if (!targetPostId) {
+            clearSocialPostEntry();
+            return;
+        }
+
+        const entryTracker = socialEntryAttemptRef.current;
+        const returnView = {
+            type: 'tab' as const,
+            id: 'social' as const,
+            params: {
+                highlightPostId: targetPostId,
+                anchorPostId: targetPostId,
+                ...(socialPostEntry.preferredScope ? { preferredScope: socialPostEntry.preferredScope } : {}),
+            },
+        };
+        const targetElement = document.getElementById(`post-${targetPostId}`);
+
+        if (targetElement) {
+            targetElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            targetElement.classList.add('flash-highlight');
+            window.setTimeout(() => {
+                targetElement.classList.remove('flash-highlight');
+            }, 800);
+            setActivePostId(targetPostId);
+
+            if (socialPostEntry.openDiscussion && !entryTracker.discussionOpened) {
+                entryTracker.discussionOpened = true;
+                clearSocialPostEntry();
+                navigate({
+                    type: 'immersive',
+                    id: 'postDiscussion',
+                    params: {
+                        postId: targetPostId,
+                        from: returnView,
+                    },
+                });
+                return;
+            }
+
+            clearSocialPostEntry();
+            return;
+        }
+
+        if (hasNextPage && entryTracker.fetchAttempts < MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS) {
+            entryTracker.fetchAttempts += 1;
+            void fetchNextPage();
+            return;
+        }
+
+        if (socialPostEntry.fallbackToStandalone && !entryTracker.fallbackTriggered) {
+            entryTracker.fallbackTriggered = true;
+            console.warn('[SOCIAL][ENTRY_FALLBACK_TO_POST_DISCUSSION]', {
+                postId: targetPostId,
+                preferredScope: socialPostEntry.preferredScope ?? null,
+                anchorPostId: socialAnchorPostId || null,
+            });
+            clearSocialPostEntry();
+            navigate({
+                type: 'immersive',
+                id: 'postDiscussion',
+                params: {
+                    postId: targetPostId,
+                    from: returnView,
+                },
+            });
+            return;
+        }
+
+        clearSocialPostEntry();
+    }, [
+        currentView,
+        socialPostEntry,
+        isSearchOpen,
+        isLoading,
+        isFetchingNextPage,
+        scope,
+        filters.length,
+        hasNextPage,
+        fetchNextPage,
+        clearSocialPostEntry,
+        navigate,
+        socialAnchorPostId,
+    ]);
 
     const lastPostObserver = useRef<IntersectionObserver | null>(null);
     const lastPostElementRef = useCallback(node => {
@@ -211,7 +367,11 @@ const SocialScreen: React.FC = () => {
                 from: {
                     type: 'tab',
                     id: 'social',
-                    params: { highlightPostId: post.id },
+                    params: {
+                        highlightPostId: post.id,
+                        anchorPostId: post.id,
+                        preferredScope: scope,
+                    },
                 }
             } 
         });

@@ -34,6 +34,7 @@ interface PostCardProps {
     post: Post;
     viewMode?: 'list' | 'flow' | 'discussion';
     onOpenDiscussion?: () => void;
+    onOpenPostEntry?: () => void;
     onNewPost?: () => void;
     surface?: RenderSurface;
 }
@@ -271,7 +272,7 @@ const resolveAttachmentFromHydratedEntity = (
     return null;
 };
 
-const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDiscussion, surface = 'feed' }) => {
+const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDiscussion, onOpenPostEntry, surface = 'feed' }) => {
     const { lang, isRTL } = useI18n();
     const { user } = useAuth();
     const { navigate, currentView } = useNavigation();
@@ -681,6 +682,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     const handleOpenTextOverlay = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (viewMode === 'discussion') return; 
+        if (viewMode === 'list' && onOpenPostEntry) {
+            onOpenPostEntry();
+            return;
+        }
 
         // GUARD: missing_text -> overlay_not_opened
         if (!post?.content?.text) return;

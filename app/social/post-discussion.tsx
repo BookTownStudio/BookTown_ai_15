@@ -2,7 +2,7 @@ import React, { useRef, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { XIcon } from '../../components/icons/XIcon.tsx';
+import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
 import ThreadComments from '../../components/content/ThreadComments.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
@@ -46,11 +46,6 @@ const PostDiscussionScreen: React.FC = () => {
 
   const handleBack = React.useCallback(() => {
     const fromView = params?.from;
-    if (fromView && typeof window !== 'undefined') {
-      window.history.back();
-      return;
-    }
-
     if (fromView) {
       navigate(fromView, { replace: true });
     } else {
@@ -144,71 +139,77 @@ const PostDiscussionScreen: React.FC = () => {
 
         {!isPostLoading && !postUnavailable && threadPost && (
           <>
-            <header className="flex-shrink-0 px-4 md:px-6 pt-6 pb-4 border-b border-white/10 bg-black/20 backdrop-blur-md">
-              <div className={cn(
-                'flex items-start justify-between gap-4',
-                isRTL ? 'flex-row-reverse' : 'flex-row'
-              )}>
-                <div className={cn(
-                  'flex items-center gap-3 min-w-0',
-                  isRTL && 'flex-row-reverse'
-                )}>
-                  <button
-                    type="button"
-                    onClick={handleOpenAuthorProfile}
-                    className={cn(
-                      'flex items-center gap-3 min-w-0 text-left',
-                      isRTL && 'flex-row-reverse text-right'
-                    )}
-                  >
-                    <img
-                      src={threadPost.authorAvatar}
-                      alt={threadPost.authorName}
-                      className="h-8 w-8 rounded-full object-cover border border-white/20"
-                    />
-                    <div className="min-w-0">
-                      <BilingualText className="font-semibold text-[13px] text-white/85 truncate">
-                        {threadPost.authorName}
-                      </BilingualText>
-                      <BilingualText role="Caption" className="!text-[10px] !text-white/52">
-                        {threadPost.authorHandle} • {timeLabel}
-                      </BilingualText>
+            <div className="app-frame__inner h-full">
+              <div className="app-rail app-rail--wide social-feed-shell flex h-full flex-col overflow-hidden">
+                <header className="flex-shrink-0 border-b border-white/10 bg-black/20 px-0 pt-6 pb-4 backdrop-blur-md">
+                  <div className={cn(
+                    'flex items-start gap-4',
+                    isRTL ? 'flex-row-reverse' : 'flex-row'
+                  )}>
+                    <Button
+                      variant="ghost"
+                      onClick={handleBack}
+                      className={cn(
+                        '!h-9 !w-9 !shrink-0 !rounded-full !p-0 !text-white/82 hover:!bg-white/10',
+                        isRTL && 'order-2'
+                      )}
+                      aria-label={lang === 'en' ? 'Back' : 'رجوع'}
+                    >
+                      <ChevronLeftIcon className="h-5 w-5" />
+                    </Button>
+
+                    <div className={cn(
+                      'min-w-0 flex-1',
+                      isRTL && 'order-1 text-right'
+                    )}>
+                      <button
+                        type="button"
+                        onClick={handleOpenAuthorProfile}
+                        className={cn(
+                          'flex min-w-0 items-center gap-3 text-left',
+                          isRTL && 'flex-row-reverse text-right'
+                        )}
+                      >
+                        <img
+                          src={threadPost.authorAvatar}
+                          alt={threadPost.authorName}
+                          className="h-8 w-8 rounded-full border border-white/20 object-cover"
+                        />
+                        <div className="min-w-0">
+                          <BilingualText className="truncate text-[13px] font-semibold text-white/85">
+                            {threadPost.authorName}
+                          </BilingualText>
+                          <BilingualText role="Caption" className="!text-[10px] !text-white/52">
+                            {threadPost.authorHandle} • {timeLabel}
+                          </BilingualText>
+                        </div>
+                      </button>
+
+                      <div className="mt-3 overflow-hidden rounded-2xl border border-white/12 bg-black/30">
+                        <div className="relative h-12 bg-gradient-to-r from-[#0a2235] via-[#17354d] to-[#0a1e2e]">
+                          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.35),transparent_58%)]" />
+                          {hasPrimaryAttachment && (
+                            <span className="absolute left-3 top-2.5 inline-flex items-center rounded-full border border-white/25 bg-black/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/75">
+                              {lang === 'en' ? 'Exhibition' : 'عرض'}
+                            </span>
+                          )}
+                        </div>
+                        <div className="px-3 py-2.5">
+                          <BilingualText
+                            role="Body"
+                            className="line-clamp-2 text-[13px] leading-relaxed text-white/76"
+                          >
+                            {threadPost.content.text}
+                          </BilingualText>
+                        </div>
+                      </div>
                     </div>
-                  </button>
-                </div>
+                  </div>
+                </header>
 
-                <Button
-                  variant="icon"
-                  onClick={handleBack}
-                  className="!bg-white/10 !text-white/80 !p-1.5 !h-8 !w-8 rounded-full border border-white/20"
-                >
-                  <XIcon className="h-4 w-4" />
-                </Button>
-              </div>
-
-              <div className="mt-3 rounded-2xl border border-white/12 bg-black/30 overflow-hidden">
-                <div className="h-12 bg-gradient-to-r from-[#0a2235] via-[#17354d] to-[#0a1e2e] relative">
-                  <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.35),transparent_58%)]" />
-                  {hasPrimaryAttachment && (
-                    <span className="absolute left-3 top-2.5 inline-flex items-center rounded-full border border-white/25 bg-black/40 px-2 py-0.5 text-[9px] font-bold tracking-[0.14em] text-white/75 uppercase">
-                      {lang === 'en' ? 'Exhibition' : 'عرض'}
-                    </span>
-                  )}
+                <div className="flex-grow overflow-y-auto">
+                  <ThreadComments post={threadPost} composerRef={composerRef} />
                 </div>
-                <div className="px-3 py-2.5">
-                  <BilingualText
-                    role="Body"
-                    className="text-[13px] leading-relaxed line-clamp-2 text-white/76"
-                  >
-                    {threadPost.content.text}
-                  </BilingualText>
-                </div>
-              </div>
-            </header>
-
-            <div className="flex-grow overflow-y-auto">
-              <div className="container mx-auto max-w-3xl min-h-full">
-                <ThreadComments post={threadPost} composerRef={composerRef} />
               </div>
             </div>
           </>

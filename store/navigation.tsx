@@ -14,6 +14,23 @@ export interface NavigationOptions {
     replace?: boolean;
 }
 
+type SocialEntryScope = 'explore' | 'following' | 'books' | 'discover';
+
+interface SocialPostEntryOptions {
+    openDiscussion?: boolean;
+    fallbackToStandalone?: boolean;
+    preferredScope?: SocialEntryScope;
+    replace?: boolean;
+}
+
+interface SocialPostEntryRequest {
+    entryId: number;
+    postId: string;
+    openDiscussion: boolean;
+    fallbackToStandalone: boolean;
+    preferredScope?: SocialEntryScope;
+}
+
 interface NavigationContextType {
     currentView: View;
     navigate: (view: View, options?: NavigationOptions) => void;
@@ -25,6 +42,9 @@ interface NavigationContextType {
     resetTokens: Record<TabName, number>;
     scrollToPost: string | null;
     navigateToSocialAndHighlight: (postId: string) => void;
+    navigateToSocialPostEntry: (postId: string, options?: SocialPostEntryOptions) => void;
+    socialPostEntry: SocialPostEntryRequest | null;
+    clearSocialPostEntry: () => void;
     clearScrollToPost: () => void;
 }
 
@@ -43,6 +63,14 @@ const decodePathSegment = (value: string): string => {
 };
 
 const encodePathSegment = (value: string): string => encodeURIComponent(value.trim());
+
+const normalizeSocialEntryScope = (value: unknown): SocialEntryScope | undefined => {
+    if (value === 'explore' || value === 'following' || value === 'books' || value === 'discover') {
+        return value;
+    }
+
+    return undefined;
+};
 
 function resolveViewFromPath(pathname: string, search = ''): View {
     const normalizedPath = (pathname || '/').replace(/\/+$/, '') || '/';
@@ -478,8 +506,25 @@ function sanitizeViewForHistory(view: View): View {
             typeof view.params?.highlightPostId === 'string'
                 ? view.params.highlightPostId.trim()
                 : '';
-        return highlightPostId
-            ? { type: 'tab', id: view.id, params: { highlightPostId } }
+        const anchorPostId =
+            typeof view.params?.anchorPostId === 'string'
+                ? view.params.anchorPostId.trim()
+                : '';
+        const preferredScope = normalizeSocialEntryScope(view.params?.preferredScope);
+        const params: NavigationParams = {};
+
+        if (highlightPostId) {
+            params.highlightPostId = highlightPostId;
+        }
+        if (anchorPostId) {
+            params.anchorPostId = anchorPostId;
+        }
+        if (preferredScope) {
+            params.preferredScope = preferredScope;
+        }
+
+        return Object.keys(params).length > 0
+            ? { type: 'tab', id: view.id, params }
             : { type: 'tab', id: view.id };
     }
 
@@ -711,6 +756,8 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     const [isDrawerOpen, setDrawerOpen] = useState(false);
     const [resetTokens, setResetTokens] = useState(initialResetTokens);
     const [scrollToPost, setScrollToPost] = useState<string | null>(null);
+    const [socialPostEntry, setSocialPostEntry] = useState<SocialPostEntryRequest | null>(null);
+    const socialEntryIdRef = React.useRef(0);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -743,10 +790,19 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
             if (
                 fromState.type === 'tab' &&
                 fromState.id === 'social' &&
-                typeof fromState.params?.highlightPostId === 'string' &&
-                fromState.params.highlightPostId.trim().length > 0
+                (
+                    (typeof fromState.params?.highlightPostId === 'string' &&
+                        fromState.params.highlightPostId.trim().length > 0) ||
+                    (typeof fromState.params?.anchorPostId === 'string' &&
+                        fromState.params.anchorPostId.trim().length > 0)
+                )
             ) {
-                setScrollToPost(fromState.params.highlightPostId.trim());
+                const targetPostId =
+                    typeof fromState.params?.highlightPostId === 'string' &&
+                    fromState.params.highlightPostId.trim().length > 0
+                        ? fromState.params.highlightPostId.trim()
+                        : fromState.params.anchorPostId.trim();
+                setScrollToPost(targetPostId);
             }
         };
 
@@ -782,13 +838,26 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         setCurrentView(view);
         setDrawerOpen(false);
 
+        if (!(view.type === 'tab' && view.id === 'social')) {
+            setSocialPostEntry(null);
+        }
+
         if (
             view.type === 'tab' &&
             view.id === 'social' &&
-            typeof view.params?.highlightPostId === 'string' &&
-            view.params.highlightPostId.trim().length > 0
+            (
+                (typeof view.params?.highlightPostId === 'string' &&
+                    view.params.highlightPostId.trim().length > 0) ||
+                (typeof view.params?.anchorPostId === 'string' &&
+                    view.params.anchorPostId.trim().length > 0)
+            )
         ) {
-            setScrollToPost(view.params.highlightPostId.trim());
+            const targetPostId =
+                typeof view.params?.highlightPostId === 'string' &&
+                view.params.highlightPostId.trim().length > 0
+                    ? view.params.highlightPostId.trim()
+                    : view.params.anchorPostId.trim();
+            setScrollToPost(targetPostId);
         }
     }, [currentView]);
 
@@ -806,6 +875,7 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
     const navigateToSocialAndHighlight = useCallback((postId: string) => {
         const normalizedPostId = typeof postId === 'string' ? postId.trim() : '';
         if (!normalizedPostId) return;
+        setSocialPostEntry(null);
         setScrollToPost(normalizedPostId);
         navigate(
             {
@@ -816,6 +886,38 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
             { replace: true }
         );
     }, [navigate]);
+
+    const navigateToSocialPostEntry = useCallback((postId: string, options?: SocialPostEntryOptions) => {
+        const normalizedPostId = typeof postId === 'string' ? postId.trim() : '';
+        if (!normalizedPostId) return;
+
+        const preferredScope = normalizeSocialEntryScope(options?.preferredScope);
+        socialEntryIdRef.current += 1;
+        setSocialPostEntry({
+            entryId: socialEntryIdRef.current,
+            postId: normalizedPostId,
+            openDiscussion: options?.openDiscussion !== false,
+            fallbackToStandalone: options?.fallbackToStandalone !== false,
+            ...(preferredScope ? { preferredScope } : {}),
+        });
+
+        navigate(
+            {
+                type: 'tab',
+                id: 'social',
+                params: {
+                    highlightPostId: normalizedPostId,
+                    anchorPostId: normalizedPostId,
+                    ...(preferredScope ? { preferredScope } : {}),
+                } as NavigationParams,
+            },
+            { replace: options?.replace === true }
+        );
+    }, [navigate]);
+
+    const clearSocialPostEntry = useCallback(() => {
+        setSocialPostEntry(null);
+    }, []);
 
     const clearScrollToPost = useCallback(() => {
         setScrollToPost(null);
@@ -832,8 +934,11 @@ export const NavigationProvider: React.FC<NavigationProviderProps> = ({ children
         resetTokens,
         scrollToPost,
         navigateToSocialAndHighlight,
+        navigateToSocialPostEntry,
+        socialPostEntry,
+        clearSocialPostEntry,
         clearScrollToPost,
-    }), [currentView, isDrawerOpen, resetTokens, scrollToPost, navigate, openDrawer, closeDrawer, setActiveTab, resetTab, navigateToSocialAndHighlight, clearScrollToPost]);
+    }), [currentView, isDrawerOpen, resetTokens, scrollToPost, navigate, openDrawer, closeDrawer, setActiveTab, resetTab, navigateToSocialAndHighlight, navigateToSocialPostEntry, socialPostEntry, clearSocialPostEntry, clearScrollToPost]);
 
     return (
         <NavigationContext.Provider value={value}>

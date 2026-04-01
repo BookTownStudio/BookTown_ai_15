@@ -1048,22 +1048,22 @@ export const listSocialComments = onCall({ cors: true }, async (request) => {
     .collection("posts")
     .doc(postId)
     .collection("comments")
-    .where("status", "==", "published")
     .orderBy("timestamp", "desc")
-    .orderBy(FieldPath.documentId(), "desc")
     .limit(COMMENT_PAGE_SIZE);
 
   if (decodedCursor) {
-    queryRef = queryRef.startAfter(
-      Timestamp.fromMillis(decodedCursor.timestampMs),
-      decodedCursor.commentId
-    );
+    queryRef = queryRef.startAfter(Timestamp.fromMillis(decodedCursor.timestampMs));
   }
 
   const snap = await queryRef.get();
-  const comments = snap.docs.map((docSnap) => {
+  const comments = snap.docs.flatMap((docSnap) => {
     const data = (docSnap.data() ?? {}) as Record<string, unknown>;
-    return {
+    const status = readTrimmedString(data.status, 32).toLowerCase();
+    if (status && status !== "published") {
+      return [];
+    }
+
+    return [{
       id: docSnap.id,
       authorId: readTrimmedString(data.authorId, 128),
       authorName: readTrimmedString(data.authorName, 120) || "Unknown",
@@ -1074,7 +1074,7 @@ export const listSocialComments = onCall({ cors: true }, async (request) => {
       parentId: readTrimmedString(data.parentId, 128) || null,
       likesCount: toNonNegativeInt(data.likesCount),
       liked: false,
-    };
+    }];
   });
 
   const lastDoc = snap.docs[snap.docs.length - 1];

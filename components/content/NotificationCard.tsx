@@ -37,7 +37,7 @@ const ActorAvatar: React.FC<{ uid: string; className?: string }> = ({ uid, class
 
 const NotificationCard: React.FC<{ notification: Notification | GroupedNotification }> = ({ notification }) => {
     const { lang } = useI18n();
-    const { navigate, currentView, navigateToSocialAndHighlight } = useNavigation();
+    const { navigate, currentView, navigateToSocialPostEntry } = useNavigation();
     const { mutate: markRead } = useToggleNotificationRead();
 
     const isGroup = 'items' in notification && notification.items.length > 1;
@@ -52,9 +52,10 @@ const NotificationCard: React.FC<{ notification: Notification | GroupedNotificat
             switch (notification.entityType) {
                 case 'post':
                     if (notification.postId) {
-                        // POST_DISCUSSION_ENTRY_GUARD_V1: Redirect to surface first. 
-                        // Do not infer discussion entry directly from notification tap.
-                        navigateToSocialAndHighlight(notification.postId);
+                        navigateToSocialPostEntry(notification.postId, {
+                            openDiscussion: true,
+                            fallbackToStandalone: true,
+                        });
                     }
                     break;
                 case 'profile':

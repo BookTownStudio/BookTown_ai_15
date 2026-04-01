@@ -7,7 +7,9 @@ import ThreadBody from '../components/content/ThreadBody.tsx';
 import ThreadComments from '../components/content/ThreadComments.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import Button from '../components/ui/Button.tsx';
-import { XIcon } from '../components/icons';
+import { ChevronLeftIcon } from '../components/icons';
+
+const POST_DISCUSSION_RAIL_CLASS = 'mx-auto w-full max-w-[1040px] px-4 md:px-0';
 
 /**
  * PostDetailsScreen
@@ -77,11 +79,11 @@ const PostDetailsScreen: React.FC = () => {
 
   return (
     <div
-      className="h-screen w-full flex flex-col justify-end bg-black/20 backdrop-blur-sm"
+      className="flex h-screen w-full flex-col justify-end bg-black/20 backdrop-blur-sm md:justify-start md:bg-gray-50 md:backdrop-blur-none dark:md:bg-slate-900"
       role="dialog"
       aria-modal="true"
     >
-      <div className="absolute inset-0 z-0" onClick={handleBack} />
+      <div className="absolute inset-0 z-0 md:hidden" onClick={handleBack} />
 
       <motion.div
         initial={{ y: '100%' }}
@@ -97,32 +99,36 @@ const PostDetailsScreen: React.FC = () => {
         dragConstraints={{ top: 0 }}
         dragElastic={{ bottom: 0.8 }}
         onDragEnd={handleDragEnd}
-        className="relative z-10 w-full h-[92vh] bg-white dark:bg-slate-900 rounded-t-[32px] shadow-2xl flex flex-col overflow-hidden"
+        className="relative z-10 flex h-[92vh] w-full flex-col overflow-hidden rounded-t-[32px] bg-white shadow-2xl dark:bg-slate-900 md:h-screen md:rounded-none md:bg-gray-50 md:shadow-none dark:md:bg-slate-900"
       >
         {/* Drag Handle */}
-        <div className="flex justify-center pt-3 pb-1">
+        <div className="flex justify-center pt-3 pb-1 md:hidden">
           <div className="w-10 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full" />
         </div>
 
         {/* Header */}
-        <header className="flex-shrink-0 px-6 py-4 flex items-center justify-between border-b border-black/5 dark:border-white/5">
-          <div className="flex-grow">
-            <ThreadHeader post={post} />
+        <header className="flex-shrink-0 border-b border-black/5 px-4 py-4 dark:border-white/5 md:px-0">
+          <div className={`${POST_DISCUSSION_RAIL_CLASS} flex items-start gap-4`}>
+            <Button
+              variant="ghost"
+              onClick={handleBack}
+              className="!mt-0.5 !h-10 !w-10 !shrink-0 !rounded-full !p-0 text-slate-700 hover:bg-black/5 dark:text-white/80 dark:hover:bg-white/5"
+              aria-label={lang === 'en' ? 'Back' : 'رجوع'}
+            >
+              <ChevronLeftIcon className="h-6 w-6" />
+            </Button>
+            <div className="min-w-0 flex-grow">
+              <ThreadHeader post={post} />
+            </div>
           </div>
-          <Button
-            variant="icon"
-            onClick={handleBack}
-            className="!bg-slate-100 dark:!bg-slate-800 !p-2 !h-10 !w-10 rounded-full"
-            aria-label="Close"
-          >
-            <XIcon className="h-5 w-5" />
-          </Button>
         </header>
 
         <div className="flex-grow flex flex-col overflow-hidden">
-          <article className="flex-shrink-0 px-6 py-6 bg-slate-50/50 dark:bg-white/[0.02] border-b border-black/5 dark:border-white/5 overflow-hidden">
-            <div className="max-h-[30vh] overflow-y-auto pr-2 scrollbar-hide">
-              <ThreadBody post={post} />
+          <article className="flex-shrink-0 border-b border-black/5 bg-slate-50/50 px-4 py-6 dark:border-white/5 dark:bg-white/[0.02] md:px-0">
+            <div className={POST_DISCUSSION_RAIL_CLASS}>
+              <div className="max-h-[30vh] overflow-y-auto scrollbar-hide md:pr-2">
+                <ThreadBody post={post} />
+              </div>
             </div>
           </article>
 

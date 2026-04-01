@@ -37,6 +37,7 @@ import PostCard from '../../components/content/PostCard.tsx';
 import ReviewCard from '../../components/content/ReviewCard.tsx';
 import CanonicalCoverArtwork from '../../components/content/CanonicalCoverArtwork.tsx';
 import type { ProfilePublicationRecord } from '../../services/db.types.ts';
+import type { Post } from '../../types/entities.ts';
 
 type ProfileTab = 'posts' | 'reviews' | 'shelves' | 'publications';
 
@@ -151,7 +152,7 @@ const ScreenHeader: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 const ProfileScreen: React.FC = () => {
   const { lang } = useI18n();
   const { user: authUser, isGuest } = useAuth();
-  const { currentView, navigate } = useNavigation();
+  const { currentView, navigate, navigateToSocialPostEntry } = useNavigation();
   const paramUserId =
     currentView.type === 'immersive'
       ? currentView.params?.userId
@@ -243,6 +244,19 @@ const ProfileScreen: React.FC = () => {
     data: followListUsers,
     isLoading: isFollowListLoading,
   } = useUserFollowList(effectiveProfileUserId, activeConnectionList);
+
+  const handleOpenProfilePost = React.useCallback((post: Post) => {
+    const preferredScope =
+      post.visibility === 'followers' || post.visibility === 'restricted'
+        ? 'following'
+        : 'explore';
+
+    navigateToSocialPostEntry(post.id, {
+      openDiscussion: true,
+      fallbackToStandalone: true,
+      preferredScope,
+    });
+  }, [navigateToSocialPostEntry]);
 
   /* -----------------------------------------------------
      Scroll listener (v10 refined)
@@ -803,6 +817,8 @@ const ProfileScreen: React.FC = () => {
                       key={post.id}
                       post={post}
                       viewMode="list"
+                      onOpenDiscussion={() => handleOpenProfilePost(post)}
+                      onOpenPostEntry={() => handleOpenProfilePost(post)}
                       surface="drawer"
                     />
                   ))

@@ -128,7 +128,7 @@ const VenueItem: React.FC<ItemProps> = ({ bookmark, lang, onPress }) => {
 const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
     const { lang } = useI18n();
     const { user } = useAuth();
-    const { navigate, currentView, navigateToSocialAndHighlight } = useNavigation();
+    const { navigate, currentView, navigateToSocialPostEntry } = useNavigation();
     const {
         data: quote,
         isLoading: isQuoteLoading,
@@ -143,7 +143,10 @@ const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
     const handlePress = () => {
         switch(bookmark.type) {
             case 'post': 
-                navigateToSocialAndHighlight(bookmark.entityId);
+                navigateToSocialPostEntry(bookmark.entityId, {
+                    openDiscussion: true,
+                    fallbackToStandalone: true,
+                });
                 break;
             case 'book':
                 navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: bookmark.entityId, from: currentView } });
