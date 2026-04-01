@@ -88,7 +88,7 @@ const CommentItem: React.FC<{
                     </div>
 
                     <div className="relative" ref={menuRef}>
-                        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-1 text-white/35 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="p-1 text-white/35 opacity-100 transition-opacity md:opacity-0 md:group-hover:opacity-100">
                             <VerticalEllipsisIcon className="h-3 w-3" />
                         </button>
                         {isMenuOpen && (
@@ -197,7 +197,7 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
 
     return (
         <div className="flex flex-col min-h-full bg-transparent">
-            <div className="sticky top-0 z-20 border-b border-white/10 bg-[#070f1a]/80 px-4 py-3 backdrop-blur-sm md:px-0">
+            <div className="sticky top-0 z-20 border-b border-white/[0.06] bg-[#070f1a]/72 px-4 py-2.5 backdrop-blur-sm md:px-0">
                 <div className={cn(THREAD_DISCUSSION_RAIL_CLASS, "flex items-center justify-between")}>
                     <BilingualText role="Label" className="!text-white/45 !text-[9px] tracking-widest font-black uppercase">
                         {lang === 'en' ? 'Replies' : 'الردود'}
@@ -236,7 +236,7 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
                                 />
                             ))
                         ) : status === 'success' && (
-                            <div className="animate-fade-in px-10 py-24 text-center opacity-45">
+                            <div className="animate-fade-in px-10 py-14 text-center opacity-45">
                                 <BilingualText role="Body" className="!text-sm">
                                     {lang === 'en' ? 'No comments yet. Start the conversation!' : 'لا توجد تعليقات بعد. ابدأ النقاش!'}
                                 </BilingualText>
@@ -251,10 +251,10 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
             </div>
 
             {/* STICKY COMPOSER: POST_DISCUSSION_SURFACE_V1 */}
-            <div className="sticky bottom-0 left-0 right-0 z-50 bg-[#07101c]/95 border-t border-white/12 pb-[env(safe-area-inset-bottom)] backdrop-blur-md shadow-[0_-16px_40px_-26px_rgba(0,0,0,0.88)]">
+            <div className="sticky bottom-0 left-0 right-0 z-50 bg-[#07101c]/94 border-t border-white/[0.08] pb-[env(safe-area-inset-bottom)] backdrop-blur-md shadow-[0_-16px_40px_-26px_rgba(0,0,0,0.88)]">
                 {replyingTo && (
                     <div className={cn(
-                        "px-4 md:px-6 py-2 bg-black/25 flex items-center justify-between animate-fade-in-up border-b border-white/10",
+                        "px-4 md:px-6 py-2 bg-black/25 flex items-center justify-between animate-fade-in-up border-b border-white/[0.08]",
                         isRTL && "flex-row-reverse"
                     )}>
                         <p className="text-[10px] font-bold text-white/55 truncate">

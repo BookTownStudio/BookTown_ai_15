@@ -96,13 +96,13 @@ describe("Post discussion fallback back ownership", () => {
   it("renders explicit Social return control for internal-origin fallback entries", () => {
     render(<PostDiscussionScreen />);
 
-    expect(screen.getByRole("button", { name: "Back to Social" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Back" })).toBeInTheDocument();
   });
 
   it("returns deterministically to Social without relying on browser history", () => {
     render(<PostDiscussionScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Back to Social" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
 
     expect(navigateMock).toHaveBeenCalledWith(
       {

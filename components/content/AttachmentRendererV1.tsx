@@ -257,10 +257,10 @@ const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: st
     const isExhibitionSurface = surface === 'feed';
     return (
         <div className={cn(
-            "relative overflow-hidden bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] p-3 shadow-[0_10px_22px_-16px_rgba(0,119,182,0.58)]",
+            "relative overflow-hidden p-3",
             isExhibitionSurface
-                ? "rounded-[0.7rem] aspect-[4/5] max-h-[72dvh] px-4 py-4"
-                : "rounded-xl"
+                ? "rounded-[0.7rem] bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] px-4 py-4 shadow-[0_10px_22px_-16px_rgba(0,119,182,0.58)]"
+                : "rounded-[0.95rem] border border-white/8 bg-[#0b1420]/92 shadow-none"
         )}>
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.26),transparent_56%)]" />
             <div className={cn(
@@ -271,12 +271,12 @@ const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: st
                     {coverUrl ? (
                         <img src={coverUrl} className={cn(
                             "object-cover shadow-lg",
-                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-24 w-16 rounded-md"
+                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-28 w-20 rounded-lg shadow-none"
                         )} alt="" />
                     ) : (
                         <div className={cn(
                             "bg-white/10",
-                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-24 w-16 rounded-md"
+                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-28 w-20 rounded-lg"
                         )} />
                     )}
                 </div>
@@ -306,10 +306,10 @@ const QuoteReferenceCard: React.FC<{ text: string; surface?: RenderSurface }> = 
     const isExhibitionSurface = surface === 'feed';
     return (
     <div className={cn(
-        "relative bg-gradient-to-r from-[#111a24] to-[#0c1118] px-4 py-3.5 text-slate-200 shadow-[0_10px_22px_-20px_rgba(255,255,255,0.35)]",
+        "relative px-4 py-3.5 text-slate-200",
         isExhibitionSurface
-            ? "rounded-[0.7rem] aspect-[4/5] max-h-[68dvh] flex flex-col justify-between"
-            : "rounded-xl"
+            ? "rounded-[0.7rem] bg-gradient-to-r from-[#111a24] to-[#0c1118] shadow-[0_10px_22px_-20px_rgba(255,255,255,0.35)] aspect-[4/5] max-h-[68dvh] flex flex-col justify-between"
+            : "rounded-[0.95rem] border border-white/8 bg-[#0d1520]/94"
     )}>
         <div className="mt-3 flex gap-2">
             <span className={cn(
@@ -330,7 +330,7 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
     avatarUrl,
     country,
 }) => (
-    <div className="flex items-center gap-3 rounded-xl bg-gradient-to-r from-[#101821] to-[#0b1118] px-3 py-2.5 shadow-[0_8px_18px_-16px_rgba(255,255,255,0.36)]">
+    <div className="flex items-center gap-3 rounded-[0.95rem] border border-white/8 bg-[#0d1520]/92 px-3 py-3 shadow-none">
         {avatarUrl ? (
             <img src={avatarUrl} className="h-11 w-11 object-cover rounded-full shadow-md" alt="" />
         ) : (
@@ -345,7 +345,7 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
 );
 
 const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: string[] }> = ({ name, bookCount, covers = [] }) => (
-    <div className="relative rounded-[0.85rem] bg-gradient-to-r from-[#0a1622] to-[#0e2131] px-4 py-3.5 shadow-[0_12px_24px_-16px_rgba(0,119,182,0.58)] min-h-[30vh]">
+    <div className="relative rounded-[0.95rem] border border-white/8 bg-[#0c1624]/94 px-4 py-3.5 shadow-none min-h-[12rem]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_60%)]" />
         <div className="relative flex items-center gap-3 h-full">
             <div className="h-full min-h-[112px] w-[48%] max-w-[156px] rounded-[0.7rem] bg-white/10 flex items-center justify-center overflow-hidden">
@@ -373,7 +373,7 @@ const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: 
 );
 
 const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: string; locationLabel?: string }> = ({ name, type, dateLabel, locationLabel }) => (
-    <div className="rounded-[0.7rem] bg-gradient-to-r from-[#10131a] to-[#121924] px-3 py-3 shadow-[0_10px_20px_-16px_rgba(255,255,255,0.34)] min-h-[20vh]">
+    <div className="rounded-[0.95rem] border border-white/8 bg-[#0d1520]/92 px-3 py-3 shadow-none min-h-[8.5rem]">
         <div className="flex items-center justify-between gap-3">
             <div className="min-w-0">
                 <AttachmentTypeLabel label="Venue" />
@@ -396,7 +396,7 @@ const PublicationReferenceCard: React.FC<{ title: string; coverUrl?: string; aut
     coverUrl,
     author,
 }) => (
-    <div className="relative overflow-hidden rounded-[0.85rem] bg-gradient-to-br from-[#16120d] via-[#201912] to-[#2c2318] px-4 py-4 shadow-[0_12px_24px_-16px_rgba(0,0,0,0.5)] min-h-[24vh]">
+    <div className="relative overflow-hidden rounded-[0.95rem] border border-white/8 bg-[#17120f]/94 px-4 py-4 shadow-none min-h-[10rem]">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(231,193,128,0.18),transparent_58%)]" />
         <div className="relative flex items-start gap-3">
             <div className="h-24 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-white/10">
@@ -1075,7 +1075,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
             <div className="absolute top-2 right-2 flex gap-1" ref={menuRef}>
                 <button 
                     onClick={toggleMenu}
-                    className="p-1.5 rounded-full bg-black/40 text-white/70 hover:bg-black/60 hover:text-white transition-all opacity-0 group-hover:opacity-100"
+                    className="p-1.5 rounded-full bg-black/40 text-white/70 transition-all opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:bg-black/60 hover:text-white"
                     aria-label="Attachment Actions"
                 >
                     <VerticalEllipsisIcon className="h-4 w-4" />
@@ -1107,7 +1107,7 @@ export const AttachmentListV1: React.FC<{
     return (
         <div className={cn(
             "mt-3 flex flex-col",
-            surface === 'feed' ? "gap-4" : "gap-3"
+            surface === 'feed' ? "gap-4" : "gap-2.5"
         )}>
             {attachments.map((att, i) => (
                 <AttachmentRendererV1 

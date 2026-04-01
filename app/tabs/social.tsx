@@ -19,12 +19,12 @@ import { useAuth } from '../../lib/auth.tsx';
 import UserSearchResultCard from '../../components/content/UserSearchResultCard.tsx';
 import TopicSearchResultCard from '../../components/content/TopicSearchResultCard.tsx';
 import { useDebounce } from 'use-debounce';
-import InteractionRail from '../../components/content/InteractionRail.tsx';
 import ErrorState from '../../components/ui/ErrorState.tsx';
 import EmptyState from '../../components/ui/EmptyState.tsx';
 import { BasketIcon as FeedIcon } from '../../components/icons/BasketIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { Post } from '../../types/entities.ts';
+import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
 
 // Simple text icon for the filters
 const TextIcon = (props: any) => (
@@ -37,7 +37,7 @@ const MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS = 2;
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
-    const socialShellClassName = 'app-rail app-rail--wide social-feed-shell';
+    const socialShellClassName = 'app-rail app-rail--narrow social-feed-shell';
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 
@@ -66,9 +66,10 @@ const SocialScreen: React.FC = () => {
     const isInitialMount = useRef(true);
     const [isMoreFiltersOpen, setMoreFiltersOpen] = useState(false);
     const moreFiltersRef = useRef<HTMLDivElement>(null);
-
-    const [activePostId, setActivePostId] = useState<string | null>(null);
-    const observerRef = useRef<IntersectionObserver | null>(null);
+    const [isTopBarVisible, setTopBarVisible] = useState(true);
+    const topBarRevealTimerRef = useRef<number | null>(null);
+    const topBarLastScrollTopRef = useRef(0);
+    const topBarDownDeltaRef = useRef(0);
 
     const [isSearchOpen, setIsSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
@@ -93,7 +94,6 @@ const SocialScreen: React.FC = () => {
     } = useSocialSearch(debouncedQuery);
 
     const posts = useMemo(() => data?.pages.flatMap(page => (page as any).posts) ?? [], [data]);
-    const activePost = useMemo(() => posts.find(p => p.id === activePostId), [posts, activePostId]);
     const socialAnchorPostId = useMemo(() => {
         if (currentView.type !== 'tab' || currentView.id !== 'social') return '';
         return typeof currentView.params?.anchorPostId === 'string'
@@ -102,35 +102,8 @@ const SocialScreen: React.FC = () => {
     }, [currentView]);
 
     useEffect(() => {
-        if (!activePostId && posts.length > 0) {
-            setActivePostId(posts[0].id);
-        }
-    }, [posts, activePostId]);
-
-    useEffect(() => {
-        if (observerRef.current) observerRef.current.disconnect();
-
-        observerRef.current = new IntersectionObserver(
-            (entries) => {
-                entries.forEach((entry) => {
-                    if (entry.isIntersecting) {
-                        const id = entry.target.getAttribute('data-post-id');
-                        if (id) setActivePostId(id);
-                    }
-                });
-            },
-            { threshold: 0.6 }
-        );
-
-        return () => observerRef.current?.disconnect();
-    }, [posts]);
-
-    const registerPostElement = useCallback((node: HTMLElement | null) => {
-        if (node) observerRef.current?.observe(node);
-    }, []);
-
-    useEffect(() => {
         if (isSearchOpen) {
+            setTopBarVisible(true);
             setTimeout(() => searchInputRef.current?.focus(), 100);
         }
     }, [isSearchOpen]);
@@ -182,6 +155,67 @@ const SocialScreen: React.FC = () => {
         if (isMoreFiltersOpen) document.addEventListener('mousedown', handleClickOutside);
         return () => document.removeEventListener('mousedown', handleClickOutside);
     }, [isMoreFiltersOpen]);
+
+    useEffect(() => {
+        const scroller = mainContentRef.current;
+        if (!scroller || isSearchOpen) {
+            setTopBarVisible(true);
+            return;
+        }
+
+        topBarLastScrollTopRef.current = scroller.scrollTop;
+
+        const scheduleReveal = () => {
+            if (topBarRevealTimerRef.current) {
+                window.clearTimeout(topBarRevealTimerRef.current);
+            }
+            topBarRevealTimerRef.current = window.setTimeout(() => {
+                topBarDownDeltaRef.current = 0;
+                setTopBarVisible(true);
+            }, 220);
+        };
+
+        const handleScroll = () => {
+            const currentTop = Math.max(0, scroller.scrollTop);
+            const delta = currentTop - topBarLastScrollTopRef.current;
+
+            if (currentTop <= 16) {
+                topBarDownDeltaRef.current = 0;
+                setTopBarVisible(true);
+                topBarLastScrollTopRef.current = currentTop;
+                scheduleReveal();
+                return;
+            }
+
+            if (Math.abs(delta) < 3) {
+                scheduleReveal();
+                return;
+            }
+
+            if (delta > 0) {
+                topBarDownDeltaRef.current += delta;
+                if (topBarDownDeltaRef.current >= 42) {
+                    setTopBarVisible(false);
+                    topBarDownDeltaRef.current = 0;
+                }
+            } else {
+                topBarDownDeltaRef.current = 0;
+                setTopBarVisible(true);
+            }
+
+            topBarLastScrollTopRef.current = currentTop;
+            scheduleReveal();
+        };
+
+        scroller.addEventListener('scroll', handleScroll, { passive: true });
+        return () => {
+            scroller.removeEventListener('scroll', handleScroll);
+            if (topBarRevealTimerRef.current) {
+                window.clearTimeout(topBarRevealTimerRef.current);
+                topBarRevealTimerRef.current = null;
+            }
+        };
+    }, [isSearchOpen]);
 
     useEffect(() => {
         if (currentView.type !== 'tab' || currentView.id !== 'social' || !socialPostEntry) {
@@ -253,7 +287,6 @@ const SocialScreen: React.FC = () => {
             window.setTimeout(() => {
                 targetElement.classList.remove('flash-highlight');
             }, 800);
-            setActivePostId(targetPostId);
 
             if (socialPostEntry.openDiscussion && !entryTracker.discussionOpened) {
                 entryTracker.discussionOpened = true;
@@ -346,19 +379,8 @@ const SocialScreen: React.FC = () => {
         mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    /**
-     * handleOpenThread
-     * Implementation of POST_DISCUSSION_NAVIGATION_V1 Contract.
-     * TRIGGER: comment_icon click from InteractionRail.
-     * MANDATORY_PARAMS: postId, from (current view).
-     */
     const handleOpenThread = (post: Post) => {
         if (!post || !post.id) return;
-
-        // NAVIGATION_CONTRACT ENFORCEMENT: 
-        // 1. type: immersive
-        // 2. id: postDiscussion
-        // 3. from: must be current view for scroll restoration
         navigate({ 
             type: 'immersive', 
             id: 'postDiscussion', 
@@ -398,7 +420,7 @@ const SocialScreen: React.FC = () => {
 
         if (isError) {
             return (
-                <div className="app-rail app-rail--wide min-h-[70dvh] flex items-start justify-center pt-24 text-center">
+                <div className="app-rail app-rail--narrow min-h-[70dvh] flex items-start justify-center pt-24 text-center">
                     <div className="w-full max-w-xl">
                         <ErrorState 
                             onRetry={() => refetch()} 
@@ -411,7 +433,7 @@ const SocialScreen: React.FC = () => {
         
         if (posts.length === 0) {
              return (
-                <div className="app-rail app-rail--wide min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24">
+                <div className="app-rail app-rail--narrow min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24">
                     <div className="w-full max-w-xl">
                         <EmptyState 
                             icon={FeedIcon}
@@ -426,23 +448,22 @@ const SocialScreen: React.FC = () => {
         }
 
         return (
-            <div className={socialShellClassName}>
+            <div className={cn(socialShellClassName, "divide-y divide-white/[0.04]")}>
                 {posts.map((post, index) => {
                     const isLastElement = posts.length === index + 1;
                     return (
                         <div 
                             ref={(node) => {
-                                registerPostElement(node);
                                 if (isLastElement) lastPostElementRef(node);
                             }} 
                             key={post.id} 
                             id={`post-${post.id}`} 
                             data-post-id={post.id}
-                            className="h-[100dvh] w-full flex-shrink-0 snap-start"
+                            className="w-full"
                         >
                             <PostCard 
                                 post={post} 
-                                viewMode="flow" 
+                                viewMode="list" 
                                 onOpenDiscussion={() => handleOpenThread(post)}
                             />
                         </div>
@@ -555,7 +576,14 @@ const SocialScreen: React.FC = () => {
 
     return (
         <>
-            <header className="fixed top-0 left-0 right-0 z-30 pt-[max(2px,env(safe-area-inset-top))] transition-all duration-300">
+            <header
+                className={cn(
+                    "fixed top-0 left-0 right-0 z-30 pt-[max(2px,env(safe-area-inset-top))] transition-[opacity,transform] duration-500 ease-out",
+                    (isTopBarVisible || isSearchOpen)
+                        ? "translate-y-0 opacity-100"
+                        : "-translate-y-3 pointer-events-none opacity-0"
+                )}
+            >
                 <div className={socialShellClassName}>
                     <div
                         className="w-full flex h-14 items-center justify-center relative"
@@ -586,24 +614,31 @@ const SocialScreen: React.FC = () => {
                             </div>
                         ) : (
                             <div className="flex items-center justify-center animate-fade-in-up w-full">
-                                <div className="flex items-center gap-2.5">
-                                    <button 
+                                <div
+                                    ref={moreFiltersRef}
+                                    className="relative inline-flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.06] px-1.5 py-1 backdrop-blur-sm md:bg-white/[0.07]"
+                                    role="tablist"
+                                >
+                                    <button
                                         onClick={() => setIsSearchOpen(true)}
-                                        className="p-1.5 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-all backdrop-blur-md border border-white/10 active:scale-95"
+                                        className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/56 transition-all hover:bg-white/[0.12] hover:text-white/80 active:scale-95"
+                                        aria-label={lang === 'en' ? 'Search' : 'بحث'}
                                     >
-                                        <SearchIcon className="h-4 w-4" />
+                                        <SearchIcon className="h-3.5 w-3.5" />
                                     </button>
 
-                                    <div ref={moreFiltersRef} className="relative bg-white/10 p-1 rounded-full flex items-center space-x-1 backdrop-blur-sm border border-white/10" role="tablist">
+                                    <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
+
+                                    <div className="flex items-center gap-1">
                                         {TABS.map(tab => (
                                             <button
                                                 key={tab.id}
                                                 onClick={() => handleScopeChange(tab.id)}
                                                 className={cn(
-                                                "whitespace-nowrap rounded-full py-1.5 px-3.5 text-[12px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent",
+                                                    "whitespace-nowrap rounded-full px-3.5 py-1.5 text-[11px] font-medium transition-colors focus:outline-none focus:ring-2 focus:ring-accent md:px-4 md:py-1.5 md:text-[12px]",
                                                     scope === tab.id
                                                         ? 'bg-white text-slate-900 shadow'
-                                                        : 'text-white/70 hover:bg-white/20 hover:text-white'
+                                                        : 'text-white/68 hover:bg-white/[0.14] hover:text-white'
                                                 )}
                                                 role="tab"
                                                 aria-selected={scope === tab.id}
@@ -611,44 +646,48 @@ const SocialScreen: React.FC = () => {
                                                 {lang === 'en' ? tab.en : tab.ar}
                                             </button>
                                         ))}
-                                        <button
-                                            onClick={() => setMoreFiltersOpen(prev => !prev)}
-                                            className={cn(
-                                                "rounded-full p-1 text-sm font-medium transition-colors relative",
-                                                filters.length > 0
-                                                    ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
-                                                    : 'text-white/70 hover:bg-white/20 hover:text-white'
-                                            )}
-                                        >
-                                            <VerticalEllipsisIcon className="h-4 w-4" />
-                                            {filters.length > 0 && (
-                                                <div className="absolute -top-1 -right-1 w-2 h-2 bg-accent rounded-full animate-pulse shadow-sm" />
-                                            )}
-                                        </button>
-                                        
-                                        {isMoreFiltersOpen && (
-                                             <div className="absolute top-full right-0 mt-2 z-10 w-48">
-                                                <GlassCard className="!p-2 !bg-slate-800 shadow-xl">
-                                                    <ul className="space-y-1">
-                                                        {SECONDARY_FILTERS.map(filter => (
-                                                            <li key={filter.id}>
-                                                                <button 
-                                                                    onClick={() => handleFilterToggle(filter.id)} 
-                                                                    className={cn(
-                                                                        "w-full text-left flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors",
-                                                                        filters.includes(filter.id) ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'
-                                                                    )}
-                                                                >
-                                                                    <filter.icon className="h-5 w-5" />
-                                                                    {lang === 'en' ? filter.en : filter.ar}
-                                                                </button>
-                                                            </li>
-                                                        ))}
-                                                    </ul>
-                                                </GlassCard>
-                                            </div>
-                                        )}
                                     </div>
+
+                                    <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
+
+                                    <button
+                                        onClick={() => setMoreFiltersOpen(prev => !prev)}
+                                        className={cn(
+                                            "relative inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-white/62 transition-colors",
+                                            filters.length > 0
+                                                ? 'bg-accent/20 text-accent ring-1 ring-accent/30'
+                                                : 'hover:bg-white/[0.12] hover:text-white/82'
+                                        )}
+                                        aria-label={lang === 'en' ? 'More filters' : 'المزيد من الفلاتر'}
+                                    >
+                                        <VerticalEllipsisIcon className="h-3.5 w-3.5" />
+                                        {filters.length > 0 && (
+                                            <div className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-accent shadow-sm" />
+                                        )}
+                                    </button>
+
+                                    {isMoreFiltersOpen && (
+                                         <div className="absolute top-full right-0 mt-2 z-10 w-48">
+                                            <GlassCard className="!p-2 !bg-slate-800 shadow-xl">
+                                                <ul className="space-y-1">
+                                                    {SECONDARY_FILTERS.map(filter => (
+                                                        <li key={filter.id}>
+                                                            <button 
+                                                                onClick={() => handleFilterToggle(filter.id)} 
+                                                                className={cn(
+                                                                    "w-full text-left flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors",
+                                                                    filters.includes(filter.id) ? 'bg-white/20 text-white' : 'text-white/70 hover:bg-white/10'
+                                                                )}
+                                                            >
+                                                                <filter.icon className="h-5 w-5" />
+                                                                {lang === 'en' ? filter.en : filter.ar}
+                                                            </button>
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            </GlassCard>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         )}
@@ -658,19 +697,10 @@ const SocialScreen: React.FC = () => {
 
             {isSearchOpen && renderSearchResults()}
 
-            {!isSearchOpen && (
-                <InteractionRail 
-                    post={activePost || null} 
-                    onOpenDiscussion={() => activePost && handleOpenThread(activePost)} 
-                    onNewPost={handleNewPost}
-                    desktopShellMaxWidth={1040}
-                />
-            )}
-
             <div 
                 ref={mainContentRef} 
                 className={cn(
-                    "social-desktop-canvas h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-scroll overflow-x-hidden overscroll-y-contain snap-y snap-mandatory scrollbar-hide transition-opacity duration-300",
+                    "social-desktop-canvas h-[100dvh] w-full bg-gradient-to-b from-[#04070d] via-[#050a12] to-black overflow-y-auto overflow-x-hidden overscroll-y-contain transition-opacity duration-300",
                     isSearchOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'
                 )}
                 style={{
@@ -679,21 +709,35 @@ const SocialScreen: React.FC = () => {
                     scrollPaddingBottom: 'calc(var(--bottom-nav-height, 66px) + 14px)'
                 }}
             >
-                {renderFeedContent()}
+                <div className="px-0 pb-[calc(var(--bottom-nav-height,66px)+28px)] pt-[calc(var(--social-top-chrome-offset)+18px)]">
+                    {renderFeedContent()}
+                </div>
                 {isFetchingNextPage && (
-                    <div className="h-[100dvh] w-full flex-shrink-0 snap-start flex items-center justify-center">
+                    <div className="flex items-center justify-center py-10">
                         <LoadingSpinner />
                     </div>
                 )}
             </div>
 
-            <style>{`
-                .snap-y { scroll-snap-type: y; }
-                .snap-mandatory { scroll-snap-stop: always; scroll-snap-type: y mandatory; }
-                .snap-start { scroll-snap-align: start; }
-                .scrollbar-hide::-webkit-scrollbar { display: none; }
-                .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
-            `}</style>
+            <div
+                className={cn(
+                    "pointer-events-none fixed bottom-[calc(var(--bottom-nav-height,66px)+18px)] left-0 right-0 z-[26] transition-all duration-200",
+                    isSearchOpen ? "opacity-0" : "opacity-100"
+                )}
+            >
+                <div className="app-frame__inner">
+                    <div className="app-rail app-rail--narrow flex justify-end px-0">
+                        <button
+                            type="button"
+                            onClick={handleNewPost}
+                            aria-label={lang === 'en' ? 'Write' : 'اكتب'}
+                            className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#8db7e7]/[0.24] bg-[#1d4f91]/88 text-white/90 shadow-[0_8px_20px_rgba(12,28,52,0.22)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#2760ab]/92 hover:text-white md:shadow-[0_10px_26px_rgba(12,28,52,0.26)] active:translate-y-0"
+                        >
+                            <PlusIcon className="h-5 w-5" />
+                        </button>
+                    </div>
+                </div>
+            </div>
         </>
     );
 };

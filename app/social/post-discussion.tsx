@@ -107,6 +107,13 @@ const PostDiscussionScreen: React.FC = () => {
 
   const hasPrimaryAttachment =
     !!threadPost?.content?.attachments && threadPost.content.attachments.length > 0;
+  const hasMediaAttachment =
+    !!threadPost?.content?.attachments?.some((attachment) =>
+      ['IMAGE', 'AUDIO', 'VIDEO'].includes(String(attachment?.type || '').toUpperCase())
+    );
+  const discussionSummaryText = hasMediaAttachment
+    ? (threadPost?.content.text || '').replace(/^\s*\/\/\s*/, '')
+    : (threadPost?.content.text || '');
 
   return (
     <div
@@ -140,10 +147,10 @@ const PostDiscussionScreen: React.FC = () => {
         {!isPostLoading && !postUnavailable && threadPost && (
           <>
             <div className="app-frame__inner h-full">
-              <div className="app-rail app-rail--wide social-feed-shell flex h-full flex-col overflow-hidden">
-                <header className="flex-shrink-0 border-b border-white/10 bg-black/20 px-0 pt-6 pb-4 backdrop-blur-md">
+              <div className="app-rail app-rail--narrow social-feed-shell flex h-full flex-col overflow-hidden">
+                <header className="flex-shrink-0 border-b border-white/[0.06] bg-black/16 px-0 pt-4 pb-3 backdrop-blur-md">
                   <div className={cn(
-                    'flex items-start gap-4',
+                    'flex items-start gap-3',
                     isRTL ? 'flex-row-reverse' : 'flex-row'
                   )}>
                     <Button
@@ -185,8 +192,8 @@ const PostDiscussionScreen: React.FC = () => {
                         </div>
                       </button>
 
-                      <div className="mt-3 overflow-hidden rounded-2xl border border-white/12 bg-black/30">
-                        <div className="relative h-12 bg-gradient-to-r from-[#0a2235] via-[#17354d] to-[#0a1e2e]">
+                      <div className="mt-2 overflow-hidden rounded-2xl border border-white/[0.08] bg-black/22">
+                        <div className="relative h-10 bg-gradient-to-r from-[#0a2235] via-[#17354d] to-[#0a1e2e]">
                           <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.35),transparent_58%)]" />
                           {hasPrimaryAttachment && (
                             <span className="absolute left-3 top-2.5 inline-flex items-center rounded-full border border-white/25 bg-black/40 px-2 py-0.5 text-[9px] font-bold uppercase tracking-[0.14em] text-white/75">
@@ -194,12 +201,12 @@ const PostDiscussionScreen: React.FC = () => {
                             </span>
                           )}
                         </div>
-                        <div className="px-3 py-2.5">
+                        <div className="px-3 py-2">
                           <BilingualText
                             role="Body"
                             className="line-clamp-2 text-[13px] leading-relaxed text-white/76"
                           >
-                            {threadPost.content.text}
+                            {discussionSummaryText}
                           </BilingualText>
                         </div>
                       </div>

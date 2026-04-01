@@ -26,6 +26,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
     const { lang } = useI18n();
     const { setActiveTab, resetTab } = useNavigation();
     const [isHidden, setIsHidden] = useState(false);
+    const isSocialTabActive = activeTab === 'social';
     const lastScrollTopRef = useRef(0);
     const downDeltaRef = useRef(0);
     const revealTimerRef = useRef<number | null>(null);
@@ -101,13 +102,20 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
     return (
         <div
             className={cn(
-                "fixed bottom-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-t border-black/10 dark:border-white/10 transition-all duration-200 ease-in-out",
+                "fixed bottom-0 left-0 right-0 z-20 backdrop-blur-lg transition-all duration-200 ease-in-out",
+                isSocialTabActive
+                    ? "border-t border-white/8 bg-[#060b12]/72"
+                    : "bg-gray-50/50 border-t border-black/10 dark:bg-slate-900/50 dark:border-white/10",
                 isHidden ? "opacity-0 translate-y-3 pointer-events-none" : "opacity-100 translate-y-0"
             )}
             style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
         >
             <div className="app-frame__inner">
-                <div className="app-rail app-rail--default flex h-[66px] items-center justify-around px-0 lg:justify-center lg:gap-14">
+                <div className={cn(
+                    "app-rail flex h-[66px] items-center justify-around px-0 lg:justify-center lg:gap-14",
+                    isSocialTabActive ? "app-rail--narrow" : "app-rail--default",
+                    isSocialTabActive && "px-2 md:px-0"
+                )}>
                     {TABS.map((tab) => {
                         const isActive = activeTab === tab.id;
                         return (

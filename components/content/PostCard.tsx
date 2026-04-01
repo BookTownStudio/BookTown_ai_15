@@ -4,22 +4,17 @@ import { useI18n } from '../../store/i18n.tsx';
 import GlassCard from '../ui/GlassCard.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import Button from '../ui/Button.tsx';
-import { LikeIcon } from '../icons/LikeIcon.tsx';
-import { ChatIcon } from '../icons/ChatIcon.tsx';
-import { RepostIcon } from '../icons/RepostIcon.tsx';
-import { ShareIcon } from '../icons/ShareIcon.tsx';
-import { BookmarkIcon } from '../icons/BookmarkIcon.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { EllipsisIcon } from '../icons/EllipsisIcon.tsx';
 import { EditIcon } from '../icons/EditIcon.tsx';
 import { TrashIcon } from '../icons/TrashIcon.tsx';
 import { cn } from '../../lib/utils.ts';
-import { usePostInteractions } from '../../lib/hooks/usePostInteractions.ts';
 import { useDeletePost } from '../../lib/hooks/useDeletePost.ts';
 import { useRestorePost } from '../../lib/hooks/useRestorePost.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { AttachmentListV1, RenderSurface } from './AttachmentRendererV1.tsx';
+import InteractionRail from './InteractionRail.tsx';
 import EditPostModal from '../modals/EditPostModal.tsx';
 import ConfirmDeleteModal from '../modals/ConfirmDeleteModal.tsx';
 import ReportPostModal from '../modals/ReportPostModal.tsx';
@@ -288,11 +283,17 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     );
     const showEditedBadge = editedAt.length > 0;
     const editedLabel = lang === 'en' ? 'Edited' : 'معدل';
+    const hasMediaAttachment = useMemo(() => {
+        const refs = post?.content?.attachments || [];
+        return refs.some((attachment) => ['IMAGE', 'AUDIO', 'VIDEO'].includes(String(attachment?.type || '').toUpperCase()));
+    }, [post]);
 
     const displayBody = useMemo(() => {
         if (isDeleted && !isOwner) return lang === 'en' ? "This content is unavailable" : "هذا المحتوى غير متوفر";
-        return post?.content?.text || "";
-    }, [post, isDeleted, isOwner, lang]);
+        const rawText = post?.content?.text || "";
+        if (!hasMediaAttachment) return rawText;
+        return rawText.replace(/^\s*\/\/\s*/, '');
+    }, [post, isDeleted, isOwner, lang, hasMediaAttachment]);
 
     const authorName = useMemo(() => {
         if (isRestricted && !isOwner) return lang === 'en' ? "Restricted User" : "مستخدم مقيد";
@@ -304,11 +305,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         return post?.authorAvatar || "https://api.dicebear.com/7.x/initials/svg?seed=U";
     }, [post, isRestricted, isOwner]);
 
-    const { 
-        isLiked, isBookmarked, isReposted, 
-        counts, actions 
-    } = usePostInteractions(post?.id, post || undefined);
-
     const { mutate: deletePost, isLoading: isDeleting } = useDeletePost();
     const { mutate: restorePost, isLoading: isRestoring } = useRestorePost();
 
@@ -316,6 +312,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
     const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+    const [isBodyExpanded, setIsBodyExpanded] = useState(false);
     const [viewportHeight, setViewportHeight] = useState<number>(
         typeof window !== 'undefined' ? window.innerHeight : 800
     );
@@ -330,6 +327,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             });
         }
     }, [post?.id, postAuthorId]);
+
+    useEffect(() => {
+        setIsBodyExpanded(false);
+    }, [post?.id]);
 
     useEffect(() => {
         if (viewMode !== 'flow' || viewTrackedRef.current || !post?.id || isDeleted) return;
@@ -382,6 +383,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         if (interval > 1) return Math.floor(interval) + (lang === 'en' ? "h" : "س");
         return Math.floor(seconds / 60) + (lang === 'en' ? "m" : "د");
     }
+
+    const bodyLength = displayBody.trim().length;
+    const isLongText = bodyLength > 280;
+    const shouldShowExpandHint =
+        viewMode === 'list' &&
+        bodyLength > 0 &&
+        !isDeleted &&
+        isLongText;
 
     const flowTextClampClass = useMemo(() => {
         const textLength = displayBody.trim().length;
@@ -638,11 +647,14 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         );
     };
 
-    const handleCommentIntent = (e: React.MouseEvent) => {
-        e.stopPropagation();
+    const openDiscussion = () => {
         if (!post?.id) return;
         if (onOpenDiscussion) {
             onOpenDiscussion?.();
+            return;
+        }
+        if (viewMode === 'list' && onOpenPostEntry) {
+            onOpenPostEntry();
             return;
         }
 
@@ -675,29 +687,15 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         });
     };
 
-    /**
-     * handleOpenTextOverlay
-     * Implementation of POST_TEXT_OVERLAY_VIEW_V1 trigger with POST_TEXT_OVERLAY_GUARD_V1 safety.
-     */
-    const handleOpenTextOverlay = (e: React.MouseEvent) => {
+    const handleBodyIntent = (e: React.MouseEvent) => {
         e.stopPropagation();
         if (viewMode === 'discussion') return; 
-        if (viewMode === 'list' && onOpenPostEntry) {
-            onOpenPostEntry();
+        if (!post?.content?.text) return;
+        if (isLongText && !isBodyExpanded) {
+            setIsBodyExpanded(true);
             return;
         }
-
-        // GUARD: missing_text -> overlay_not_opened
-        if (!post?.content?.text) return;
-
-        navigate({
-            type: 'immersive',
-            id: 'postTextOverlay',
-            params: {
-                post: post, // Passing strictly for id, text, identity fields as per guard policy
-                from: currentView
-            }
-        });
+        openDiscussion();
     };
 
     if (isDeleted && isOwner) {
@@ -774,7 +772,19 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         className="flex-1 flex flex-col pl-5 md:pl-7 pr-[108px] md:pr-[120px] pt-4 md:pt-5"
                         style={{ paddingBottom: 'max(26vh, calc(var(--bottom-nav-height, 66px) + 16px))' }}
                     >
-                        <div className="w-full max-w-[760px] mx-auto space-y-3">
+                        <div onClick={handleBodyIntent} className="cursor-pointer active:opacity-80 transition-opacity mx-auto w-full max-w-[760px] text-center mt-2">
+                            <BilingualText
+                                role="Body"
+                                className={cn(
+                                    "font-serif leading-[1.55] md:leading-[1.58] drop-shadow-md tracking-[0.01em] text-white/95",
+                                    !isBodyExpanded && flowTextClampClass,
+                                    flowTextSizeClass
+                                )}
+                            >
+                                {displayBody}
+                            </BilingualText>
+                        </div>
+                        <div className="w-full max-w-[760px] mx-auto space-y-3 mt-6">
                             {quoteAttachments.map((attachment) => (
                                 <button
                                     key={`quote:${attachment.quoteId}`}
@@ -802,20 +812,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                                 </button>
                             ))}
                             {nonQuoteAttachments.length > 0 ? (
-                                <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface} />
+                                <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
                             ) : null}
                         </div>
-                        <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity mx-auto w-full max-w-[760px] text-center mt-6">
-                            <BilingualText
-                                role="Body"
-                                className={cn(
-                                    "font-serif leading-[1.55] md:leading-[1.58] drop-shadow-md tracking-[0.01em] text-white/95",
-                                    flowTextClampClass,
-                                    flowTextSizeClass
-                                )}
-                            >
-                                {displayBody}
-                            </BilingualText>
+                        <div className="mx-auto w-full max-w-[760px]">
+                            <InteractionRail post={post} onOpenDiscussion={openDiscussion} className="border-white/10 pt-4" />
                         </div>
                     </div>
                 </div>
@@ -897,8 +898,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     }
 
     return (
-        <GlassCard className="!p-5 md:!p-6 relative !border-transparent !bg-transparent !shadow-none">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.08),transparent_56%)]" />
+        <GlassCard className="!p-4 md:!p-5 relative !border-transparent !bg-transparent !shadow-none">
+            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.05),transparent_56%)]" />
             <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
                 <button
                     type="button"
@@ -941,12 +942,22 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         </div>
                     </div>
                     {/* POST_COMPOSER_DRAFT_V1: Truncate to 3 lines in list mode as well. Click triggers overlay. */}
-                    <div onClick={handleOpenTextOverlay} className="cursor-pointer active:opacity-80 transition-opacity">
-                        <BilingualText role="Body" className="mt-3 font-serif !text-[1.2rem] leading-[1.55] text-white/92 line-clamp-3">
+                    <div onClick={handleBodyIntent} className="cursor-pointer active:opacity-80 transition-opacity">
+                        <BilingualText role="Body" className={cn(
+                            "mt-3 font-serif !text-[1.2rem] leading-[1.6] text-white/92",
+                            shouldShowExpandHint && !isBodyExpanded && "line-clamp-3"
+                        )}>
                             {displayBody}
                         </BilingualText>
                     </div>
-                    <div className="min-h-[1px] mt-5 space-y-3">
+                    {shouldShowExpandHint && (
+                        <BilingualText role="Caption" className="mt-2 !text-[11px] text-white/42">
+                            {isBodyExpanded
+                                ? (lang === 'en' ? 'Tap again to open discussion' : 'اضغط مرة أخرى لفتح النقاش')
+                                : (lang === 'en' ? 'Tap to continue reading' : 'اضغط لمتابعة القراءة')}
+                        </BilingualText>
+                    )}
+                    <div className="min-h-[1px] mt-4 space-y-3">
                          {quoteAttachments.map((attachment) => (
                             <button
                                 key={`quote:${attachment.quoteId}`}
@@ -977,28 +988,7 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                             <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
                          ) : null}
                     </div>
-                    <div className={`mt-5 flex items-center justify-between text-slate-500 dark:text-white/60 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                        <Button variant="ghost" className="!text-inherit hover:!text-sky-400 !px-2" onClick={handleCommentIntent} disabled={isRestricted && !isOwner}>
-                            <ChatIcon className="h-5 w-5 mr-2" /> 
-                            <span className="text-sm">{counts?.commentsCount || 0}</span>
-                        </Button>
-                        <Button variant="ghost" className={cn("!text-inherit !px-2", isReposted && "text-green-400")} onClick={(e) => { e.stopPropagation(); actions.toggleRepost(); }} disabled={isRestricted && !isOwner}>
-                            <RepostIcon className={cn("h-5 w-5 mr-2", isReposted && "fill-current")} /> 
-                            <span className="text-sm">{counts?.repostsCount || 0}</span>
-                        </Button>
-                        <Button variant="ghost" className={cn("!text-inherit !px-2", isLiked && "text-pink-500")} onClick={(e) => { e.stopPropagation(); actions.toggleLike(); }} disabled={isRestricted && !isOwner}>
-                            <LikeIcon className={cn("h-5 w-5 mr-2", isLiked && "fill-current")} /> 
-                            <span className="text-sm">{counts?.likesCount || 0}</span>
-                        </Button>
-                        <div className="flex items-center gap-1">
-                            <Button variant="icon" className="!text-inherit" onClick={(e) => { e.stopPropagation(); actions.share(); }} disabled={isRestricted && !isOwner}>
-                                <ShareIcon className="h-5 w-5" />
-                            </Button>
-                            <Button variant="icon" className={cn("!text-inherit transition-all", isBookmarked ? "text-yellow-400" : "hover:!text-accent")} onClick={(e) => { e.stopPropagation(); actions.toggleBookmark(); }} disabled={isRestricted && !isOwner}>
-                                <BookmarkIcon className={cn("h-5 w-5", isBookmarked && "fill-yellow-400 text-yellow-400")} />
-                            </Button>
-                        </div>
-                    </div>
+                    <InteractionRail post={post} onOpenDiscussion={openDiscussion} className="border-white/[0.05]" />
                 </div>
             </div>
             {isEditModalOpen && post && <EditPostModal post={post} isOpen={isEditModalOpen} onClose={() => setEditModalOpen(false)} />}

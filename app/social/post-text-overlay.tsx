@@ -50,6 +50,15 @@ const PostTextOverlayScreen: React.FC = () => {
     }
   }, [post?.timestamps?.createdAt, lang]);
 
+  const displayBody = useMemo(() => {
+    const rawText = post?.content?.text || '';
+    const hasMediaAttachment = !!post?.content?.attachments?.some((attachment: any) =>
+      ['IMAGE', 'AUDIO', 'VIDEO'].includes(String(attachment?.type || '').toUpperCase())
+    );
+    if (!hasMediaAttachment) return rawText;
+    return rawText.replace(/^\s*\/\/\s*/, '');
+  }, [post]);
+
   // -----------------------------
   // UI GUARD (SAFE)
   // -----------------------------
@@ -119,7 +128,7 @@ const PostTextOverlayScreen: React.FC = () => {
               role="Body"
               className="text-xl md:text-2xl leading-relaxed font-serif whitespace-pre-wrap"
             >
-              {post.content.text}
+              {displayBody}
             </BilingualText>
 
             {/* Interaction guard */}
