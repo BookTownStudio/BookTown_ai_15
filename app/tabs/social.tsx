@@ -449,7 +449,7 @@ const SocialScreen: React.FC = () => {
         }
 
         return (
-            <div className={cn(socialShellClassName, "divide-y divide-white/[0.04]")}>
+            <div className={socialShellClassName}>
                 {posts.map((post, index) => {
                     const isLastElement = posts.length === index + 1;
                     return (
@@ -460,7 +460,10 @@ const SocialScreen: React.FC = () => {
                             key={post.id} 
                             id={`post-${post.id}`} 
                             data-post-id={post.id}
-                            className="w-full"
+                            className={cn(
+                                "relative w-full",
+                                index > 0 && "before:absolute before:top-0 before:left-4 before:right-4 before:h-px before:bg-white/[0.09] md:before:left-5 md:before:right-5"
+                            )}
                         >
                             <PostCard 
                                 post={post} 

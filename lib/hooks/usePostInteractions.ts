@@ -126,7 +126,6 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     initialData: seedSnapshot,
   });
 
-  const isOwner = post && uid && post.authorId === uid;
   const isDeleted = post && post.status === 'deleted';
 
   const loginPrompt = () =>
@@ -180,14 +179,13 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
   const repostMutation = useMutation({
     mutationFn: async (id: string) => {
       if (isGuest || !uid) throw new Error('AUTH_REQUIRED');
-      if (isOwner) throw new Error('OWNER_REPOST_BLOCKED');
       return callCallableEndpoint<{ postId: string }, { success: boolean; reposted?: boolean }>(
         'repostSocialPost',
         { postId: id }
       );
     },
     onMutate: async () => {
-      if (isGuest || !uid || isOwner || isDeleted) return;
+      if (isGuest || !uid || isDeleted) return;
 
       await queryClient.cancelQueries(interactionKey);
       const previousSnapshot = queryClient.getQueryData<PostInteractionSnapshot>(interactionKey);
@@ -217,13 +215,7 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
         queryClient.setQueryData(interactionKey, context.previousSnapshot);
       }
 
-      if (err.message === 'OWNER_REPOST_BLOCKED') {
-        showToast(
-          lang === 'en'
-            ? 'You cannot repost your own post.'
-            : 'لا يمكنك إعادة نشر منشورك الخاص.'
-        );
-      } else if (err.message !== 'AUTH_REQUIRED') {
+      if (err.message !== 'AUTH_REQUIRED') {
         showToast(lang === 'en' ? 'Failed to repost.' : 'فشل إعادة النشر.');
       }
     },
@@ -281,6 +273,7 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     isReposted: snapshot.status.repost,
     counts: snapshot.counts,
     isLoading: interactionSnapshot.isLoading,
+    isRepostTransitioning: repostMutation.isLoading,
     isTransitioning:
       likeMutation.isLoading || repostMutation.isLoading || bookmarkMutation.isLoading,
     actions: {
@@ -295,14 +288,6 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
       toggleRepost: () => {
         if (isGuest) return loginPrompt();
         if (!postId) return;
-        if (isOwner) {
-          showToast(
-            lang === 'en'
-              ? 'You cannot repost your own post.'
-              : 'لا يمكنك إعادة نشر منشورك الخاص.'
-          );
-          return;
-        }
         repostMutation.mutate(postId);
       },
       share: () => {

@@ -82,7 +82,7 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
 /**
  * repostSocialPost
  * Authority: POST_INTERACTION_V1
- * Enforces: non-owner only, emits activity log.
+ * Enforces: viewer access only, emits activity log.
  */
 export const repostSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
@@ -108,11 +108,6 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
                 transaction,
             });
             
-            // SECURITY: no_self_repost (POST_INTERACTION_V1)
-            if (authorId === uid) {
-                throw new HttpsError("failed-precondition", "POST_REPOST_FORBIDDEN: Ownership prevents repost.");
-            }
-
             const repostSnap = await transaction.get(repostRef);
             const isReposting = !repostSnap.exists;
             const now = admin.firestore.FieldValue.serverTimestamp();

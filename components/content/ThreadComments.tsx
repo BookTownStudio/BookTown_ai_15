@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { ThreadPost, ThreadComment } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
@@ -24,6 +24,10 @@ interface ThreadCommentsProps {
 }
 
 const THREAD_DISCUSSION_RAIL_CLASS = 'w-full';
+type ThreadCommentNode = {
+    readonly comment: ThreadComment;
+    readonly replies: ThreadCommentNode[];
+};
 
 const CommentItem: React.FC<{ 
     readonly comment: ThreadComment; 
@@ -32,7 +36,8 @@ const CommentItem: React.FC<{
     readonly onLike: (id: string) => void;
     readonly onDelete: (id: string) => void;
     readonly onEdit: (id: string, text: string) => void;
-}> = ({ comment, postId, onReply, onLike, onDelete, onEdit }) => {
+    readonly depth?: number;
+}> = ({ comment, postId, onReply, onLike, onDelete, onEdit, depth = 0 }) => {
     const { lang, isRTL } = useI18n();
     const { navigate, currentView } = useNavigation();
     const { user } = useAuth();
@@ -42,7 +47,7 @@ const CommentItem: React.FC<{
     
     const isOwner = user?.uid === comment.authorId;
     const canInteract = !!user;
-    const isReply = typeof comment.parentId === 'string' && comment.parentId.trim().length > 0;
+    const isReply = depth > 0;
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -72,19 +77,8 @@ const CommentItem: React.FC<{
         <div className={cn(
             "relative flex gap-3 py-4 px-4 md:px-6 animate-fade-in group border-b border-white/8",
             isRTL ? "flex-row-reverse text-right" : "flex-row text-left",
-            isReply && (isRTL
-                ? "mr-7 md:mr-8 pr-5 bg-[#08111e]/72 rounded-l-xl"
-                : "ml-7 md:ml-8 pl-5 bg-[#08111e]/72 rounded-r-xl")
+            isReply && "rounded-2xl bg-[#08111e]/72"
         )}>
-            {isReply && (
-                <div
-                    aria-hidden="true"
-                    className={cn(
-                        "absolute inset-y-3 w-px rounded-full bg-gradient-to-b from-[#62b7de]/0 via-[#62b7de]/45 to-[#62b7de]/0",
-                        isRTL ? "right-2.5 md:right-3" : "left-2.5 md:left-3"
-                    )}
-                />
-            )}
             <button onClick={() => navigate({ type: 'immersive', id: 'profile', params: { userId: comment.authorId, from: currentView } })} className="flex-shrink-0 h-7 w-7">
                 <img src={comment.authorAvatar} alt={comment.authorName} className="h-7 w-7 rounded-full border border-white/20 object-cover bg-slate-100 dark:bg-slate-800" />
             </button>
@@ -167,6 +161,77 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
         addComment, likeComment, deleteComment, editComment, isSubmitting 
     } = useThreadComments(post.id);
 
+    const orderedCommentThreads = useMemo<ThreadCommentNode[]>(() => {
+        const decoratedComments = comments.map((comment, index) => ({
+            comment,
+            index,
+            timestamp: Number.isFinite(Date.parse(comment.createdAt)) ? Date.parse(comment.createdAt) : index,
+        }));
+
+        const sortedComments = [...decoratedComments].sort(
+            (left, right) => left.timestamp - right.timestamp || left.index - right.index
+        );
+
+        const nodeMap = new Map<string, ThreadCommentNode>(
+            sortedComments.map(({ comment }) => [comment.id, { comment, replies: [] }])
+        );
+        const rootNodes: ThreadCommentNode[] = [];
+
+        sortedComments.forEach(({ comment }) => {
+            const node = nodeMap.get(comment.id);
+            if (!node) return;
+
+            const parentId = typeof comment.parentId === 'string' ? comment.parentId.trim() : '';
+            if (!parentId) {
+                rootNodes.push(node);
+                return;
+            }
+
+            const parentNode = nodeMap.get(parentId);
+            if (parentNode) {
+                parentNode.replies.push(node);
+                return;
+            }
+
+            rootNodes.push(node);
+        });
+
+        return rootNodes;
+    }, [comments]);
+
+    const renderCommentThread = (node: ThreadCommentNode, depth = 0): React.ReactNode => (
+        <div key={node.comment.id}>
+            <CommentItem
+                comment={node.comment}
+                postId={post.id}
+                onReply={handleReplyIntent}
+                onLike={likeComment}
+                onDelete={deleteComment}
+                onEdit={handleEditIntent}
+                depth={depth}
+            />
+            {node.replies.length > 0 && (
+                <div
+                    className={cn(
+                        "relative",
+                        isRTL ? "mr-4 md:mr-5 pr-4 md:pr-5" : "ml-4 md:ml-5 pl-4 md:pl-5"
+                    )}
+                >
+                    <div
+                        aria-hidden="true"
+                        className={cn(
+                            "absolute top-0 bottom-4 w-px rounded-full bg-gradient-to-b from-[#62b7de]/0 via-[#62b7de]/38 to-[#62b7de]/0",
+                            isRTL ? "right-1.5 md:right-2" : "left-1.5 md:left-2"
+                        )}
+                    />
+                    <div className="space-y-0">
+                        {node.replies.map((replyNode) => renderCommentThread(replyNode, depth + 1))}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+
     const handleSend = async () => {
         if (!commentText.trim() || isSubmitting) return;
         try {
@@ -233,18 +298,8 @@ const ThreadComments: React.FC<ThreadCommentsProps> = ({ post, composerRef }) =>
 
                 <div className={THREAD_DISCUSSION_RAIL_CLASS}>
                     <div className="flex flex-col">
-                        {comments.length > 0 ? (
-                            comments.map(comment => (
-                                <CommentItem 
-                                    key={comment.id} 
-                                    comment={comment} 
-                                    postId={post.id} 
-                                    onReply={handleReplyIntent}
-                                    onLike={likeComment}
-                                    onDelete={deleteComment}
-                                    onEdit={handleEditIntent}
-                                />
-                            ))
+                        {orderedCommentThreads.length > 0 ? (
+                            orderedCommentThreads.map((node) => renderCommentThread(node))
                         ) : status === 'success' && (
                             <div className="animate-fade-in px-10 py-14 text-center opacity-45">
                                 <BilingualText role="Body" className="!text-sm">

@@ -81,13 +81,13 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
 
     const { 
         isLiked, isBookmarked, isReposted, 
-        counts, isTransitioning,
+        counts, isTransitioning, isRepostTransitioning,
         actions 
     } = usePostInteractions(post?.id, post || undefined);
 
     // POST_VISIBILITY_POLICY_V1: Interaction Constraints
     const canInteract = post && (post.visibility === 'public' || post.visibility === 'followers') && post.status !== 'deleted';
-    const canRepost = post && post.visibility === 'public' && post.authorId !== user?.uid && post.status !== 'deleted';
+    const canRepost = post && (post.visibility === 'public' || post.visibility === 'followers') && post.status !== 'deleted';
     const canShare = post && post.visibility === 'public' && post.status !== 'deleted';
 
     const actionsConfig = useMemo(() => {
@@ -111,7 +111,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
                     count: counts?.repostsCount || 0,
                     active: isReposted,
                     iconClassName: cn('text-green-400', isReposted && 'fill-green-400'),
-                    loading: isTransitioning,
+                    loading: isRepostTransitioning,
                     onClick: actions.toggleRepost,
                     disabled: !canRepost,
                 }
