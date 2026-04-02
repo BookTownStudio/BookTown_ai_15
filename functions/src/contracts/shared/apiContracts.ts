@@ -1900,6 +1900,7 @@ export const apiContracts = {
     getReaderInsights: defineContract(
       z.union([
         z.undefined(),
+        z.null(),
         z
           .object({
             bookId: z.string().min(1),

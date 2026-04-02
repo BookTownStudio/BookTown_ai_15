@@ -18,7 +18,12 @@ interface AttachQuoteModalProps {
 const AttachQuoteModal: React.FC<AttachQuoteModalProps> = ({ isOpen, onClose, onSelect }) => {
     const { lang } = useI18n();
     const [searchQuery, setSearchQuery] = useState('');
-    const { data: quotes, isLoading } = useSearchUserQuotes(searchQuery);
+    const { data: quotes, isLoading } = useSearchUserQuotes(
+        searchQuery,
+        undefined,
+        undefined,
+        isOpen
+    );
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>

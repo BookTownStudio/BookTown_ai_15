@@ -4,6 +4,7 @@ import { dataService } from '../../services/dataService.ts';
 import { useInfiniteQuery, useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { callCallableEndpoint } from '../callable.ts';
+import { queryKeys } from '../queryKeys.ts';
 
 interface CommentsPage {
   comments: ThreadComment[];
@@ -14,6 +15,21 @@ interface CommentsPage {
 interface InfiniteCommentsData {
   pages: CommentsPage[];
   pageParams: unknown[];
+}
+
+interface InteractionSnapshotData {
+  counts?: {
+    commentsCount?: number;
+  };
+}
+
+interface FeedPageData {
+  posts?: Array<{
+    id?: string;
+    counters?: {
+      comments?: number;
+    };
+  }>;
 }
 
 interface UseThreadCommentsResult {
@@ -125,6 +141,88 @@ const restoreCommentsSnapshot = (
   queryClient.removeQueries(queryKey);
 };
 
+const incrementPostCommentCaches = (
+  queryClient: ReturnType<typeof useQueryClient>,
+  postId: string,
+  uid: string | undefined,
+  delta: number
+) => {
+  const applyDelta = (count: unknown) =>
+    Math.max(
+      0,
+      (typeof count === 'number' && Number.isFinite(count) ? count : 0) + delta
+    );
+
+  queryClient.setQueryData<InteractionSnapshotData>(
+    ['social', 'interactionSnapshot', uid || 'guest', postId],
+    (current) =>
+      current
+        ? {
+            ...current,
+            counts: {
+              ...current.counts,
+              commentsCount: applyDelta(current.counts?.commentsCount),
+            },
+          }
+        : current
+  );
+
+  queryClient.setQueryData(
+    ['social', 'post-discussion', postId],
+    (current: any) =>
+      current
+        ? {
+            ...current,
+            counters: {
+              ...(current.counters || {}),
+              comments: applyDelta(current.counters?.comments),
+            },
+          }
+        : current
+  );
+
+  queryClient.setQueryData(
+    queryKeys.social.post(postId) as unknown as any[],
+    (current: any) =>
+      current
+        ? {
+            ...current,
+            counters: {
+              ...(current.counters || {}),
+              comments: applyDelta(current.counters?.comments),
+            },
+          }
+        : current
+  );
+
+  queryClient.setQueriesData(
+    { queryKey: ['feed'] },
+    (current: any) => {
+      if (!current || !Array.isArray(current.pages)) return current;
+
+      return {
+        ...current,
+        pages: current.pages.map((page: FeedPageData) => ({
+          ...page,
+          posts: Array.isArray(page.posts)
+            ? page.posts.map((post) =>
+                post?.id === postId
+                  ? {
+                      ...post,
+                      counters: {
+                        ...(post.counters || {}),
+                        comments: applyDelta(post.counters?.comments),
+                      },
+                    }
+                  : post
+              )
+            : page.posts,
+        })),
+      };
+    }
+  );
+};
+
 /**
  * useThreadComments
  * Authoritative implementation of POST_DISCUSSION_DATA_FLOW_V1 and INTERACTIONS_V1.
@@ -172,6 +270,17 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
       await queryClient.cancelQueries(queryKey);
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
+      const previousInteractionSnapshot = queryClient.getQueryData<InteractionSnapshotData>([
+        'social',
+        'interactionSnapshot',
+        user.uid,
+        postId,
+      ]);
+      const previousDiscussionPost = queryClient.getQueryData(['social', 'post-discussion', postId]);
+      const previousPost = queryClient.getQueryData(
+        queryKeys.social.post(postId) as unknown as any[]
+      );
+      const previousFeeds = queryClient.getQueriesData({ queryKey: ['feed'] });
       const tempId = `temp_comment_${Date.now()}`;
       const optimisticComment = buildOptimisticComment({
         authorAvatar: user.photoURL || `https://api.dicebear.com/8.x/lorelei/svg?seed=${user.uid}`,
@@ -186,11 +295,40 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
       queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
         prependCommentToFirstPage(old, optimisticComment)
       );
+      incrementPostCommentCaches(queryClient, postId, user.uid, 1);
 
-      return { optimisticComment, previousComments, tempId };
+      return {
+        optimisticComment,
+        previousComments,
+        previousInteractionSnapshot,
+        previousDiscussionPost,
+        previousPost,
+        previousFeeds,
+        tempId,
+      };
     },
     onError: (_error, _variables, context) => {
       restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+      if (context?.previousInteractionSnapshot) {
+        queryClient.setQueryData(
+          ['social', 'interactionSnapshot', user?.uid || 'guest', postId],
+          context.previousInteractionSnapshot
+        );
+      }
+      if (typeof context?.previousDiscussionPost !== 'undefined') {
+        queryClient.setQueryData(['social', 'post-discussion', postId], context.previousDiscussionPost);
+      }
+      if (typeof context?.previousPost !== 'undefined') {
+        queryClient.setQueryData(
+          queryKeys.social.post(postId) as unknown as any[],
+          context.previousPost
+        );
+      }
+      if (Array.isArray(context?.previousFeeds)) {
+        context.previousFeeds.forEach(([key, value]: [unknown, unknown]) => {
+          queryClient.setQueryData(key as any, value);
+        });
+      }
     },
     onSuccess: (result, _variables, context) => {
       if (!context) return;

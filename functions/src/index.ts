@@ -104,6 +104,7 @@ import { getAttachmentUrl as getAttachmentUrlRaw } from "./attachments/getAttach
 import { createEbookAttachment as createEbookAttachmentRaw } from "./attachments/createEbookAttachment";
 import { getUploadToken as getUploadTokenRaw } from "./attachments/getUploadToken";
 import { finalizeMetadata as finalizeMetadataRaw } from "./attachments/finalizeMetadata";
+import { logAttachmentEvents as logAttachmentEventsRaw } from "./attachments/analytics";
 import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
 import { backfillReadingProgressCanonical as backfillReadingProgressCanonicalRaw } from "./admin/backfillReadingProgressCanonical";
 import {
@@ -779,6 +780,10 @@ export const getUploadToken = wrapCallableV2(
 export const finalizeMetadata = wrapCallableV2(
   "finalizeMetadata",
   finalizeMetadataRaw
+);
+export const logAttachmentEvents = wrapCallableV2(
+  "logAttachmentEvents",
+  logAttachmentEventsRaw
 );
 
 // Admin

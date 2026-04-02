@@ -35,6 +35,10 @@
   --app-rail-current: var(--app-rail-narrow, 760px);
 }
 
+.social-rail--v23 {
+  --app-rail-current: var(--social-rail-v23, 648px);
+}
+
 .app-rail--wide {
   --app-rail-current: var(--app-rail-wide, 1040px);
 }

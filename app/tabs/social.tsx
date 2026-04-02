@@ -37,7 +37,8 @@ const MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS = 2;
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
-    const socialShellClassName = 'app-rail app-rail--narrow social-feed-shell';
+    const socialRailClassName = 'app-rail social-rail--v23';
+    const socialShellClassName = `${socialRailClassName} social-feed-shell`;
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 
@@ -420,7 +421,7 @@ const SocialScreen: React.FC = () => {
 
         if (isError) {
             return (
-                <div className="app-rail app-rail--narrow min-h-[70dvh] flex items-start justify-center pt-24 text-center">
+                <div className={cn(socialRailClassName, "min-h-[70dvh] flex items-start justify-center pt-24 text-center")}>
                     <div className="w-full max-w-xl">
                         <ErrorState 
                             onRetry={() => refetch()} 
@@ -433,7 +434,7 @@ const SocialScreen: React.FC = () => {
         
         if (posts.length === 0) {
              return (
-                <div className="app-rail app-rail--narrow min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24">
+                <div className={cn(socialRailClassName, "min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24")}>
                     <div className="w-full max-w-xl">
                         <EmptyState 
                             icon={FeedIcon}
@@ -726,12 +727,12 @@ const SocialScreen: React.FC = () => {
                 )}
             >
                 <div className="app-frame__inner">
-                    <div className="app-rail app-rail--narrow flex justify-end px-0">
+                    <div className="app-rail social-rail--v23 flex justify-end px-0">
                         <button
                             type="button"
                             onClick={handleNewPost}
                             aria-label={lang === 'en' ? 'Write' : 'اكتب'}
-                            className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#8db7e7]/[0.24] bg-[#1d4f91]/88 text-white/90 shadow-[0_8px_20px_rgba(12,28,52,0.22)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#2760ab]/92 hover:text-white md:shadow-[0_10px_26px_rgba(12,28,52,0.26)] active:translate-y-0"
+                            className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#7cc8ff]/[0.32] bg-[#1d9bf0] text-white shadow-[0_10px_24px_rgba(8,53,92,0.28)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1a8cd8] hover:text-white active:translate-y-0"
                         >
                             <PlusIcon className="h-5 w-5" />
                         </button>

@@ -433,8 +433,6 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
             return { success: true, postId: idempotencySnap.data()?.postId, isDuplicate: true };
         }
 
-        await checkUserMutationQuota(db, transaction, uid, "createPost");
-
         const postRef = db.collection('posts').doc();
         const verifiedMediaAttachments: CanonicalMediaAttachmentRecord[] = [];
 
@@ -493,6 +491,8 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
                 data: attachmentData,
             });
         }
+
+        await checkUserMutationQuota(db, transaction, uid, "createPost");
 
         transaction.set(postRef, postData);
 

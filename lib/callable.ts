@@ -19,6 +19,31 @@ function toError(endpoint: string, code: string, message: string): Error {
   return new Error(`[${endpoint}] [${code}] ${message}`);
 }
 
+export function sanitizeCallablePayload<T>(payload: T): T {
+  if (Array.isArray(payload)) {
+    return payload
+      .filter((value) => value !== undefined)
+      .map((value) => sanitizeCallablePayload(value)) as T;
+  }
+
+  if (
+    payload &&
+    typeof payload === "object" &&
+    Object.prototype.toString.call(payload) === "[object Object]"
+  ) {
+    const result: Record<string, unknown> = {};
+    Object.entries(payload as Record<string, unknown>).forEach(([key, value]) => {
+      if (value === undefined) {
+        return;
+      }
+      result[key] = sanitizeCallablePayload(value);
+    });
+    return result as T;
+  }
+
+  return payload;
+}
+
 export function extractCallableData<T>(
   endpoint: string,
   payload: unknown
@@ -65,6 +90,6 @@ export async function callCallableEndpoint<Req, Res>(
     getFirebaseFunctions(),
     endpoint
   );
-  const result = await fn(payload);
+  const result = await fn(sanitizeCallablePayload(payload));
   return extractCallableData<Res>(endpoint, result.data);
 }

@@ -147,7 +147,7 @@ const PostDiscussionScreen: React.FC = () => {
         {!isPostLoading && !postUnavailable && threadPost && (
           <>
             <div className="app-frame__inner h-full">
-              <div className="app-rail app-rail--narrow social-feed-shell flex h-full flex-col overflow-hidden">
+              <div className="app-rail social-rail--v23 social-feed-shell flex h-full flex-col overflow-hidden">
                 <header className="flex-shrink-0 border-b border-white/[0.06] bg-black/16 px-0 pt-4 pb-3 backdrop-blur-md">
                   <div className={cn(
                     'flex items-start gap-3',

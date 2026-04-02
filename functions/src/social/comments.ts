@@ -38,6 +38,7 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
     }
 
     const postRef = db.collection('posts').doc(postId);
+    const postStatsRef = db.collection("post_stats").doc(postId);
     const commentId = `c_${Date.now()}_${uid.substring(0, 5)}`;
     const commentRef = postRef.collection('comments').doc(commentId);
     
@@ -87,6 +88,18 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
                 status: 'published',
                 version: 1
             });
+
+            transaction.set(
+                postStatsRef,
+                {
+                    counters: {
+                        comments: admin.firestore.FieldValue.increment(1),
+                    },
+                    commentsCount: admin.firestore.FieldValue.increment(1),
+                    lastUpdatedAt: now,
+                },
+                { merge: true }
+            );
 
             // 2. Emit activity log (POST_INTERACTION_V1 requirement)
             const activityRef = db.collection('activity_log').doc();

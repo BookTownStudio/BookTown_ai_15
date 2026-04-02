@@ -42,6 +42,7 @@ const CommentItem: React.FC<{
     
     const isOwner = user?.uid === comment.authorId;
     const canInteract = !!user;
+    const isReply = typeof comment.parentId === 'string' && comment.parentId.trim().length > 0;
 
     useEffect(() => {
         const handleClick = (e: MouseEvent) => {
@@ -69,12 +70,21 @@ const CommentItem: React.FC<{
 
     return (
         <div className={cn(
-            "relative flex gap-3 py-4 px-4 md:px-6 animate-fade-in group border-b border-white/8", 
+            "relative flex gap-3 py-4 px-4 md:px-6 animate-fade-in group border-b border-white/8",
             isRTL ? "flex-row-reverse text-right" : "flex-row text-left",
-            comment.parentId && (isRTL
-                ? "mr-8 md:mr-11 pr-3 border-r border-[#0077B6]/45 bg-[#08111e]/65 rounded-l-xl"
-                : "ml-8 md:ml-11 pl-3 border-l border-[#0077B6]/45 bg-[#08111e]/65 rounded-r-xl")
+            isReply && (isRTL
+                ? "mr-7 md:mr-8 pr-5 bg-[#08111e]/72 rounded-l-xl"
+                : "ml-7 md:ml-8 pl-5 bg-[#08111e]/72 rounded-r-xl")
         )}>
+            {isReply && (
+                <div
+                    aria-hidden="true"
+                    className={cn(
+                        "absolute inset-y-3 w-px rounded-full bg-gradient-to-b from-[#62b7de]/0 via-[#62b7de]/45 to-[#62b7de]/0",
+                        isRTL ? "right-2.5 md:right-3" : "left-2.5 md:left-3"
+                    )}
+                />
+            )}
             <button onClick={() => navigate({ type: 'immersive', id: 'profile', params: { userId: comment.authorId, from: currentView } })} className="flex-shrink-0 h-7 w-7">
                 <img src={comment.authorAvatar} alt={comment.authorName} className="h-7 w-7 rounded-full border border-white/20 object-cover bg-slate-100 dark:bg-slate-800" />
             </button>

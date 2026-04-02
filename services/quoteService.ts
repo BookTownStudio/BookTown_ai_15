@@ -1,5 +1,6 @@
 import { httpsCallable } from "firebase/functions";
 import { getFirebaseFunctions } from "../lib/firebase.ts";
+import { sanitizeCallablePayload } from "../lib/callable.ts";
 import { Quote } from "../types/entities.ts";
 
 export interface ManagedQuote extends Quote {
@@ -176,7 +177,7 @@ async function callQuoteEndpoint<TRequest, TData>(
       getFirebaseFunctions(),
       endpoint
     );
-    const result = await fn(request);
+    const result = await fn(sanitizeCallablePayload(request));
     return extractSuccessData<TData>(endpoint, result.data);
   } catch (error) {
     throw formatCallableError(endpoint, error);

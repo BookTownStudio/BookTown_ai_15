@@ -47,7 +47,7 @@ const ActionButton: React.FC<{
             type="button"
             aria-label={buttonAriaLabel}
             className={cn(
-                "inline-flex h-8.5 shrink-0 items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition-all duration-200",
+                "inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition-all duration-200",
                 (disabled || loading)
                     ? "cursor-not-allowed opacity-35 grayscale"
                     : "opacity-75 hover:bg-white/[0.04] hover:opacity-100",
@@ -57,12 +57,12 @@ const ActionButton: React.FC<{
             {...props}
         >
             <div className={cn(
-                "flex h-5 w-5 items-center justify-center rounded-full transition-colors duration-200",
+                "flex h-[1.35rem] w-[1.35rem] items-center justify-center rounded-full transition-colors duration-200",
                 (!disabled && !loading) && "bg-transparent",
                 active && "text-white",
                 containerClassName
             )}>
-                {loading ? <LoadingSpinner className="h-3.5 w-3.5" /> : <Icon className={cn("h-4 w-4", iconClassName)} />}
+                {loading ? <LoadingSpinner className="h-4 w-4" /> : <Icon className={cn("h-[1.15rem] w-[1.15rem]", iconClassName)} />}
             </div>
             {count !== undefined && <span className="text-[10px] font-medium tabular-nums text-white/46">{count}</span>}
         </button>
@@ -91,7 +91,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
     const canShare = post && post.visibility === 'public' && post.status !== 'deleted';
 
     const actionsConfig = useMemo(() => {
-        const orderedActions = [
+        const leftActions = [
             {
                 id: 'comment', 
                 props: { 
@@ -130,19 +130,6 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
                 }
             },
             {
-                id: 'bookmark',
-                props: {
-                    icon: BookmarkIcon,
-                    label: lang === 'en' ? 'Bookmark' : 'حفظ',
-                    count: counts?.bookmarksCount || 0,
-                    active: isBookmarked,
-                    iconClassName: cn('text-yellow-400', isBookmarked && 'fill-yellow-400'),
-                    loading: isTransitioning,
-                    onClick: actions.toggleBookmark,
-                    disabled: !post || post.status === 'deleted',
-                }
-            },
-            {
                 id: 'share',
                 props: {
                     icon: ShareIcon,
@@ -155,7 +142,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
         ];
 
         if (showNewPost) {
-            orderedActions.unshift({
+            leftActions.unshift({
                 id: 'new-post',
                 props: {
                     icon: PlusIcon,
@@ -167,17 +154,36 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
             });
         }
 
-        return orderedActions;
+        const bookmarkAction = {
+            id: 'bookmark',
+            props: {
+                icon: BookmarkIcon,
+                label: lang === 'en' ? 'Bookmark' : 'حفظ',
+                count: counts?.bookmarksCount || 0,
+                active: isBookmarked,
+                iconClassName: cn('text-yellow-400', isBookmarked && 'fill-yellow-400'),
+                loading: isTransitioning,
+                onClick: actions.toggleBookmark,
+                disabled: !post || post.status === 'deleted',
+            }
+        };
+
+        return { leftActions, bookmarkAction };
     }, [post, lang, isLiked, isBookmarked, isReposted, counts, isTransitioning, actions, onOpenDiscussion, onNewPost, canInteract, canRepost, canShare, showNewPost]);
 
     return (
         <div className={cn(
-            "mt-4 flex items-center gap-0.5 overflow-x-auto whitespace-nowrap border-t border-white/[0.05] pt-2.5 text-white/68 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-1",
+            "mt-4 flex items-center justify-between gap-3 border-t border-white/[0.05] pt-2.5 text-white/68",
             className
         )}>
-            {actionsConfig.map((action) => (
-                <ActionButton key={action.id} {...action.props} />
-            ))}
+            <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-1">
+                {actionsConfig.leftActions.map((action) => (
+                    <ActionButton key={action.id} {...action.props} />
+                ))}
+            </div>
+            <div className="flex shrink-0 items-center">
+                <ActionButton {...actionsConfig.bookmarkAction.props} />
+            </div>
         </div>
     );
 };

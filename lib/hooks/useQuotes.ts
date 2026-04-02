@@ -10,6 +10,7 @@ interface UseQuotesFilters {
     query?: string;
     limit?: number;
     cursor?: string;
+    enabled?: boolean;
 }
 
 export const useQuotes = (filters: UseQuotesFilters = {}) => {
@@ -38,6 +39,6 @@ export const useQuotes = (filters: UseQuotesFilters = {}) => {
             });
             return response.quotes;
         },
-        enabled: !!uid,
+        enabled: !!uid && (filters.enabled ?? true),
     });
 };

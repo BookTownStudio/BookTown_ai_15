@@ -5,9 +5,7 @@ import { apiContracts } from "../shared/apiContracts";
 const indexPath = path.resolve(__dirname, "..", "..", "index.ts");
 const indexSource = fs.readFileSync(indexPath, "utf8");
 
-const KNOWN_UNIMPLEMENTED_ENDPOINTS = new Set([
-  "logAttachmentEvents",
-]);
+const KNOWN_UNIMPLEMENTED_ENDPOINTS = new Set<string>();
 
 const wrappedCallableKeys = Array.from(
   indexSource.matchAll(/wrapCallableV(?:1|2)\(\s*"([A-Za-z0-9_]+)"/g)

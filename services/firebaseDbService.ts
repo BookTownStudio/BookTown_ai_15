@@ -3666,7 +3666,82 @@ class FirebaseSocialService {
       throw new Error("[createSocialPost] Invalid response payload.");
     }
 
-    const createdPost = await this.getPost(result.postId.trim());
+    const createdPostId = result.postId.trim();
+    const primaryStructuredAttachment = mappedAttachments.find(
+      (
+        attachment
+      ): attachment is {
+        type: "book" | "author" | "quote" | "shelf" | "venue" | "publication";
+        entityId: string;
+        entityOwnerId?: string;
+      } => "entityId" in attachment
+    );
+
+    let createdPost: Post;
+    try {
+      createdPost = await this.getPost(createdPostId);
+    } catch (error) {
+      console.error("[SOCIAL][CREATE_POST_READBACK_FAILED]", {
+        uid: normalizedUid,
+        postId: createdPostId,
+        visibility,
+        attachmentCount: mappedAttachments.length,
+        error:
+          error instanceof Error
+            ? {
+                name: error.name,
+                message: error.message,
+              }
+            : String(error),
+      });
+
+      return normalizePost({
+        id: createdPostId,
+        authorId: normalizedUid,
+        content: {
+          text: text || null,
+          attachments: mappedAttachments.map((attachment) =>
+            "entityId" in attachment
+              ? {
+                  attachmentId: attachment.entityId,
+                  entityId: attachment.entityId,
+                  ...(attachment.entityOwnerId
+                    ? { entityOwnerId: attachment.entityOwnerId }
+                    : {}),
+                  type: attachment.type,
+                  role: "primary",
+                  renderHint: "card",
+                }
+              : {
+                  attachmentId: attachment.attachmentId,
+                  type: attachment.type,
+                  role: "primary",
+                  renderHint: "card",
+                }
+          ),
+        },
+        visibility,
+        status: "published",
+        counters: {
+          likes: 0,
+          comments: 0,
+          reposts: 0,
+          bookmarks: 0,
+        },
+        timestamps: {
+          createdAt: new Date().toISOString(),
+          updatedAt: null,
+          publishedAt: new Date().toISOString(),
+        },
+        flags: {
+          edited: false,
+          hasAttachments: mappedAttachments.length > 0,
+        },
+        primaryEntityType: primaryStructuredAttachment?.type ?? null,
+        primaryEntityId: primaryStructuredAttachment?.entityId ?? null,
+      });
+    }
+
     if (createdPost.authorId !== normalizedUid) {
       throw new Error("FAILED_PRECONDITION: Created post author mismatch.");
     }

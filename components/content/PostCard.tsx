@@ -611,6 +611,10 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
             ),
         [resolvedAttachments]
     );
+    const hasQuoteAttachments = quoteAttachments.length > 0;
+    const hasNonQuoteAttachments = nonQuoteAttachments.length > 0;
+    const hasRenderableAttachments = hasQuoteAttachments || hasNonQuoteAttachments;
+    const hasDisplayBody = bodyLength > 0;
 
     const handleOpenQuoteAttachment = (attachment: Extract<PostAttachment, { type: 'quote' }>) => {
         const quoteId = attachment.quoteId.trim();
@@ -898,67 +902,62 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     }
 
     return (
-        <GlassCard className="!p-4 md:!p-5 relative !border-transparent !bg-transparent !shadow-none">
+        <GlassCard className="relative overflow-hidden !border-transparent !bg-transparent !p-0 !shadow-none">
             <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.05),transparent_56%)]" />
-            <div className={`flex items-start gap-4 ${isRTL ? 'flex-row-reverse' : 'flex-row'}`}>
-                <button
-                    type="button"
-                    onClick={handleOpenAuthorProfile}
-                    className="flex-shrink-0"
-                    aria-label={lang === 'en' ? 'Open profile' : 'فتح الملف الشخصي'}
-                >
-                    <img src={authorAvatar} alt={authorName} className="h-12 w-12 rounded-full bg-slate-800" />
-                </button>
-                <div className="flex-grow relative z-10">
-                    <div className="flex justify-between items-start">
-                        <div className="flex-grow text-left">
-                            <div className={`flex items-baseline gap-2 ${isRTL ? 'flex-row-reverse' : ''}`}>
-                                <button type="button" onClick={handleOpenAuthorProfile}>
-                                    <BilingualText className="font-semibold !text-[15px] text-white/90">{authorName}</BilingualText>
+            <div className="relative z-10">
+                <header className={cn("flex items-start justify-between gap-3 px-4 pt-4 md:px-5 md:pt-5", isRTL && "text-right")}>
+                    <div className={cn("flex min-w-0 items-center gap-3", isRTL && "flex-row-reverse")}>
+                        <button
+                            type="button"
+                            onClick={handleOpenAuthorProfile}
+                            className="flex-shrink-0"
+                            aria-label={lang === 'en' ? 'Open profile' : 'فتح الملف الشخصي'}
+                        >
+                            <img src={authorAvatar} alt={authorName} className="h-12 w-12 rounded-full bg-slate-800" />
+                        </button>
+                        <div className="min-w-0 flex-grow">
+                            <div className={cn("flex items-baseline gap-2", isRTL && "flex-row-reverse")}>
+                                <button type="button" onClick={handleOpenAuthorProfile} className="min-w-0">
+                                    <BilingualText className="truncate font-semibold !text-[15px] text-white/90">{authorName}</BilingualText>
                                 </button>
-                                <BilingualText role="Caption" className="!text-[11px] text-white/55">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
+                                <BilingualText role="Caption" className="truncate !text-[11px] text-white/55">{(post?.authorHandle || "@user")} · {timeAgo(post?.timestamps?.createdAt || "")}</BilingualText>
                                 {showEditedBadge && (
                                     <span className="text-[10px] font-medium uppercase tracking-wide text-slate-400">{editedLabel}</span>
                                 )}
+                            </div>
+                            <div className={cn("mt-0.5 flex items-center gap-2", isRTL && "flex-row-reverse")}>
                                 <VisibilityBadge />
                             </div>
                         </div>
-                        <div className="relative" ref={menuRef}>
-                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }} className="p-1 -mr-2 text-slate-400 hover:text-slate-100">
-                                <EllipsisIcon className="h-5 w-5 rotate-90" />
-                            </button>
-                            {isMenuOpen && (
-                                <div className={cn("absolute top-full z-30 mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
-                                    {isOwner ? (
-                                        <>
-                                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setEditModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><EditIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Edit' : 'تعديل'}</button>
-                                            <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"><TrashIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Delete' : 'حذف'}</button>
-                                        </>
-                                    ) : (
-                                        <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsReportModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><FlagIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Report' : 'إبلاغ'}</button>
-                                    )}
-                                </div>
-                            )}
-                        </div>
                     </div>
-                    {/* POST_COMPOSER_DRAFT_V1: Truncate to 3 lines in list mode as well. Click triggers overlay. */}
-                    <div onClick={handleBodyIntent} className="cursor-pointer active:opacity-80 transition-opacity">
-                        <BilingualText role="Body" className={cn(
-                            "mt-3 font-serif !text-[1.2rem] leading-[1.6] text-white/92",
-                            shouldShowExpandHint && !isBodyExpanded && "line-clamp-3"
-                        )}>
-                            {displayBody}
-                        </BilingualText>
+                    <div className="relative" ref={menuRef}>
+                        <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(!isMenuOpen); }} className="p-1 -mr-2 text-slate-400 hover:text-slate-100">
+                            <EllipsisIcon className="h-5 w-5 rotate-90" />
+                        </button>
+                        {isMenuOpen && (
+                            <div className={cn("absolute top-full z-30 mt-1 w-44 bg-slate-900 border border-white/10 rounded-lg shadow-xl py-1 overflow-hidden", isRTL ? "left-0" : "right-0")}>
+                                {isOwner ? (
+                                    <>
+                                        <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setEditModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><EditIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Edit' : 'تعديل'}</button>
+                                        <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsDeleteModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-red-400 hover:bg-red-500/10 flex items-center gap-2"><TrashIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Delete' : 'حذف'}</button>
+                                    </>
+                                ) : (
+                                    <button onClick={(e) => { e.stopPropagation(); setIsMenuOpen(false); setIsReportModalOpen(true); }} className="w-full text-left px-4 py-2.5 text-sm text-white hover:bg-white/10 flex items-center gap-2"><FlagIcon className="h-4 w-4 opacity-70" />{lang === 'en' ? 'Report' : 'إبلاغ'}</button>
+                                )}
+                            </div>
+                        )}
                     </div>
-                    {shouldShowExpandHint && (
-                        <BilingualText role="Caption" className="mt-2 !text-[11px] text-white/42">
-                            {isBodyExpanded
-                                ? (lang === 'en' ? 'Tap again to open discussion' : 'اضغط مرة أخرى لفتح النقاش')
-                                : (lang === 'en' ? 'Tap to continue reading' : 'اضغط لمتابعة القراءة')}
-                        </BilingualText>
-                    )}
-                    <div className="min-h-[1px] mt-4 space-y-3">
-                         {quoteAttachments.map((attachment) => (
+                </header>
+
+                {hasNonQuoteAttachments && (
+                    <div className="mt-3">
+                        <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
+                    </div>
+                )}
+
+                {hasQuoteAttachments && (
+                    <div className={cn("space-y-3 px-4 md:px-5", hasNonQuoteAttachments ? "mt-3" : "mt-4")}>
+                        {quoteAttachments.map((attachment) => (
                             <button
                                 key={`quote:${attachment.quoteId}`}
                                 type="button"
@@ -983,11 +982,29 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                                     </div>
                                 </GlassCard>
                             </button>
-                         ))}
-                         {nonQuoteAttachments.length > 0 ? (
-                            <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
-                         ) : null}
+                        ))}
                     </div>
+                )}
+
+                {hasDisplayBody && (
+                    <div onClick={handleBodyIntent} className={cn("cursor-pointer px-4 active:opacity-80 transition-opacity md:px-5", hasRenderableAttachments ? "mt-4" : "mt-3")}>
+                        <BilingualText role="Body" className={cn(
+                            "font-serif !text-[1.2rem] leading-[1.6] text-white/92",
+                            shouldShowExpandHint && !isBodyExpanded && "line-clamp-3"
+                        )}>
+                            {displayBody}
+                        </BilingualText>
+                    </div>
+                )}
+                {shouldShowExpandHint && (
+                    <BilingualText role="Caption" className="mt-2 px-4 !text-[11px] text-white/42 md:px-5">
+                        {isBodyExpanded
+                            ? (lang === 'en' ? 'Tap again to open discussion' : 'اضغط مرة أخرى لفتح النقاش')
+                            : (lang === 'en' ? 'Tap to continue reading' : 'اضغط لمتابعة القراءة')}
+                    </BilingualText>
+                )}
+
+                <div className="px-4 pb-4 md:px-5 md:pb-5">
                     <InteractionRail post={post} onOpenDiscussion={openDiscussion} className="border-white/[0.05]" />
                 </div>
             </div>

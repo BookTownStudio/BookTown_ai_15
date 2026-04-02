@@ -126,7 +126,6 @@ const ImageView: React.FC<{
                     : { maxHeight }
             }
         >
-            // {devLog("IMAGE_VIEW_RENDERING", url)}
             <img
                 src={url}
                 alt={resolvedAlt}

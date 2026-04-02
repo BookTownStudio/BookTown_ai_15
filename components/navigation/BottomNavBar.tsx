@@ -113,7 +113,7 @@ const BottomNavBar: React.FC<BottomNavBarProps> = ({ activeTab }) => {
             <div className="app-frame__inner">
                 <div className={cn(
                     "app-rail flex h-[66px] items-center justify-around px-0 lg:justify-center lg:gap-14",
-                    isSocialTabActive ? "app-rail--narrow" : "app-rail--default",
+                    isSocialTabActive ? "social-rail--v23" : "app-rail--default",
                     isSocialTabActive && "px-2 md:px-0"
                 )}>
                     {TABS.map((tab) => {
