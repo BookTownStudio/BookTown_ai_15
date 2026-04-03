@@ -12,14 +12,15 @@ import {
 import { resolveAuthorProviderPayload } from "./authors/providerSources";
 import { buildCanonicalKey } from "./persistence/canonicalKey";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
+import { fetchOpenLibraryCanonicalMetadata } from "./providers/openLibrary";
 
-type SupportedSource = "googleBooks" | "openLibrary";
+export type SupportedSource = "googleBooks" | "openLibrary";
 
 type IngestionRequest = {
   providerExternalId?: string;
   bookId?: string;
   source: SupportedSource;
-  rawBook: Record<string, unknown>;
+  rawBook?: Record<string, unknown>;
 };
 
 type IdentityType =
@@ -170,6 +171,57 @@ function extractLanguage(rawBook: Record<string, unknown>): string {
   return "en";
 }
 
+async function fetchGoogleBooksCanonicalMetadata(
+  providerExternalId: string
+): Promise<Record<string, unknown> | null> {
+  const apiKey = process.env.GOOGLE_BOOKS_API_KEY;
+  const url = new URL(
+    `https://www.googleapis.com/books/v1/volumes/${encodeURIComponent(providerExternalId)}`
+  );
+  if (apiKey) {
+    url.searchParams.set("key", apiKey);
+  }
+
+  const response = await fetch(url.toString(), {
+    headers: {
+      "User-Agent": "BookTownBot/2.0",
+      Accept: "application/json,text/plain,*/*",
+    },
+  });
+
+  if (!response.ok) {
+    logger.warn("[INGEST_V2][GOOGLE_METADATA_UNAVAILABLE]", {
+      providerExternalId,
+      status: response.status,
+    });
+    return null;
+  }
+
+  const payload = asRecord(await response.json());
+  const volumeInfo = asRecord(payload?.volumeInfo);
+  if (!payload || !volumeInfo) {
+    return null;
+  }
+
+  return {
+    ...volumeInfo,
+    id: providerExternalId,
+    externalId: providerExternalId,
+    source: "googleBooks",
+  };
+}
+
+async function hydrateRawBookFromProvider(
+  source: SupportedSource,
+  providerExternalId: string
+): Promise<Record<string, unknown> | null> {
+  if (source === "openLibrary") {
+    return fetchOpenLibraryCanonicalMetadata(providerExternalId);
+  }
+
+  return fetchGoogleBooksCanonicalMetadata(providerExternalId);
+}
+
 function extractIsbns(rawBook: Record<string, unknown>): {
   isbn13: string;
   isbn10: string;
@@ -220,6 +272,25 @@ function extractIsbns(rawBook: Record<string, unknown>): {
   }
 
   return { isbn13, isbn10 };
+}
+
+export function hasMinimumCanonicalIdentity(
+  rawBook: Record<string, unknown>
+): boolean {
+  const title =
+    asNonEmptyString(rawBook.titleEn) ||
+    asNonEmptyString(rawBook.title);
+  const authorFromArray =
+    asStringArray(rawBook.authors).length > 0
+      ? asStringArray(rawBook.authors)
+      : asStringArray(rawBook.author_name);
+  const author =
+    authorFromArray[0] ||
+    asNonEmptyString(rawBook.authorEn) ||
+    asNonEmptyString(rawBook.author);
+  const { isbn13, isbn10 } = extractIsbns(rawBook);
+
+  return Boolean(title && (author || isbn13 || isbn10));
 }
 
 function normalizeSource(input: unknown): SupportedSource | null {
@@ -424,24 +495,25 @@ export async function fetchFirstValid(urls: string[]): Promise<Buffer | null> {
   return null;
 }
 
-export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (request) => {
-  if (!request.auth) {
-    throw new HttpsError("unauthenticated", "Auth required.");
-  }
-
-  const payload =
-    request.data &&
-    typeof request.data === "object" &&
-    "data" in request.data
-      ? (request.data as { data: IngestionRequest }).data
-      : request.data;
-
-  const providerExternalId =
-    asNonEmptyString(payload?.providerExternalId || "") ||
-    asNonEmptyString(payload?.bookId || "");
-  const source = normalizeSource(payload?.source);
-  const rawBook = asRecord(payload?.rawBook);
-
+export async function ingestBookServerSide(params: {
+  uid: string;
+  providerExternalId: string;
+  source: SupportedSource;
+  rawBook?: Record<string, unknown>;
+}): Promise<{
+  canonicalBookId: string;
+  bookId: string;
+  editionId: string;
+  status: string;
+}> {
+  const providerExternalId = asNonEmptyString(params.providerExternalId);
+  const source = params.source;
+  const hydratedRawBook =
+    asRecord(params.rawBook) ||
+    (providerExternalId && source
+      ? await hydrateRawBookFromProvider(source, providerExternalId)
+      : null);
+  const rawBook = asRecord(hydratedRawBook);
   if (!providerExternalId || !source || !rawBook) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
@@ -798,7 +870,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
 
     if (hasAttachment || hasStoragePath) {
       await getOrBuildReaderManifest({
-        uid: request.auth.uid,
+        uid: params.uid,
         bookId: transactionResult.bookId,
       });
 
@@ -816,4 +888,34 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
   }
 
   return transactionResult;
+}
+
+export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Auth required.");
+  }
+
+  const payload =
+    request.data &&
+    typeof request.data === "object" &&
+    "data" in request.data
+      ? (request.data as { data: IngestionRequest }).data
+      : request.data;
+
+  const providerExternalId =
+    asNonEmptyString(payload?.providerExternalId || "") ||
+    asNonEmptyString(payload?.bookId || "");
+  const source = normalizeSource(payload?.source);
+  const rawBook = asRecord(payload?.rawBook);
+
+  if (!providerExternalId || !source) {
+    throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
+  }
+
+  return ingestBookServerSide({
+    uid: request.auth.uid,
+    providerExternalId,
+    source,
+    rawBook: rawBook || undefined,
+  });
 });

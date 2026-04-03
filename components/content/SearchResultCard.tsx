@@ -82,7 +82,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       ? result.authorEn || ''
       : result.authorAr || result.authorEn || '';
 
-  const canReadInApp = result.ebookClass === 'in_app' && !!onRead;
+  const canRead = result.acquired && !!onRead;
   const canAdd = typeof onAdd === 'function';
   const groupedEditionText =
     result.editionPresence === 'grouped'
@@ -114,6 +114,25 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       key: 'ebook',
       label: lang === 'en' ? 'In-App Ebook' : 'كتاب داخل التطبيق',
       className: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
+    });
+  }
+
+  if (!result.acquired && result.available && result.readAccess === 'trusted_external') {
+    semanticChips.push({
+      key: 'available',
+      label:
+        lang === 'en'
+          ? `Available via ${result.readProvider === 'openLibrary'
+              ? 'OpenLibrary'
+              : result.readProvider === 'gutenberg'
+              ? 'Gutenberg'
+              : result.readProvider === 'hindawi'
+              ? 'Hindawi'
+              : result.readProvider === 'gallica'
+              ? 'Gallica'
+              : 'External'}`
+          : 'متاح للقراءة',
+      className: 'border-cyan-400/25 bg-cyan-400/10 text-cyan-200',
     });
   }
 
@@ -238,7 +257,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
         {mode === 'discovery' && (
           <>
             {/* 👁 Ebook indicator / Read */}
-            {canReadInApp && (
+            {canRead && (
               <button
                 type="button"
                 disabled={isBusy}

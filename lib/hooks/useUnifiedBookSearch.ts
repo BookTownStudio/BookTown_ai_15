@@ -6,7 +6,7 @@ export function useUnifiedBookSearch(query: string) {
   const { lang } = useI18n();
   const { ebookOnly, setEbookOnly, toggleEbookOnly } = useUnifiedBookSearchFilters();
   const search = useBookSearch(query, {
-    ebookOnly,
+    availabilityOnly: ebookOnly,
     lang,
     limit: 15,
   });

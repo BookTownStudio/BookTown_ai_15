@@ -37,11 +37,22 @@ type SearchBookResponse = {
   descriptionAr: string;
   coverUrl: string;
   language: string;
+  available: boolean;
+  acquired: boolean;
+  readAccess: "none" | "in_app" | "trusted_external";
+  readProvider: "booktown" | "openLibrary" | "gutenberg" | "hindawi" | "gallica" | null;
   hasEbook: boolean;
   downloadable: boolean;
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
+  externalReadableSources?: Array<{
+    provider: "openLibrary" | "gutenberg" | "hindawi" | "gallica";
+    providerExternalId: string;
+    lendingEditionId?: string;
+    lendingIdentifier?: string;
+    trust: "trusted";
+  }>;
   rawBook?: Record<string, unknown>;
 };
 
@@ -385,11 +396,35 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
       : downloadable
       ? "in_app"
       : "unavailable";
+  const available = Boolean(raw?.available ?? (downloadable || ebookClass === "external_link"));
+  const acquired = Boolean(raw?.acquired ?? downloadable);
   const sourceClassRaw = String(raw?.sourceClass || "").trim();
   const sourceClass =
     sourceClassRaw === "external_provider"
       ? "external_provider"
       : "canonical_catalog";
+  const readAccessRaw = String(raw?.readAccess || "").trim();
+  const readAccess =
+    readAccessRaw === "none" ||
+    readAccessRaw === "in_app" ||
+    readAccessRaw === "trusted_external"
+      ? readAccessRaw
+      : acquired
+      ? "in_app"
+      : available
+      ? "trusted_external"
+      : "none";
+  const readProviderRaw = String(raw?.readProvider || "").trim();
+  const readProvider =
+    readProviderRaw === "booktown" ||
+    readProviderRaw === "openLibrary" ||
+    readProviderRaw === "gutenberg" ||
+    readProviderRaw === "hindawi" ||
+    readProviderRaw === "gallica"
+      ? readProviderRaw
+      : acquired
+      ? "booktown"
+      : null;
   const languageTruthRaw = String(raw?.languageTruth || "").trim();
   const languageTruth =
     languageTruthRaw === "match" ||
@@ -399,6 +434,16 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
       : "unknown";
   const confidenceRaw = Number(raw?.confidence);
   const rankRaw = Number(raw?.rank);
+  const externalReadableSources = Array.isArray(raw?.externalReadableSources)
+    ? raw.externalReadableSources
+        .map((entry: unknown) => toExternalReadableSource(entry))
+        .filter(
+          (
+            entry: NonNullable<SearchBookResponse["externalReadableSources"]>[number] | null
+          ): entry is NonNullable<SearchBookResponse["externalReadableSources"]>[number] =>
+            Boolean(entry)
+        )
+    : [];
 
   return {
     id: String(raw?.id || editionId),
@@ -424,15 +469,56 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
     descriptionAr: String(raw?.descriptionAr || ""),
     coverUrl: String(raw?.coverUrl || ""),
     language: String(raw?.language || "en"),
+    available,
+    acquired,
+    readAccess,
+    readProvider,
     hasEbook,
     downloadable,
     isEbookAvailable: ebookAvailable,
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? rankRaw : 999,
+    ...(externalReadableSources.length > 0 ? { externalReadableSources } : {}),
     rawBook:
       raw?.rawBook && typeof raw.rawBook === "object"
         ? (raw.rawBook as Record<string, unknown>)
         : undefined,
+  };
+}
+
+function toExternalReadableSource(
+  raw: unknown
+): NonNullable<SearchBookResponse["externalReadableSources"]>[number] | null {
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  if (!record) return null;
+
+  const providerRaw = String(record.provider || "").trim();
+  const provider =
+    providerRaw === "openLibrary" ||
+    providerRaw === "gutenberg" ||
+    providerRaw === "hindawi" ||
+    providerRaw === "gallica"
+      ? providerRaw
+      : null;
+  const providerExternalId = String(record.providerExternalId || "").trim();
+  const trust = record.trust === "trusted" ? "trusted" : null;
+
+  if (!provider || !providerExternalId || !trust) {
+    return null;
+  }
+
+  const lendingEditionId = String(record.lendingEditionId || "").trim();
+  const lendingIdentifier = String(record.lendingIdentifier || "").trim();
+
+  return {
+    provider,
+    providerExternalId,
+    ...(lendingEditionId ? { lendingEditionId } : {}),
+    ...(lendingIdentifier ? { lendingIdentifier } : {}),
+    trust,
   };
 }
 
@@ -555,6 +641,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
 
     const q = req.query.q as string | undefined;
     const ebookOnly = req.query.ebookOnly === "true";
+    const availabilityOnly = req.query.availabilityOnly === "true";
     const lang = req.query.lang as string | undefined;
     const cursor = typeof req.query.cursor === "string" ? req.query.cursor : undefined;
     const limitRaw =
@@ -569,6 +656,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       phase: "request",
       q: queryPreview,
       ebookOnly,
+      availabilityOnly,
       lang: lang || "auto",
       limit: limit ?? null,
       hasCursor: Boolean(cursor),
@@ -618,6 +706,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
 
     const searchResponse = await unifiedSearch(q, {
       ebookOnly,
+      availabilityOnly,
       language: lang,
       cursor,
       limit,

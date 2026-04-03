@@ -192,8 +192,8 @@ export class LibrarySearchService implements LibrarySearchDataService {
             : result.source === 'openLibrary'
             ? 'open_library'
             : 'booktown';
-        const downloadable = result.ebookClass === 'in_app';
-        const ebookAvailable = downloadable;
+        const downloadable = result.acquired;
+        const ebookAvailable = result.available;
         const editionFormat = downloadable ? 'ebook' : 'paperback';
 
         return {

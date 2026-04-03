@@ -12,6 +12,7 @@ import { backfillAuthorMetadata as backfillAuthorMetadataRaw } from "./library/b
 import { backfillSeedAuthorSourceMetadata as backfillSeedAuthorSourceMetadataRaw } from "./library/backfillSeedAuthorSourceMetadata";
 import { uploadUserBook as uploadUserBookRaw } from "./library/uploadUserBook";
 import { finalizeUserUpload as finalizeUserUploadRaw } from "./library/finalizeUserUpload";
+import { acquireExternalEbookForRead as acquireExternalEbookForReadRaw } from "./library/acquireExternalEbookForRead";
 import {
   finalizeGoodreadsImport as finalizeGoodreadsImportRaw,
   processGoodreadsImportSessions,
@@ -97,6 +98,8 @@ import { getProjectReleasePreview as getProjectReleasePreviewRaw } from "./getPr
 import { getProjectReleaseEbookPreviewSession as getProjectReleaseEbookPreviewSessionRaw } from "./getProjectReleaseEbookPreviewSession";
 import { getLongformPublication as getLongformPublicationRaw } from "./getLongformPublication";
 import { getAccessibleBook as getAccessibleBookRaw } from "./getAccessibleBook";
+import { getRelatedBooks as getRelatedBooksRaw } from "./catalog/getRelatedBooks";
+import { getRecommendations as getRecommendationsRaw } from "./catalog/getRecommendations";
 import { listOwnLongformPublications as listOwnLongformPublicationsRaw } from "./listOwnLongformPublications";
 import { createWriteProjectShareLink as createWriteProjectShareLinkRaw } from "./createWriteProjectShareLink";
 import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from "./revokeWriteProjectShareLink";
@@ -439,6 +442,10 @@ export const requestEbookReadAccessV2 = wrapCallableV2(
   "requestEbookReadAccess",
   requestEbookReadAccessRaw
 );
+export const acquireExternalEbookForRead = wrapCallableV2(
+  "acquireExternalEbookForRead",
+  acquireExternalEbookForReadRaw
+);
 export const recordReadingProgress = wrapCallableV2(
   "recordReadingProgress",
   recordReadingProgressRaw
@@ -750,6 +757,14 @@ export const getLongformPublication = wrapCallableV2(
 export const getAccessibleBook = wrapCallableV2(
   "getAccessibleBook",
   getAccessibleBookRaw
+);
+export const getRelatedBooks = wrapCallableV2(
+  "getRelatedBooks",
+  getRelatedBooksRaw
+);
+export const getRecommendations = wrapCallableV2(
+  "getRecommendations",
+  getRecommendationsRaw
 );
 export const listOwnLongformPublications = wrapCallableV2(
   "listOwnLongformPublications",

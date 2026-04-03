@@ -11,7 +11,7 @@ export type EnsureCanonicalBookResult = {
 type EnsureCanonicalBookIngestionParams = {
   providerExternalId: string;
   source: 'googleBooks' | 'openLibrary';
-  rawBook: Record<string, unknown>;
+  rawBook?: Record<string, unknown>;
 };
 
 type EnsureCanonicalBookNavigationParams = {
@@ -43,8 +43,8 @@ function isIngestionParams(value: EnsureCanonicalBookParams): value is EnsureCan
   return (
     typeof record.providerExternalId === 'string' &&
     (record.source === 'googleBooks' || record.source === 'openLibrary') &&
-    !!record.rawBook &&
-    typeof record.rawBook === 'object'
+    (record.rawBook === undefined ||
+      (!!record.rawBook && typeof record.rawBook === 'object'))
   );
 }
 
@@ -80,31 +80,6 @@ function parseSyntheticBookId(bookId: string): { source: 'googleBooks' | 'openLi
   return null;
 }
 
-function buildRawBookFromNavigationParams(
-  params: EnsureCanonicalBookNavigationParams,
-  parsed: { source: 'googleBooks' | 'openLibrary'; providerExternalId: string }
-): Record<string, unknown> {
-  const title = String(params.title || '').trim() || 'Unknown Title';
-  const author = String(params.author || '').trim() || 'Unknown';
-  const externalId = parsed.providerExternalId;
-
-  return {
-    id: externalId,
-    externalId,
-    source: parsed.source,
-    title,
-    titleEn: title,
-    titleAr: '',
-    authors: [author],
-    authorEn: author,
-    authorAr: '',
-    description: '',
-    descriptionEn: '',
-    descriptionAr: '',
-    coverUrl: String(params.coverUrl || '').trim(),
-  };
-}
-
 export async function ensureCanonicalBook(
   params: EnsureCanonicalBookParams
 ): Promise<EnsureCanonicalBookResult | null> {
@@ -132,17 +107,20 @@ export async function ensureCanonicalBook(
       resolvedParams = {
         providerExternalId: parsedSynthetic.providerExternalId,
         source: parsedSynthetic.source,
-        rawBook: buildRawBookFromNavigationParams(navigationParams, parsedSynthetic),
       };
     }
 
     const functions = getFirebaseFunctions();
     const ingestFn = httpsCallable(functions, 'ingestBook');
-    const result = await ingestFn({
+    const requestPayload: Record<string, unknown> = {
       providerExternalId: resolvedParams.providerExternalId,
       source: resolvedParams.source,
-      rawBook: resolvedParams.rawBook,
-    });
+    };
+    if (resolvedParams.rawBook && typeof resolvedParams.rawBook === 'object') {
+      requestPayload.rawBook = resolvedParams.rawBook;
+    }
+
+    const result = await ingestFn(requestPayload);
 
     const payload = result?.data as unknown;
     const envelope =

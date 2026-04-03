@@ -1,9 +1,19 @@
 import { getFirestore } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { isBookVisibleToPublic } from "../../rights/bookRights";
+import { resolveOpenLibraryReadableCandidate } from "../providers/openLibrary";
+import { resolveGutenbergReadableCandidate } from "../providers/gutenberg";
+import { resolveHindawiReadableCandidate } from "../providers/hindawi";
+import { resolveGallicaReadableCandidate } from "../providers/gallica";
+import type {
+  AcquisitionProvider,
+  ExternalReadableSourceRecord,
+  ProviderLookupContext,
+} from "../providers/types";
 
 export interface SearchOptions {
   ebookOnly?: boolean;
+  availabilityOnly?: boolean;
   language?: string;
   cursor?: string;
   limit?: number;
@@ -16,6 +26,14 @@ export type SearchEditionPresence = "single" | "grouped" | "edition";
 export type SearchEbookClass = "in_app" | "external_link" | "unavailable";
 export type SearchSourceClass = "canonical_catalog" | "external_provider";
 export type SearchLanguageTruth = "match" | "mismatch" | "unknown";
+export type SearchReadAccess = "none" | "in_app" | "trusted_external";
+export type SearchReadProvider =
+  | "booktown"
+  | "openLibrary"
+  | "gutenberg"
+  | "hindawi"
+  | "gallica"
+  | null;
 
 export interface UnifiedSearchResult {
   id: string;
@@ -41,11 +59,16 @@ export interface UnifiedSearchResult {
   descriptionAr: string;
   coverUrl: string;
   language: string;
+  available: boolean;
+  acquired: boolean;
+  readAccess: SearchReadAccess;
+  readProvider: SearchReadProvider;
   hasEbook: boolean;
   downloadable: boolean;
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
+  externalReadableSources?: ExternalReadableSourceRecord[];
   isbn13?: string;
   isbn10?: string;
   canonicalKey?: string;
@@ -81,7 +104,8 @@ type RankedResult = UnifiedSearchResult & {
   recentActivityMs: number;
   normalizedTitle: string;
   languageMatchScore: number;
-};
+  canonicalProviderExternalIds: string[];
+  };
 
 type CursorPayload = {
   offset: number;
@@ -96,6 +120,7 @@ const MAX_RETURN_COUNT = 30;
 const EXTERNAL_FALLBACK_TRIGGER = 5;
 const CONFIDENCE_THRESHOLD = 0.72;
 const EXTERNAL_PROVIDER_TIMEOUT_MS = 3000;
+const AVAILABILITY_PROBE_LIMIT = 10;
 const EXCLUDED_TYPE_PATTERN =
   /\b(academic journal|research paper|conference proceedings?|technical manual|whitepaper|government report|report|reports|thesis|magazine issue|in re|\bvs\b|hearing|hearings)\b/i;
 
@@ -157,6 +182,42 @@ function asStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function asExternalReadableSources(
+  value: unknown
+): ExternalReadableSourceRecord[] {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return null;
+      }
+      const record = entry as Record<string, unknown>;
+      const provider =
+        record.provider === "openLibrary" ||
+        record.provider === "gutenberg" ||
+        record.provider === "hindawi" ||
+        record.provider === "gallica"
+          ? record.provider
+          : null;
+      const providerExternalId = asNonEmptyString(record.providerExternalId);
+      const trust = record.trust === "trusted" ? "trusted" : null;
+      if (!provider || !providerExternalId || !trust) return null;
+
+      const lendingEditionId = asNonEmptyString(record.lendingEditionId);
+      const lendingIdentifier = asNonEmptyString(record.lendingIdentifier);
+
+      return {
+        provider,
+        providerExternalId,
+        ...(lendingEditionId ? { lendingEditionId } : {}),
+        ...(lendingIdentifier ? { lendingIdentifier } : {}),
+        trust,
+      } satisfies ExternalReadableSourceRecord;
+    })
+    .filter((entry): entry is ExternalReadableSourceRecord => entry !== null);
+}
+
 function normalizeSearchText(value?: string | null): string {
   if (!value) return "";
   return value
@@ -201,16 +262,152 @@ function toLanguageMatchScore(languageTruth: SearchLanguageTruth): number {
   return languageTruth === "match" ? 1 : 0;
 }
 
-function computeCanonicalEbookClass(data: Record<string, unknown>): SearchEbookClass {
+function hasCanonicalLegacyStoragePath(
+  bookId: string,
+  data: Record<string, unknown>
+): boolean {
+  const storagePath = asNonEmptyString(data.storagePath);
+  if (!storagePath) return false;
+
+  return (
+    storagePath.startsWith(`books/${bookId}/original/`) ||
+    storagePath.startsWith(`ebooks/${bookId}/`)
+  );
+}
+
+function computeCanonicalEbookClass(
+  bookId: string,
+  data: Record<string, unknown>
+): SearchEbookClass {
   const hasVerifiedAttachment =
     asNonEmptyString(data.ebookAttachmentId).length > 0 ||
     asNonEmptyString(data.ebookStoragePath).length > 0 ||
+    hasCanonicalLegacyStoragePath(bookId, data) ||
     Boolean(data.downloadable);
   return hasVerifiedAttachment ? "in_app" : "unavailable";
 }
 
 function computeExternalEbookClass(hasExternalEbookSignal: boolean): SearchEbookClass {
   return hasExternalEbookSignal ? "external_link" : "unavailable";
+}
+
+function hasOpenLibraryReadableAvailability(doc: Record<string, unknown>): boolean {
+  const hasFulltext = doc.has_fulltext === true;
+  const lendingEditionId = asNonEmptyString(doc.lending_edition_s);
+  const lendingIdentifier = asNonEmptyString(doc.lending_identifier_s);
+
+  return hasFulltext && Boolean(lendingEditionId || lendingIdentifier);
+}
+
+function getProviderPriority(
+  provider: SearchReadProvider
+): number {
+  switch (provider) {
+    case "booktown":
+      return 0;
+    case "openLibrary":
+      return 1;
+    case "gutenberg":
+      return 2;
+    case "hindawi":
+      return 3;
+    case "gallica":
+      return 4;
+    default:
+      return 99;
+  }
+}
+
+function buildOwnershipReadSignals(isOwned: boolean): Pick<
+  UnifiedSearchResult,
+  "available" | "acquired" | "readAccess" | "readProvider" | "hasEbook" | "downloadable" | "isEbookAvailable"
+> {
+  if (isOwned) {
+    return {
+      available: true,
+      acquired: true,
+      readAccess: "in_app",
+      readProvider: "booktown",
+      hasEbook: true,
+      downloadable: true,
+      isEbookAvailable: true,
+    };
+  }
+
+  return {
+    available: false,
+    acquired: false,
+    readAccess: "none",
+    readProvider: null,
+    hasEbook: false,
+    downloadable: false,
+    isEbookAvailable: false,
+  };
+}
+
+function hasTrustedExternalAvailability(
+  result: UnifiedSearchResult
+): boolean {
+  return (
+    result.available === true &&
+    result.acquired === false &&
+    result.readAccess === "trusted_external" &&
+    result.readProvider !== null
+  );
+}
+
+function mergeExternalReadableSources(
+  existing: ExternalReadableSourceRecord[] | undefined,
+  next: ExternalReadableSourceRecord[] | undefined
+): ExternalReadableSourceRecord[] | undefined {
+  const merged = [...(existing || []), ...(next || [])].filter(Boolean);
+  if (merged.length === 0) return undefined;
+
+  const deduped = new Map<string, ExternalReadableSourceRecord>();
+  for (const entry of merged) {
+    const key = `${entry.provider}:${entry.providerExternalId}`;
+    if (!deduped.has(key)) {
+      deduped.set(key, entry);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+function applyTrustedExternalAvailability<T extends UnifiedSearchResult>(
+  result: T,
+  provider: AcquisitionProvider,
+  externalReadableSources?: ExternalReadableSourceRecord[]
+): T {
+  if (result.acquired) {
+    return result;
+  }
+
+  if (
+    result.readProvider &&
+    getProviderPriority(result.readProvider) <= getProviderPriority(provider)
+  ) {
+    return result;
+  }
+
+  return {
+    ...result,
+    ebookClass: "external_link",
+    available: true,
+    acquired: false,
+    readAccess: "trusted_external",
+    readProvider: provider,
+    hasEbook: false,
+    downloadable: false,
+    isEbookAvailable: false,
+    ...(mergeExternalReadableSources(result.externalReadableSources, externalReadableSources)
+      ? {
+          externalReadableSources: mergeExternalReadableSources(
+            result.externalReadableSources,
+            externalReadableSources
+          ),
+        }
+      : {}),
+  };
 }
 
 function computeCanonicalEditionPresence(data: Record<string, unknown>): SearchEditionPresence {
@@ -478,6 +675,7 @@ function computeFingerprint(queryNorm: string, options: SearchOptions): string {
   return [
     queryNorm,
     options.ebookOnly ? "1" : "0",
+    options.availabilityOnly ? "1" : "0",
     options.language || "",
     String(normalizeLimit(options.limit)),
   ].join("|");
@@ -738,6 +936,17 @@ function canonicalIdentityKey(result: UnifiedSearchResult): string {
   return `canonical:${author}::${title}`;
 }
 
+function buildIdentityKeys(result: UnifiedSearchResult): string[] {
+  return [
+    result.isbn13 ? `isbn13:${result.isbn13}` : "",
+    result.isbn10 ? `isbn10:${result.isbn10}` : "",
+    result.canonicalKey ? `canonical:${result.canonicalKey}` : "",
+    result.resultType === "external" && result.externalId
+      ? `provider:${result.source}:${result.externalId}`
+      : "",
+  ].filter((entry) => entry.length > 0);
+}
+
 function mapCanonicalBook(
   docId: string,
   data: Record<string, unknown>,
@@ -768,10 +977,9 @@ function mapCanonicalBook(
 
   const language = asNonEmptyString(data.language) || "en";
   const languageTruth = resolveLanguageTruth(language, options.language);
-  const ebookClass = computeCanonicalEbookClass(data);
-  const downloadable = ebookClass === "in_app";
-  const hasEbook = downloadable;
-  if (options.ebookOnly && !downloadable) {
+  const ebookClass = computeCanonicalEbookClass(docId, data);
+  const ownedReadSignals = buildOwnershipReadSignals(ebookClass === "in_app");
+  if (options.ebookOnly && !ownedReadSignals.downloadable) {
     return null;
   }
 
@@ -840,9 +1048,13 @@ function mapCanonicalBook(
     descriptionAr: asNonEmptyString(data.descriptionAr) || "",
     coverUrl,
     language,
-    hasEbook,
-    downloadable,
-    isEbookAvailable: downloadable,
+    available: ownedReadSignals.available,
+    acquired: ownedReadSignals.acquired,
+    readAccess: ownedReadSignals.readAccess,
+    readProvider: ownedReadSignals.readProvider,
+    hasEbook: ownedReadSignals.hasEbook,
+    downloadable: ownedReadSignals.downloadable,
+    isEbookAvailable: ownedReadSignals.isEbookAvailable,
     confidence: rank.confidence,
     rank: rank.rankTier,
     rankTier: rank.rankTier,
@@ -856,6 +1068,10 @@ function mapCanonicalBook(
     isbn13: isbn13 || undefined,
     isbn10: isbn10 || undefined,
     canonicalKey,
+    ...(asExternalReadableSources(data.externalReadableSources).length > 0
+      ? { externalReadableSources: asExternalReadableSources(data.externalReadableSources) }
+      : {}),
+    canonicalProviderExternalIds: asStringArray(data.providerExternalIds),
   };
 }
 
@@ -1002,10 +1218,7 @@ async function fetchGoogleExternal(
     const thumbnail = asNonEmptyString(imageLinks?.thumbnail).replace(/^http:\/\//i, "https://");
 
     const language = asNonEmptyString(volumeInfo.language) || "en";
-    const hasExternalEbookSignal =
-      Boolean(asRecord(item.saleInfo)?.isEbook) ||
-      Boolean(asRecord(asRecord(item.accessInfo)?.epub)?.isAvailable) ||
-      Boolean(asRecord(asRecord(item.accessInfo)?.pdf)?.isAvailable);
+    const hasTrustedExternalAvailability = false;
     const languageTruth = resolveLanguageTruth(language, requestedLanguage);
 
     mapped.push({
@@ -1018,7 +1231,7 @@ async function fetchGoogleExternal(
       resultType: "external",
       workType: "edition",
       editionPresence: "edition",
-      ebookClass: computeExternalEbookClass(hasExternalEbookSignal),
+      ebookClass: computeExternalEbookClass(hasTrustedExternalAvailability),
       sourceClass: "external_provider",
       languageTruth,
       title,
@@ -1032,6 +1245,10 @@ async function fetchGoogleExternal(
       descriptionAr: "",
       coverUrl: thumbnail,
       language,
+      available: false,
+      acquired: false,
+      readAccess: "none",
+      readProvider: null,
       hasEbook: false,
       downloadable: false,
       isEbookAvailable: false,
@@ -1048,6 +1265,7 @@ async function fetchGoogleExternal(
       isbn13: isbn13 || undefined,
       isbn10: isbn10 || undefined,
       canonicalKey: `${normalizeSearchText(normalizedAuthors[0])}::${normalizeSearchText(title)}`,
+      canonicalProviderExternalIds: [],
       rawBook: {
         ...volumeInfo,
         id: externalId,
@@ -1123,8 +1341,23 @@ async function fetchOpenLibraryExternal(
       : "";
 
     const language = asStringArray(doc.language)[0] || "en";
-    const hasExternalEbookSignal = Number(doc.ebook_count_i || 0) > 0;
+    const hasExternalEbookSignal = hasOpenLibraryReadableAvailability(doc);
+    const lendingEditionId = asNonEmptyString(doc.lending_edition_s);
+    const lendingIdentifier = asNonEmptyString(doc.lending_identifier_s);
     const languageTruth = resolveLanguageTruth(language, requestedLanguage);
+    const externalReadSignals = hasExternalEbookSignal
+      ? {
+          available: true,
+          acquired: false,
+          readAccess: "trusted_external" as const,
+          readProvider: "openLibrary" as const,
+        }
+      : {
+          available: false,
+          acquired: false,
+          readAccess: "none" as const,
+          readProvider: null,
+        };
 
     mapped.push({
       id: `ol_${key}`,
@@ -1150,9 +1383,26 @@ async function fetchOpenLibraryExternal(
       descriptionAr: "",
       coverUrl,
       language,
+      available: externalReadSignals.available,
+      acquired: externalReadSignals.acquired,
+      readAccess: externalReadSignals.readAccess,
+      readProvider: externalReadSignals.readProvider,
       hasEbook: false,
       downloadable: false,
       isEbookAvailable: false,
+      ...(hasExternalEbookSignal
+        ? {
+            externalReadableSources: [
+              {
+                provider: "openLibrary" as const,
+                providerExternalId: key,
+                ...(lendingEditionId ? { lendingEditionId } : {}),
+                ...(lendingIdentifier ? { lendingIdentifier } : {}),
+                trust: "trusted" as const,
+              },
+            ],
+          }
+        : {}),
       confidence: rank.confidence,
       rank: rank.rankTier,
       rankTier: rank.rankTier,
@@ -1166,6 +1416,7 @@ async function fetchOpenLibraryExternal(
       isbn13: isbn13 || undefined,
       isbn10: isbn10 || undefined,
       canonicalKey: `${normalizeSearchText(normalizedAuthors[0])}::${normalizeSearchText(title)}`,
+      canonicalProviderExternalIds: [],
       rawBook: {
         ...doc,
         id: key,
@@ -1244,29 +1495,102 @@ function compareRanked(a: RankedResult, b: RankedResult): number {
   return a.id.localeCompare(b.id);
 }
 
-function filterAndDedupExternal(
+async function enrichCanonicalAvailability(
+  canonicalResults: RankedResult[],
+  requestedCount: number
+): Promise<RankedResult[]> {
+  const probeCount = Math.min(
+    canonicalResults.length,
+    Math.max(requestedCount * 2, EXTERNAL_FALLBACK_TRIGGER),
+    AVAILABILITY_PROBE_LIMIT
+  );
+  if (probeCount === 0) {
+    return canonicalResults;
+  }
+
+  const providerResolvers = [
+    resolveOpenLibraryReadableCandidate,
+    resolveGutenbergReadableCandidate,
+    resolveHindawiReadableCandidate,
+    resolveGallicaReadableCandidate,
+  ];
+
+  const enrichedHead = await Promise.all(
+    canonicalResults.slice(0, probeCount).map(async (result) => {
+      if (result.acquired) {
+        return result;
+      }
+
+      const lookupContext: ProviderLookupContext = {
+        bookId: result.bookId,
+        book: {
+          ...result,
+          providerExternalIds: result.canonicalProviderExternalIds,
+        },
+        editionId: result.editionId || null,
+        sourceHint: null,
+      };
+
+      for (const resolveProvider of providerResolvers) {
+        try {
+          const candidate = await resolveProvider(lookupContext);
+          if (!candidate?.trust?.availabilityTrust) {
+            continue;
+          }
+          return applyTrustedExternalAvailability(
+            result,
+            candidate.provider,
+            candidate.persistedSource ? [candidate.persistedSource] : undefined
+          );
+        } catch (error) {
+          logger.warn("BOOK_SEARCH_V2_AVAILABILITY_PROVIDER_FAILED", {
+            bookId: result.bookId,
+            provider: resolveProvider.name || "unknown",
+            error: String(error),
+          });
+        }
+      }
+
+      return result;
+    })
+  );
+
+  return [...enrichedHead, ...canonicalResults.slice(probeCount)];
+}
+
+function mergeCanonicalAvailability(
   rankedExternal: RankedResult[],
   canonicalResults: RankedResult[]
-): RankedResult[] {
-  const canonicalIdentity = new Set<string>();
-  for (const canonical of canonicalResults) {
-    canonicalIdentity.add(canonicalIdentityKey(canonical));
-    if (canonical.isbn13) canonicalIdentity.add(`isbn13:${canonical.isbn13}`);
-    if (canonical.isbn10) canonicalIdentity.add(`isbn10:${canonical.isbn10}`);
-  }
+): {
+  canonicalResults: RankedResult[];
+  externalResults: RankedResult[];
+} {
+  const canonicalIdentity = new Map<string, number>();
+  const nextCanonical = canonicalResults.slice();
+  canonicalResults.forEach((canonical, index) => {
+    for (const identity of buildIdentityKeys(canonical)) {
+      canonicalIdentity.set(identity, index);
+    }
+    canonicalIdentity.set(canonicalIdentityKey(canonical), index);
+  });
 
   const accepted: RankedResult[] = [];
   const seen = new Set<string>();
 
   for (const result of rankedExternal.sort(compareRanked)) {
-    const identities = [
-      result.isbn13 ? `isbn13:${result.isbn13}` : "",
-      result.isbn10 ? `isbn10:${result.isbn10}` : "",
-      result.canonicalKey ? `canonical:${result.canonicalKey}` : "",
-      `provider:${result.source}:${result.externalId}`,
-    ].filter((entry) => entry.length > 0);
+    const identities = buildIdentityKeys(result);
+    const canonicalIndex = identities
+      .map((entry) => canonicalIdentity.get(entry))
+      .find((entry): entry is number => typeof entry === "number");
 
-    if (identities.some((entry) => canonicalIdentity.has(entry))) {
+    if (typeof canonicalIndex === "number") {
+      if (hasTrustedExternalAvailability(result)) {
+        nextCanonical[canonicalIndex] = applyTrustedExternalAvailability(
+          nextCanonical[canonicalIndex],
+          result.readProvider as AcquisitionProvider,
+          result.externalReadableSources
+        );
+      }
       continue;
     }
 
@@ -1278,7 +1602,10 @@ function filterAndDedupExternal(
     accepted.push(result);
   }
 
-  return accepted;
+  return {
+    canonicalResults: nextCanonical,
+    externalResults: accepted,
+  };
 }
 
 /**
@@ -1445,34 +1772,66 @@ export async function unifiedSearch(
     queryTokens,
     queryIntent
   );
+  const canonicalAvailability = options.availabilityOnly
+    ? await enrichCanonicalAvailability(rerankedCanonical, limit)
+    : rerankedCanonical.slice();
   const internalSearchDurationMs = Date.now() - totalStartMs;
 
   let externalCandidates: RankedResult[] = [];
   const externalFallbackEnabled = process.env.NODE_ENV !== 'test';
   let googleCount = 0;
   let openLibraryCount = 0;
+  const canonicalAvailabilityCount = canonicalAvailability.filter(
+    (entry) => entry.available
+  ).length;
 
   const shouldUseExternalFallback =
     externalFallbackEnabled &&
     !options.ebookOnly &&
-    rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER;
+    (options.availabilityOnly
+      ? canonicalAvailabilityCount < limit
+      : rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER);
 
   if (shouldUseExternalFallback) {
     phaseOrder.push("external_fallback");
-    const [google, openLibrary] = await Promise.all([
-      fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
-      fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
-    ]);
+    const [google, openLibrary] = options.availabilityOnly
+      ? await Promise.all([
+          Promise.resolve([] as RankedResult[]),
+          fetchOpenLibraryExternal(
+            queryNorm,
+            queryNorm,
+            queryTokens,
+            queryIntent,
+            options.language
+          ),
+        ])
+      : await Promise.all([
+          fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
+          fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
+        ]);
 
-    externalCandidates = filterAndDedupExternal(
+    const mergedAvailability = mergeCanonicalAvailability(
       [...google, ...openLibrary],
-      rerankedCanonical
+      canonicalAvailability
     );
+    canonicalAvailability.splice(
+      0,
+      canonicalAvailability.length,
+      ...mergedAvailability.canonicalResults
+    );
+    externalCandidates = mergedAvailability.externalResults;
     googleCount = externalCandidates.filter((entry) => entry.source === "googleBooks").length;
     openLibraryCount = externalCandidates.filter((entry) => entry.source === "openLibrary").length;
   }
 
-  const merged = [...rerankedCanonical, ...externalCandidates].sort(compareRanked);
+  if (options.availabilityOnly) {
+    externalCandidates = externalCandidates.filter((entry) => entry.available);
+  }
+
+  const canonicalResultsForResponse = options.availabilityOnly
+    ? canonicalAvailability.filter((entry) => entry.available)
+    : canonicalAvailability;
+  const merged = [...canonicalResultsForResponse, ...externalCandidates].sort(compareRanked);
   phaseOrder.push("merge_sort");
   const totalDurationMs = Date.now() - totalStartMs;
 
@@ -1499,7 +1858,7 @@ export async function unifiedSearch(
       isbn: canonicalPhaseIds.isbn.size,
       tokens: canonicalPhaseIds.tokens.size,
       prefix: canonicalPhaseIds.prefix.size,
-      canonical: rerankedCanonical.length,
+      canonical: canonicalResultsForResponse.length,
     },
     externalFallbackCalled:
       shouldUseExternalFallback,
@@ -1521,6 +1880,7 @@ export async function unifiedSearch(
         engagementScore,
         recentActivityMs,
         normalizedTitle,
+        canonicalProviderExternalIds,
         ...publicResult
       } = entry;
       void rankTier;
@@ -1530,12 +1890,13 @@ export async function unifiedSearch(
       void engagementScore;
       void recentActivityMs;
       void normalizedTitle;
+      void canonicalProviderExternalIds;
       return publicResult;
     }),
     nextCursor,
     hasMore,
     cursorUsed: startOffset > 0,
-    canonicalCount: rerankedCanonical.length,
+    canonicalCount: canonicalResultsForResponse.length,
     externalCount: externalCandidates.length,
     telemetry: {
       normalizedQuery: queryNorm,

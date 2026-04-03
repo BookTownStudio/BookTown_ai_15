@@ -54,6 +54,13 @@ function normalizeRequestPayload(endpointKey: string, req: Request): unknown {
         : ebookOnlyRaw === "false"
         ? false
         : undefined;
+    const availabilityOnlyRaw = req.query.availabilityOnly;
+    const availabilityOnly =
+      availabilityOnlyRaw === "true"
+        ? true
+        : availabilityOnlyRaw === "false"
+        ? false
+        : undefined;
 
     return {
       q,
@@ -61,6 +68,7 @@ function normalizeRequestPayload(endpointKey: string, req: Request): unknown {
       ...(cursor ? { cursor } : {}),
       ...(limit === undefined ? {} : { limit }),
       ...(ebookOnly === undefined ? {} : { ebookOnly }),
+      ...(availabilityOnly === undefined ? {} : { availabilityOnly }),
     };
   }
 

@@ -29,6 +29,7 @@ export function enqueueProgressSyncOperation(params: {
   totalPages: number;
   percentage: number;
   lastPosition?: Record<string, unknown> | null;
+  lastAnchor?: Record<string, unknown> | null;
   recommendationContext?: LibrarianRecommendationContext;
 }): ReaderSyncOperation {
   const op: ReaderSyncOperation = {
@@ -42,6 +43,7 @@ export function enqueueProgressSyncOperation(params: {
       totalPages: params.totalPages,
       percentage: params.percentage,
       lastPosition: params.lastPosition || null,
+      lastAnchor: params.lastAnchor || null,
       status_state: params.percentage >= 1 ? "completed" : "reading",
       ...(params.recommendationContext
         ? { recommendationContext: params.recommendationContext }

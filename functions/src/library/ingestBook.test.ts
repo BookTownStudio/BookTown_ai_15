@@ -214,6 +214,7 @@ describe("ingestBook v2 smoke", () => {
     store.clear();
     uuidCounter = 0;
     timestampCounter = 0;
+    vi.unstubAllGlobals();
     vi.clearAllMocks();
   });
 
@@ -265,5 +266,37 @@ describe("ingestBook v2 smoke", () => {
     expect(book?.authorCanonicalKey).toBe("author one::unknown");
     expect(author?.nameEn).toBe("Author One");
     expect(authorIdentity?.authorId).toBe(authorId);
+  });
+
+  it("hydrates provider metadata on the server when rawBook is omitted", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          id: "direct_google_id",
+          volumeInfo: {
+            title: "Direct Route Title",
+            authors: ["Direct Route Author"],
+            language: "en",
+          },
+        }),
+      })) as any
+    );
+
+    const ingestBookCallable = await getIngestBookCallable();
+    const result = await ingestBookCallable.run({
+      auth: { uid: "test-user" },
+      data: {
+        providerExternalId: "direct_google_id",
+        source: "googleBooks",
+      },
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+
+    expect(book?.titleEn).toBe("Direct Route Title");
+    expect(book?.authorEn).toBe("Direct Route Author");
+    expect(book?.providerExternalIds).toContain("googleBooks:direct_google_id");
   });
 });

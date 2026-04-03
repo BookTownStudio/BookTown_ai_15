@@ -1,5 +1,5 @@
 import React from "react";
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BookDetailsScreen from "../../app/book-details.tsx";
 import type { SearchResultDTO } from "../../types/bookSearch.ts";
@@ -11,6 +11,7 @@ const {
   refetchMock,
   useBookCatalogMock,
   ensureCanonicalBookMock,
+  acquireExternalEbookForReadMock,
 } = vi.hoisted(() => ({
   currentViewState: {
     type: "immersive",
@@ -22,6 +23,7 @@ const {
   refetchMock: vi.fn(),
   useBookCatalogMock: vi.fn(),
   ensureCanonicalBookMock: vi.fn(),
+  acquireExternalEbookForReadMock: vi.fn(),
 }));
 
 vi.mock("../../store/navigation.tsx", () => ({
@@ -86,6 +88,10 @@ vi.mock("../../lib/hooks/useToggleBookOnShelf.ts", () => ({
 
 vi.mock("../../lib/books/ensureCanonicalBook.ts", () => ({
   ensureCanonicalBook: ensureCanonicalBookMock,
+}));
+
+vi.mock("../../lib/books/acquireExternalEbookForRead.ts", () => ({
+  acquireExternalEbookForRead: acquireExternalEbookForReadMock,
 }));
 
 vi.mock("../../lib/logging/bookEngineV2Log.ts", () => ({
@@ -191,6 +197,10 @@ function buildSearchResult(overrides?: Partial<SearchResultDTO>): SearchResultDT
     descriptionAr: "",
     coverUrl: "",
     language: "en",
+    available: false,
+    acquired: false,
+    readAccess: "none",
+    readProvider: null,
     hasEbook: false,
     downloadable: false,
     isEbookAvailable: false,
@@ -252,7 +262,7 @@ describe("BookDetailsScreen hydration guards", () => {
     expect(screen.getByText("Imported Edition")).toBeInTheDocument();
   });
 
-  it("replaces an endless external hydration spinner with an explicit timeout error", async () => {
+  it("keeps the details view responsive while external hydration is still pending", async () => {
     vi.useFakeTimers();
     ensureCanonicalBookMock.mockReturnValue(new Promise(() => {}));
     currentViewState.params = {
@@ -284,15 +294,153 @@ describe("BookDetailsScreen hydration guards", () => {
 
     render(<BookDetailsScreen />);
 
-    expect(screen.getByText("Preparing book…")).toBeInTheDocument();
+    expect(screen.getByText("Canonical Book")).toBeInTheDocument();
 
     await act(async () => {
       vi.advanceTimersByTime(12050);
     });
 
-    expect(screen.getByText("Book timed out")).toBeInTheDocument();
+    expect(screen.getByText("Canonical Book")).toBeInTheDocument();
+  });
+
+  it("hydrates direct OpenLibrary routes through the external canonicalization path", async () => {
+    currentViewState.params = {
+      bookId: "ol_OL20221783W",
+    };
+
+    ensureCanonicalBookMock.mockResolvedValue({
+      canonicalBookId: "book_ol_1",
+      bookId: "book_ol_1",
+      status: "CREATED",
+    });
+    useBookCatalogMock.mockImplementation((bookId?: string) => ({
+      data: bookId === "book_ol_1" ? buildBook("book_ol_1", "Pride and Prejudice") : null,
+      isLoading: false,
+      isError: false,
+      refetch: refetchMock,
+    }));
+
+    render(<BookDetailsScreen />);
+
+    expect(screen.queryByText("Book not found")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(ensureCanonicalBookMock).toHaveBeenCalledWith({ bookId: "ol_OL20221783W" });
+    });
+    await waitFor(() => {
+      expect(screen.getByText("Pride and Prejudice")).toBeInTheDocument();
+    });
+  });
+
+  it("confirms ebookAttachmentId before surfacing acquisition success", async () => {
+    const pendingBook = buildBook("book_1", "Canonical Book");
+
+    currentViewState.params = {
+      bookId: "book_1",
+      searchResult: buildSearchResult({
+        id: "book_1",
+        bookId: "book_1",
+        available: true,
+        acquired: false,
+        readAccess: "trusted_external",
+        readProvider: "openLibrary",
+        ebookClass: "external_link",
+      }),
+    };
+
+    useBookCatalogMock.mockImplementation(() => ({
+      data: pendingBook,
+      isLoading: false,
+      isError: false,
+      refetch: refetchMock,
+    }));
+    acquireExternalEbookForReadMock.mockResolvedValue({ ok: true });
+    refetchMock
+      .mockResolvedValueOnce({ data: pendingBook })
+      .mockResolvedValueOnce({ data: pendingBook })
+      .mockResolvedValueOnce({
+        data: {
+          ...pendingBook,
+          ebookAttachmentId: "attachment_1",
+        },
+      });
+
+    render(<BookDetailsScreen />);
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Prepare ebook"));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(acquireExternalEbookForReadMock).toHaveBeenCalledWith({ bookId: "book_1" });
+    expect(showToastMock).toHaveBeenCalledWith("Preparing ebook...");
+    await waitFor(() => {
+      expect(refetchMock).toHaveBeenCalledTimes(1);
+    });
+    expect(showToastMock).not.toHaveBeenCalledWith("Ebook is ready.");
+
+    await waitFor(() => {
+      expect(refetchMock).toHaveBeenCalledTimes(3);
+      expect(showToastMock).toHaveBeenCalledWith("Ebook is ready.");
+    }, { timeout: 3000 });
+
+    expect(screen.getByText("Ebook ready to read.")).toBeInTheDocument();
+    expect(screen.getByText("Read")).toBeInTheDocument();
+  });
+
+  it("renders a persistent failed acquisition state with explicit retry", async () => {
+    const pendingBook = buildBook("book_1", "Canonical Book");
+
+    currentViewState.params = {
+      bookId: "book_1",
+      autoAcquireOnOpen: true,
+      searchResult: buildSearchResult({
+        id: "book_1",
+        bookId: "book_1",
+        available: true,
+        acquired: false,
+        readAccess: "trusted_external",
+        readProvider: "openLibrary",
+        ebookClass: "external_link",
+      }),
+    };
+
+    useBookCatalogMock.mockImplementation(() => ({
+      data: pendingBook,
+      isLoading: false,
+      isError: false,
+      refetch: refetchMock,
+    }));
+    acquireExternalEbookForReadMock
+      .mockRejectedValueOnce(new Error("acquire_failed"))
+      .mockResolvedValueOnce({ ok: true });
+    refetchMock.mockResolvedValueOnce({
+      data: {
+        ...pendingBook,
+        ebookAttachmentId: "attachment_retry",
+      },
+    });
+
+    render(<BookDetailsScreen />);
+
+    await waitFor(() => {
+      expect(acquireExternalEbookForReadMock).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.getByText("Ebook preparation failed.")).toBeInTheDocument();
     expect(
-      screen.getByText("This book took too long to prepare. Please try again or return to search.")
+      screen.getByText("This ebook could not be prepared. Please try again.")
     ).toBeInTheDocument();
+    expect(screen.getByText("Retry")).toBeInTheDocument();
+
+    await act(async () => {
+      fireEvent.click(screen.getByText("Retry"));
+      await Promise.resolve();
+    });
+
+    await waitFor(() => {
+      expect(acquireExternalEbookForReadMock).toHaveBeenCalledTimes(2);
+      expect(screen.getByText("Read")).toBeInTheDocument();
+    });
   });
 });

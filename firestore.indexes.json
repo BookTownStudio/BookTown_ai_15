@@ -529,6 +529,24 @@
       ]
     },
     {
+      "collectionGroup": "reader_events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "event",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "occurredAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "reader_highlights",
       "queryScope": "COLLECTION",
       "fields": [

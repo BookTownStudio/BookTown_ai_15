@@ -21,6 +21,52 @@ function readStringArray(value: unknown): string[] | undefined {
   return value.filter((item): item is string => typeof item === "string");
 }
 
+function readExternalReadableSources(
+  value: unknown
+): Book["externalReadableSources"] | undefined {
+  if (!Array.isArray(value)) return undefined;
+
+  const normalized = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        return null;
+      }
+
+      const raw = entry as Record<string, unknown>;
+      const provider =
+        raw.provider === "openLibrary" ||
+        raw.provider === "gutenberg" ||
+        raw.provider === "hindawi" ||
+        raw.provider === "gallica"
+          ? raw.provider
+          : null;
+      const providerExternalId = readString(raw.providerExternalId);
+      const trust = raw.trust === "trusted" ? "trusted" : null;
+
+      if (!provider || !providerExternalId || !trust) {
+        return null;
+      }
+
+      const lendingEditionId = readString(raw.lendingEditionId);
+      const lendingIdentifier = readString(raw.lendingIdentifier);
+
+      return {
+        provider,
+        providerExternalId,
+        ...(lendingEditionId ? { lendingEditionId } : {}),
+        ...(lendingIdentifier ? { lendingIdentifier } : {}),
+        trust,
+      };
+    })
+    .filter(
+      (
+        entry
+      ): entry is NonNullable<Book["externalReadableSources"]>[number] => entry !== null
+    );
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 function readFallbackCover(value: unknown): Book["fallbackCover"] | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -145,6 +191,36 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     ...(seed.rawBook ? { rawBook: seed.rawBook } : {}),
     ...(typeof seed.ebookAttachmentId === "string" && seed.ebookAttachmentId.trim().length > 0
       ? { ebookAttachmentId: seed.ebookAttachmentId.trim() }
+      : {}),
+    ...(typeof seed.ebookStoragePath === "string" && seed.ebookStoragePath.trim().length > 0
+      ? { ebookStoragePath: seed.ebookStoragePath.trim() }
+      : {}),
+    ...(seed.downloadable === true ? { downloadable: true } : {}),
+    ...(readStringArray((seed as { providerExternalIds?: unknown }).providerExternalIds)
+      ? {
+          providerExternalIds: readStringArray(
+            (seed as { providerExternalIds?: unknown }).providerExternalIds
+          ),
+        }
+      : {}),
+    ...(readExternalReadableSources(
+      (seed as { externalReadableSources?: unknown }).externalReadableSources
+    )
+      ? {
+          externalReadableSources: readExternalReadableSources(
+            (seed as { externalReadableSources?: unknown }).externalReadableSources
+          ),
+        }
+      : {}),
+    ...(((seed as { acquiredFromProvider?: unknown }).acquiredFromProvider === 'openLibrary' ||
+      (seed as { acquiredFromProvider?: unknown }).acquiredFromProvider === 'gutenberg' ||
+      (seed as { acquiredFromProvider?: unknown }).acquiredFromProvider === 'hindawi' ||
+      (seed as { acquiredFromProvider?: unknown }).acquiredFromProvider === 'gallica')
+      ? {
+          acquiredFromProvider: (seed as {
+            acquiredFromProvider: Book['acquiredFromProvider'];
+          }).acquiredFromProvider,
+        }
       : {}),
   };
 }

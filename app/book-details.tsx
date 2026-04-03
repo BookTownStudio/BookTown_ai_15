@@ -41,12 +41,43 @@ import { cn } from '../lib/utils.ts';
 import { mockBooks } from '../data/mocks.ts';
 import { SearchResultDTO } from '../types/bookSearch.ts';
 import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
-import { resolveIngestionSource } from '../lib/books/searchNavigation.ts';
+import { parseExternalRouteBookId, resolveIngestionSource } from '../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
+import { acquireExternalEbookForRead } from '../lib/books/acquireExternalEbookForRead.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
+const ACQUISITION_CONFIRM_MAX_ATTEMPTS = 3;
+const ACQUISITION_CONFIRM_DELAY_MS = 500;
+
+type AcquisitionState = 'idle' | 'pending' | 'success' | 'failed';
+
+function getCanonicalEbookAttachmentId(
+  value: unknown
+): string | null {
+  const raw =
+    value && typeof value === 'object'
+      ? (value as Record<string, unknown>).ebookAttachmentId
+      : undefined;
+  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
+}
+
+function hasReadableCopy(value: unknown): boolean {
+  if (!value || typeof value !== 'object') return false;
+  const record = value as Record<string, unknown>;
+  return Boolean(
+    getCanonicalEbookAttachmentId(record) ||
+      (typeof record.ebookStoragePath === 'string' && record.ebookStoragePath.trim().length > 0) ||
+      record.downloadable
+  );
+}
+
+function waitForAcquisitionConfirmation(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
 
 function parseRecommendationContext(
   value: unknown
@@ -99,15 +130,25 @@ const BookDetailsScreen: React.FC = () => {
   const pendingAction = typeof params?.pendingAction === 'string' ? params.pendingAction : 'NONE';
   const pendingShelfId = typeof params?.pendingShelfId === 'string' ? params.pendingShelfId : '';
   const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
+  const autoAcquireOnOpen = params?.autoAcquireOnOpen === true;
   const recommendationContext = parseRecommendationContext(params?.recommendationContext);
   const hasExternalPendingSearch = pendingSearchResult?.resultType === 'external';
+  const directExternalRoute = useMemo(
+    () => (!pendingSearchResult ? parseExternalRouteBookId(originalBookId) : null),
+    [originalBookId, pendingSearchResult]
+  );
+  const hasExternalHydrationCandidate = hasExternalPendingSearch || Boolean(directExternalRoute);
 
   const [resolvedExternalBookId, setResolvedExternalBookId] = useState<string | null>(null);
   const [isResolvingExternal, setIsResolvingExternal] = useState(false);
   const [externalResolveFailed, setExternalResolveFailed] = useState(false);
   const [prepareTimedOut, setPrepareTimedOut] = useState(false);
+  const [acquisitionState, setAcquisitionState] = useState<AcquisitionState>('idle');
+  const [acquisitionErrorMessage, setAcquisitionErrorMessage] = useState<string | null>(null);
+  const [confirmedReadableAttachmentId, setConfirmedReadableAttachmentId] = useState<string | null>(null);
   const ingestionStartedRef = useRef<string>('');
   const pendingActionRef = useRef<string>('');
+  const autoAcquireStartedRef = useRef<string>('');
 
   const randomBookId = useMemo(() => {
     if (originalBookId !== 'surprise') return null;
@@ -118,7 +159,7 @@ const BookDetailsScreen: React.FC = () => {
   const bookId =
     originalBookId === 'surprise'
       ? randomBookId
-      : resolvedExternalBookId || (hasExternalPendingSearch ? undefined : originalBookId);
+      : resolvedExternalBookId || (hasExternalHydrationCandidate ? undefined : originalBookId);
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
@@ -130,10 +171,14 @@ const BookDetailsScreen: React.FC = () => {
   useEffect(() => {
     ingestionStartedRef.current = '';
     pendingActionRef.current = '';
+    autoAcquireStartedRef.current = '';
     setResolvedExternalBookId(null);
     setIsResolvingExternal(false);
     setExternalResolveFailed(false);
     setPrepareTimedOut(false);
+    setAcquisitionState('idle');
+    setAcquisitionErrorMessage(null);
+    setConfirmedReadableAttachmentId(null);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
 
   useEffect(() => {
@@ -151,23 +196,38 @@ const BookDetailsScreen: React.FC = () => {
     if (originalBookId) {
       logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
         phase: 'payload_received',
-        resultType: 'canonical',
+        resultType: directExternalRoute ? 'external_direct' : 'canonical',
         bookId: originalBookId,
+        source: directExternalRoute?.source || null,
+        provider: directExternalRoute?.provider || null,
+        externalId: directExternalRoute?.providerExternalId || null,
       });
     }
-  }, [originalBookId, pendingSearchResult]);
+  }, [directExternalRoute, originalBookId, pendingSearchResult]);
 
   useEffect(() => {
-    if (!hasExternalPendingSearch || !pendingSearchResult) return;
+    if (!hasExternalPendingSearch && !directExternalRoute) return;
 
-    const source = resolveIngestionSource(pendingSearchResult);
+    const source = pendingSearchResult
+      ? resolveIngestionSource(pendingSearchResult)
+      : directExternalRoute?.source || null;
+    const providerExternalId =
+      pendingSearchResult?.externalId ||
+      pendingSearchResult?.id ||
+      directExternalRoute?.providerExternalId ||
+      '';
+
     if (!source) {
       setExternalResolveFailed(true);
-      showToast(lang === 'en' ? 'Invalid external source.' : 'مصدر خارجي غير صالح.');
+      logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+        phase: 'ingest_unsupported_source',
+        id: pendingSearchResult?.id || originalBookId || null,
+        provider: directExternalRoute?.provider || null,
+      });
       return;
     }
 
-    const effectKey = `${pendingSearchResult.id}:${source}`;
+    const effectKey = `${providerExternalId}:${source}`;
     if (ingestionStartedRef.current === effectKey) return;
     ingestionStartedRef.current = effectKey;
     setIsResolvingExternal(true);
@@ -176,28 +236,34 @@ const BookDetailsScreen: React.FC = () => {
     logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
       phase: 'invoke_ingest',
       source,
-      id: pendingSearchResult.id,
-      externalId: pendingSearchResult.externalId || pendingSearchResult.id,
+      id: pendingSearchResult?.id || originalBookId || null,
+      externalId: providerExternalId || null,
     });
 
-    ensureCanonicalBook({
-      providerExternalId: pendingSearchResult.externalId || pendingSearchResult.id,
-      source,
-      rawBook: pendingSearchResult.rawBook || {
-        id: pendingSearchResult.externalId || pendingSearchResult.id,
-        externalId: pendingSearchResult.externalId || pendingSearchResult.id,
-        source,
-        title: pendingSearchResult.title,
-        titleEn: pendingSearchResult.titleEn,
-        titleAr: pendingSearchResult.titleAr,
-        authors: pendingSearchResult.authors,
-        authorEn: pendingSearchResult.authorEn,
-        authorAr: pendingSearchResult.authorAr,
-        description: pendingSearchResult.description,
-        descriptionEn: pendingSearchResult.descriptionEn,
-        descriptionAr: pendingSearchResult.descriptionAr,
-      },
-    })
+    const ensureParams = pendingSearchResult
+      ? {
+          providerExternalId,
+          source,
+          rawBook: pendingSearchResult.rawBook || {
+            id: providerExternalId,
+            externalId: providerExternalId,
+            source,
+            title: pendingSearchResult.title,
+            titleEn: pendingSearchResult.titleEn,
+            titleAr: pendingSearchResult.titleAr,
+            authors: pendingSearchResult.authors,
+            authorEn: pendingSearchResult.authorEn,
+            authorAr: pendingSearchResult.authorAr,
+            description: pendingSearchResult.description,
+            descriptionEn: pendingSearchResult.descriptionEn,
+            descriptionAr: pendingSearchResult.descriptionAr,
+          },
+        }
+      : {
+          bookId: originalBookId || '',
+        };
+
+    ensureCanonicalBook(ensureParams)
       .then((result) => {
         const canonicalBookId = result?.canonicalBookId;
         if (!canonicalBookId) {
@@ -217,7 +283,7 @@ const BookDetailsScreen: React.FC = () => {
         logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
           phase: 'ingest_failed',
           error: String(error),
-          id: pendingSearchResult.id,
+          id: pendingSearchResult?.id || originalBookId || null,
           source,
         });
         showToast(lang === 'en' ? 'Failed to load this book.' : 'تعذر تحميل هذا الكتاب.');
@@ -226,15 +292,17 @@ const BookDetailsScreen: React.FC = () => {
         setIsResolvingExternal(false);
       });
   }, [
+    directExternalRoute,
     hasExternalPendingSearch,
     lang,
+    originalBookId,
     pendingSearchResult,
     showToast,
   ]);
 
   const isPreparingBook =
     (isResolvingExternal && !resolvedExternalBookId) ||
-    (!bookId && hasExternalPendingSearch && !externalResolveFailed) ||
+    (!bookId && hasExternalHydrationCandidate && !externalResolveFailed) ||
     (Boolean(bookId) && (isBookLoading || book === null) && !isError);
 
   useEffect(() => {
@@ -261,7 +329,7 @@ const BookDetailsScreen: React.FC = () => {
     bookId,
     book,
     externalResolveFailed,
-    hasExternalPendingSearch,
+    hasExternalHydrationCandidate,
     isBookLoading,
     isError,
     isPreparingBook,
@@ -392,11 +460,71 @@ const BookDetailsScreen: React.FC = () => {
         downloadable?: unknown;
       })
     | null;
-  const hasReadableEbook = Boolean(
-    bookSearchTruth?.ebookAttachmentId ||
-      bookSearchTruth?.ebookStoragePath ||
-      bookSearchTruth?.downloadable
-  );
+  const liveReadableAttachmentId = getCanonicalEbookAttachmentId(bookSearchTruth);
+  const hasReadableEbook =
+    hasReadableCopy(bookSearchTruth) || Boolean(confirmedReadableAttachmentId);
+  const providerExternalIds = Array.isArray((book as Record<string, unknown> | null)?.providerExternalIds)
+    ? ((book as Record<string, unknown>).providerExternalIds as unknown[])
+    : [];
+  const externalReadableSources = Array.isArray((book as Record<string, unknown> | null)?.externalReadableSources)
+    ? ((book as Record<string, unknown>).externalReadableSources as unknown[])
+    : [];
+  const canPrepareReadableCopy =
+    !hasReadableEbook &&
+    (pendingSearchResult?.available === true ||
+      pendingSearchResult?.readAccess === 'trusted_external' ||
+      externalReadableSources.length > 0 ||
+      providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0));
+  const canAttemptRead = hasReadableEbook;
+  const isPreparingReadableCopy = acquisitionState === 'pending';
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('SEARCH RESULT PROVIDERS', pendingSearchResult?.externalReadableSources);
+  }, [pendingSearchResult]);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    console.log('DETAIL BOOK PROVIDERS', (book as Record<string, unknown> | null)?.externalReadableSources);
+  }, [book]);
+
+  const displayBook = useMemo(() => {
+    if (book) return book;
+    if (!pendingSearchResult) return null;
+
+    return {
+      id: bookId || pendingSearchResult.bookId || pendingSearchResult.id,
+      titleEn: pendingSearchResult.titleEn || pendingSearchResult.title,
+      titleAr: pendingSearchResult.titleAr || '',
+      authorEn: pendingSearchResult.authorEn || pendingSearchResult.authors?.[0] || 'Unknown',
+      authorAr: pendingSearchResult.authorAr || '',
+      coverUrl: pendingSearchResult.coverUrl || '',
+      coverMode: 'image',
+      fallbackCover: null,
+      rating: 0,
+      ratingsCount: 0,
+      descriptionEn: pendingSearchResult.descriptionEn || pendingSearchResult.description || '',
+      descriptionAr: pendingSearchResult.descriptionAr || '',
+    } as any;
+  }, [book, bookId, pendingSearchResult]);
+
+  useEffect(() => {
+    if (!liveReadableAttachmentId) return;
+    setConfirmedReadableAttachmentId((current) =>
+      current === liveReadableAttachmentId ? current : liveReadableAttachmentId
+    );
+    setAcquisitionErrorMessage(null);
+    setAcquisitionState((current) => (current === 'pending' || current === 'failed' ? 'success' : current));
+  }, [liveReadableAttachmentId]);
+
+  const acquisitionFailedMessage =
+    lang === 'en'
+      ? 'This ebook could not be prepared. Please try again.'
+      : 'تعذر تجهيز هذا الكتاب الإلكتروني. حاول مرة أخرى.';
+  const acquisitionConfirmationFailedMessage =
+    lang === 'en'
+      ? 'The ebook was not confirmed after preparation. Please try again.'
+      : 'لم يتم تأكيد الكتاب الإلكتروني بعد التجهيز. حاول مرة أخرى.';
 
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;
@@ -404,12 +532,106 @@ const BookDetailsScreen: React.FC = () => {
   };
 
   const handleShare = () => {
-    if (!book || !navigator.share) return;
+    if (!displayBook || !navigator.share) return;
     navigator.share({
-      title: lang === 'en' ? book.titleEn : book.titleAr,
+      title: lang === 'en' ? displayBook.titleEn : displayBook.titleAr,
       url: window.location.href
     }).catch(() => {});
   };
+
+  const confirmReadableAttachment = async (): Promise<string | null> => {
+    if (liveReadableAttachmentId) {
+      return liveReadableAttachmentId;
+    }
+
+    for (let attempt = 1; attempt <= ACQUISITION_CONFIRM_MAX_ATTEMPTS; attempt += 1) {
+      const refreshed = await refetch();
+      const attachmentId = getCanonicalEbookAttachmentId(refreshed.data);
+      if (attachmentId) {
+        return attachmentId;
+      }
+      if (attempt < ACQUISITION_CONFIRM_MAX_ATTEMPTS) {
+        await waitForAcquisitionConfirmation(ACQUISITION_CONFIRM_DELAY_MS);
+      }
+    }
+
+    return null;
+  };
+
+  const prepareReadableCopy = async (silent: boolean): Promise<boolean> => {
+    if (!bookId || isPreparingReadableCopy || !canPrepareReadableCopy) {
+      return false;
+    }
+
+    try {
+      if (import.meta.env.DEV) {
+        console.log('ACQUIRE INPUT PROVIDERS', (book as Record<string, unknown> | null)?.externalReadableSources);
+      }
+      setAcquisitionState('pending');
+      setAcquisitionErrorMessage(null);
+      if (!silent) {
+        showToast(lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...');
+      }
+      await acquireExternalEbookForRead({ bookId });
+      const attachmentId = await confirmReadableAttachment();
+      if (!attachmentId) {
+        setAcquisitionState('failed');
+        setAcquisitionErrorMessage(acquisitionConfirmationFailedMessage);
+        return false;
+      }
+      setConfirmedReadableAttachmentId(attachmentId);
+      setAcquisitionState('success');
+      if (!silent) {
+        showToast(lang === 'en' ? 'Ebook is ready.' : 'الكتاب الإلكتروني جاهز.');
+      }
+      return true;
+    } catch (error) {
+      console.error('[BOOK_DETAILS][READ_ACQUIRE_FAILED]', error);
+      setAcquisitionState('failed');
+      setAcquisitionErrorMessage(acquisitionFailedMessage);
+      if (!silent) {
+        showToast(
+          lang === 'en'
+            ? 'This book could not be prepared for reading.'
+            : 'تعذر تجهيز هذا الكتاب للقراءة.'
+        );
+      }
+      return false;
+    }
+  };
+
+  const handleRead = async () => {
+    if (!bookId || isPreparingReadableCopy) return;
+
+    if (hasReadableEbook) {
+      navigate({
+        type: 'immersive',
+        id: 'reader',
+        params: { bookId, from: currentView, recommendationContext }
+      });
+      return;
+    }
+
+    if (canPrepareReadableCopy) {
+      await prepareReadableCopy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!autoAcquireOnOpen || !bookId || hasReadableEbook || !canPrepareReadableCopy) return;
+
+    const acquisitionKey = `${bookId}:${pendingSearchResult?.id || 'canonical'}`;
+    if (autoAcquireStartedRef.current === acquisitionKey) return;
+    autoAcquireStartedRef.current = acquisitionKey;
+
+    void prepareReadableCopy(true);
+  }, [
+    autoAcquireOnOpen,
+    bookId,
+    canPrepareReadableCopy,
+    hasReadableEbook,
+    pendingSearchResult?.id,
+  ]);
 
   const handlePublishReview = async () => {
     if (!bookId || !user?.uid) return;
@@ -433,7 +655,7 @@ const BookDetailsScreen: React.FC = () => {
     }
   };
 
-  if (isResolvingExternal && !resolvedExternalBookId) {
+  if (isResolvingExternal && !resolvedExternalBookId && !displayBook) {
     if (prepareTimedOut) {
       return (
         <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
@@ -476,7 +698,7 @@ const BookDetailsScreen: React.FC = () => {
     );
   }
 
-  if (isBookLoading) {
+  if (isBookLoading && !displayBook) {
     if (prepareTimedOut) {
       return (
         <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
@@ -503,7 +725,7 @@ const BookDetailsScreen: React.FC = () => {
     );
   }
 
-  if (isError || (!bookId && !hasExternalPendingSearch)) {
+  if ((isError && !displayBook) || (!bookId && !hasExternalHydrationCandidate && !displayBook)) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
         <ErrorState
@@ -519,7 +741,7 @@ const BookDetailsScreen: React.FC = () => {
     );
   }
 
-  if (!bookId && hasExternalPendingSearch) {
+  if (!bookId && hasExternalHydrationCandidate && !displayBook) {
     if (prepareTimedOut) {
       return (
         <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
@@ -546,7 +768,7 @@ const BookDetailsScreen: React.FC = () => {
     );
   }
 
-  if (book === null) {
+  if (book === null && !displayBook) {
     if (prepareTimedOut) {
       return (
         <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
@@ -596,25 +818,25 @@ const BookDetailsScreen: React.FC = () => {
           <section className={cn('flex items-start gap-5 lg:gap-8', isRTL && 'flex-row-reverse')}>
             <div className="w-32 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 shadow-2xl aspect-[2/3] lg:w-[180px]">
               <CanonicalCoverArtwork
-                title={lang === 'en' ? book.titleEn : book.titleAr}
-                author={lang === 'en' ? book.authorEn : book.authorAr}
-                coverUrl={book.coverUrl}
-                coverMode={book.coverMode}
-                fallbackCover={book.fallbackCover}
+                title={lang === 'en' ? displayBook?.titleEn : displayBook?.titleAr}
+                author={lang === 'en' ? displayBook?.authorEn : displayBook?.authorAr}
+                coverUrl={displayBook?.coverUrl}
+                coverMode={displayBook?.coverMode}
+                fallbackCover={displayBook?.fallbackCover}
                 variant="poster"
                 imageClassName="h-full w-full object-cover"
               />
             </div>
             <div className={cn('min-w-0 flex-1 self-start pt-1 lg:max-w-[calc(100%-212px)]', isRTL && 'text-right')}>
               <BilingualText role="H1" className="!text-2xl !font-bold leading-tight md:!text-4xl">
-                {lang === 'en' ? book.titleEn : book.titleAr}
+                {lang === 'en' ? displayBook?.titleEn : displayBook?.titleAr}
               </BilingualText>
-              <p className="mt-1.5 text-base text-white/60">{lang === 'en' ? book.authorEn : book.authorAr}</p>
+              <p className="mt-1.5 text-base text-white/60">{lang === 'en' ? displayBook?.authorEn : displayBook?.authorAr}</p>
               <div className={cn('mt-4 flex flex-wrap items-center gap-2', isRTL && 'justify-end')}>
                 <div className="flex items-center rounded-full border border-white/10 bg-white/5 px-2.5 py-1">
                   <StarIcon className="mr-1.5 h-3 w-3 fill-current text-yellow-400" />
-                  <span className="mr-1.5 text-sm font-black">{(book.rating || 0).toFixed(1)}</span>
-                  <span className="text-[10px] tracking-tighter text-white/30">({(book.ratingsCount || 0).toLocaleString()})</span>
+                  <span className="mr-1.5 text-sm font-black">{(displayBook?.rating || 0).toFixed(1)}</span>
+                  <span className="text-[10px] tracking-tighter text-white/30">({(displayBook?.ratingsCount || 0).toLocaleString()})</span>
                 </div>
               </div>
             </div>
@@ -624,9 +846,11 @@ const BookDetailsScreen: React.FC = () => {
           <section className="grid grid-cols-4 gap-3 lg:gap-4">
             <button
               onClick={() => setIsShelfModalOpen(true)}
+              disabled={!bookId || !book}
               className={cn(
                 'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
-                isSavedOnPhysicalShelf && 'bg-accent/10 text-accent'
+                isSavedOnPhysicalShelf && 'bg-accent/10 text-accent',
+                (!bookId || !book) && 'opacity-40'
               )}
             >
               <ShelvesIcon className="h-6 w-6" />
@@ -650,33 +874,82 @@ const BookDetailsScreen: React.FC = () => {
               </span>
             </button>
             <button
-              onClick={() =>
-                hasReadableEbook
-                  && navigate({
-                    type: 'immersive',
-                    id: 'reader',
-                    params: { bookId, from: currentView, recommendationContext }
-                  })
-              }
-              disabled={!hasReadableEbook}
+              onClick={handleRead}
+              disabled={isPreparingReadableCopy || (!canAttemptRead && !canPrepareReadableCopy)}
               className={cn(
                 'flex aspect-square items-center justify-center rounded-2xl border transition-all lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
-                hasReadableEbook
+                canAttemptRead
                   ? 'border-accent bg-accent text-black shadow-lg shadow-accent/25 ring-1 ring-accent/40'
+                  : canPrepareReadableCopy
+                  ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-100'
                   : 'border-white/10 bg-white/5 opacity-20'
               )}
             >
-              <EyeIcon className={cn('h-6 w-6', hasReadableEbook && 'h-6.5 w-6.5')} />
-              <span className={cn('hidden text-xs font-semibold tracking-wide lg:block', hasReadableEbook ? 'text-black/80' : 'text-white/70')}>
-                {lang === 'en' ? 'Read' : 'اقرأ'}
+              {isPreparingReadableCopy ? <LoadingSpinner className="!h-5 !w-5" /> : <EyeIcon className={cn('h-6 w-6', canAttemptRead && 'h-6.5 w-6.5')} />}
+              <span className={cn('hidden text-xs font-semibold tracking-wide lg:block', canAttemptRead ? 'text-black/80' : 'text-white/70')}>
+                {isPreparingReadableCopy
+                  ? (lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...')
+                  : canAttemptRead
+                  ? (lang === 'en' ? 'Read' : 'اقرأ')
+                  : acquisitionState === 'failed' && canPrepareReadableCopy
+                  ? (lang === 'en' ? 'Retry ebook' : 'أعد تجهيز الكتاب الإلكتروني')
+                  : canPrepareReadableCopy
+                  ? (lang === 'en' ? 'Prepare ebook' : 'جهّز الكتاب الإلكتروني')
+                  : (lang === 'en' ? 'Unavailable' : 'غير متاح')}
               </span>
             </button>
           </section>
 
+          {acquisitionState !== 'idle' && (
+            <section
+              className={cn(
+                'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3',
+                acquisitionState === 'pending'
+                  ? 'border-cyan-400/25 bg-cyan-400/10'
+                  : acquisitionState === 'failed'
+                  ? 'border-rose-400/25 bg-rose-400/10'
+                  : 'border-emerald-400/25 bg-emerald-400/10'
+              )}
+            >
+              <div className="min-w-0">
+                <p
+                  className={cn(
+                    'text-sm font-semibold',
+                    acquisitionState === 'pending'
+                      ? 'text-cyan-100'
+                      : acquisitionState === 'failed'
+                      ? 'text-rose-100'
+                      : 'text-emerald-100'
+                  )}
+                >
+                  {acquisitionState === 'pending'
+                    ? (lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...')
+                    : acquisitionState === 'failed'
+                    ? (lang === 'en' ? 'Ebook preparation failed.' : 'فشل تجهيز الكتاب الإلكتروني.')
+                    : (lang === 'en' ? 'Ebook ready to read.' : 'الكتاب الإلكتروني جاهز للقراءة.')}
+                </p>
+                {acquisitionState === 'failed' && acquisitionErrorMessage ? (
+                  <p className="mt-1 text-xs text-rose-100/80">{acquisitionErrorMessage}</p>
+                ) : null}
+              </div>
+              {acquisitionState === 'failed' && canPrepareReadableCopy ? (
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    void prepareReadableCopy(false);
+                  }}
+                  className="!h-9 !shrink-0 !rounded-full border border-rose-200/20 !px-4 !text-xs !text-rose-50"
+                >
+                  {lang === 'en' ? 'Retry' : 'إعادة المحاولة'}
+                </Button>
+              ) : null}
+            </section>
+          )}
+
           {/* Summary */}
           <section className="space-y-3">
             <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Summary' : 'الملخص'}</BilingualText>
-            <p className="text-base leading-relaxed text-white/80 font-serif">{lang === 'en' ? book.descriptionEn : book.descriptionAr || book.descriptionEn}</p>
+            <p className="text-base leading-relaxed text-white/80 font-serif">{lang === 'en' ? displayBook?.descriptionEn : displayBook?.descriptionAr || displayBook?.descriptionEn}</p>
           </section>
 
           {/* Reviews */}
@@ -716,7 +989,9 @@ const BookDetailsScreen: React.FC = () => {
         </main>
       </div>
 
-      <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId!} book={book} recommendationContext={recommendationContext} />
+      {bookId && book && (
+        <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId} book={book} recommendationContext={recommendationContext} />
+      )}
     </PageTransition>
   );
 };

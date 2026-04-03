@@ -648,13 +648,12 @@ export const firebaseCatalogService = {
   },
 
   async getRelatedBooks(bookId: string): Promise<Book[]> {
-    const book = await this.getBook(bookId);
-    if (!book?.authorId) return [];
-
-    const byAuthor = await this.getBooksByAuthor(book.authorId);
-    return byAuthor
-      .filter((candidate) => candidate.id !== bookId)
-      .slice(0, RELATED_BOOKS_LIMIT);
+    if (!bookId) return [];
+    const response = await callEndpoint<{ bookId: string }, { books: Book[] }>(
+      "getRelatedBooks",
+      { bookId }
+    );
+    return Array.isArray(response.books) ? response.books : [];
   },
 
   async getTrendingBooks(): Promise<Book[]> {
@@ -990,7 +989,10 @@ export const firebaseCatalogService = {
   },
 
   async getRecommendations(_uid: string): Promise<string[]> {
-    const trending = await this.getTrendingBooks();
-    return trending.map((b) => b.id);
+    const response = await callEndpoint<{ uid?: string }, { bookIds: string[] }>(
+      "getRecommendations",
+      typeof _uid === "string" && _uid.trim().length > 0 ? { uid: _uid.trim() } : {}
+    );
+    return Array.isArray(response.bookIds) ? response.bookIds : [];
   },
 };

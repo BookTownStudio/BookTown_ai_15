@@ -242,6 +242,53 @@ describe("Search Harness — Canonical Local Engine", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("availabilityOnly returns only canonical in-app and trusted external available rows", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("openlibrary.org/search.json")) {
+          return {
+            ok: true,
+            json: async () => ({ docs: [] }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gutendex.com")) {
+          return {
+            ok: true,
+            json: async () => ({ results: [] }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gallica.bnf.fr")) {
+          return {
+            ok: true,
+            json: async () => ({}),
+            text: async () => "",
+          } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({ entries: [] }),
+          text: async () => "",
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("ebook filter", { availabilityOnly: true });
+    const titles = response.results.map((entry: any) => normalize(entry.title || ""));
+
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(titles).toContain("ebook filter primary novel");
+    expect(titles).toContain("ebook filter digital edition");
+    expect(titles).not.toContain("ebook filter print edition");
+    response.results.forEach((entry: any) => {
+      expect(entry.available).toBe(true);
+    });
+  });
+
   it("external fallback only when canonicalCount < threshold", async () => {
     vi.stubEnv("NODE_ENV", "development");
 
@@ -462,6 +509,227 @@ describe("Search Harness — Canonical Local Engine", () => {
       expect(entry.rank).toBeGreaterThan(results[0]?.rank ?? 0);
       expect(normalize(entry.authors?.[0] || "")).toBe("unknown");
     });
+  });
+
+  it('returns the canonical Pride row for ebookOnly when legacy in-app storage exists', async () => {
+    const pride = LOCAL_EDITIONS.find((entry) => entry.id === 'e16') as
+      | (Record<string, unknown> & { storagePath?: string; isEbookAvailable?: boolean })
+      | undefined;
+    expect(pride).toBeDefined();
+
+    const previousStoragePath = pride?.storagePath;
+    const previousIsEbookAvailable = pride?.isEbookAvailable;
+
+    if (pride) {
+      pride.storagePath = 'books/e16/original/pride-and-prejudice.epub';
+      pride.isEbookAvailable = true;
+    }
+
+    try {
+      const response = await unifiedSearch('pride', { ebookOnly: true });
+
+      expect(response.results).toHaveLength(1);
+      expect(response.canonicalCount).toBe(1);
+      expect(response.externalCount).toBe(0);
+      expect(response.telemetry?.externalFallbackTriggered).toBe(false);
+      expect(response.results[0]?.title).toBe('Pride and Prejudice');
+      expect(response.results[0]?.ebookClass).toBe('in_app');
+      expect(response.results[0]?.downloadable).toBe(true);
+      expect(response.results[0]?.hasEbook).toBe(true);
+      expect(response.results[0]?.isEbookAvailable).toBe(true);
+    } finally {
+      if (pride) {
+        if (typeof previousStoragePath === 'string') {
+          pride.storagePath = previousStoragePath;
+        } else {
+          delete pride.storagePath;
+        }
+
+        if (typeof previousIsEbookAvailable === 'boolean') {
+          pride.isEbookAvailable = previousIsEbookAvailable;
+        } else {
+          delete pride.isEbookAvailable;
+        }
+      }
+    }
+  });
+
+  it("availabilityOnly collapses duplicate external readability into the canonical row", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const pride = LOCAL_EDITIONS.find((entry) => entry.id === "e16");
+    expect(pride).toBeDefined();
+    const previousProviderIds = Array.isArray(pride?.providerExternalIds)
+      ? [...(pride?.providerExternalIds || [])]
+      : undefined;
+    if (pride) {
+      pride.providerExternalIds = ["openLibrary:OL66554W"];
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("openlibrary.org/works/OL66554W/editions.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              entries: [
+                {
+                  title: "Pride and Prejudice",
+                  ocaid: "pride-and-prejudice-ia",
+                },
+              ],
+            }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("openlibrary.org/search.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  key: "/works/OL66554W",
+                  title: "Pride and Prejudice",
+                  author_name: ["Jane Austen"],
+                  has_fulltext: true,
+                  lending_edition_s: "OL50444320M",
+                  language: ["en"],
+                },
+                {
+                  key: "/works/OLMEMOIR1W",
+                  title: "Pride: A Memoir",
+                  author_name: ["Author Example"],
+                  has_fulltext: true,
+                  lending_identifier_s: "memoir-lending-id",
+                  language: ["en"],
+                },
+              ],
+            }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gutendex.com")) {
+          return {
+            ok: true,
+            json: async () => ({ results: [] }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gallica.bnf.fr")) {
+          return {
+            ok: true,
+            json: async () => ({}),
+            text: async () => "",
+          } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({ entries: [] }),
+          text: async () => "",
+        } as any;
+      }) as any
+    );
+
+    try {
+      const response = await unifiedSearch("pride", { availabilityOnly: true });
+      const canonicalPride = response.results.find(
+        (entry: any) =>
+          entry.resultType === "canonical" &&
+          normalize(entry.title || "") === "pride and prejudice"
+      );
+      const duplicateExternal = response.results.find(
+        (entry: any) => entry.resultType === "external" && entry.externalId === "OL66554W"
+      );
+
+      expect(canonicalPride).toBeDefined();
+      expect(canonicalPride?.available).toBe(true);
+      expect(canonicalPride?.acquired).toBe(false);
+      expect(canonicalPride?.readAccess).toBe("trusted_external");
+      expect(canonicalPride?.readProvider).toBe("openLibrary");
+      expect(canonicalPride?.externalReadableSources).toEqual([
+        {
+          provider: "openLibrary",
+          providerExternalId: "OL66554W",
+          lendingEditionId: "OL50444320M",
+          trust: "trusted",
+        },
+      ]);
+      expect(duplicateExternal).toBeUndefined();
+    } finally {
+      if (pride) {
+        if (previousProviderIds) {
+          pride.providerExternalIds = previousProviderIds;
+        } else {
+          delete pride.providerExternalIds;
+        }
+      }
+    }
+  });
+
+  it("availabilityOnly keeps live-shape OpenLibrary readable rows even when ebook_count_i is absent", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("openlibrary.org/search.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  key: "/works/OL1095427W",
+                  title: "Jane Eyre",
+                  author_name: ["Charlotte Bronte"],
+                  has_fulltext: true,
+                  lending_edition_s: "OL35354586M",
+                  public_scan_b: true,
+                  language: ["en"],
+                },
+              ],
+            }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gutendex.com")) {
+          return {
+            ok: true,
+            json: async () => ({ results: [] }),
+            text: async () => "",
+          } as any;
+        }
+        if (url.includes("gallica.bnf.fr")) {
+          return {
+            ok: true,
+            json: async () => ({}),
+            text: async () => "",
+          } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({ entries: [] }),
+          text: async () => "",
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("Jane Eyre", { availabilityOnly: true });
+    const jane = response.results.find((entry: any) => entry.externalId === "OL1095427W");
+
+    expect(jane).toBeDefined();
+    expect(jane?.available).toBe(true);
+    expect(jane?.acquired).toBe(false);
+    expect(jane?.readAccess).toBe("trusted_external");
+    expect(jane?.readProvider).toBe("openLibrary");
+    expect(jane?.externalReadableSources).toEqual([
+      {
+        provider: "openLibrary",
+        providerExternalId: "OL1095427W",
+        lendingEditionId: "OL35354586M",
+        trust: "trusted",
+      },
+    ]);
   });
 
   it("penalizes unknown-author Frankenstein rows below the canonical author", async () => {

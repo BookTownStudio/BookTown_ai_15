@@ -230,14 +230,56 @@ const searchBookSchema = z
     descriptionAr: z.string(),
     coverUrl: z.string(),
     language: z.string().min(2).max(8),
+    available: z.boolean(),
+    acquired: z.boolean(),
+    readAccess: z.enum(["none", "in_app", "trusted_external"]),
+    readProvider: z
+      .enum(["booktown", "openLibrary", "gutenberg", "hindawi", "gallica"])
+      .nullable(),
     hasEbook: z.boolean(),
     downloadable: z.boolean(),
     isEbookAvailable: z.boolean(),
     confidence: z.number().min(0).max(1),
     rank: z.number().int().nonnegative(),
+    externalReadableSources: z
+      .array(
+        z
+          .object({
+            provider: z.enum(["openLibrary", "gutenberg", "hindawi", "gallica"]),
+            providerExternalId: z.string().min(1),
+            lendingEditionId: z.string().min(1).optional(),
+            lendingIdentifier: z.string().min(1).optional(),
+            trust: z.literal("trusted"),
+          })
+          .strict()
+      )
+      .optional(),
     rawBook: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
+
+const conflictingSearchAvailabilityModesMessage =
+  "Search request cannot set both ebookOnly=true and availabilityOnly=true.";
+
+const searchBooksRequestSchema = z
+  .object({
+    q: z.string().min(2),
+    ebookOnly: z.boolean().optional(),
+    availabilityOnly: z.boolean().optional(),
+    lang: z.string().min(2).max(8).optional(),
+    cursor: z.string().min(1).optional(),
+    limit: z.number().int().min(1).max(30).optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    if (value.ebookOnly === true && value.availabilityOnly === true) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: conflictingSearchAvailabilityModesMessage,
+        path: ["availabilityOnly"],
+      });
+    }
+  });
 
 // Canonical quote contract:
 // - `id` is the authoritative canonical quote identity used by new reads/writes.
@@ -496,6 +538,26 @@ const catalogBookSchema = z
     createdAt: z.number().int().nonnegative().optional(),
     rawBook: z.record(z.string(), z.unknown()).optional(),
     ebookAttachmentId: z.string().max(256).optional(),
+    ebookStoragePath: z.string().max(2048).optional(),
+    downloadable: z.boolean().optional(),
+    providerExternalIds: z.array(z.string().max(256)).max(32).optional(),
+    externalReadableSources: z
+      .array(
+        z
+          .object({
+            provider: z.enum(["openLibrary", "gutenberg", "hindawi", "gallica"]),
+            providerExternalId: z.string().min(1),
+            lendingEditionId: z.string().min(1).optional(),
+            lendingIdentifier: z.string().min(1).optional(),
+            trust: z.literal("trusted"),
+          })
+          .strict()
+      )
+      .max(16)
+      .optional(),
+    acquiredFromProvider: z
+      .enum(["openLibrary", "gutenberg", "hindawi", "gallica"])
+      .optional(),
   })
   .strict();
 
@@ -1167,6 +1229,40 @@ export const apiContracts = {
       }
     ),
 
+    getRelatedBooks: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          books: z.array(catalogBookSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/firebaseCatalogService.ts"],
+      }
+    ),
+
+    getRecommendations: defineContract(
+      z
+        .object({
+          uid: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          bookIds: z.array(z.string().min(1)).max(20),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/firebaseCatalogService.ts"],
+      }
+    ),
+
     getPublicProfile: defineContract(
       z
         .object({
@@ -1642,18 +1738,21 @@ export const apiContracts = {
           providerExternalId: z.string().min(1).optional(),
           bookId: z.string().min(1).optional(),
           source: z.enum(["googleBooks", "openLibrary"]),
-          rawBook: z.record(z.string(), z.unknown()),
+          rawBook: z.record(z.string(), z.unknown()).optional(),
         })
         .strict()
-        .refine(
-          (value) =>
-            (typeof value.providerExternalId === "string" &&
-              value.providerExternalId.trim().length > 0) ||
-            (typeof value.bookId === "string" && value.bookId.trim().length > 0),
-          {
-            message: "providerExternalId_or_bookId_required",
+        .superRefine((value, ctx) => {
+          const providerExternalId =
+            typeof value.providerExternalId === "string" && value.providerExternalId.trim().length > 0;
+          const bookId = typeof value.bookId === "string" && value.bookId.trim().length > 0;
+
+          if (!providerExternalId && !bookId) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "providerExternalId_or_bookId_required",
+            });
           }
-        ),
+        }),
       z
         .object({
           canonicalBookId: z.string().min(1),
@@ -1894,6 +1993,37 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useEbookReaderAccess.ts"],
+      }
+    ),
+
+    acquireExternalEbookForRead: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1).optional(),
+          source: z.enum(["googleBooks", "openLibrary"]).optional(),
+          providerExternalId: z.string().min(1).optional(),
+        })
+        .strict()
+        .superRefine((value, ctx) => {
+          if (!value.bookId && !(value.source && value.providerExternalId)) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "bookId or source + providerExternalId is required",
+            });
+          }
+        }),
+      z
+        .object({
+          bookId: z.string().min(1),
+          editionId: z.string().min(1).optional(),
+          status: z.enum(["already_available", "acquired"]),
+          provider: z.enum(["booktown", "openLibrary", "gutenberg", "hindawi", "gallica"]),
+          format: z.enum(["epub", "pdf", "unknown"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/books/acquireExternalEbookForRead.ts"],
       }
     ),
 
@@ -3275,15 +3405,7 @@ export const apiContracts = {
 
   rest: {
     searchBooks: defineContract(
-      z
-        .object({
-          q: z.string().min(2),
-          ebookOnly: z.boolean().optional(),
-          lang: z.string().min(2).max(8).optional(),
-          cursor: z.string().min(1).optional(),
-          limit: z.number().int().min(1).max(30).optional(),
-        })
-        .strict(),
+      searchBooksRequestSchema,
       z
         .object({
           results: z.array(searchBookSchema),

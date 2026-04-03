@@ -27,7 +27,7 @@ const UnifiedSearchFilterToggle: React.FC<UnifiedSearchFilterToggleProps> = ({
         className
       )}
     >
-      {lang === 'en' ? 'In-App Ebooks' : 'كتب داخل التطبيق'}
+      {lang === 'en' ? 'Available Ebooks' : 'الكتب المتاحة'}
     </button>
   );
 };

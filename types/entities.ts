@@ -244,6 +244,17 @@ export interface Book {
     createdAt?: number;
     rawBook?: any; // preserved provider response
     ebookAttachmentId?: string; // Reference to secure binary attachment
+    ebookStoragePath?: string;
+    downloadable?: boolean;
+    providerExternalIds?: string[];
+    externalReadableSources?: Array<{
+        provider: 'openLibrary' | 'gutenberg' | 'hindawi' | 'gallica';
+        providerExternalId: string;
+        lendingEditionId?: string;
+        lendingIdentifier?: string;
+        trust: 'trusted';
+    }>;
+    acquiredFromProvider?: 'openLibrary' | 'gutenberg' | 'hindawi' | 'gallica';
 }
 
 export type CanonicalCoverMode = 'uploaded' | 'fallback_metadata';

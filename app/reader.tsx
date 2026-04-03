@@ -5,6 +5,8 @@ import { useNavigation } from '../store/navigation.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
+import AppFrame from '../components/layout/AppFrame.tsx';
+import ContentRail from '../components/layout/ContentRail.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
 import NarrationMicroPlayer from '../components/reader/NarrationMicroPlayer.tsx';
 import QuoteBubble from '../components/reader/QuoteBubble.tsx';
@@ -100,6 +102,24 @@ function clampReaderPage(page: number, totalPages: number): number {
   return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
 }
 
+function renderReaderViewport(children: React.ReactNode, backgroundColor = '#000000') {
+  return (
+    <AppFrame
+      className="h-screen overflow-hidden"
+      style={{ backgroundColor }}
+    >
+      <div className="app-frame__inner h-full px-0">
+        <ContentRail
+          variant="narrow"
+          className="h-full px-0"
+        >
+          {children}
+        </ContentRail>
+      </div>
+    </AppFrame>
+  );
+}
+
 const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
@@ -150,6 +170,7 @@ const ReaderScreen: React.FC = () => {
   const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastProgressFingerprintRef = useRef<string>('');
   const lastNarrationErrorRef = useRef<string>('');
+  const latestEpubAnchorRef = useRef<Record<string, unknown> | null>(null);
   const latestProgressPayloadRef = useRef<{
     bookId: string;
     currentPage: number;
@@ -158,6 +179,7 @@ const ReaderScreen: React.FC = () => {
     format: ReaderFormat;
     readingMode: 'scroll' | 'page';
     paragraphIndex: number | null;
+    lastAnchor?: Record<string, unknown> | null;
   } | null>(null);
   const hasOfflineCopy = useMemo(
     () => Boolean(offlineRecord && isOfflineValid(offlineRecord)),
@@ -200,6 +222,10 @@ const ReaderScreen: React.FC = () => {
     snapshot: narrationSnapshot,
     language: lang,
   });
+
+  useEffect(() => {
+    latestEpubAnchorRef.current = null;
+  }, [bookId]);
 
   const handleReaderPageChange = useCallback((nextPage: number, pagesCount: number) => {
     setCurrentPage(nextPage);
@@ -342,6 +368,32 @@ const ReaderScreen: React.FC = () => {
     if (readerManifest?.format && readerManifest.format !== 'unknown') return readerManifest.format;
     return inferFormatFromUrl(readerSession.signedUrl);
   }, [offlineRecord, readerManifest, readerSession]);
+
+  const handleEpubLocationChange = useCallback(
+    (location: { cfi: string; href: string | null; index: number | null }) => {
+      if (effectiveFormat !== 'epub') return;
+
+      const cfi = typeof location.cfi === 'string' ? location.cfi.trim() : '';
+      const href = typeof location.href === 'string' ? location.href.trim() : '';
+      const manifestVersion =
+        typeof readerManifest?.version === 'number' && Number.isFinite(readerManifest.version)
+          ? Math.trunc(readerManifest.version)
+          : null;
+
+      if (!cfi || !href || !manifestVersion || manifestVersion <= 0) {
+        return;
+      }
+
+      latestEpubAnchorRef.current = {
+        kind: 'epub_point',
+        manifestVersion,
+        locationId: href,
+        spineItemId: href,
+        cfi,
+      };
+    },
+    [effectiveFormat, readerManifest?.version]
+  );
 
   const effectiveBookmarks = useMemo(() => {
     const merged = new Map<string, (typeof bookmarks)[number]>();
@@ -595,6 +647,7 @@ const ReaderScreen: React.FC = () => {
       format: ReaderFormat;
       readingMode: 'scroll' | 'page';
       paragraphIndex: number | null;
+      lastAnchor?: Record<string, unknown> | null;
     }) => {
       try {
         const fn = httpsCallable(getFunctions(), 'recordReadingProgress');
@@ -610,6 +663,7 @@ const ReaderScreen: React.FC = () => {
             mode: payload.readingMode,
             paragraphIndex: payload.paragraphIndex,
           },
+          ...(payload.lastAnchor ? { lastAnchor: payload.lastAnchor } : {}),
           ...(recommendationContext ? { recommendationContext } : {}),
         });
 
@@ -642,6 +696,7 @@ const ReaderScreen: React.FC = () => {
             mode: payload.readingMode,
             paragraphIndex: payload.paragraphIndex,
           },
+          ...(payload.lastAnchor ? { lastAnchor: payload.lastAnchor } : {}),
         });
       }
     },
@@ -728,9 +783,14 @@ const ReaderScreen: React.FC = () => {
       format,
       readingMode,
       paragraphIndex: narration.paragraphIndex,
+      lastAnchor: format === 'epub' ? latestEpubAnchorRef.current : null,
     };
     latestProgressPayloadRef.current = payload;
-    const fingerprint = `${bookId}:${safePage}:${safeTotal}:${format}:${readingMode}:${narration.paragraphIndex ?? 'none'}`;
+    const anchorFingerprint =
+      format === 'epub' && payload.lastAnchor && typeof payload.lastAnchor.cfi === 'string'
+        ? payload.lastAnchor.cfi
+        : 'none';
+    const fingerprint = `${bookId}:${safePage}:${safeTotal}:${format}:${readingMode}:${narration.paragraphIndex ?? 'none'}:${anchorFingerprint}`;
 
     if (lastProgressFingerprintRef.current === fingerprint) return;
 
@@ -795,10 +855,11 @@ const ReaderScreen: React.FC = () => {
   // Loading state
   // -------------------------------------------------
   if (isBookLoading || (loadingSession && !hasOfflineCopy) || (isOffline && hasOfflineCopy && !offlineObjectUrl)) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-black">
+    return renderReaderViewport(
+      <div className="h-full w-full flex items-center justify-center bg-black">
         <LoadingSpinner />
-      </div>
+      </div>,
+      '#000000'
     );
   }
 
@@ -806,8 +867,8 @@ const ReaderScreen: React.FC = () => {
   // Terminal guard
   // -------------------------------------------------
   if (!bookId || (sessionError && !hasOfflineCopy)) {
-    return (
-      <div className="h-screen w-full flex flex-col items-center justify-center bg-black text-white gap-6">
+    return renderReaderViewport(
+      <div className="h-full w-full flex flex-col items-center justify-center bg-black text-white gap-6">
         <p className="text-white/60 text-sm">
           {lang === 'en'
             ? 'This book is not available for reading.'
@@ -819,15 +880,17 @@ const ReaderScreen: React.FC = () => {
         >
           {lang === 'en' ? 'Back' : 'عودة'}
         </button>
-      </div>
+      </div>,
+      '#000000'
     );
   }
 
   if (book === null) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-black">
+    return renderReaderViewport(
+      <div className="h-full w-full flex items-center justify-center bg-black">
         <LoadingSpinner />
-      </div>
+      </div>,
+      '#000000'
     );
   }
 
@@ -843,12 +906,19 @@ const ReaderScreen: React.FC = () => {
             : readerSession?.resumePage || 1,
           manifestEstimatedPageCount
         );
+  const initialEpubCfi =
+    readerSession?.resumeAnchor?.kind === 'epub_point'
+      ? readerSession.resumeAnchor.cfi
+      : readerSession?.resumeAnchor?.kind === 'epub_range'
+        ? readerSession.resumeAnchor.startCfi
+        : null;
 
   if (!book || !activeReaderUrl) {
-    return (
-      <div className="h-screen w-full flex items-center justify-center bg-black">
+    return renderReaderViewport(
+      <div className="h-full w-full flex items-center justify-center bg-black">
         <LoadingSpinner />
-      </div>
+      </div>,
+      '#000000'
     );
   }
 
@@ -873,9 +943,9 @@ const ReaderScreen: React.FC = () => {
     </div>
   );
 
-  return (
+  return renderReaderViewport(
     <div
-      className="reader-container h-screen w-full flex flex-col overflow-hidden"
+      className="reader-container h-full w-full flex flex-col overflow-hidden"
       style={{
         backgroundColor:
           theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000',
@@ -914,6 +984,8 @@ const ReaderScreen: React.FC = () => {
             selection={runtimeSelection}
             signedUrl={activeReaderUrl}
             initialPage={initialReaderPage}
+            initialEpubCfi={initialEpubCfi}
+            onEpubLocationChange={handleEpubLocationChange}
             theme={theme}
             readingMode={readingMode}
             fontSize={fontSize}
@@ -962,7 +1034,8 @@ const ReaderScreen: React.FC = () => {
       {isSettingsVisible && (
         <ReaderSettings onClose={() => setIsSettingsVisible(false)} />
       )}
-    </div>
+    </div>,
+    theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000'
   );
 };
 

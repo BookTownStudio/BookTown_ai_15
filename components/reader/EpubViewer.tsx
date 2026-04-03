@@ -12,6 +12,12 @@ type ReaderMode = 'scroll' | 'page';
 type EpubViewerProps = {
   url: string;
   initialPage?: number;
+  initialEpubCfi?: string | null;
+  onLocationChange?: (location: {
+    cfi: string;
+    href: string | null;
+    index: number | null;
+  }) => void;
   theme?: ReaderTheme;
   readingMode?: ReaderMode;
   fontSize?: FontSize;
@@ -44,6 +50,7 @@ type EpubRendition = {
     display: (target?: string) => Promise<void>;
     prev: () => Promise<void>;
     next: () => Promise<void>;
+    resize?: (width?: number, height?: number) => void;
     on: (event: string, callback: (payload: any) => void) => void;
     destroy: () => void;
     annotations?: {
@@ -80,6 +87,78 @@ async function loadEpubBinary(url: string, signal: AbortSignal): Promise<ArrayBu
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
+}
+
+function waitForAnimationFrame(): Promise<void> {
+  if (typeof window === 'undefined') {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve) => {
+    window.requestAnimationFrame(() => resolve());
+  });
+}
+
+async function waitForStableContainer(container: HTMLElement): Promise<void> {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  let stableFrameCount = 0;
+  let lastWidth = -1;
+  let lastHeight = -1;
+
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await waitForAnimationFrame();
+
+    if (!container.isConnected) {
+      return;
+    }
+
+    const width = Math.floor(container.clientWidth);
+    const height = Math.floor(container.clientHeight);
+    if (width <= 0 || height <= 0) {
+      stableFrameCount = 0;
+      lastWidth = width;
+      lastHeight = height;
+      continue;
+    }
+
+    if (width === lastWidth && height === lastHeight) {
+      stableFrameCount += 1;
+    } else {
+      stableFrameCount = 1;
+      lastWidth = width;
+      lastHeight = height;
+    }
+
+    if (stableFrameCount >= 2) {
+      return;
+    }
+  }
+}
+
+function scheduleIdleTask(task: () => void): () => void {
+  if (typeof window === 'undefined') {
+    task();
+    return () => {};
+  }
+
+  if (typeof window.requestIdleCallback === 'function') {
+    const idleId = window.requestIdleCallback(() => {
+      task();
+    }, { timeout: 1500 });
+    return () => {
+      if (typeof window.cancelIdleCallback === 'function') {
+        window.cancelIdleCallback(idleId);
+      }
+    };
+  }
+
+  const timeoutId = window.setTimeout(task, 0);
+  return () => {
+    window.clearTimeout(timeoutId);
+  };
 }
 
 function getFontSizePx(fontSize: FontSize): string {
@@ -273,6 +352,7 @@ function epubHighlightStyles(color: string): Record<string, string> {
 const EpubViewer: React.FC<EpubViewerProps> = ({
   url,
   initialPage = 1,
+  initialEpubCfi = null,
   theme = 'dark',
   readingMode = 'scroll',
   fontSize = 'md',
@@ -280,6 +360,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   highlights = [],
   onPageChange,
   onLoadError,
+  onLocationChange,
   onTextSelection,
   onNarrationSnapshotChange,
 }) => {
@@ -288,6 +369,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   const bookRef = useRef<EpubBook | null>(null);
   const onPageChangeRef = useRef<EpubViewerProps["onPageChange"]>(onPageChange);
   const onLoadErrorRef = useRef<EpubViewerProps["onLoadError"]>(onLoadError);
+  const onLocationChangeRef = useRef<EpubViewerProps["onLocationChange"]>(onLocationChange);
   const onTextSelectionRef = useRef<EpubViewerProps["onTextSelection"]>(onTextSelection);
   const onNarrationSnapshotChangeRef =
     useRef<EpubViewerProps["onNarrationSnapshotChange"]>(onNarrationSnapshotChange);
@@ -296,6 +378,12 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   const isRenditionReadyRef = useRef<boolean>(false);
   const pageStateRef = useRef<{ current: number; total: number }>({ current: 1, total: 1 });
   const narrationFrameRef = useRef<number | null>(null);
+  const lastDisplayedCfiRef = useRef<string | null>(null);
+  const resizeTimerRef = useRef<number | null>(null);
+  const idleTaskCancelRef = useRef<(() => void) | null>(null);
+  const hasInitialRenderSettledRef = useRef<boolean>(false);
+  const shouldSkipRelocatedSnapshotRef = useRef<boolean>(true);
+  const areLocationsReadyRef = useRef<boolean>(false);
   const [pageState, setPageState] = useState({ current: 1, total: 1 });
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -306,6 +394,10 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   useEffect(() => {
     onLoadErrorRef.current = onLoadError;
   }, [onLoadError]);
+
+  useEffect(() => {
+    onLocationChangeRef.current = onLocationChange;
+  }, [onLocationChange]);
 
   useEffect(() => {
     onTextSelectionRef.current = onTextSelection;
@@ -356,6 +448,9 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       setLoadError(null);
       setPageState({ current: 1, total: 1 });
       isRenditionReadyRef.current = false;
+      hasInitialRenderSettledRef.current = false;
+      shouldSkipRelocatedSnapshotRef.current = true;
+      areLocationsReadyRef.current = false;
 
       try {
         const epubModule = await import('epubjs');
@@ -380,33 +475,110 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         await book.ready;
         rendition.themes?.default(getEpubThemeStyles(theme, fontSize, fontStyle));
         rendition.themes?.select('default');
-        await book.locations.generate(1200);
 
         if (cancelled) return;
 
-        const totalLocations = Math.max(1, book.locations.length());
         const requestedPage = Math.max(1, Math.trunc(initialPage));
-        const effectiveRequestedPage =
-          readingMode === 'scroll'
-            ? Math.min(requestedPage, Math.max(1, totalLocations - 1))
-            : Math.min(requestedPage, totalLocations);
-        const ratio =
-          totalLocations <= 1
-            ? 0
-            : clamp((effectiveRequestedPage - 1) / (totalLocations - 1), 0, 1);
+        const startupCfi =
+          typeof initialEpubCfi === 'string' && initialEpubCfi.trim().length > 0
+            ? initialEpubCfi.trim()
+            : null;
+        const hydrateLocations = async () => {
+          try {
+            await book.locations.generate(1200);
+            if (cancelled) return;
 
-        const startCfi = book.locations.cfiFromPercentage(ratio);
-        await rendition.display(startCfi);
+            areLocationsReadyRef.current = true;
+            const totalLocations = Math.max(1, book.locations.length());
+            const effectiveRequestedPage =
+              readingMode === 'scroll'
+                ? Math.min(requestedPage, Math.max(1, totalLocations - 1))
+                : Math.min(requestedPage, totalLocations);
+
+            if (!startupCfi && effectiveRequestedPage > 1) {
+              const ratio =
+                totalLocations <= 1
+                  ? 0
+                  : clamp((effectiveRequestedPage - 1) / (totalLocations - 1), 0, 1);
+              const targetCfi = book.locations.cfiFromPercentage(ratio);
+              lastDisplayedCfiRef.current = targetCfi;
+              await rendition.display(targetCfi);
+              if (cancelled) return;
+              emitPage(effectiveRequestedPage, totalLocations);
+              return;
+            }
+
+            const currentCfi = lastDisplayedCfiRef.current;
+            if (currentCfi) {
+              const percentage = book.locations.percentageFromCfi(currentCfi);
+              const current = Math.max(
+                1,
+                Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
+              );
+              emitPage(current, totalLocations);
+            } else {
+              emitPage(1, totalLocations);
+            }
+          } catch (error) {
+            if (!cancelled) {
+              console.warn('[READER][EPUB_LOCATIONS_GENERATE_FAILED]', error);
+            }
+          } finally {
+            if (!cancelled) {
+              scheduleNarrationSnapshot();
+            }
+          }
+        };
+
+        const renderedHandler = () => {
+          if (cancelled || hasInitialRenderSettledRef.current) return;
+          hasInitialRenderSettledRef.current = true;
+          shouldSkipRelocatedSnapshotRef.current = false;
+          idleTaskCancelRef.current?.();
+          idleTaskCancelRef.current = scheduleIdleTask(() => {
+            void hydrateLocations();
+          });
+        };
+
+        rendition.on('rendered', renderedHandler);
+
+        await waitForStableContainer(containerRef.current);
+        if (cancelled) return;
+        if (startupCfi) {
+          try {
+            await rendition.display(startupCfi);
+            lastDisplayedCfiRef.current = startupCfi;
+          } catch (error) {
+            console.warn('[READER][EPUB_START_CFI_DISPLAY_FAILED]', error);
+            await rendition.display();
+          }
+        } else {
+          await rendition.display();
+        }
         isRenditionReadyRef.current = true;
-
-        emitPage(effectiveRequestedPage, totalLocations);
-        scheduleNarrationSnapshot();
+        emitPage(1, 1);
 
         rendition.on('relocated', (location: any) => {
           if (cancelled) return;
 
           const cfi = location?.start?.cfi;
           if (!cfi) return;
+          lastDisplayedCfiRef.current = cfi;
+          onLocationChangeRef.current?.({
+            cfi,
+            href:
+              typeof location?.start?.href === 'string' && location.start.href.trim().length > 0
+                ? location.start.href.trim()
+                : null,
+            index:
+              typeof location?.start?.index === 'number' && Number.isFinite(location.start.index)
+                ? Math.trunc(location.start.index)
+                : null,
+          });
+          if (!areLocationsReadyRef.current) {
+            return;
+          }
+          const totalLocations = Math.max(1, book.locations.length());
           const percentage = book.locations.percentageFromCfi(cfi);
           const current = Math.max(
             1,
@@ -414,6 +586,9 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
           );
 
           emitPage(current, totalLocations);
+          if (shouldSkipRelocatedSnapshotRef.current || !hasInitialRenderSettledRef.current) {
+            return;
+          }
           scheduleNarrationSnapshot();
         });
 
@@ -436,11 +611,16 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
           const frame =
             (contents?.document?.defaultView?.frameElement as HTMLElement | null) || null;
           const rect = toViewportRect(rawRect, frame);
-          const percentage = book.locations.percentageFromCfi(cfiRange);
-          const page = Math.max(
-            1,
-            Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
-          );
+          const page = areLocationsReadyRef.current
+            ? (() => {
+                const totalLocations = Math.max(1, book.locations.length());
+                const percentage = book.locations.percentageFromCfi(cfiRange);
+                return Math.max(
+                  1,
+                  Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
+                );
+              })()
+            : pageStateRef.current.current;
 
           onTextSelectionRef.current?.({
             quote,
@@ -450,8 +630,8 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
           });
         });
       } catch (error: any) {
-        if (abortController.signal.aborted) return;
-        const message = error?.message || 'Failed to load EPUB.';
+      if (abortController.signal.aborted) return;
+      const message = error?.message || 'Failed to load EPUB.';
         if (cancelled) return;
         setLoadError(message);
         onNarrationSnapshotChangeRef.current?.(null);
@@ -483,14 +663,34 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       renditionRef.current = null;
       bookRef.current = null;
       isRenditionReadyRef.current = false;
+      areLocationsReadyRef.current = false;
+      hasInitialRenderSettledRef.current = false;
+      shouldSkipRelocatedSnapshotRef.current = true;
+      lastDisplayedCfiRef.current = null;
       appliedHighlightCfisRef.current = [];
+      idleTaskCancelRef.current?.();
+      idleTaskCancelRef.current = null;
+      if (resizeTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
+      }
       if (narrationFrameRef.current !== null && typeof window !== 'undefined') {
         window.cancelAnimationFrame(narrationFrameRef.current);
         narrationFrameRef.current = null;
       }
       onNarrationSnapshotChangeRef.current?.(null);
     };
-  }, [emitPage, fontSize, fontStyle, initialPage, readingMode, scheduleNarrationSnapshot, theme, url]);
+  }, [
+    emitPage,
+    fontSize,
+    fontStyle,
+    initialEpubCfi,
+    initialPage,
+    readingMode,
+    scheduleNarrationSnapshot,
+    theme,
+    url,
+  ]);
 
   useEffect(() => {
     const rendition = renditionRef.current;
@@ -532,8 +732,60 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       return;
     }
 
+    if (!hasInitialRenderSettledRef.current) {
+      return;
+    }
+
+    if (!areLocationsReadyRef.current) {
+      return;
+    }
+
     scheduleNarrationSnapshot();
   }, [fontSize, fontStyle, loadError, pageState.current, readingMode, scheduleNarrationSnapshot, theme]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || typeof ResizeObserver === 'undefined') {
+      return;
+    }
+
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry || !isRenditionReadyRef.current) return;
+
+      const width = Math.floor(entry.contentRect.width);
+      const height = Math.floor(entry.contentRect.height);
+      if (width <= 0 || height <= 0) return;
+
+      if (resizeTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(resizeTimerRef.current);
+      }
+
+      resizeTimerRef.current = window.setTimeout(() => {
+        resizeTimerRef.current = null;
+        const rendition = renditionRef.current;
+        if (!rendition || !isRenditionReadyRef.current) return;
+
+        try {
+          rendition.resize?.(width, height);
+          if (hasInitialRenderSettledRef.current && areLocationsReadyRef.current) {
+            scheduleNarrationSnapshot();
+          }
+        } catch (error) {
+          console.warn('[READER][EPUB_RESIZE_REFLOW_FAILED]', error);
+        }
+      }, 120);
+    });
+
+    observer.observe(container);
+    return () => {
+      observer.disconnect();
+      if (resizeTimerRef.current !== null && typeof window !== 'undefined') {
+        window.clearTimeout(resizeTimerRef.current);
+        resizeTimerRef.current = null;
+      }
+    };
+  }, [scheduleNarrationSnapshot]);
 
   const navigateRendition = useCallback(
     (direction: 'prev' | 'next') => {

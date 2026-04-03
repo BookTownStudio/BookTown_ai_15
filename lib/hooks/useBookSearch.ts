@@ -1,11 +1,12 @@
 import { useDebounce } from 'use-debounce';
 import { useQuery } from '../react-query.ts';
-import { bookSearchService } from '../../services/bookSearchService.ts';
+import { assertValidSearchModes, bookSearchService } from '../../services/bookSearchService.ts';
 import { SearchResponseDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../logging/bookEngineV2Log.ts';
 
 type UseBookSearchOptions = {
   ebookOnly?: boolean;
+  availabilityOnly?: boolean;
   lang?: string;
   limit?: number;
 };
@@ -22,6 +23,7 @@ export const useBookSearch = (
       'bookSearchV2',
       normalizedQuery,
       Boolean(options.ebookOnly),
+      Boolean(options.availabilityOnly),
       options.lang || '',
       typeof options.limit === 'number' ? options.limit : 15,
     ],
@@ -31,6 +33,7 @@ export const useBookSearch = (
           query: normalizedQuery.slice(0, 80),
           enabled: normalizedQuery.length >= 2,
           ebookOnly: Boolean(options.ebookOnly),
+          availabilityOnly: Boolean(options.availabilityOnly),
           lang: options.lang || 'auto',
           limit:
             typeof options.limit === 'number'
@@ -38,9 +41,15 @@ export const useBookSearch = (
               : 15,
         });
 
+        assertValidSearchModes({
+          ebookOnly: options.ebookOnly,
+          availabilityOnly: options.availabilityOnly,
+        });
+
         return bookSearchService.searchBooks({
           query: normalizedQuery,
           ebookOnly: options.ebookOnly,
+          availabilityOnly: options.availabilityOnly,
           lang: options.lang,
           limit: options.limit,
         });

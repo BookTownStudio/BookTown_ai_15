@@ -1,4 +1,4 @@
-import { SearchResponseDTO, SearchResultDTO } from '../types/bookSearch.ts';
+import { ExternalReadableSourceDTO, SearchResponseDTO, SearchResultDTO } from '../types/bookSearch.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import {
   getFirebaseAppCheckToken,
@@ -9,6 +9,7 @@ import {
 type SearchParams = {
   query: string;
   ebookOnly?: boolean;
+  availabilityOnly?: boolean;
   lang?: string;
   cursor?: string;
   limit?: number;
@@ -27,6 +28,10 @@ type FailureEnvelope = {
   };
 };
 
+export const SEARCH_FILTER_CONFLICT_CODE = 'SEARCH_FILTER_CONFLICT';
+export const SEARCH_FILTER_CONFLICT_MESSAGE =
+  'Search request cannot set both ebookOnly=true and availabilityOnly=true.';
+
 export class BookSearchRequestError extends Error {
   readonly code: string;
   readonly status: number | null;
@@ -36,6 +41,18 @@ export class BookSearchRequestError extends Error {
     this.name = 'BookSearchRequestError';
     this.code = options?.code || 'SEARCH_REQUEST_FAILED';
     this.status = typeof options?.status === 'number' ? options.status : null;
+  }
+}
+
+export function assertValidSearchModes(params: {
+  ebookOnly?: boolean;
+  availabilityOnly?: boolean;
+}): void {
+  if (params.ebookOnly === true && params.availabilityOnly === true) {
+    throw new BookSearchRequestError(SEARCH_FILTER_CONFLICT_MESSAGE, {
+      code: SEARCH_FILTER_CONFLICT_CODE,
+      status: 400,
+    });
   }
 }
 
@@ -86,6 +103,28 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
   const sourceClass = asString(record.sourceClass) === 'external_provider'
     ? 'external_provider'
     : 'canonical_catalog';
+  const readAccessRaw = asString(record.readAccess);
+  const readAccess =
+    readAccessRaw === 'none' ||
+    readAccessRaw === 'in_app' ||
+    readAccessRaw === 'trusted_external'
+      ? readAccessRaw
+      : ebookClass === 'in_app'
+      ? 'in_app'
+      : ebookClass === 'external_link'
+      ? 'trusted_external'
+      : 'none';
+  const readProviderRaw = asString(record.readProvider);
+  const readProvider =
+    readProviderRaw === 'booktown' ||
+    readProviderRaw === 'openLibrary' ||
+    readProviderRaw === 'gutenberg' ||
+    readProviderRaw === 'hindawi' ||
+    readProviderRaw === 'gallica'
+      ? readProviderRaw
+      : readAccess === 'in_app'
+      ? 'booktown'
+      : null;
   const languageTruthRaw = asString(record.languageTruth);
   const languageTruth =
     languageTruthRaw === 'match' ||
@@ -106,6 +145,15 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
 
   const confidenceRaw = Number(record.confidence);
   const rankRaw = Number(record.rank);
+  const externalReadableSources = Array.isArray(record.externalReadableSources)
+    ? record.externalReadableSources
+        .map((entry) => normalizeExternalReadableSource(entry))
+        .filter(
+          (
+            entry
+          ): entry is ExternalReadableSourceDTO => entry !== null
+        )
+    : [];
 
   return {
     id,
@@ -131,15 +179,53 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     descriptionAr: asString(record.descriptionAr),
     coverUrl: asString(record.coverUrl),
     language: asString(record.language) || 'en',
+    available: Boolean(record.available ?? (ebookClass === 'in_app' || ebookClass === 'external_link')),
+    acquired: Boolean(record.acquired ?? record.downloadable),
+    readAccess,
+    readProvider,
     hasEbook: Boolean(record.hasEbook),
     downloadable: Boolean(record.downloadable),
     isEbookAvailable: Boolean(record.isEbookAvailable),
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? Math.max(0, Math.trunc(rankRaw)) : 999,
+    ...(externalReadableSources.length > 0
+      ? { externalReadableSources }
+      : {}),
     rawBook:
       record.rawBook && typeof record.rawBook === 'object'
         ? (record.rawBook as Record<string, unknown>)
         : undefined,
+  };
+}
+
+function normalizeExternalReadableSource(raw: unknown): ExternalReadableSourceDTO | null {
+  const record = raw && typeof raw === 'object' ? (raw as Record<string, unknown>) : null;
+  if (!record) return null;
+
+  const provider = asString(record.provider);
+  if (
+    provider !== 'openLibrary' &&
+    provider !== 'gutenberg' &&
+    provider !== 'hindawi' &&
+    provider !== 'gallica'
+  ) {
+    return null;
+  }
+
+  const providerExternalId = asString(record.providerExternalId);
+  if (!providerExternalId || record.trust !== 'trusted') {
+    return null;
+  }
+
+  const lendingEditionId = asString(record.lendingEditionId);
+  const lendingIdentifier = asString(record.lendingIdentifier);
+
+  return {
+    provider,
+    providerExternalId,
+    ...(lendingEditionId ? { lendingEditionId } : {}),
+    ...(lendingIdentifier ? { lendingIdentifier } : {}),
+    trust: 'trusted',
   };
 }
 
@@ -209,6 +295,8 @@ function normalizeResponse(payload: unknown): SearchResponseDTO {
 
 export const bookSearchService = {
   async searchBooks(params: SearchParams): Promise<SearchResponseDTO> {
+    assertValidSearchModes(params);
+
     const query = params.query.trim();
     if (query.length < 2) {
       return {
@@ -222,6 +310,7 @@ export const bookSearchService = {
     const url = new URL('/api/search/books', window.location.origin);
     url.searchParams.set('q', query);
     url.searchParams.set('ebookOnly', params.ebookOnly ? 'true' : 'false');
+    url.searchParams.set('availabilityOnly', params.availabilityOnly ? 'true' : 'false');
 
     if (params.lang) {
       url.searchParams.set('lang', params.lang);
@@ -244,6 +333,7 @@ export const bookSearchService = {
         url: `${url.pathname}?${url.searchParams.toString()}`,
         q: query.slice(0, 80),
         ebookOnly: Boolean(params.ebookOnly),
+        availabilityOnly: Boolean(params.availabilityOnly),
         lang: params.lang || 'auto',
         limit:
           typeof params.limit === 'number'

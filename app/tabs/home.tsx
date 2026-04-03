@@ -29,6 +29,10 @@ import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
 import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
+import {
+  acquireExternalEbookForRead,
+  buildAcquireExternalReadParams,
+} from '../../lib/books/acquireExternalEbookForRead.ts';
 
 /* -------------------------------
    Constants
@@ -116,6 +120,7 @@ const HomeScreen: React.FC = () => {
         type: 'immersive',
         id: 'bookDetails',
         params: buildBookDetailsParams(result, currentView, {
+          autoAcquireOnOpen: ebookOnly && result.available && !result.acquired,
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),
           clickTracked: true,
@@ -130,10 +135,16 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleReadResult = async (result: SearchResultDTO) => {
-    if (busyId || result.ebookClass !== 'in_app') return;
+    if (busyId || result.ebookClass === 'unavailable') return;
 
     try {
+      const acquisitionParams = buildAcquireExternalReadParams(result);
+      if (!acquisitionParams) {
+        throw new Error('INVALID_ACQUISITION_PARAMS');
+      }
+
       setBusyId(result.id);
+      showToast(lang === 'en' ? 'Preparing your copy...' : 'جارٍ تجهيز نسختك...');
       trackSearchClick({
         query: searchQuery,
         clickedRank: clickedRankFor(result.id),
@@ -142,18 +153,23 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
+      const acquired = await acquireExternalEbookForRead(acquisitionParams);
 
       navigate({
         type: 'immersive',
         id: 'reader',
         params: {
-          bookId: result.bookId,
+          bookId: acquired.bookId,
           from: currentView,
         },
       });
     } catch (err) {
       console.error('[HOME][READ_OPEN_FAILED]', err);
-      showToast(lang === 'en' ? 'Failed to open ebook.' : 'فشل فتح الكتاب الإلكتروني.');
+      showToast(
+        lang === 'en'
+          ? 'This book could not be prepared for reading.'
+          : 'تعذر تجهيز هذا الكتاب للقراءة.'
+      );
     } finally {
       setBusyId(null);
     }

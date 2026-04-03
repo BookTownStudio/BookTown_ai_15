@@ -17,6 +17,12 @@ interface ReaderSurfaceProps {
   selection: ReaderRuntimeSelection;
   signedUrl: string;
   initialPage: number;
+  initialEpubCfi?: string | null;
+  onEpubLocationChange?: (location: {
+    cfi: string;
+    href: string | null;
+    index: number | null;
+  }) => void;
   theme: ReaderTheme;
   readingMode: ReaderMode;
   fontSize: FontSize;
@@ -36,6 +42,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   selection,
   signedUrl,
   initialPage,
+  initialEpubCfi,
+  onEpubLocationChange,
   theme,
   readingMode,
   fontSize,
@@ -62,6 +70,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
         <EpubViewer
           url={signedUrl}
           initialPage={initialPage}
+          initialEpubCfi={initialEpubCfi}
+          onLocationChange={onEpubLocationChange}
           theme={theme}
           readingMode={readingMode}
           fontSize={fontSize}
