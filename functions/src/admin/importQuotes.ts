@@ -15,6 +15,12 @@ export const QUOTE_IMPORT_DAILY_WRITE_BUDGET = 15_000;
 export const QUOTE_IMPORT_BATCH_ROW_LIMIT = 200;
 export const QUOTE_IMPORT_ALLOWED_HEADERS = ["quote", "author", "category"] as const;
 
+export const QUOTE_IMPORT_CANONICAL_HEADERS = [
+  "texten",
+  "sourceen",
+  "tags",
+] as const;
+
 const QUOTE_IMPORT_MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024;
 const QUOTE_IMPORT_ALLOWED_CONTENT_TYPES = new Set([
   "",
@@ -83,22 +89,37 @@ function readOptionalNonNegativeInteger(value: unknown): number | undefined {
 }
 
 function normalizeHeader(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
+  return typeof value === "string"
+    ? value.trim().replace(/^\uFEFF/, "").toLowerCase()
+    : "";
+}
+
+function detectCsvSchema(normalizedHeaders: string[]): "raw" | "canonical" {
+  const hasRaw = QUOTE_IMPORT_ALLOWED_HEADERS.every((header) =>
+    normalizedHeaders.includes(header)
+  );
+
+  if (hasRaw) {
+    return "raw";
+  }
+
+  const hasCanonical = QUOTE_IMPORT_CANONICAL_HEADERS.every((header) =>
+    normalizedHeaders.includes(header)
+  );
+
+  if (hasCanonical) {
+    return "canonical";
+  }
+
+  throw new HttpsError(
+    "invalid-argument",
+    "CSV must contain either raw headers (quote, author, category) or canonical headers (textEn, sourceEn, tags)."
+  );
 }
 
 function validateCsvColumns(headers: string[]): string[] {
   const normalizedHeaders = headers.map(normalizeHeader);
-  const missing = QUOTE_IMPORT_ALLOWED_HEADERS.filter(
-    (header) => !normalizedHeaders.includes(header)
-  );
-
-  if (missing.length > 0) {
-    throw new HttpsError(
-      "invalid-argument",
-      `CSV is missing required headers: ${missing.join(", ")}.`
-    );
-  }
-
+  detectCsvSchema(normalizedHeaders);
   return normalizedHeaders;
 }
 
@@ -435,7 +456,10 @@ export const adminGetQuoteImportStatus = onCall({ cors: true }, async (request) 
   assertRoleFromClaims(request.auth, "superadmin");
   const snap = await quoteImportStateRef().get();
   const job = readQuoteImportJobState(snap.data());
+
+  const safeJob = JSON.parse(JSON.stringify(mapQuoteImportJobResponse(job)));
+
   return {
-    job: mapQuoteImportJobResponse(job),
+    job: safeJob,
   };
 });
