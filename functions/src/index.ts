@@ -111,10 +111,27 @@ import { logAttachmentEvents as logAttachmentEventsRaw } from "./attachments/ana
 import { backfillDerivedStats as backfillDerivedStatsRaw } from "./admin/backfillStats";
 import { backfillReadingProgressCanonical as backfillReadingProgressCanonicalRaw } from "./admin/backfillReadingProgressCanonical";
 import {
+  adminListAuthors as adminListAuthorsRaw,
+  adminGetAuthor as adminGetAuthorRaw,
+  adminAuthorCreate as adminAuthorCreateRaw,
+  adminAuthorUpdate as adminAuthorUpdateRaw,
+  adminAuthorArchive as adminAuthorArchiveRaw,
+} from "./admin/literaryAuthority";
+import {
+  adminRegisterQuoteImport as adminRegisterQuoteImportRaw,
+  adminGetQuoteImportStatus as adminGetQuoteImportStatusRaw,
+} from "./admin/importQuotes";
+import { processQuotesDaily } from "./admin/processQuotesDaily";
+import {
   listUserQuotes as listUserQuotesRaw,
   searchPublicQuotes as searchPublicQuotesRaw,
   getQuoteById as getQuoteByIdRaw,
   createQuote as createQuoteRaw,
+  adminListQuotes as adminListQuotesRaw,
+  adminGetQuote as adminGetQuoteRaw,
+  adminQuoteCreate as adminQuoteCreateRaw,
+  adminQuoteUpdate as adminQuoteUpdateRaw,
+  adminQuoteArchive as adminQuoteArchiveRaw,
   saveQuoteFromReference as saveQuoteFromReferenceRaw,
   toggleQuoteBookmark as toggleQuoteBookmarkRaw,
 } from "./quotes";
@@ -398,6 +415,26 @@ export const createDefaultShelves = wrapCallableV2(
 );
 export const ingestAuthor = wrapCallableV2("ingestAuthor", ingestAuthorRaw);
 export const discoverAuthors = wrapCallableV2("discoverAuthors", discoverAuthorsRaw);
+export const adminListAuthors = wrapCallableV2(
+  "adminListAuthors",
+  adminListAuthorsRaw
+);
+export const adminGetAuthor = wrapCallableV2(
+  "adminGetAuthor",
+  adminGetAuthorRaw
+);
+export const adminAuthorCreate = wrapCallableV2(
+  "adminAuthorCreate",
+  adminAuthorCreateRaw
+);
+export const adminAuthorUpdate = wrapCallableV2(
+  "adminAuthorUpdate",
+  adminAuthorUpdateRaw
+);
+export const adminAuthorArchive = wrapCallableV2(
+  "adminAuthorArchive",
+  adminAuthorArchiveRaw
+);
 export const backfillAuthorMetadata = wrapCallableV2(
   "backfillAuthorMetadata",
   backfillAuthorMetadataRaw
@@ -658,6 +695,34 @@ export const searchPublicQuotes = wrapCallableV2(
 );
 export const getQuoteById = wrapCallableV2("getQuoteById", getQuoteByIdRaw);
 export const createQuote = wrapCallableV2("createQuote", createQuoteRaw);
+export const adminListQuotes = wrapCallableV2(
+  "adminListQuotes",
+  adminListQuotesRaw
+);
+export const adminGetQuote = wrapCallableV2(
+  "adminGetQuote",
+  adminGetQuoteRaw
+);
+export const adminQuoteCreate = wrapCallableV2(
+  "adminQuoteCreate",
+  adminQuoteCreateRaw
+);
+export const adminQuoteUpdate = wrapCallableV2(
+  "adminQuoteUpdate",
+  adminQuoteUpdateRaw
+);
+export const adminQuoteArchive = wrapCallableV2(
+  "adminQuoteArchive",
+  adminQuoteArchiveRaw
+);
+export const adminRegisterQuoteImport = wrapCallableV2(
+  "adminRegisterQuoteImport",
+  adminRegisterQuoteImportRaw
+);
+export const adminGetQuoteImportStatus = wrapCallableV2(
+  "adminGetQuoteImportStatus",
+  adminGetQuoteImportStatusRaw
+);
 export const saveQuoteFromReference = wrapCallableV2(
   "saveQuoteFromReference",
   saveQuoteFromReferenceRaw
@@ -813,6 +878,7 @@ export const backfillReadingProgressCanonical = wrapCallableV2(
 export { scheduledNotificationCleanup } from "./admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "./admin/cleanupAttachments";
 export { scheduledReviewAggregateReconcile } from "./admin/reconcileReviewAggregates";
+export { processQuotesDaily };
 export {
   listDeletionRequests,
   createDeletionRequest,

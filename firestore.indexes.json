@@ -909,5 +909,36 @@
       ]
     }
   ],
-  "fieldOverrides": []
+  "fieldOverrides": [
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "canonicalText",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "textEn",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "textAr",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "sourceEn",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "sourceAr",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "quotes",
+      "fieldPath": "tags",
+      "indexes": []
+    }
+  ]
 }

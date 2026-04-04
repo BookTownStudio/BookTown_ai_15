@@ -17,7 +17,12 @@ const db = admin.firestore();
 
 export type SupportedAuthorSource = "openLibrary" | "wikidata" | "googleBooks";
 
-type AuthorIdentityType = "canonical" | "provider";
+type AuthorIdentityType =
+  | "canonical"
+  | "provider"
+  | "authority"
+  | "slug"
+  | "normalized_name";
 
 type AuthorIdentityRecord = {
   identityKey: string;
@@ -42,6 +47,49 @@ export type MaterializeCanonicalAuthorResult = {
   status: "CREATED" | "MERGED" | "ALREADY_COMPLETE";
   source: SupportedAuthorSource;
   providerExternalId?: string;
+};
+
+export type AdminAuthorStatus = "active" | "archived";
+
+export type AdminAuthorUpsertInput = {
+  authorId?: string;
+  canonicalName: string;
+  displayName?: string;
+  aliases?: string[];
+  slug?: string;
+  birthDate?: string | null;
+  deathDate?: string | null;
+  birthPlace?: string;
+  deathPlace?: string;
+  nationality?: string;
+  languages?: string[];
+  genres?: string[];
+  movements?: string[];
+  period?: string;
+  themes?: string[];
+  influenceTags?: string[];
+  shortBio?: string;
+  fullBio?: string;
+  wikipediaUrl?: string;
+  goodreadsId?: string;
+  openLibraryId?: string;
+  wikidataId?: string;
+  isni?: string;
+  viaf?: string;
+  portraitUrl?: string;
+  gallery?: string[];
+  knownWorks?: string[];
+  bookIds?: string[];
+  status?: AdminAuthorStatus;
+  source?: string;
+  primarySource?: string;
+  provenance?: Record<string, unknown>;
+};
+
+export type AdminAuthorUpsertResult = {
+  authorId: string;
+  canonicalKey: string;
+  status: "CREATED" | "UPDATED" | "MERGED";
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -321,6 +369,131 @@ function buildLifespan(birthYear: string, deathYear: string): string {
   }
 
   return "";
+}
+
+function normalizeDateOnly(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  const match = normalized.match(/^(\d{4})(?:-(\d{2})-(\d{2}))?$/);
+  if (!match) {
+    return "";
+  }
+
+  if (match[2] && match[3]) {
+    return `${match[1]}-${match[2]}-${match[3]}`;
+  }
+
+  return match[1];
+}
+
+function slugifyAuthorValue(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/g, "")
+    .replace(/-+$/g, "")
+    .slice(0, 120);
+}
+
+function normalizeUrl(value: unknown): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  try {
+    const parsed = new URL(normalized);
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeLooseStringArray(value: unknown, max = 24): string[] {
+  if (Array.isArray(value)) {
+    return uniqueStrings(
+      value
+        .filter((entry): entry is string => typeof entry === "string")
+        .map((entry) => entry.trim()),
+      max
+    );
+  }
+
+  if (typeof value === "string") {
+    return uniqueStrings(
+      value
+        .split(/[,\n;]/)
+        .map((entry) => entry.trim())
+        .filter(Boolean),
+      max
+    );
+  }
+
+  return [];
+}
+
+function buildAdminIdentityCandidates(params: {
+  canonicalKey: string;
+  normalizedName: string;
+  slug: string;
+  openLibraryId: string;
+  wikidataId: string;
+  goodreadsId: string;
+  isni: string;
+  viaf: string;
+}): Array<{
+  key: string;
+  type: AuthorIdentityType;
+  value: string;
+  precedence: number;
+}> {
+  const entries = buildIdentityCandidates({
+    canonicalKey: params.canonicalKey,
+    sourceIds: {
+      ...(params.openLibraryId ? { openLibrary: params.openLibraryId } : {}),
+      ...(params.wikidataId ? { wikidata: params.wikidataId } : {}),
+    },
+  });
+
+  if (params.slug) {
+    entries.push({
+      key: `slug:${params.slug}`,
+      type: "slug",
+      value: params.slug,
+      precedence: 150,
+    });
+  }
+
+  const authorityEntries: Array<[string, string]> = [
+    ["goodreads", params.goodreadsId],
+    ["isni", params.isni],
+    ["viaf", params.viaf],
+  ];
+
+  authorityEntries.forEach(([kind, value], index) => {
+    if (!value) return;
+    entries.push({
+      key: `authority:${kind}:${value}`,
+      type: "authority",
+      value: `${kind}:${value}`,
+      precedence: 300 + index,
+    });
+  });
+
+  return entries;
 }
 
 function buildIdentityCandidates(params: {
@@ -639,5 +812,334 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     status: resolvedAuthorId ? "MERGED" : "CREATED",
     source: params.source,
     ...(externalId ? { providerExternalId: externalId } : {}),
+  };
+}
+
+export async function upsertAdminAuthorInTransaction(params: {
+  tx: Transaction;
+  actorUid: string;
+  input: AdminAuthorUpsertInput;
+}): Promise<AdminAuthorUpsertResult> {
+  const canonicalName = asNonEmptyString(params.input.canonicalName) || "Unknown";
+  const displayName =
+    asNonEmptyString(params.input.displayName) || canonicalName;
+  const birthDate = normalizeDateOnly(params.input.birthDate);
+  const deathDate = normalizeDateOnly(params.input.deathDate);
+  const birthYear = normalizeAuthorYear(birthDate);
+  const deathYear = normalizeAuthorYear(deathDate);
+  const canonicalKey = buildCanonicalAuthorKey({
+    name: canonicalName,
+    birthYear,
+  });
+  const normalizedName = normalizeSearchText(canonicalName);
+  const slug =
+    asNonEmptyString(params.input.slug) ||
+    slugifyAuthorValue(displayName) ||
+    slugifyAuthorValue(canonicalName) ||
+    `author-${uuidv4().slice(0, 12)}`;
+  const openLibraryId = asNonEmptyString(params.input.openLibraryId);
+  const wikidataId = asNonEmptyString(params.input.wikidataId).toUpperCase();
+  const goodreadsId = asNonEmptyString(params.input.goodreadsId);
+  const isni = asNonEmptyString(params.input.isni);
+  const viaf = asNonEmptyString(params.input.viaf);
+  const identityCandidates = buildAdminIdentityCandidates({
+    canonicalKey,
+    normalizedName,
+    slug,
+    openLibraryId,
+    wikidataId,
+    goodreadsId,
+    isni,
+    viaf,
+  });
+
+  const mappedAuthorIds = new Set<string>();
+  const identitySnapshotsByKey = new Map<
+    string,
+    FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>
+  >();
+
+  for (const candidate of identityCandidates) {
+    const identityRef = db.collection("author_identity").doc(candidate.key);
+    const identitySnap = await params.tx.get(identityRef);
+    identitySnapshotsByKey.set(candidate.key, identitySnap);
+    const identityData = asRecord(identitySnap.data() || null);
+    const mappedAuthorId = asNonEmptyString(identityData?.authorId);
+    if (mappedAuthorId) {
+      mappedAuthorIds.add(mappedAuthorId);
+    }
+  }
+
+  const requestedAuthorId = asNonEmptyString(params.input.authorId);
+  if (requestedAuthorId) {
+    mappedAuthorIds.delete(requestedAuthorId);
+  }
+
+  if (mappedAuthorIds.size > 1) {
+    logger.error("[ADMIN_AUTHOR][IDENTITY_CONFLICT]", {
+      actorUid: params.actorUid,
+      candidateAuthorIds: Array.from(mappedAuthorIds),
+      canonicalKey,
+    });
+    throw new Error("AUTHOR_IDENTITY_CONFLICT");
+  }
+
+  const conflictingAuthorId = Array.from(mappedAuthorIds)[0] || "";
+  if (requestedAuthorId && conflictingAuthorId && conflictingAuthorId !== requestedAuthorId) {
+    throw new Error("AUTHOR_DUPLICATE_CONFLICT");
+  }
+
+  const authorId = requestedAuthorId || conflictingAuthorId || uuidv4();
+  const authorRef = db.collection("authors").doc(authorId);
+  const authorSnap = await params.tx.get(authorRef);
+  const existingAuthor = asRecord(authorSnap.data() || null);
+  if (requestedAuthorId && !authorSnap.exists) {
+    throw new Error("AUTHOR_NOT_FOUND");
+  }
+
+  const aliases = uniqueStrings([
+    ...asStringArray(existingAuthor?.aliases),
+    ...normalizeLooseStringArray(params.input.aliases),
+  ]);
+  const languages = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.languages, 12),
+    ...normalizeLooseStringArray(params.input.languages, 12),
+  ], 12);
+  const genres = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.genres, 16),
+    ...normalizeLooseStringArray(params.input.genres, 16),
+  ], 16);
+  const movements = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.movements, 16),
+    ...normalizeLooseStringArray(params.input.movements, 16),
+  ], 16);
+  const themes = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.themes, 20),
+    ...normalizeLooseStringArray(params.input.themes, 20),
+  ], 20);
+  const influenceTags = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.influenceTags, 20),
+    ...normalizeLooseStringArray(params.input.influenceTags, 20),
+  ], 20);
+  const gallery = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.gallery, 12),
+    ...normalizeLooseStringArray(params.input.gallery, 12),
+  ], 12);
+  const knownWorks = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.knownWorks, 24),
+    ...normalizeLooseStringArray(params.input.knownWorks, 24),
+  ], 24);
+  const bookIds = uniqueStrings([
+    ...normalizeLooseStringArray(existingAuthor?.bookIds, 48),
+    ...normalizeLooseStringArray(params.input.bookIds, 48),
+  ], 48);
+  const officialLinks = uniqueStrings([
+    ...asStringArray(existingAuthor?.officialLinks),
+    normalizeUrl(params.input.wikipediaUrl),
+  ], 12);
+  const searchFields = buildSearchFieldsFromTextParts([
+    canonicalName,
+    displayName,
+    ...aliases,
+    ...genres,
+    ...movements,
+  ]);
+  const sourceIds = {
+    openLibrary:
+      openLibraryId || asNonEmptyString(asRecord(existingAuthor?.sourceIds)?.openLibrary),
+    wikidata:
+      wikidataId || asNonEmptyString(asRecord(existingAuthor?.sourceIds)?.wikidata),
+    googleBooks: asNonEmptyString(asRecord(existingAuthor?.sourceIds)?.googleBooks),
+  };
+  const hasProviderSourceId = Boolean(sourceIds.openLibrary || sourceIds.wikidata || sourceIds.googleBooks);
+  const now = FieldValue.serverTimestamp();
+  const status = params.input.status || (existingAuthor?.status === "archived" ? "archived" : "active");
+  const portraitUrl =
+    normalizeUrl(params.input.portraitUrl) ||
+    asNonEmptyString(existingAuthor?.portraitUrl) ||
+    asNonEmptyString(existingAuthor?.avatarUrl);
+  const fullBio =
+    asNonEmptyString(params.input.fullBio) ||
+    asNonEmptyString(existingAuthor?.fullBio) ||
+    asNonEmptyString(existingAuthor?.bioEn);
+  const shortBio =
+    asNonEmptyString(params.input.shortBio) ||
+    asNonEmptyString(existingAuthor?.shortBio);
+  const nationality =
+    asNonEmptyString(params.input.nationality) ||
+    asNonEmptyString(existingAuthor?.nationality) ||
+    asNonEmptyString(existingAuthor?.countryEn);
+  const authorityLinks = {
+    wikipediaUrl:
+      normalizeUrl(params.input.wikipediaUrl) ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.wikipediaUrl),
+    goodreadsId:
+      goodreadsId ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.goodreadsId),
+    openLibraryId:
+      openLibraryId ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.openLibraryId),
+    isni:
+      isni ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.isni),
+    viaf:
+      viaf ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.viaf),
+    wikidataId:
+      wikidataId ||
+      asNonEmptyString(asRecord(existingAuthor?.authorityLinks)?.wikidataId),
+  };
+  const provenance = {
+    ...(asRecord(existingAuthor?.provenance) || {}),
+    ...(params.input.provenance || {}),
+    source: asNonEmptyString(params.input.source) || asNonEmptyString(existingAuthor?.source) || "admin_manual",
+    updatedBy: params.actorUid,
+  };
+
+  params.tx.set(
+    authorRef,
+    {
+      id: authorId,
+      authorId,
+      canonicalKey,
+      canonicalName,
+      normalizedName,
+      displayName,
+      slug,
+      nameEn: canonicalName,
+      nameAr: asNonEmptyString(existingAuthor?.nameAr) || canonicalName,
+      nameEnNormalized: normalizedName,
+      nameArNormalized: normalizeSearchText(asNonEmptyString(existingAuthor?.nameAr) || canonicalName),
+      aliases,
+      aliasesNormalized: uniqueStrings(
+        aliases.map((entry) => normalizeSearchText(entry)).filter(Boolean),
+        50
+      ),
+      searchTokens: searchFields.tokens,
+      searchPrefixes: searchFields.prefixes,
+      shortBio,
+      fullBio,
+      bioEn: fullBio,
+      bioAr: asNonEmptyString(existingAuthor?.bioAr),
+      portraitUrl,
+      avatarUrl: portraitUrl,
+      birthDate: birthDate || existingAuthor?.birthDate || null,
+      deathDate: deathDate || existingAuthor?.deathDate || null,
+      birthYear: birthYear || asNonEmptyString(existingAuthor?.birthYear) || null,
+      deathYear: deathYear || asNonEmptyString(existingAuthor?.deathYear) || null,
+      lifespan:
+        buildLifespan(
+          birthYear || asNonEmptyString(existingAuthor?.birthYear),
+          deathYear || asNonEmptyString(existingAuthor?.deathYear)
+        ) || asNonEmptyString(existingAuthor?.lifespan),
+      birthPlace:
+        asNonEmptyString(params.input.birthPlace) ||
+        asNonEmptyString(existingAuthor?.birthPlace),
+      deathPlace:
+        asNonEmptyString(params.input.deathPlace) ||
+        asNonEmptyString(existingAuthor?.deathPlace),
+      nationality,
+      countryEn: nationality,
+      countryAr: asNonEmptyString(existingAuthor?.countryAr),
+      languages,
+      languageEn: languages[0] || asNonEmptyString(existingAuthor?.languageEn),
+      languageAr: asNonEmptyString(existingAuthor?.languageAr),
+      genres,
+      movements,
+      period:
+        asNonEmptyString(params.input.period) ||
+        asNonEmptyString(existingAuthor?.period),
+      themes,
+      influenceTags,
+      authorityLinks,
+      sourceIds,
+      sourceRecordType: hasProviderSourceId ? "provider" : "admin",
+      enrichmentEligible: hasProviderSourceId || existingAuthor?.enrichmentEligible === true,
+      remoteIds: {
+        ...(asRecord(existingAuthor?.remoteIds) || {}),
+        ...(goodreadsId ? { goodreads: goodreadsId } : {}),
+        ...(isni ? { isni } : {}),
+        ...(viaf ? { viaf } : {}),
+      },
+      primarySource:
+        asNonEmptyString(params.input.primarySource) ||
+        asNonEmptyString(params.input.source) ||
+        asNonEmptyString(existingAuthor?.primarySource) ||
+        "manual",
+      officialLinks,
+      gallery,
+      knownWorks,
+      topWorks:
+        knownWorks.length > 0
+          ? knownWorks.map((title, index) => ({
+              workId: bookIds[index] || `${slug}:${index + 1}`,
+              title,
+            }))
+          : existingAuthor?.topWorks || [],
+      bookIds,
+      workCount: Math.max(
+        Number(existingAuthor?.workCount || 0),
+        knownWorks.length,
+        bookIds.length
+      ),
+      status,
+      source:
+        asNonEmptyString(params.input.source) ||
+        asNonEmptyString(existingAuthor?.source) ||
+        "admin_manual",
+      provenance,
+      createdBy: asNonEmptyString(existingAuthor?.createdBy) || params.actorUid,
+      updatedBy: params.actorUid,
+      archivedAt:
+        status === "archived"
+          ? existingAuthor?.archivedAt || now
+          : null,
+      archivedBy:
+        status === "archived"
+          ? asNonEmptyString(existingAuthor?.archivedBy) || params.actorUid
+          : null,
+      metadataVersion: 2,
+      popularityScore: Number(existingAuthor?.popularityScore || 0),
+      createdAt: existingAuthor?.createdAt || now,
+      updatedAt: now,
+      ...(openLibraryId || wikidataId
+        ? {
+            providerExternalIds: FieldValue.arrayUnion(
+              ...(openLibraryId ? [`openLibrary:${openLibraryId}`] : []),
+              ...(wikidataId ? [`wikidata:${wikidataId}`] : [])
+            ),
+          }
+        : {}),
+    },
+    { merge: true }
+  );
+
+  for (const candidate of identityCandidates) {
+    const identityRef = db.collection("author_identity").doc(candidate.key);
+    const existingIdentity = asRecord(identitySnapshotsByKey.get(candidate.key)?.data() || null);
+    const identityRecord: AuthorIdentityRecord = {
+      identityKey: candidate.key,
+      identityType: candidate.type,
+      value: candidate.value,
+      precedence: candidate.precedence,
+      authorId,
+      updatedAt: now,
+    };
+
+    if (!existingIdentity) {
+      identityRecord.createdAt = now;
+    }
+
+    params.tx.set(identityRef, identityRecord, { merge: true });
+  }
+
+  return {
+    authorId,
+    canonicalKey,
+    status: existingAuthor
+      ? requestedAuthorId
+        ? "UPDATED"
+        : "MERGED"
+      : "CREATED",
   };
 }

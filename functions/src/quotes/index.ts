@@ -2,8 +2,9 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { Query, DocumentData, QueryDocumentSnapshot } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { createHash } from "crypto";
 import { normalizeSearchText, tokenizeSearchText } from "../search/normalization";
-import { assertActiveAuthenticatedUser } from "../shared/auth";
+import { assertActiveAuthenticatedUser, assertRoleFromClaims } from "../shared/auth";
 
 const db = admin.firestore();
 
@@ -17,7 +18,7 @@ const QUOTE_TEXT_MAX = 2000;
 const QUOTE_SOURCE_MAX = 240;
 const QUOTE_QUERY_MAX = 120;
 
-type QuoteProvenance = {
+export type QuoteProvenance = {
   sourceType: "book" | "author" | "manual";
   verificationStatus: "unverified" | "canonical_linked" | "saved_reference";
   sourceBookId?: string;
@@ -44,8 +45,96 @@ type CanonicalQuote = {
   searchTextNormalized: string;
 };
 
-type RootQuoteOriginType = "user_authored" | "saved_reference";
+type RootQuoteOriginType = "user_authored" | "saved_reference" | "dataset_import";
 type RootQuoteAttributionType = "book" | "author" | "label";
+type AdminQuoteStatus = "active" | "archived";
+
+type AdminQuoteShape = {
+  quoteId: string;
+  canonicalQuoteId: string;
+  canonicalQuoteHash?: string;
+  slug?: string;
+  canonicalText: string;
+  normalizedText: string;
+  textEn: string;
+  textAr: string;
+  sourceEn: string;
+  sourceAr: string;
+  authorId?: string;
+  authorName?: string;
+  bookId?: string;
+  bookTitle?: string;
+  chapter?: string;
+  page?: number;
+  section?: string;
+  year?: number;
+  language?: string;
+  originalLanguage?: string;
+  translatedFrom?: string;
+  translationStatus?: string;
+  themes?: string[];
+  mood?: string;
+  concepts?: string[];
+  keywords?: string[];
+  tags?: string[];
+  attributionConfidence?: number;
+  sourceType?: string;
+  sourceReference?: string;
+  provenance?: QuoteProvenance;
+  status: AdminQuoteStatus;
+  isPublic: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type CanonicalQuoteCreateInput = {
+  actorUid: string;
+  textEn: string;
+  textAr: string;
+  sourceEn: string;
+  sourceAr: string;
+  bookId?: string;
+  authorId?: string;
+  isPublic: boolean;
+  originType: RootQuoteOriginType;
+  createdBy?: string;
+  updatedBy?: string;
+  status?: AdminQuoteStatus;
+  chapter?: string;
+  page?: number;
+  section?: string;
+  year?: number;
+  language?: string;
+  originalLanguage?: string;
+  translatedFrom?: string;
+  translationStatus?: string;
+  themes?: string[];
+  mood?: string;
+  concepts?: string[];
+  keywords?: string[];
+  tags?: string[];
+  attributionConfidence?: number;
+  sourceType?: string;
+  sourceReference?: string;
+  savedFromOwnerId?: string;
+  savedFromQuoteId?: string;
+  authorNameOverride?: string;
+  bookTitleOverride?: string;
+};
+
+export type PreparedCanonicalQuoteWrite = {
+  canonicalQuoteId: string;
+  canonicalQuoteHash: string;
+  canonicalLinks: {
+    bookId?: string;
+    authorId?: string;
+  };
+  searchTextNormalized: string;
+  rootQuoteData: Record<string, unknown>;
+  identityData: Record<string, unknown>;
+};
 
 function normalizeRequiredString(
   value: unknown,
@@ -99,6 +188,26 @@ function normalizeOptionalString(
   return normalized;
 }
 
+function normalizeStringAllowEmpty(
+  value: unknown,
+  field: string,
+  maxLength: number
+): string {
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", `${field} must be a string.`);
+  }
+
+  const normalized = value.trim();
+  if (normalized.length > maxLength) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${field} exceeds ${maxLength} characters.`
+    );
+  }
+
+  return normalized;
+}
+
 function timestampToIso(value: unknown): string | undefined {
   if (!value) {
     return undefined;
@@ -129,7 +238,7 @@ function quoteCollection(ownerId: string) {
   return db.collection("users").doc(ownerId).collection("quotes");
 }
 
-function rootQuoteRef(canonicalQuoteId: string) {
+export function rootQuoteRef(canonicalQuoteId: string) {
   return db.collection("quotes").doc(canonicalQuoteId);
 }
 
@@ -141,7 +250,7 @@ function quoteBookmarkId(canonicalQuoteId: string): string {
   return canonicalQuoteId;
 }
 
-function normalizeQuoteSearchText(parts: Array<string | undefined>): string {
+export function normalizeQuoteSearchText(parts: Array<string | undefined>): string {
   return normalizeSearchText(parts.filter(Boolean).join(" "));
 }
 
@@ -208,7 +317,7 @@ function parseQuoteProvenance(value: unknown): QuoteProvenance | undefined {
   };
 }
 
-function buildQuoteProvenance(params: {
+export function buildQuoteProvenance(params: {
   bookId?: string;
   authorId?: string;
   savedFromOwnerId?: string;
@@ -530,7 +639,325 @@ function sanitizeIdentifier(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 100);
 }
 
-async function resolveCanonicalQuoteLinks(params: {
+function normalizeStringArray(
+  value: unknown,
+  max = 20
+): string[] {
+  const rawValues = Array.isArray(value)
+    ? value
+    : typeof value === "string"
+      ? value.split(/[,\n;]/)
+      : [];
+  const seen = new Set<string>();
+
+  for (const entry of rawValues) {
+    if (typeof entry !== "string") continue;
+    const normalized = entry.trim();
+    if (!normalized) continue;
+    seen.add(normalized);
+    if (seen.size >= max) break;
+  }
+
+  return Array.from(seen);
+}
+
+function normalizeOptionalInteger(
+  value: unknown,
+  field: string,
+  minimum = 0,
+  maximum = 1_000_000
+): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.trim())
+        : Number.NaN;
+  if (!Number.isFinite(numeric)) {
+    throw new HttpsError("invalid-argument", `${field} must be a finite number.`);
+  }
+
+  const integer = Math.trunc(numeric);
+  if (integer < minimum || integer > maximum) {
+    throw new HttpsError(
+      "invalid-argument",
+      `${field} must be between ${minimum} and ${maximum}.`
+    );
+  }
+
+  return integer;
+}
+
+function normalizeOptionalConfidence(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") {
+    return undefined;
+  }
+
+  const numeric =
+    typeof value === "number"
+      ? value
+      : typeof value === "string"
+        ? Number(value.trim())
+        : Number.NaN;
+  if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) {
+    throw new HttpsError(
+      "invalid-argument",
+      "attributionConfidence must be between 0 and 1."
+    );
+  }
+
+  return numeric;
+}
+
+function slugifyQuoteValue(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+/g, "")
+    .replace(/-+$/g, "")
+    .slice(0, 120);
+}
+
+export function quoteIdentityRef(canonicalQuoteHash: string) {
+  return db.collection("quote_identity").doc(canonicalQuoteHash);
+}
+
+export function buildCanonicalQuoteHash(params: {
+  bookId?: string;
+  authorId?: string;
+  textEn: string;
+  textAr: string;
+  sourceEn: string;
+  sourceAr: string;
+}): string {
+  const anchorScope = params.bookId ? "book" : "author";
+  const anchorId = params.bookId || params.authorId || "manual";
+  const payload = [
+    anchorScope,
+    anchorId,
+    normalizeSearchText(params.textEn),
+    normalizeSearchText(params.textAr),
+    normalizeSearchText(params.sourceEn),
+    normalizeSearchText(params.sourceAr),
+  ].join("||");
+
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+export async function resolveQuoteDisplayMetadata(params: {
+  bookId?: string;
+  authorId?: string;
+}): Promise<{ authorName?: string; bookTitle?: string }> {
+  const tasks: Array<Promise<FirebaseFirestore.DocumentSnapshot<DocumentData>>> = [];
+  if (params.bookId) {
+    tasks.push(db.collection("books").doc(params.bookId).get());
+  }
+  if (params.authorId) {
+    tasks.push(db.collection("authors").doc(params.authorId).get());
+  }
+  const [bookSnap, authorSnap] = await Promise.all(tasks);
+
+  const bookTitle =
+    params.bookId && bookSnap?.exists
+      ? (
+          typeof bookSnap.data()?.titleEn === "string" && bookSnap.data()?.titleEn.trim()
+            ? String(bookSnap.data()?.titleEn).trim()
+            : typeof bookSnap.data()?.title === "string"
+              ? String(bookSnap.data()?.title).trim()
+              : ""
+        )
+      : undefined;
+  const authorName =
+    params.authorId && authorSnap?.exists
+      ? (
+          typeof authorSnap.data()?.canonicalName === "string" && authorSnap.data()?.canonicalName.trim()
+            ? String(authorSnap.data()?.canonicalName).trim()
+            : typeof authorSnap.data()?.nameEn === "string"
+              ? String(authorSnap.data()?.nameEn).trim()
+              : ""
+        )
+      : undefined;
+
+  return {
+    ...(bookTitle ? { bookTitle } : {}),
+    ...(authorName ? { authorName } : {}),
+  };
+}
+
+function mapAdminQuote(raw: DocumentData, quoteId: string): AdminQuoteShape {
+  const canonicalText =
+    typeof raw.canonicalText === "string" && raw.canonicalText.trim()
+      ? raw.canonicalText.trim()
+      : typeof raw.textEn === "string" && raw.textEn.trim()
+        ? raw.textEn.trim()
+        : typeof raw.textAr === "string"
+          ? raw.textAr.trim()
+          : "";
+  const normalizedText =
+    typeof raw.normalizedText === "string" && raw.normalizedText.trim()
+      ? raw.normalizedText.trim()
+      : normalizeSearchText(canonicalText);
+
+  return {
+    quoteId,
+    canonicalQuoteId:
+      typeof raw.canonicalQuoteId === "string" && raw.canonicalQuoteId.trim()
+        ? raw.canonicalQuoteId.trim()
+        : quoteId,
+    canonicalQuoteHash:
+      typeof raw.canonicalQuoteHash === "string" && raw.canonicalQuoteHash.trim()
+        ? raw.canonicalQuoteHash.trim()
+        : undefined,
+    slug:
+      typeof raw.slug === "string" && raw.slug.trim()
+        ? raw.slug.trim()
+        : undefined,
+    canonicalText,
+    normalizedText,
+    textEn: typeof raw.textEn === "string" ? raw.textEn.trim() : "",
+    textAr: typeof raw.textAr === "string" ? raw.textAr.trim() : "",
+    sourceEn: typeof raw.sourceEn === "string" ? raw.sourceEn.trim() : "",
+    sourceAr: typeof raw.sourceAr === "string" ? raw.sourceAr.trim() : "",
+    authorId:
+      typeof raw.authorId === "string" && raw.authorId.trim()
+        ? raw.authorId.trim()
+        : undefined,
+    authorName:
+      typeof raw.authorName === "string" && raw.authorName.trim()
+        ? raw.authorName.trim()
+        : undefined,
+    bookId:
+      typeof raw.bookId === "string" && raw.bookId.trim()
+        ? raw.bookId.trim()
+        : undefined,
+    bookTitle:
+      typeof raw.bookTitle === "string" && raw.bookTitle.trim()
+        ? raw.bookTitle.trim()
+        : undefined,
+    chapter:
+      typeof raw.chapter === "string" && raw.chapter.trim()
+        ? raw.chapter.trim()
+        : undefined,
+    page:
+      typeof raw.page === "number" && Number.isFinite(raw.page)
+        ? Math.trunc(raw.page)
+        : undefined,
+    section:
+      typeof raw.section === "string" && raw.section.trim()
+        ? raw.section.trim()
+        : undefined,
+    year:
+      typeof raw.year === "number" && Number.isFinite(raw.year)
+        ? Math.trunc(raw.year)
+        : undefined,
+    language:
+      typeof raw.language === "string" && raw.language.trim()
+        ? raw.language.trim()
+        : undefined,
+    originalLanguage:
+      typeof raw.originalLanguage === "string" && raw.originalLanguage.trim()
+        ? raw.originalLanguage.trim()
+        : undefined,
+    translatedFrom:
+      typeof raw.translatedFrom === "string" && raw.translatedFrom.trim()
+        ? raw.translatedFrom.trim()
+        : undefined,
+    translationStatus:
+      typeof raw.translationStatus === "string" && raw.translationStatus.trim()
+        ? raw.translationStatus.trim()
+        : undefined,
+    themes: normalizeStringArray(raw.themes, 20),
+    mood:
+      typeof raw.mood === "string" && raw.mood.trim()
+        ? raw.mood.trim()
+        : undefined,
+    concepts: normalizeStringArray(raw.concepts, 20),
+    keywords: normalizeStringArray(raw.keywords, 20),
+    tags: normalizeStringArray(raw.tags, 20),
+    attributionConfidence:
+      typeof raw.attributionConfidence === "number" &&
+      Number.isFinite(raw.attributionConfidence)
+        ? raw.attributionConfidence
+        : undefined,
+    sourceType:
+      typeof raw.sourceType === "string" && raw.sourceType.trim()
+        ? raw.sourceType.trim()
+        : undefined,
+    sourceReference:
+      typeof raw.sourceReference === "string" && raw.sourceReference.trim()
+        ? raw.sourceReference.trim()
+        : undefined,
+    provenance: parseQuoteProvenance(raw.provenance),
+    status: raw.status === "archived" ? "archived" : "active",
+    isPublic: raw.isPublic !== false,
+    createdAt: timestampToIso(raw.createdAt),
+    updatedAt: timestampToIso(raw.updatedAt),
+    createdBy:
+      typeof raw.createdBy === "string" && raw.createdBy.trim()
+        ? raw.createdBy.trim()
+        : undefined,
+    updatedBy:
+      typeof raw.updatedBy === "string" && raw.updatedBy.trim()
+        ? raw.updatedBy.trim()
+        : undefined,
+  };
+}
+
+export async function findExistingCanonicalQuote(params: {
+  canonicalQuoteHash: string;
+  searchTextNormalized: string;
+  bookId?: string;
+  authorId?: string;
+}): Promise<{ canonicalQuoteId: string } | null> {
+  const identitySnap = await quoteIdentityRef(params.canonicalQuoteHash).get();
+  if (identitySnap.exists) {
+    const canonicalQuoteId =
+      typeof identitySnap.data()?.canonicalQuoteId === "string" &&
+      identitySnap.data()?.canonicalQuoteId.trim()
+        ? String(identitySnap.data()?.canonicalQuoteId).trim()
+        : "";
+    if (canonicalQuoteId) {
+      return { canonicalQuoteId };
+    }
+  }
+
+  const searchSnap = await db
+    .collection("quotes")
+    .where("searchTextNormalized", "==", params.searchTextNormalized)
+    .limit(20)
+    .get();
+
+  for (const docSnap of searchSnap.docs) {
+    const raw = docSnap.data();
+    const rawHash = buildCanonicalQuoteHash({
+      bookId:
+        typeof raw.bookId === "string" && raw.bookId.trim()
+          ? raw.bookId.trim()
+          : undefined,
+      authorId:
+        typeof raw.authorId === "string" && raw.authorId.trim()
+          ? raw.authorId.trim()
+          : undefined,
+      textEn: typeof raw.textEn === "string" ? raw.textEn : "",
+      textAr: typeof raw.textAr === "string" ? raw.textAr : "",
+      sourceEn: typeof raw.sourceEn === "string" ? raw.sourceEn : "",
+      sourceAr: typeof raw.sourceAr === "string" ? raw.sourceAr : "",
+    });
+    if (rawHash === params.canonicalQuoteHash) {
+      return { canonicalQuoteId: docSnap.id };
+    }
+  }
+
+  return null;
+}
+
+export async function resolveCanonicalQuoteLinks(params: {
   bookId?: string;
   authorId?: string;
 }): Promise<{ bookId?: string; authorId?: string }> {
@@ -567,6 +994,196 @@ async function resolveCanonicalQuoteLinks(params: {
   return {
     ...(bookId ? { bookId } : {}),
     ...(resolvedAuthorId ? { authorId: resolvedAuthorId } : {}),
+  };
+}
+
+export async function prepareCanonicalQuoteWrite(
+  input: CanonicalQuoteCreateInput,
+  canonicalQuoteId = allocateCanonicalQuoteId()
+): Promise<PreparedCanonicalQuoteWrite> {
+  if (!input.bookId && !input.authorId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Canonical quotes require bookId or authorId."
+    );
+  }
+
+  const canonicalLinks = await resolveCanonicalQuoteLinks({
+    bookId: input.bookId,
+    authorId: input.authorId,
+  });
+  const provenance = buildQuoteProvenance({
+    bookId: canonicalLinks.bookId,
+    authorId: canonicalLinks.authorId,
+    savedFromOwnerId: input.savedFromOwnerId,
+    savedFromQuoteId: input.savedFromQuoteId,
+  });
+  const searchTextNormalized = normalizeQuoteSearchText([
+    input.textEn,
+    input.textAr,
+    input.sourceEn,
+    input.sourceAr,
+  ]);
+  const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
+  const canonicalQuoteHash = buildCanonicalQuoteHash({
+    bookId: canonicalLinks.bookId,
+    authorId: canonicalLinks.authorId,
+    textEn: input.textEn,
+    textAr: input.textAr,
+    sourceEn: input.sourceEn,
+    sourceAr: input.sourceAr,
+  });
+  const linkMetadata =
+    input.authorNameOverride || input.bookTitleOverride
+      ? {
+          ...(input.bookTitleOverride ? { bookTitle: input.bookTitleOverride } : {}),
+          ...(input.authorNameOverride ? { authorName: input.authorNameOverride } : {}),
+        }
+      : await resolveQuoteDisplayMetadata(canonicalLinks);
+  const canonicalText = input.textEn || input.textAr;
+  const normalizedText = normalizeSearchText(canonicalText);
+  const slug = slugifyQuoteValue(canonicalText) || canonicalQuoteId;
+  const now = admin.firestore.FieldValue.serverTimestamp();
+
+  return {
+    canonicalQuoteId,
+    canonicalQuoteHash,
+    canonicalLinks,
+    searchTextNormalized,
+    rootQuoteData: {
+      canonicalQuoteId,
+      canonicalQuoteHash,
+      ownerId: input.actorUid,
+      textEn: input.textEn,
+      textAr: input.textAr,
+      sourceEn: input.sourceEn,
+      sourceAr: input.sourceAr,
+      canonicalText,
+      normalizedText,
+      slug,
+      originType: input.originType,
+      attributionType: resolveRootAttributionType(canonicalLinks),
+      attributionLabel: input.sourceEn,
+      authorId: canonicalLinks.authorId ?? null,
+      authorName: linkMetadata.authorName ?? null,
+      bookId: canonicalLinks.bookId ?? null,
+      bookTitle: linkMetadata.bookTitle ?? null,
+      chapter: input.chapter ?? null,
+      page: input.page ?? null,
+      section: input.section ?? null,
+      year: input.year ?? null,
+      language: input.language ?? null,
+      originalLanguage: input.originalLanguage ?? null,
+      translatedFrom: input.translatedFrom ?? null,
+      translationStatus: input.translationStatus ?? null,
+      themes: input.themes ?? [],
+      mood: input.mood ?? null,
+      concepts: input.concepts ?? [],
+      keywords: input.keywords ?? [],
+      tags: input.tags ?? [],
+      attributionConfidence: input.attributionConfidence ?? null,
+      sourceType: input.sourceType ?? provenance.sourceType,
+      sourceReference: input.sourceReference ?? input.sourceEn,
+      sourceChapterId: null,
+      sourceOffset: null,
+      isPublic: input.isPublic,
+      status: input.status ?? "active",
+      provenance,
+      searchTextNormalized,
+      searchTokens,
+      createdBy: input.createdBy ?? input.actorUid,
+      updatedBy: input.updatedBy ?? input.actorUid,
+      createdAt: now,
+      updatedAt: now,
+      version: 2,
+    },
+    identityData: {
+      canonicalQuoteHash,
+      canonicalQuoteId,
+      searchTextNormalized,
+      bookId: canonicalLinks.bookId ?? null,
+      authorId: canonicalLinks.authorId ?? null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  };
+}
+
+async function createCanonicalQuoteServerSide(
+  input: CanonicalQuoteCreateInput
+): Promise<{ canonicalQuote: AdminQuoteShape; duplicate: boolean }> {
+  const prepared = await prepareCanonicalQuoteWrite(input);
+  const duplicateCandidate = await findExistingCanonicalQuote({
+    canonicalQuoteHash: prepared.canonicalQuoteHash,
+    searchTextNormalized: prepared.searchTextNormalized,
+    bookId: prepared.canonicalLinks.bookId,
+    authorId: prepared.canonicalLinks.authorId,
+  });
+
+  if (duplicateCandidate) {
+    const existingSnap = await rootQuoteRef(duplicateCandidate.canonicalQuoteId).get();
+    if (!existingSnap.exists) {
+      throw new HttpsError("internal", "Duplicate quote identity points to missing root.");
+    }
+
+    const existingQuote = mapAdminQuote(existingSnap.data() as DocumentData, existingSnap.id);
+    await quoteIdentityRef(prepared.canonicalQuoteHash).set(
+      {
+        canonicalQuoteHash: prepared.canonicalQuoteHash,
+        canonicalQuoteId: existingQuote.canonicalQuoteId,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt:
+          existingSnap.data()?.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    return {
+      canonicalQuote: existingQuote,
+      duplicate: true,
+    };
+  }
+
+  const canonicalRef = rootQuoteRef(prepared.canonicalQuoteId);
+
+  await db.runTransaction(async (tx) => {
+    const identitySnap = await tx.get(quoteIdentityRef(prepared.canonicalQuoteHash));
+    const existingCanonicalQuoteId =
+      typeof identitySnap.data()?.canonicalQuoteId === "string" &&
+      identitySnap.data()?.canonicalQuoteId.trim()
+        ? String(identitySnap.data()?.canonicalQuoteId).trim()
+        : "";
+    if (existingCanonicalQuoteId) {
+      return;
+    }
+
+    tx.set(canonicalRef, prepared.rootQuoteData);
+    tx.set(quoteIdentityRef(prepared.canonicalQuoteHash), prepared.identityData);
+  });
+
+  const createdSnap = await canonicalRef.get();
+  if (!createdSnap.exists) {
+    const duplicateSnap = await quoteIdentityRef(prepared.canonicalQuoteHash).get();
+    const recoveredId =
+      typeof duplicateSnap.data()?.canonicalQuoteId === "string" &&
+      duplicateSnap.data()?.canonicalQuoteId.trim()
+        ? String(duplicateSnap.data()?.canonicalQuoteId).trim()
+        : "";
+    if (!recoveredId) {
+      throw new HttpsError("internal", "Quote creation failed.");
+    }
+    const recoveredSnap = await rootQuoteRef(recoveredId).get();
+    if (!recoveredSnap.exists) {
+      throw new HttpsError("internal", "Quote recovery failed.");
+    }
+    return {
+      canonicalQuote: mapAdminQuote(recoveredSnap.data() as DocumentData, recoveredSnap.id),
+      duplicate: true,
+    };
+  }
+
+  return {
+    canonicalQuote: mapAdminQuote(createdSnap.data() as DocumentData, createdSnap.id),
+    duplicate: false,
   };
 }
 
@@ -819,13 +1436,8 @@ export const searchPublicQuotes = onCall({ cors: true }, async (request) => {
   let matchedQuotes = materializeMatches(snap.docs);
 
   if (matchedQuotes.length === 0 && shouldRunLegacyFallback) {
-    const legacySnap = await db
-      .collectionGroup("quotes")
-      .where("isPublic", "==", true)
-      .limit(MAX_QUOTE_SCAN_DOCS)
-      .get();
-    matchedQuotes = materializeMatches(legacySnap.docs);
-  }
+  matchedQuotes = [];
+}
 
   return {
     quotes: sortQuotesByFreshness(matchedQuotes)
@@ -848,62 +1460,45 @@ export const createQuote = onCall({ cors: true }, async (request) => {
     authorId: normalizeOptionalString(data.authorId, "authorId", 180),
     isPublic: data.isPublic === undefined ? true : data.isPublic === true,
   };
-  const canonicalLinks = await resolveCanonicalQuoteLinks({
+  const nowIso = new Date().toISOString();
+  const quoteRef = quoteCollection(uid).doc();
+  const { canonicalQuote } = await createCanonicalQuoteServerSide({
+    actorUid: uid,
+    textEn: rawQuote.textEn,
+    textAr: rawQuote.textAr,
+    sourceEn: rawQuote.sourceEn,
+    sourceAr: rawQuote.sourceAr,
     bookId: rawQuote.bookId,
     authorId: rawQuote.authorId,
-  });
-  const provenance = buildQuoteProvenance(canonicalLinks);
-  const searchTextNormalized = normalizeQuoteSearchText([
-    rawQuote.textEn,
-    rawQuote.textAr,
-    rawQuote.sourceEn,
-    rawQuote.sourceAr,
-  ]);
-  const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
-
-  const nowIso = new Date().toISOString();
-  const canonicalQuoteId = allocateCanonicalQuoteId();
-  const canonicalRef = rootQuoteRef(canonicalQuoteId);
-  const quoteRef = quoteCollection(uid).doc();
-
-  const rootQuoteData = {
-    canonicalQuoteId,
-    legacyQuoteId: quoteRef.id,
-    ownerId: uid,
-    textEn: rawQuote.textEn,
-    textAr: rawQuote.textAr,
-    sourceEn: rawQuote.sourceEn,
-    sourceAr: rawQuote.sourceAr,
-    originType: "user_authored" as RootQuoteOriginType,
-    attributionType: resolveRootAttributionType(canonicalLinks),
-    authorId: canonicalLinks.authorId ?? null,
-    bookId: canonicalLinks.bookId ?? null,
-    attributionLabel: rawQuote.sourceEn,
-    sourceChapterId: null,
-    sourceOffset: null,
     isPublic: rawQuote.isPublic,
-    provenance,
-    searchTextNormalized,
-    searchTokens,
-    createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    version: 1,
-  };
-
-  await canonicalRef.set(rootQuoteData);
+    originType: "user_authored",
+  });
 
   await quoteRef.set({
-    canonicalQuoteId,
+    canonicalQuoteId: canonicalQuote.canonicalQuoteId,
     ownerId: uid,
     textEn: rawQuote.textEn,
     textAr: rawQuote.textAr,
     sourceEn: rawQuote.sourceEn,
     sourceAr: rawQuote.sourceAr,
-    ...(canonicalLinks.bookId ? { bookId: canonicalLinks.bookId } : {}),
-    ...(canonicalLinks.authorId ? { authorId: canonicalLinks.authorId } : {}),
-    provenance,
-    searchTextNormalized,
-    searchTokens,
+    ...(canonicalQuote.bookId ? { bookId: canonicalQuote.bookId } : {}),
+    ...(canonicalQuote.authorId ? { authorId: canonicalQuote.authorId } : {}),
+    provenance: canonicalQuote.provenance,
+    searchTextNormalized: normalizeQuoteSearchText([
+      rawQuote.textEn,
+      rawQuote.textAr,
+      rawQuote.sourceEn,
+      rawQuote.sourceAr,
+    ]),
+    searchTokens: tokenizeSearchText(
+      normalizeQuoteSearchText([
+        rawQuote.textEn,
+        rawQuote.textAr,
+        rawQuote.sourceEn,
+        rawQuote.sourceAr,
+      ]),
+      40
+    ),
     isPublic: rawQuote.isPublic,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
@@ -912,17 +1507,395 @@ export const createQuote = onCall({ cors: true }, async (request) => {
 
   return {
     id: quoteRef.id,
-    canonicalQuoteId,
+    canonicalQuoteId: canonicalQuote.canonicalQuoteId,
     ownerId: uid,
     textEn: rawQuote.textEn,
     textAr: rawQuote.textAr,
     sourceEn: rawQuote.sourceEn,
     sourceAr: rawQuote.sourceAr,
-    ...(canonicalLinks.bookId ? { bookId: canonicalLinks.bookId } : {}),
-    ...(canonicalLinks.authorId ? { authorId: canonicalLinks.authorId } : {}),
-    provenance,
+    ...(canonicalQuote.bookId ? { bookId: canonicalQuote.bookId } : {}),
+    ...(canonicalQuote.authorId ? { authorId: canonicalQuote.authorId } : {}),
+    provenance: canonicalQuote.provenance,
     createdAt: nowIso,
     updatedAt: nowIso,
+  };
+});
+
+export const adminListQuotes = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const limit = Math.min(normalizePageSize(data.limit), 50);
+  const queryValue = normalizeQueryValue(data.query);
+  const bookId = normalizeOptionalString(data.bookId, "bookId", 180);
+  const authorId = normalizeOptionalString(data.authorId, "authorId", 180);
+  const status =
+    data.status === "archived" || data.status === "active" ? data.status : "all";
+
+  let queryRef: Query = db.collection("quotes");
+  if (bookId) {
+    queryRef = queryRef.where("bookId", "==", bookId);
+  }
+  if (authorId) {
+    queryRef = queryRef.where("authorId", "==", authorId);
+  }
+  if (status === "archived") {
+    queryRef = queryRef.where("status", "==", "archived");
+  }
+  if (queryValue) {
+    const searchTokens = tokenizeSearchText(queryValue, 8);
+    const primaryToken = searchTokens.sort((left, right) => right.length - left.length)[0];
+    if (primaryToken) {
+      queryRef = queryRef.where("searchTokens", "array-contains", primaryToken);
+    }
+  }
+
+  const snap = await queryRef.limit(Math.max(limit, 50)).get();
+  const items = snap.docs
+    .map((docSnap) => mapAdminQuote(docSnap.data(), docSnap.id))
+    .filter((quote) =>
+      status === "all"
+        ? true
+        : status === "active"
+          ? quote.status !== "archived"
+          : quote.status === "archived"
+    )
+    .filter((quote) =>
+      queryValue
+        ? quote.normalizedText.includes(queryValue) ||
+          quote.canonicalText.toLowerCase().includes(queryValue) ||
+          (quote.authorName || "").toLowerCase().includes(queryValue) ||
+          (quote.bookTitle || "").toLowerCase().includes(queryValue)
+        : true
+    )
+    .sort((left, right) =>
+      (right.updatedAt || right.createdAt || "").localeCompare(
+        left.updatedAt || left.createdAt || ""
+      )
+    )
+    .slice(0, limit);
+
+  return {
+    quotes: items,
+  };
+});
+
+export const adminGetQuote = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const quoteId = normalizeRequiredString(data.quoteId, "quoteId", 180);
+  const snap = await rootQuoteRef(quoteId).get();
+  if (!snap.exists) {
+    throw new HttpsError("not-found", "Quote not found.");
+  }
+
+  return {
+    quote: mapAdminQuote(snap.data() as DocumentData, snap.id),
+  };
+});
+
+export const adminQuoteCreate = onCall({ cors: true }, async (request) => {
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const bookId = normalizeOptionalString(data.bookId, "bookId", 180);
+  const authorId = normalizeOptionalString(data.authorId, "authorId", 180);
+  if (!bookId && !authorId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Canonical quotes require bookId or authorId."
+    );
+  }
+  const { canonicalQuote, duplicate } = await createCanonicalQuoteServerSide({
+    actorUid: caller.uid,
+    textEn: normalizeRequiredString(data.textEn, "textEn", QUOTE_TEXT_MAX),
+    textAr: normalizeRequiredString(data.textAr, "textAr", QUOTE_TEXT_MAX),
+    sourceEn: normalizeRequiredString(data.sourceEn, "sourceEn", QUOTE_SOURCE_MAX),
+    sourceAr: normalizeRequiredString(data.sourceAr, "sourceAr", QUOTE_SOURCE_MAX),
+    bookId,
+    authorId,
+    isPublic: data.isPublic === undefined ? true : data.isPublic === true,
+    originType: "user_authored",
+    createdBy: caller.uid,
+    updatedBy: caller.uid,
+    status: "active",
+    chapter: normalizeOptionalString(data.chapter, "chapter", 120),
+    page: normalizeOptionalInteger(data.page, "page", 1, 200_000),
+    section: normalizeOptionalString(data.section, "section", 120),
+    year: normalizeOptionalInteger(data.year, "year", 0, 4000),
+    language: normalizeOptionalString(data.language, "language", 16),
+    originalLanguage: normalizeOptionalString(data.originalLanguage, "originalLanguage", 16),
+    translatedFrom: normalizeOptionalString(data.translatedFrom, "translatedFrom", 16),
+    translationStatus: normalizeOptionalString(data.translationStatus, "translationStatus", 40),
+    themes: normalizeStringArray(data.themes, 20),
+    mood: normalizeOptionalString(data.mood, "mood", 80),
+    concepts: normalizeStringArray(data.concepts, 20),
+    keywords: normalizeStringArray(data.keywords, 20),
+    attributionConfidence: normalizeOptionalConfidence(data.attributionConfidence),
+    sourceType: normalizeOptionalString(data.sourceType, "sourceType", 80),
+    sourceReference: normalizeOptionalString(data.sourceReference, "sourceReference", 240),
+  });
+
+  return {
+    quote: canonicalQuote,
+    duplicate,
+  };
+});
+
+export const adminQuoteUpdate = onCall({ cors: true }, async (request) => {
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const quoteId = normalizeRequiredString(data.quoteId, "quoteId", 180);
+  const existingSnap = await rootQuoteRef(quoteId).get();
+  if (!existingSnap.exists) {
+    throw new HttpsError("not-found", "Quote not found.");
+  }
+
+  const existing = mapAdminQuote(existingSnap.data() as DocumentData, existingSnap.id);
+  const nextTextEn = normalizeRequiredString(
+    data.textEn ?? existing.textEn,
+    "textEn",
+    QUOTE_TEXT_MAX
+  );
+  const nextTextAr = normalizeStringAllowEmpty(
+    data.textAr ?? existing.textAr,
+    "textAr",
+    QUOTE_TEXT_MAX
+  );
+  const nextSourceEn = normalizeRequiredString(
+    data.sourceEn ?? existing.sourceEn,
+    "sourceEn",
+    QUOTE_SOURCE_MAX
+  );
+  const nextSourceAr = normalizeStringAllowEmpty(
+    data.sourceAr ?? existing.sourceAr,
+    "sourceAr",
+    QUOTE_SOURCE_MAX
+  );
+  const canonicalLinks = await resolveCanonicalQuoteLinks({
+    bookId: normalizeOptionalString(data.bookId ?? existing.bookId, "bookId", 180),
+    authorId: normalizeOptionalString(data.authorId ?? existing.authorId, "authorId", 180),
+  });
+  const searchTextNormalized = normalizeQuoteSearchText([
+    nextTextEn,
+    nextTextAr,
+    nextSourceEn,
+    nextSourceAr,
+  ]);
+  const canonicalQuoteHash = buildCanonicalQuoteHash({
+    bookId: canonicalLinks.bookId,
+    authorId: canonicalLinks.authorId,
+    textEn: nextTextEn,
+    textAr: nextTextAr,
+    sourceEn: nextSourceEn,
+    sourceAr: nextSourceAr,
+  });
+  const duplicate = await findExistingCanonicalQuote({
+    canonicalQuoteHash,
+    searchTextNormalized,
+    bookId: canonicalLinks.bookId,
+    authorId: canonicalLinks.authorId,
+  });
+  if (duplicate && duplicate.canonicalQuoteId !== quoteId) {
+    throw new HttpsError("already-exists", "A canonical duplicate quote already exists.");
+  }
+
+  const linkMetadata = await resolveQuoteDisplayMetadata(canonicalLinks);
+  const provenance = buildQuoteProvenance({
+    bookId: canonicalLinks.bookId,
+    authorId: canonicalLinks.authorId,
+  });
+  const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
+  const nextStatus =
+    data.status === "archived" || existing.status === "archived" ? "archived" : "active";
+  const updatePayload = {
+    canonicalQuoteId: quoteId,
+    canonicalQuoteHash,
+    textEn: nextTextEn,
+    textAr: nextTextAr,
+    sourceEn: nextSourceEn,
+    sourceAr: nextSourceAr,
+    canonicalText: nextTextEn || nextTextAr,
+    normalizedText: normalizeSearchText(nextTextEn || nextTextAr),
+    slug:
+      slugifyQuoteValue(nextTextEn || nextTextAr) ||
+      existing.slug ||
+      quoteId,
+    authorId: canonicalLinks.authorId ?? null,
+    authorName: linkMetadata.authorName ?? null,
+    bookId: canonicalLinks.bookId ?? null,
+    bookTitle: linkMetadata.bookTitle ?? null,
+    chapter: normalizeOptionalString(data.chapter ?? existing.chapter, "chapter", 120) ?? null,
+    page:
+      normalizeOptionalInteger(data.page ?? existing.page, "page", 1, 200_000) ?? null,
+    section:
+      normalizeOptionalString(data.section ?? existing.section, "section", 120) ?? null,
+    year:
+      normalizeOptionalInteger(data.year ?? existing.year, "year", 0, 4000) ?? null,
+    language:
+      normalizeOptionalString(data.language ?? existing.language, "language", 16) ?? null,
+    originalLanguage:
+      normalizeOptionalString(
+        data.originalLanguage ?? existing.originalLanguage,
+        "originalLanguage",
+        16
+      ) ?? null,
+    translatedFrom:
+      normalizeOptionalString(
+        data.translatedFrom ?? existing.translatedFrom,
+        "translatedFrom",
+        16
+      ) ?? null,
+    translationStatus:
+      normalizeOptionalString(
+        data.translationStatus ?? existing.translationStatus,
+        "translationStatus",
+        40
+      ) ?? null,
+    themes: normalizeStringArray(data.themes ?? existing.themes, 20),
+    mood: normalizeOptionalString(data.mood ?? existing.mood, "mood", 80) ?? null,
+    concepts: normalizeStringArray(data.concepts ?? existing.concepts, 20),
+    keywords: normalizeStringArray(data.keywords ?? existing.keywords, 20),
+    attributionConfidence:
+      normalizeOptionalConfidence(
+        data.attributionConfidence ?? existing.attributionConfidence
+      ) ?? null,
+    sourceType:
+      normalizeOptionalString(data.sourceType ?? existing.sourceType, "sourceType", 80) ??
+      provenance.sourceType,
+    sourceReference:
+      normalizeOptionalString(
+        data.sourceReference ?? existing.sourceReference,
+        "sourceReference",
+        240
+      ) ?? nextSourceEn,
+    attributionType: resolveRootAttributionType(canonicalLinks),
+    attributionLabel: nextSourceEn,
+    provenance,
+    searchTextNormalized,
+    searchTokens,
+    isPublic: data.isPublic === undefined ? existing.isPublic : data.isPublic === true,
+    status: nextStatus,
+    updatedBy: caller.uid,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  };
+
+  await db.runTransaction(async (tx) => {
+    const existingRoot = await tx.get(rootQuoteRef(quoteId));
+    if (!existingRoot.exists) {
+      throw new HttpsError("not-found", "Quote not found.");
+    }
+
+    const previousHash =
+      typeof existingRoot.data()?.canonicalQuoteHash === "string" &&
+      existingRoot.data()?.canonicalQuoteHash.trim()
+        ? String(existingRoot.data()?.canonicalQuoteHash).trim()
+        : "";
+    if (previousHash && previousHash !== canonicalQuoteHash) {
+      tx.delete(quoteIdentityRef(previousHash));
+    }
+
+    tx.set(rootQuoteRef(quoteId), updatePayload, { merge: true });
+    tx.set(
+      quoteIdentityRef(canonicalQuoteHash),
+      {
+        canonicalQuoteHash,
+        canonicalQuoteId: quoteId,
+        searchTextNormalized,
+        bookId: canonicalLinks.bookId ?? null,
+        authorId: canonicalLinks.authorId ?? null,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        createdAt:
+          existingRoot.data()?.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    const legacyQuoteId =
+      typeof existingRoot.data()?.legacyQuoteId === "string" &&
+      existingRoot.data()?.legacyQuoteId.trim()
+        ? String(existingRoot.data()?.legacyQuoteId).trim()
+        : "";
+    const ownerId =
+      typeof existingRoot.data()?.ownerId === "string" &&
+      existingRoot.data()?.ownerId.trim()
+        ? String(existingRoot.data()?.ownerId).trim()
+        : "";
+    if (legacyQuoteId && ownerId) {
+      tx.set(
+        quoteDocRef(ownerId, legacyQuoteId),
+        {
+          textEn: nextTextEn,
+          textAr: nextTextAr,
+          sourceEn: nextSourceEn,
+          sourceAr: nextSourceAr,
+          ...(canonicalLinks.bookId ? { bookId: canonicalLinks.bookId } : { bookId: null }),
+          ...(canonicalLinks.authorId ? { authorId: canonicalLinks.authorId } : { authorId: null }),
+          provenance,
+          searchTextNormalized,
+          searchTokens,
+          isPublic: updatePayload.isPublic,
+          status: nextStatus,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  const updatedSnap = await rootQuoteRef(quoteId).get();
+  return {
+    quote: mapAdminQuote(updatedSnap.data() as DocumentData, updatedSnap.id),
+  };
+});
+
+export const adminQuoteArchive = onCall({ cors: true }, async (request) => {
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const quoteId = normalizeRequiredString(data.quoteId, "quoteId", 180);
+  await db.runTransaction(async (tx) => {
+    const rootSnap = await tx.get(rootQuoteRef(quoteId));
+    if (!rootSnap.exists) {
+      throw new HttpsError("not-found", "Quote not found.");
+    }
+
+    tx.set(
+      rootQuoteRef(quoteId),
+      {
+        status: "archived",
+        isPublic: false,
+        archivedAt: admin.firestore.FieldValue.serverTimestamp(),
+        archivedBy: caller.uid,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedBy: caller.uid,
+      },
+      { merge: true }
+    );
+
+    const legacyQuoteId =
+      typeof rootSnap.data()?.legacyQuoteId === "string" &&
+      rootSnap.data()?.legacyQuoteId.trim()
+        ? String(rootSnap.data()?.legacyQuoteId).trim()
+        : "";
+    const ownerId =
+      typeof rootSnap.data()?.ownerId === "string" &&
+      rootSnap.data()?.ownerId.trim()
+        ? String(rootSnap.data()?.ownerId).trim()
+        : "";
+    if (legacyQuoteId && ownerId) {
+      tx.set(
+        quoteDocRef(ownerId, legacyQuoteId),
+        {
+          status: "archived",
+          isPublic: false,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  });
+
+  return {
+    archived: true,
+    quoteId,
   };
 });
 

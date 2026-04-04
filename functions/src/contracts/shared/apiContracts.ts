@@ -318,6 +318,117 @@ const quoteSchema = z
   })
   .strict();
 
+const adminAuthorSchema = z
+  .object({
+    authorId: z.string().min(1),
+    canonicalName: z.string().min(1),
+    normalizedName: z.string().min(1),
+    displayName: z.string().min(1),
+    aliases: z.array(z.string().min(1)),
+    slug: z.string().min(1).optional(),
+    birthDate: z.string().min(1).optional(),
+    deathDate: z.string().min(1).optional(),
+    birthPlace: z.string().min(1).optional(),
+    deathPlace: z.string().min(1).optional(),
+    nationality: z.string().min(1).optional(),
+    languages: z.array(z.string().min(1)),
+    genres: z.array(z.string().min(1)),
+    movements: z.array(z.string().min(1)),
+    period: z.string().min(1).optional(),
+    themes: z.array(z.string().min(1)),
+    influenceTags: z.array(z.string().min(1)),
+    shortBio: z.string().min(1).optional(),
+    fullBio: z.string().min(1).optional(),
+    wikipediaUrl: z.string().min(1).optional(),
+    goodreadsId: z.string().min(1).optional(),
+    openLibraryId: z.string().min(1).optional(),
+    wikidataId: z.string().min(1).optional(),
+    isni: z.string().min(1).optional(),
+    viaf: z.string().min(1).optional(),
+    portraitUrl: z.string().min(1).optional(),
+    gallery: z.array(z.string().min(1)),
+    knownWorks: z.array(z.string().min(1)),
+    bookIds: z.array(z.string().min(1)),
+    status: z.enum(["active", "archived"]),
+    source: z.string().min(1).optional(),
+    primarySource: z.string().min(1).optional(),
+    provenance: z.record(z.string(), z.unknown()).optional(),
+    createdAt: z.string().min(1).optional(),
+    updatedAt: z.string().min(1).optional(),
+    createdBy: z.string().min(1).optional(),
+    updatedBy: z.string().min(1).optional(),
+  })
+  .strict();
+
+const adminQuoteSchema = z
+  .object({
+    quoteId: z.string().min(1),
+    canonicalQuoteId: z.string().min(1),
+    canonicalQuoteHash: z.string().min(1).optional(),
+    slug: z.string().min(1).optional(),
+    canonicalText: z.string().min(1),
+    normalizedText: z.string().min(1),
+    textEn: z.string().min(1),
+    textAr: z.string(),
+    sourceEn: z.string().min(1),
+    sourceAr: z.string(),
+    authorId: z.string().min(1).optional(),
+    authorName: z.string().min(1).optional(),
+    bookId: z.string().min(1).optional(),
+    bookTitle: z.string().min(1).optional(),
+    chapter: z.string().min(1).optional(),
+    page: z.number().int().positive().optional(),
+    section: z.string().min(1).optional(),
+    year: z.number().int().nonnegative().optional(),
+    language: z.string().min(1).optional(),
+    originalLanguage: z.string().min(1).optional(),
+    translatedFrom: z.string().min(1).optional(),
+    translationStatus: z.string().min(1).optional(),
+    themes: z.array(z.string().min(1)).optional(),
+    mood: z.string().min(1).optional(),
+    concepts: z.array(z.string().min(1)).optional(),
+    keywords: z.array(z.string().min(1)).optional(),
+    tags: z.array(z.string().min(1)).optional(),
+    attributionConfidence: z.number().min(0).max(1).optional(),
+    sourceType: z.string().min(1).optional(),
+    sourceReference: z.string().min(1).optional(),
+    provenance: z.record(z.string(), z.unknown()).optional(),
+    status: z.enum(["active", "archived"]),
+    isPublic: z.boolean(),
+    createdAt: z.string().min(1).optional(),
+    updatedAt: z.string().min(1).optional(),
+    createdBy: z.string().min(1).optional(),
+    updatedBy: z.string().min(1).optional(),
+  })
+  .strict();
+
+const adminQuoteImportJobSchema = z
+  .object({
+    status: z.enum(["registered", "running", "completed", "failed"]),
+    storagePath: z.string().min(1),
+    fileName: z.string().min(1),
+    fileSize: z.number().int().nonnegative(),
+    contentType: z.string(),
+    totalRows: z.number().int().nonnegative(),
+    processedRows: z.number().int().nonnegative(),
+    createdRows: z.number().int().nonnegative(),
+    duplicateRows: z.number().int().nonnegative(),
+    skippedRows: z.number().int().nonnegative(),
+    failedRows: z.number().int().nonnegative(),
+    lastProcessedRow: z.number().int().nonnegative(),
+    completed: z.boolean(),
+    lastRunAt: z.string().min(1).optional(),
+    createdAt: z.string().min(1).optional(),
+    updatedAt: z.string().min(1).optional(),
+    registeredBy: z.string().min(1),
+    lastError: z.string().min(1).optional(),
+    dailyRowLimit: z.number().int().positive(),
+    dailyWriteBudget: z.number().int().positive(),
+    batchRowLimit: z.number().int().positive(),
+    estimatedCompletionDays: z.number().int().nonnegative(),
+  })
+  .strict();
+
 const publicProfileSchema = z
   .object({
     uid: z.string().min(1),
@@ -1667,6 +1778,157 @@ export const apiContracts = {
       }
     ),
 
+    adminListAuthors: defineContract(
+      z
+        .object({
+          query: z.string().min(1).max(120).optional(),
+          status: z.enum(["active", "archived", "all"]).optional(),
+          limit: z.number().int().min(1).max(50).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          authors: z.array(adminAuthorSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminGetAuthor: defineContract(
+      z
+        .object({
+          authorId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          author: adminAuthorSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminAuthorCreate: defineContract(
+      z
+        .object({
+          canonicalName: z.string().min(1).max(240),
+          displayName: z.string().min(1).max(240).optional(),
+          aliases: z.array(z.string().min(1).max(240)).optional(),
+          slug: z.string().min(1).max(120).optional(),
+          birthDate: z.string().min(1).max(16).optional(),
+          deathDate: z.string().min(1).max(16).optional(),
+          birthPlace: z.string().min(1).max(160).optional(),
+          deathPlace: z.string().min(1).max(160).optional(),
+          nationality: z.string().min(1).max(120).optional(),
+          languages: z.array(z.string().min(1).max(120)).optional(),
+          genres: z.array(z.string().min(1).max(120)).optional(),
+          movements: z.array(z.string().min(1).max(120)).optional(),
+          period: z.string().min(1).max(120).optional(),
+          themes: z.array(z.string().min(1).max(120)).optional(),
+          influenceTags: z.array(z.string().min(1).max(120)).optional(),
+          shortBio: z.string().min(1).max(800).optional(),
+          fullBio: z.string().min(1).max(5000).optional(),
+          wikipediaUrl: z.string().min(1).max(500).optional(),
+          goodreadsId: z.string().min(1).max(120).optional(),
+          openLibraryId: z.string().min(1).max(120).optional(),
+          wikidataId: z.string().min(1).max(120).optional(),
+          isni: z.string().min(1).max(120).optional(),
+          viaf: z.string().min(1).max(120).optional(),
+          portraitUrl: z.string().min(1).max(500).optional(),
+          gallery: z.array(z.string().min(1).max(500)).optional(),
+          knownWorks: z.array(z.string().min(1).max(300)).optional(),
+          bookIds: z.array(z.string().min(1).max(180)).optional(),
+          status: z.enum(["active", "archived"]).optional(),
+          source: z.string().min(1).max(120).optional(),
+          primarySource: z.string().min(1).max(120).optional(),
+          provenance: z.record(z.string(), z.unknown()).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          author: adminAuthorSchema,
+          status: z.enum(["CREATED", "UPDATED", "MERGED"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminAuthorUpdate: defineContract(
+      z
+        .object({
+          authorId: z.string().min(1),
+          canonicalName: z.string().min(1).max(240),
+          displayName: z.string().min(1).max(240).optional(),
+          aliases: z.array(z.string().min(1).max(240)).optional(),
+          slug: z.string().min(1).max(120).optional(),
+          birthDate: z.string().min(1).max(16).optional(),
+          deathDate: z.string().min(1).max(16).optional(),
+          birthPlace: z.string().min(1).max(160).optional(),
+          deathPlace: z.string().min(1).max(160).optional(),
+          nationality: z.string().min(1).max(120).optional(),
+          languages: z.array(z.string().min(1).max(120)).optional(),
+          genres: z.array(z.string().min(1).max(120)).optional(),
+          movements: z.array(z.string().min(1).max(120)).optional(),
+          period: z.string().min(1).max(120).optional(),
+          themes: z.array(z.string().min(1).max(120)).optional(),
+          influenceTags: z.array(z.string().min(1).max(120)).optional(),
+          shortBio: z.string().min(1).max(800).optional(),
+          fullBio: z.string().min(1).max(5000).optional(),
+          wikipediaUrl: z.string().min(1).max(500).optional(),
+          goodreadsId: z.string().min(1).max(120).optional(),
+          openLibraryId: z.string().min(1).max(120).optional(),
+          wikidataId: z.string().min(1).max(120).optional(),
+          isni: z.string().min(1).max(120).optional(),
+          viaf: z.string().min(1).max(120).optional(),
+          portraitUrl: z.string().min(1).max(500).optional(),
+          gallery: z.array(z.string().min(1).max(500)).optional(),
+          knownWorks: z.array(z.string().min(1).max(300)).optional(),
+          bookIds: z.array(z.string().min(1).max(180)).optional(),
+          status: z.enum(["active", "archived"]).optional(),
+          source: z.string().min(1).max(120).optional(),
+          primarySource: z.string().min(1).max(120).optional(),
+          provenance: z.record(z.string(), z.unknown()).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          author: adminAuthorSchema,
+          status: z.enum(["CREATED", "UPDATED", "MERGED"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminAuthorArchive: defineContract(
+      z
+        .object({
+          authorId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          author: adminAuthorSchema,
+          archived: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
     backfillAuthorMetadata: defineContract(
       z
         .object({
@@ -2602,6 +2864,174 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/quoteService.ts"],
+      }
+    ),
+
+    adminListQuotes: defineContract(
+      z
+        .object({
+          query: z.string().min(1).max(120).optional(),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          status: z.enum(["active", "archived", "all"]).optional(),
+          limit: z.number().int().min(1).max(50).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          quotes: z.array(adminQuoteSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminGetQuote: defineContract(
+      z
+        .object({
+          quoteId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          quote: adminQuoteSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminQuoteCreate: defineContract(
+      z
+        .object({
+          textEn: z.string().min(1).max(2000),
+          textAr: z.string().min(1).max(2000),
+          sourceEn: z.string().min(1).max(240),
+          sourceAr: z.string().min(1).max(240),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          isPublic: z.boolean().optional(),
+          chapter: z.string().min(1).max(120).optional(),
+          page: z.number().int().positive().max(200000).optional(),
+          section: z.string().min(1).max(120).optional(),
+          year: z.number().int().nonnegative().max(4000).optional(),
+          language: z.string().min(1).max(16).optional(),
+          originalLanguage: z.string().min(1).max(16).optional(),
+          translatedFrom: z.string().min(1).max(16).optional(),
+          translationStatus: z.string().min(1).max(40).optional(),
+          themes: z.array(z.string().min(1).max(120)).optional(),
+          mood: z.string().min(1).max(80).optional(),
+          concepts: z.array(z.string().min(1).max(120)).optional(),
+          keywords: z.array(z.string().min(1).max(120)).optional(),
+          attributionConfidence: z.number().min(0).max(1).optional(),
+          sourceType: z.string().min(1).max(80).optional(),
+          sourceReference: z.string().min(1).max(240).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          quote: adminQuoteSchema,
+          duplicate: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminQuoteUpdate: defineContract(
+      z
+        .object({
+          quoteId: z.string().min(1),
+          textEn: z.string().min(1).max(2000).optional(),
+          textAr: z.string().min(1).max(2000).optional(),
+          sourceEn: z.string().min(1).max(240).optional(),
+          sourceAr: z.string().min(1).max(240).optional(),
+          bookId: z.string().min(1).optional(),
+          authorId: z.string().min(1).optional(),
+          isPublic: z.boolean().optional(),
+          status: z.enum(["active", "archived"]).optional(),
+          chapter: z.string().min(1).max(120).optional(),
+          page: z.number().int().positive().max(200000).optional(),
+          section: z.string().min(1).max(120).optional(),
+          year: z.number().int().nonnegative().max(4000).optional(),
+          language: z.string().min(1).max(16).optional(),
+          originalLanguage: z.string().min(1).max(16).optional(),
+          translatedFrom: z.string().min(1).max(16).optional(),
+          translationStatus: z.string().min(1).max(40).optional(),
+          themes: z.array(z.string().min(1).max(120)).optional(),
+          mood: z.string().min(1).max(80).optional(),
+          concepts: z.array(z.string().min(1).max(120)).optional(),
+          keywords: z.array(z.string().min(1).max(120)).optional(),
+          attributionConfidence: z.number().min(0).max(1).optional(),
+          sourceType: z.string().min(1).max(80).optional(),
+          sourceReference: z.string().min(1).max(240).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          quote: adminQuoteSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminQuoteArchive: defineContract(
+      z
+        .object({
+          quoteId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          archived: z.boolean(),
+          quoteId: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminRegisterQuoteImport: defineContract(
+      z
+        .object({
+          storagePath: z.string().min(1).max(500),
+          fileName: z.string().min(1).max(240),
+          fileSize: z.number().int().positive().max(500 * 1024 * 1024),
+          contentType: z.string().max(160).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          job: adminQuoteImportJobSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
+      }
+    ),
+
+    adminGetQuoteImportStatus: defineContract(
+      z.object({}).strict(),
+      z
+        .object({
+          job: adminQuoteImportJobSchema.nullable(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"],
       }
     ),
 

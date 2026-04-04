@@ -1,5 +1,7 @@
 import { httpsCallable, type Functions } from 'firebase/functions';
-import { getFirebaseFunctions } from '../firebase.ts';
+import { ref, uploadBytes } from 'firebase/storage';
+import { getFirebaseAuth, getFirebaseFunctions, getFirebaseStorage } from '../firebase.ts';
+import { callCallableEndpoint } from '../callable.ts';
 
 export type DeletionRequestStatus = 'pending' | 'approved' | 'rejected' | 'executed';
 export type DeletionReviewDecision = Extract<DeletionRequestStatus, 'approved' | 'rejected'>;
@@ -84,8 +86,151 @@ export type DeletionRequest = {
   createdAt: string;
 };
 
+export type AdminAuthorRecord = {
+  authorId: string;
+  canonicalName: string;
+  normalizedName: string;
+  displayName: string;
+  aliases: string[];
+  slug?: string;
+  birthDate?: string;
+  deathDate?: string;
+  birthPlace?: string;
+  deathPlace?: string;
+  nationality?: string;
+  languages: string[];
+  genres: string[];
+  movements: string[];
+  period?: string;
+  themes: string[];
+  influenceTags: string[];
+  shortBio?: string;
+  fullBio?: string;
+  wikipediaUrl?: string;
+  goodreadsId?: string;
+  openLibraryId?: string;
+  wikidataId?: string;
+  isni?: string;
+  viaf?: string;
+  portraitUrl?: string;
+  gallery: string[];
+  knownWorks: string[];
+  bookIds: string[];
+  status: 'active' | 'archived';
+  source?: string;
+  primarySource?: string;
+  provenance?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type AdminQuoteRecord = {
+  quoteId: string;
+  canonicalQuoteId: string;
+  canonicalQuoteHash?: string;
+  slug?: string;
+  canonicalText: string;
+  normalizedText: string;
+  textEn: string;
+  textAr: string;
+  sourceEn: string;
+  sourceAr: string;
+  authorId?: string;
+  authorName?: string;
+  bookId?: string;
+  bookTitle?: string;
+  chapter?: string;
+  page?: number;
+  section?: string;
+  year?: number;
+  language?: string;
+  originalLanguage?: string;
+  translatedFrom?: string;
+  translationStatus?: string;
+  themes: string[];
+  mood?: string;
+  concepts: string[];
+  keywords: string[];
+  tags: string[];
+  attributionConfidence?: number;
+  sourceType?: string;
+  sourceReference?: string;
+  provenance?: Record<string, unknown>;
+  status: 'active' | 'archived';
+  isPublic: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+};
+
+export type AdminQuoteImportJob = {
+  status: 'registered' | 'running' | 'completed' | 'failed';
+  storagePath: string;
+  fileName: string;
+  fileSize: number;
+  contentType: string;
+  totalRows: number;
+  processedRows: number;
+  createdRows: number;
+  duplicateRows: number;
+  skippedRows: number;
+  failedRows: number;
+  lastProcessedRow: number;
+  completed: boolean;
+  lastRunAt?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  registeredBy: string;
+  lastError?: string;
+  dailyRowLimit: number;
+  dailyWriteBudget: number;
+  batchRowLimit: number;
+  estimatedCompletionDays: number;
+};
+
+export type AdminAuthorImportCandidate = {
+  id: string;
+  nameEn: string;
+  nameAr: string;
+  avatarUrl: string;
+  bioEn: string;
+  bioAr: string;
+  lifespan: string;
+  countryEn: string;
+  countryAr: string;
+  languageEn: string;
+  languageAr: string;
+  providerSource?: 'openLibrary' | 'wikidata';
+  providerExternalId?: string;
+  requiresCanonicalization?: boolean;
+};
+
 export const adminServiceQueryKeys = {
   deletionRequests: ['admin', 'deletionRequests'] as const,
+  authors: (params: { query?: string | null; status?: string | null; limit?: number | null } = {}) =>
+    ['admin', 'authors', params.query ?? null, params.status ?? null, params.limit ?? null] as const,
+  author: (authorId: string | null | undefined) => ['admin', 'author', authorId ?? null] as const,
+  quotes: (params: {
+    query?: string | null;
+    status?: string | null;
+    authorId?: string | null;
+    bookId?: string | null;
+    limit?: number | null;
+  } = {}) =>
+    [
+      'admin',
+      'quotes',
+      params.query ?? null,
+      params.status ?? null,
+      params.authorId ?? null,
+      params.bookId ?? null,
+      params.limit ?? null,
+    ] as const,
+  quote: (quoteId: string | null | undefined) => ['admin', 'quote', quoteId ?? null] as const,
+  quoteImportStatus: ['admin', 'quoteImportStatus'] as const,
   analyticsSnapshot: ['admin', 'analytics', 'snapshot'] as const,
   analyticsDailyRange: (params: SystemMetricsDailyRangeParams = {}) =>
     [
@@ -216,6 +361,13 @@ function readRequiredString(value: unknown, field: string, context: string): str
   return normalized;
 }
 
+function readString(value: unknown, field: string, context: string): string {
+  if (typeof value !== 'string') {
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
+  }
+  return value.trim();
+}
+
 function readNullableString(value: unknown, field: string, context: string): string | null {
   if (value == null) return null;
   if (typeof value !== 'string') {
@@ -342,6 +494,201 @@ function parseSearchUsersResponse(payload: unknown): AdminUserSearchResult[] {
   }
 
   return response.users.map((item, index) => mapAdminUserSearchItem(item, index));
+}
+
+function readStringArray(value: unknown, field: string, context: string): string[] {
+  if (value == null) return [];
+  if (!Array.isArray(value)) {
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
+  }
+
+  return value.map((entry, index) =>
+    readRequiredString(entry, `${field}[${index}]`, context)
+  );
+}
+
+function readOptionalNumber(value: unknown, field: string, context: string): number | undefined {
+  if (value == null) return undefined;
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
+  }
+  return value;
+}
+
+function readOptionalObject(
+  value: unknown,
+  field: string,
+  context: string
+): Record<string, unknown> | undefined {
+  if (value == null) return undefined;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`[adminService] Invalid ${field} in ${context}.`);
+  }
+  return value as Record<string, unknown>;
+}
+
+function readAuthorStatus(value: unknown, context: string): AdminAuthorRecord['status'] {
+  if (value === 'active' || value === 'archived') {
+    return value;
+  }
+  throw new Error(`[adminService] Invalid author status in ${context}.`);
+}
+
+function readQuoteStatus(value: unknown, context: string): AdminQuoteRecord['status'] {
+  if (value === 'active' || value === 'archived') {
+    return value;
+  }
+  throw new Error(`[adminService] Invalid quote status in ${context}.`);
+}
+
+function mapAdminAuthorItem(item: unknown, index: number): AdminAuthorRecord {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid admin author at index ${index}.`);
+  }
+  const data = item as Record<string, unknown>;
+  const context = `admin author #${index}`;
+  return {
+    authorId: readRequiredString(data.authorId, 'authorId', context),
+    canonicalName: readRequiredString(data.canonicalName, 'canonicalName', context),
+    normalizedName: readRequiredString(data.normalizedName, 'normalizedName', context),
+    displayName: readRequiredString(data.displayName, 'displayName', context),
+    aliases: readStringArray(data.aliases, 'aliases', context),
+    slug: readNullableString(data.slug, 'slug', context) ?? undefined,
+    birthDate: readNullableString(data.birthDate, 'birthDate', context) ?? undefined,
+    deathDate: readNullableString(data.deathDate, 'deathDate', context) ?? undefined,
+    birthPlace: readNullableString(data.birthPlace, 'birthPlace', context) ?? undefined,
+    deathPlace: readNullableString(data.deathPlace, 'deathPlace', context) ?? undefined,
+    nationality: readNullableString(data.nationality, 'nationality', context) ?? undefined,
+    languages: readStringArray(data.languages, 'languages', context),
+    genres: readStringArray(data.genres, 'genres', context),
+    movements: readStringArray(data.movements, 'movements', context),
+    period: readNullableString(data.period, 'period', context) ?? undefined,
+    themes: readStringArray(data.themes, 'themes', context),
+    influenceTags: readStringArray(data.influenceTags, 'influenceTags', context),
+    shortBio: readNullableString(data.shortBio, 'shortBio', context) ?? undefined,
+    fullBio: readNullableString(data.fullBio, 'fullBio', context) ?? undefined,
+    wikipediaUrl: readNullableString(data.wikipediaUrl, 'wikipediaUrl', context) ?? undefined,
+    goodreadsId: readNullableString(data.goodreadsId, 'goodreadsId', context) ?? undefined,
+    openLibraryId: readNullableString(data.openLibraryId, 'openLibraryId', context) ?? undefined,
+    wikidataId: readNullableString(data.wikidataId, 'wikidataId', context) ?? undefined,
+    isni: readNullableString(data.isni, 'isni', context) ?? undefined,
+    viaf: readNullableString(data.viaf, 'viaf', context) ?? undefined,
+    portraitUrl: readNullableString(data.portraitUrl, 'portraitUrl', context) ?? undefined,
+    gallery: readStringArray(data.gallery, 'gallery', context),
+    knownWorks: readStringArray(data.knownWorks, 'knownWorks', context),
+    bookIds: readStringArray(data.bookIds, 'bookIds', context),
+    status: readAuthorStatus(data.status, context),
+    source: readNullableString(data.source, 'source', context) ?? undefined,
+    primarySource: readNullableString(data.primarySource, 'primarySource', context) ?? undefined,
+    provenance: readOptionalObject(data.provenance, 'provenance', context),
+    createdAt: toIsoString(data.createdAt, 'createdAt', context, false) ?? undefined,
+    updatedAt: toIsoString(data.updatedAt, 'updatedAt', context, false) ?? undefined,
+    createdBy: readNullableString(data.createdBy, 'createdBy', context) ?? undefined,
+    updatedBy: readNullableString(data.updatedBy, 'updatedBy', context) ?? undefined,
+  };
+}
+
+function mapAdminQuoteItem(item: unknown, index: number): AdminQuoteRecord {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid admin quote at index ${index}.`);
+  }
+  const data = item as Record<string, unknown>;
+  const context = `admin quote #${index}`;
+  return {
+    quoteId: readRequiredString(data.quoteId, 'quoteId', context),
+    canonicalQuoteId: readRequiredString(data.canonicalQuoteId, 'canonicalQuoteId', context),
+    canonicalQuoteHash:
+      readNullableString(data.canonicalQuoteHash, 'canonicalQuoteHash', context) ?? undefined,
+    slug: readNullableString(data.slug, 'slug', context) ?? undefined,
+    canonicalText: readRequiredString(data.canonicalText, 'canonicalText', context),
+    normalizedText: readRequiredString(data.normalizedText, 'normalizedText', context),
+    textEn: readRequiredString(data.textEn, 'textEn', context),
+    textAr: readString(data.textAr, 'textAr', context),
+    sourceEn: readRequiredString(data.sourceEn, 'sourceEn', context),
+    sourceAr: readString(data.sourceAr, 'sourceAr', context),
+    authorId: readNullableString(data.authorId, 'authorId', context) ?? undefined,
+    authorName: readNullableString(data.authorName, 'authorName', context) ?? undefined,
+    bookId: readNullableString(data.bookId, 'bookId', context) ?? undefined,
+    bookTitle: readNullableString(data.bookTitle, 'bookTitle', context) ?? undefined,
+    chapter: readNullableString(data.chapter, 'chapter', context) ?? undefined,
+    page: readOptionalNumber(data.page, 'page', context),
+    section: readNullableString(data.section, 'section', context) ?? undefined,
+    year: readOptionalNumber(data.year, 'year', context),
+    language: readNullableString(data.language, 'language', context) ?? undefined,
+    originalLanguage:
+      readNullableString(data.originalLanguage, 'originalLanguage', context) ?? undefined,
+    translatedFrom:
+      readNullableString(data.translatedFrom, 'translatedFrom', context) ?? undefined,
+    translationStatus:
+      readNullableString(data.translationStatus, 'translationStatus', context) ?? undefined,
+    themes: readStringArray(data.themes ?? [], 'themes', context),
+    mood: readNullableString(data.mood, 'mood', context) ?? undefined,
+    concepts: readStringArray(data.concepts ?? [], 'concepts', context),
+    keywords: readStringArray(data.keywords ?? [], 'keywords', context),
+    tags: readStringArray(data.tags ?? [], 'tags', context),
+    attributionConfidence: readOptionalNumber(
+      data.attributionConfidence,
+      'attributionConfidence',
+      context
+    ),
+    sourceType: readNullableString(data.sourceType, 'sourceType', context) ?? undefined,
+    sourceReference:
+      readNullableString(data.sourceReference, 'sourceReference', context) ?? undefined,
+    provenance: readOptionalObject(data.provenance, 'provenance', context),
+    status: readQuoteStatus(data.status, context),
+    isPublic: data.isPublic === true,
+    createdAt: toIsoString(data.createdAt, 'createdAt', context, false) ?? undefined,
+    updatedAt: toIsoString(data.updatedAt, 'updatedAt', context, false) ?? undefined,
+    createdBy: readNullableString(data.createdBy, 'createdBy', context) ?? undefined,
+    updatedBy: readNullableString(data.updatedBy, 'updatedBy', context) ?? undefined,
+  };
+}
+
+function parseAdminQuoteImportJob(payload: unknown): AdminQuoteImportJob {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new Error('[adminService] Invalid quote import job payload.');
+  }
+
+  const data = payload as Record<string, unknown>;
+  const context = 'quote import job';
+  const status = readRequiredString(data.status, 'status', context);
+  if (
+    status !== 'registered' &&
+    status !== 'running' &&
+    status !== 'completed' &&
+    status !== 'failed'
+  ) {
+    throw new Error('[adminService] Invalid quote import job status.');
+  }
+
+  return {
+    status,
+    storagePath: readRequiredString(data.storagePath, 'storagePath', context),
+    fileName: readRequiredString(data.fileName, 'fileName', context),
+    fileSize: readRequiredFiniteNumber(data.fileSize, 'fileSize', context),
+    contentType: readString(data.contentType, 'contentType', context),
+    totalRows: readRequiredFiniteNumber(data.totalRows, 'totalRows', context),
+    processedRows: readRequiredFiniteNumber(data.processedRows, 'processedRows', context),
+    createdRows: readRequiredFiniteNumber(data.createdRows, 'createdRows', context),
+    duplicateRows: readRequiredFiniteNumber(data.duplicateRows, 'duplicateRows', context),
+    skippedRows: readRequiredFiniteNumber(data.skippedRows, 'skippedRows', context),
+    failedRows: readRequiredFiniteNumber(data.failedRows, 'failedRows', context),
+    lastProcessedRow: readRequiredFiniteNumber(data.lastProcessedRow, 'lastProcessedRow', context),
+    completed: data.completed === true,
+    lastRunAt: readNullableString(data.lastRunAt, 'lastRunAt', context) ?? undefined,
+    createdAt: readNullableString(data.createdAt, 'createdAt', context) ?? undefined,
+    updatedAt: readNullableString(data.updatedAt, 'updatedAt', context) ?? undefined,
+    registeredBy: readRequiredString(data.registeredBy, 'registeredBy', context),
+    lastError: readNullableString(data.lastError, 'lastError', context) ?? undefined,
+    dailyRowLimit: readRequiredFiniteNumber(data.dailyRowLimit, 'dailyRowLimit', context),
+    dailyWriteBudget: readRequiredFiniteNumber(data.dailyWriteBudget, 'dailyWriteBudget', context),
+    batchRowLimit: readRequiredFiniteNumber(data.batchRowLimit, 'batchRowLimit', context),
+    estimatedCompletionDays: readRequiredFiniteNumber(
+      data.estimatedCompletionDays,
+      'estimatedCompletionDays',
+      context
+    ),
+  };
 }
 
 const DATE_KEY_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -698,6 +1045,333 @@ export const adminService = {
     });
 
     return parseSearchUsersResponse(result.data);
+  },
+
+  async discoverAuthorCandidates(query: string, limit = 12): Promise<AdminAuthorImportCandidate[]> {
+    const normalized = query.trim();
+    if (!normalized) {
+      return [];
+    }
+    const data = await callCallableEndpoint<{ query: string; limit?: number }, { authors: unknown[] }>(
+      'discoverAuthors',
+      { query: normalized, limit }
+    );
+    if (!Array.isArray(data.authors)) {
+      throw new Error('[discoverAuthors] Invalid authors payload.');
+    }
+    return data.authors.map((item, index) => {
+      if (!item || typeof item !== 'object' || Array.isArray(item)) {
+        throw new Error(`[adminService] Invalid import candidate at index ${index}.`);
+      }
+      const row = item as Record<string, unknown>;
+      const context = `import candidate #${index}`;
+      return {
+        id: readRequiredString(row.id, 'id', context),
+        nameEn: readRequiredString(row.nameEn, 'nameEn', context),
+        nameAr: readRequiredString(row.nameAr, 'nameAr', context),
+        avatarUrl: readNullableString(row.avatarUrl, 'avatarUrl', context) ?? '',
+        bioEn: readNullableString(row.bioEn, 'bioEn', context) ?? '',
+        bioAr: readNullableString(row.bioAr, 'bioAr', context) ?? '',
+        lifespan: readNullableString(row.lifespan, 'lifespan', context) ?? '',
+        countryEn: readNullableString(row.countryEn, 'countryEn', context) ?? '',
+        countryAr: readNullableString(row.countryAr, 'countryAr', context) ?? '',
+        languageEn: readNullableString(row.languageEn, 'languageEn', context) ?? '',
+        languageAr: readNullableString(row.languageAr, 'languageAr', context) ?? '',
+        providerSource:
+          row.providerSource === 'openLibrary' || row.providerSource === 'wikidata'
+            ? row.providerSource
+            : undefined,
+        providerExternalId:
+          readNullableString(row.providerExternalId, 'providerExternalId', context) ?? undefined,
+        requiresCanonicalization: row.requiresCanonicalization === true,
+      };
+    });
+  },
+
+  async importAuthorCandidate(payload: {
+    source: 'openLibrary' | 'wikidata';
+    providerExternalId: string;
+    rawAuthor: Record<string, unknown>;
+  }): Promise<{ authorId: string; canonicalAuthorId: string; canonicalKey: string; status: string }> {
+    return callCallableEndpoint<typeof payload, {
+      authorId: string;
+      canonicalAuthorId: string;
+      canonicalKey: string;
+      status: string;
+    }>('ingestAuthor', payload);
+  },
+
+  async listAuthors(params: {
+    query?: string;
+    status?: 'active' | 'archived' | 'all';
+    limit?: number;
+  } = {}): Promise<AdminAuthorRecord[]> {
+    const data = await callCallableEndpoint<typeof params, { authors: unknown[] }>(
+      'adminListAuthors',
+      params
+    );
+    if (!Array.isArray(data.authors)) {
+      throw new Error('[adminListAuthors] Invalid authors payload.');
+    }
+    return data.authors.map((item, index) => mapAdminAuthorItem(item, index));
+  },
+
+  async getAuthor(authorId: string): Promise<AdminAuthorRecord> {
+    const normalizedAuthorId = authorId.trim();
+    if (!normalizedAuthorId) {
+      throw new Error('Author ID is required.');
+    }
+    const data = await callCallableEndpoint<{ authorId: string }, { author: unknown }>(
+      'adminGetAuthor',
+      { authorId: normalizedAuthorId }
+    );
+    return mapAdminAuthorItem(data.author, 0);
+  },
+
+  async createAuthor(payload: {
+    canonicalName: string;
+    displayName?: string;
+    aliases?: string[];
+    slug?: string;
+    birthDate?: string;
+    deathDate?: string;
+    birthPlace?: string;
+    deathPlace?: string;
+    nationality?: string;
+    languages?: string[];
+    genres?: string[];
+    movements?: string[];
+    period?: string;
+    themes?: string[];
+    influenceTags?: string[];
+    shortBio?: string;
+    fullBio?: string;
+    wikipediaUrl?: string;
+    goodreadsId?: string;
+    openLibraryId?: string;
+    wikidataId?: string;
+    isni?: string;
+    viaf?: string;
+    portraitUrl?: string;
+    gallery?: string[];
+    knownWorks?: string[];
+    bookIds?: string[];
+    status?: 'active' | 'archived';
+    source?: string;
+    primarySource?: string;
+    provenance?: Record<string, unknown>;
+  }): Promise<{ author: AdminAuthorRecord; status: 'CREATED' | 'UPDATED' | 'MERGED' }> {
+    const data = await callCallableEndpoint<typeof payload, { author: unknown; status: 'CREATED' | 'UPDATED' | 'MERGED' }>(
+      'adminAuthorCreate',
+      payload
+    );
+    return {
+      author: mapAdminAuthorItem(data.author, 0),
+      status: data.status,
+    };
+  },
+
+  async updateAuthor(payload: {
+    authorId: string;
+    canonicalName: string;
+    displayName?: string;
+    aliases?: string[];
+    slug?: string;
+    birthDate?: string;
+    deathDate?: string;
+    birthPlace?: string;
+    deathPlace?: string;
+    nationality?: string;
+    languages?: string[];
+    genres?: string[];
+    movements?: string[];
+    period?: string;
+    themes?: string[];
+    influenceTags?: string[];
+    shortBio?: string;
+    fullBio?: string;
+    wikipediaUrl?: string;
+    goodreadsId?: string;
+    openLibraryId?: string;
+    wikidataId?: string;
+    isni?: string;
+    viaf?: string;
+    portraitUrl?: string;
+    gallery?: string[];
+    knownWorks?: string[];
+    bookIds?: string[];
+    status?: 'active' | 'archived';
+    source?: string;
+    primarySource?: string;
+    provenance?: Record<string, unknown>;
+  }): Promise<{ author: AdminAuthorRecord; status: 'CREATED' | 'UPDATED' | 'MERGED' }> {
+    const data = await callCallableEndpoint<typeof payload, { author: unknown; status: 'CREATED' | 'UPDATED' | 'MERGED' }>(
+      'adminAuthorUpdate',
+      payload
+    );
+    return {
+      author: mapAdminAuthorItem(data.author, 0),
+      status: data.status,
+    };
+  },
+
+  async archiveAuthor(authorId: string): Promise<AdminAuthorRecord> {
+    const normalizedAuthorId = authorId.trim();
+    if (!normalizedAuthorId) {
+      throw new Error('Author ID is required.');
+    }
+    const data = await callCallableEndpoint<{ authorId: string }, { author: unknown; archived: boolean }>(
+      'adminAuthorArchive',
+      { authorId: normalizedAuthorId }
+    );
+    return mapAdminAuthorItem(data.author, 0);
+  },
+
+  async listQuotes(params: {
+    query?: string;
+    status?: 'active' | 'archived' | 'all';
+    authorId?: string;
+    bookId?: string;
+    limit?: number;
+  } = {}): Promise<AdminQuoteRecord[]> {
+    const data = await callCallableEndpoint<typeof params, { quotes: unknown[] }>(
+      'adminListQuotes',
+      params
+    );
+    if (!Array.isArray(data.quotes)) {
+      throw new Error('[adminListQuotes] Invalid quotes payload.');
+    }
+    return data.quotes.map((item, index) => mapAdminQuoteItem(item, index));
+  },
+
+  async getQuote(quoteId: string): Promise<AdminQuoteRecord> {
+    const normalizedQuoteId = quoteId.trim();
+    if (!normalizedQuoteId) {
+      throw new Error('Quote ID is required.');
+    }
+    const data = await callCallableEndpoint<{ quoteId: string }, { quote: unknown }>(
+      'adminGetQuote',
+      { quoteId: normalizedQuoteId }
+    );
+    return mapAdminQuoteItem(data.quote, 0);
+  },
+
+  async createQuote(payload: {
+    textEn: string;
+    textAr: string;
+    sourceEn: string;
+    sourceAr: string;
+    bookId?: string;
+    authorId?: string;
+    isPublic?: boolean;
+    chapter?: string;
+    page?: number;
+    section?: string;
+    year?: number;
+    language?: string;
+    originalLanguage?: string;
+    translatedFrom?: string;
+    translationStatus?: string;
+    themes?: string[];
+    mood?: string;
+    concepts?: string[];
+    keywords?: string[];
+    attributionConfidence?: number;
+    sourceType?: string;
+    sourceReference?: string;
+  }): Promise<{ quote: AdminQuoteRecord; duplicate: boolean }> {
+    const data = await callCallableEndpoint<typeof payload, { quote: unknown; duplicate: boolean }>(
+      'adminQuoteCreate',
+      payload
+    );
+    return {
+      quote: mapAdminQuoteItem(data.quote, 0),
+      duplicate: data.duplicate === true,
+    };
+  },
+
+  async updateQuote(payload: {
+    quoteId: string;
+    textEn?: string;
+    textAr?: string;
+    sourceEn?: string;
+    sourceAr?: string;
+    bookId?: string;
+    authorId?: string;
+    isPublic?: boolean;
+    status?: 'active' | 'archived';
+    chapter?: string;
+    page?: number;
+    section?: string;
+    year?: number;
+    language?: string;
+    originalLanguage?: string;
+    translatedFrom?: string;
+    translationStatus?: string;
+    themes?: string[];
+    mood?: string;
+    concepts?: string[];
+    keywords?: string[];
+    attributionConfidence?: number;
+    sourceType?: string;
+    sourceReference?: string;
+  }): Promise<AdminQuoteRecord> {
+    const data = await callCallableEndpoint<typeof payload, { quote: unknown }>(
+      'adminQuoteUpdate',
+      payload
+    );
+    return mapAdminQuoteItem(data.quote, 0);
+  },
+
+  async archiveQuote(quoteId: string): Promise<void> {
+    const normalizedQuoteId = quoteId.trim();
+    if (!normalizedQuoteId) {
+      throw new Error('Quote ID is required.');
+    }
+    await callCallableEndpoint<{ quoteId: string }, { archived: boolean; quoteId: string }>(
+      'adminQuoteArchive',
+      { quoteId: normalizedQuoteId }
+    );
+  },
+
+  async uploadQuoteImportFile(file: File): Promise<AdminQuoteImportJob> {
+    if (!(file instanceof File) || file.size <= 0) {
+      throw new Error('Quote import file is required.');
+    }
+    if (!file.name.toLowerCase().endsWith('.csv')) {
+      throw new Error('Quote import file must be a CSV.');
+    }
+
+    const currentUser = getFirebaseAuth().currentUser;
+    if (!currentUser?.uid) {
+      throw new Error('Authentication is required.');
+    }
+
+    const safeFileName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '_').slice(0, 180);
+    const tempStoragePath = `imports/${currentUser.uid}/quote_uploads/${Date.now()}_${safeFileName}`;
+    await uploadBytes(ref(getFirebaseStorage(), tempStoragePath), file, {
+      contentType: file.type || 'text/csv',
+    });
+
+    const data = await callCallableEndpoint<
+      { storagePath: string; fileName: string; fileSize: number; contentType?: string },
+      { job: unknown }
+    >('adminRegisterQuoteImport', {
+      storagePath: tempStoragePath,
+      fileName: file.name,
+      fileSize: file.size,
+      ...(file.type ? { contentType: file.type } : {}),
+    });
+
+    return parseAdminQuoteImportJob(data.job);
+  },
+
+  async getQuoteImportStatus(): Promise<AdminQuoteImportJob | null> {
+    const data = await callCallableEndpoint<Record<string, never>, { job: unknown | null }>(
+      'adminGetQuoteImportStatus',
+      {}
+    );
+    return data.job ? parseAdminQuoteImportJob(data.job) : null;
   },
 
   async getSystemMetricsSnapshot(): Promise<SystemMetricsSnapshot> {

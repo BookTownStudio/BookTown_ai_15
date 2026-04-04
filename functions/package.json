@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@google-cloud/vertexai": "^1.10.0",
+    "csv-parse": "^5.6.0",
     "express": "^4.19.2",
     "firebase-admin": "^12.7.0",
     "firebase-functions": "^5.1.1",

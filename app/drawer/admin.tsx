@@ -24,6 +24,7 @@ import Button from '../../components/ui/Button.tsx';
 import GlassCard from '../../components/ui/GlassCard.tsx';
 import { cn } from '../../lib/utils.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
+import CatalogAuthorityTab from '../../components/admin/CatalogAuthorityTab.tsx';
 
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
@@ -1277,11 +1278,7 @@ const ControlCenterScreen: React.FC = () => {
                 />
               )}
               {activeSection === 'catalog' && (
-                <PlaceholderTab
-                  title={lang === 'en' ? 'Catalog' : 'الكتالوج'}
-                  subtitle={lang === 'en' ? 'Catalog quality controls.' : 'ضوابط جودة الكتالوج.'}
-                  icon={BookIcon}
-                />
+                <CatalogAuthorityTab />
               )}
               {activeSection === 'curation' && (
                 <PlaceholderTab
