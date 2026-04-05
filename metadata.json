@@ -1,6 +1,6 @@
 {
-  "name": "BookTown 12",
-  "short_name": "BookTown 12",
+  "name": "BookTown",
+  "short_name": "BookTown",
   "description": "Read. Write. Think.",
   "start_url": "/",
   "display": "standalone",
