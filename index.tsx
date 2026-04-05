@@ -40,7 +40,7 @@ if (!isReaderBenchmarkMode && !isReaderHighlightBenchmarkMode) {
 // 3️⃣ Safe build/version log
 // FIX: Safely access import.meta.env to prevent runtime errors
 devLog(
-  'BOOKTOWN 12 BUILD',
+  'BOOKTOWN BUILD',
   (import.meta as any).env?.VITE_APP_VERSION || '1.0.0-dev'
 );
 

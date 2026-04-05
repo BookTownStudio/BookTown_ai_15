@@ -19,6 +19,9 @@ export const QUOTE_IMPORT_CANONICAL_HEADERS = [
   "texten",
   "sourceen",
   "tags",
+  "textar",
+  "sourcear",
+  "authorid",
 ] as const;
 
 const QUOTE_IMPORT_MAX_FILE_SIZE_BYTES = 500 * 1024 * 1024;
