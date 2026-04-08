@@ -55,6 +55,9 @@ export interface SearchResultDTO {
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
+  isbn13?: string;
+  isbn10?: string;
+  canonicalKey?: string;
   externalReadableSources?: ExternalReadableSourceDTO[];
   rawBook?: Record<string, unknown>;
 }

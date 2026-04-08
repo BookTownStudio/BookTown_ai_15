@@ -194,6 +194,23 @@ describe("Search Harness — Canonical Local Engine", () => {
     expect(normalize(topTitle).includes("harry potter")).toBe(true);
   });
 
+  it("rescues bounded title typos before external widening when local canonical candidates exist", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy as any);
+
+    const response = await unifiedSearch("harry potr", {});
+
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(normalize(response.results[0]?.title || "")).toContain("harry potter");
+    expect(response.results[0]?.resultType).toBe("canonical");
+    expect(response.results.slice(0, 4).map((entry: any) => entry.title)).not.toContain(
+      "Harry Potter Critical Study"
+    );
+    expect(response.telemetry?.externalFallbackTriggered).toBe(false);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("prioritizes author relevance for author query", async () => {
     const response = await unifiedSearch("rowling", {});
     const results = response.results;
@@ -201,6 +218,138 @@ describe("Search Harness — Canonical Local Engine", () => {
 
     const topThreeAuthors = results.slice(0, 3).map((entry: any) => entry.authorEn || entry.authors?.[0] || "");
     expect(topThreeAuthors.every((author) => normalize(author).includes("rowling"))).toBe(true);
+  });
+
+  it("keeps Kafka and Camus author retrieval canonical-first", async () => {
+    const kafka = await unifiedSearch("Kafka", {});
+    const camus = await unifiedSearch("Camus", {});
+
+    expect(kafka.results.length).toBeGreaterThan(0);
+    expect(normalize(kafka.results[0]?.authorEn || "")).toContain("kafka");
+    expect(kafka.results[0]?.resultType).toBe("canonical");
+
+    expect(camus.results.length).toBeGreaterThan(0);
+    expect(normalize(camus.results[0]?.authorEn || "")).toContain("camus");
+    expect(camus.results[0]?.resultType).toBe("canonical");
+  });
+
+  it("keeps Kafka primary works above secondary books under author intent", async () => {
+    const response = await unifiedSearch("Kafka", {});
+    const titles = response.results.slice(0, 4).map((entry: any) => entry.title);
+
+    expect(titles[0]).toBe("The Trial");
+    expect(titles).toContain("The Metamorphosis");
+    expect(titles).toContain("The Castle");
+    expect(titles).not.toContain("Franz Kafka Writer 1913");
+  });
+
+  it("keeps Camus primary works above biography rows under author intent", async () => {
+    const response = await unifiedSearch("Camus", {});
+    const titles = response.results.slice(0, 4).map((entry: any) => entry.title);
+
+    expect(titles.every((title) => title !== "Albert Camus A Biography")).toBe(true);
+    expect(titles.some((title) => title === "The Stranger")).toBe(true);
+    expect(titles).toContain("The Plague");
+    expect(titles).toContain("The Fall");
+    expect(titles).toContain("Caligula");
+    expect(titles).not.toContain("Albert Camus A Biography");
+  });
+
+  it("rescues author typos by widening externally once and rerunning canonical lookup", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("googleapis")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: "gb-dost-1",
+                  volumeInfo: {
+                    title: "Crime and Punishment",
+                    authors: ["Fyodor Dostoevsky"],
+                    printType: "BOOK",
+                  },
+                },
+              ],
+            }),
+          } as any;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            docs: [
+              {
+                key: "/works/OLDOST1W",
+                title: "The Brothers Karamazov",
+                author_name: ["Fyodor Dostoevsky"],
+                type: "book",
+              },
+            ],
+          }),
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("dostoyesvky", {});
+
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(response.results[0]?.resultType).toBe("canonical");
+    expect(normalize(response.results[0]?.authorEn || "")).toContain("dostoevsky");
+    expect(response.telemetry?.externalFallbackTriggered).toBe(true);
+  });
+
+  it("keeps Dostoevsky primary works above collected or critical rows", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("googleapis")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: "gb-dost-1",
+                  volumeInfo: {
+                    title: "Crime and Punishment",
+                    authors: ["Fyodor Dostoevsky"],
+                    printType: "BOOK",
+                  },
+                },
+              ],
+            }),
+          } as any;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            docs: [
+              {
+                key: "/works/OLDOST1W",
+                title: "The Brothers Karamazov",
+                author_name: ["Fyodor Dostoevsky"],
+                type: "book",
+              },
+            ],
+          }),
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("dostoyesvky", {});
+    const titles = response.results.slice(0, 4).map((entry: any) => entry.title);
+
+    expect(titles[0]).toBe("Crime and Punishment");
+    expect(titles).toContain("The Brothers Karamazov");
+    expect(titles).toContain("Notes from Underground");
+    expect(titles).not.toContain("The Complete Works of Dostoevsky 1913");
   });
 
   it("suppresses non-book legal and institutional documents", async () => {
@@ -352,6 +501,63 @@ describe("Search Harness — Canonical Local Engine", () => {
     expect(response.results[0]?.editionPresence).toBe("grouped");
     expect(response.results[0]?.workType).toBe("work");
     expect(response.results[0]?.workId).toBe(response.results[0]?.bookId);
+  });
+
+  it("uses dedicated external isbn lookup before generic provider search when local isbn recall is absent", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const fetchSpy = vi.fn(async (input: string | URL) => {
+      const url = String(input);
+      if (url.includes("googleapis") && url.includes("isbn%3A9780140449136")) {
+        return {
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                id: "gb-isbn-1",
+                volumeInfo: {
+                  title: "Crime and Punishment",
+                  authors: ["Fyodor Dostoevsky"],
+                  printType: "BOOK",
+                  industryIdentifiers: [
+                    { type: "ISBN_13", identifier: "9780140449136" },
+                  ],
+                },
+              },
+            ],
+          }),
+        } as any;
+      }
+      if (url.includes("openlibrary.org/isbn/9780140449136.json")) {
+        return {
+          ok: true,
+          json: async () => ({
+            key: "/books/OL9780140449136M",
+            title: "Crime and Punishment",
+            by_statement: "Fyodor Dostoevsky",
+            covers: [12345],
+          }),
+        } as any;
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    vi.stubGlobal("fetch", fetchSpy as any);
+
+    const response = await unifiedSearch("9780140449136", {});
+
+    expect(response.results.length).toBeGreaterThan(0);
+    expect(response.results[0]?.rank).toBe(0);
+    expect(response.results[0]?.resultType).toBe("external");
+    expect(fetchSpy).toHaveBeenCalled();
+    expect(
+      fetchSpy.mock.calls.some(([input]) =>
+        String(input).includes("googleapis") && String(input).includes("isbn%3A9780140449136")
+      )
+    ).toBe(true);
+    expect(
+      fetchSpy.mock.calls.some(([input]) =>
+        String(input).includes("openlibrary.org/isbn/9780140449136.json")
+      )
+    ).toBe(true);
   });
 
   it("keeps language behavior parity across canonical and external results", async () => {

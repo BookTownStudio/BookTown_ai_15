@@ -27,8 +27,7 @@ export const useBookSearch = (
       options.lang || '',
       typeof options.limit === 'number' ? options.limit : 15,
     ],
-    queryFn: () =>
-      {
+    queryFn: async () => {
         logBookEngineV2('BOOK_SEARCH_V2_CLIENT_QUERY', {
           query: normalizedQuery.slice(0, 80),
           enabled: normalizedQuery.length >= 2,
@@ -46,13 +45,20 @@ export const useBookSearch = (
           availabilityOnly: options.availabilityOnly,
         });
 
-        return bookSearchService.searchBooks({
+        const response = await bookSearchService.searchBooks({
           query: normalizedQuery,
           ebookOnly: options.ebookOnly,
           availabilityOnly: options.availabilityOnly,
           lang: options.lang,
           limit: options.limit,
         });
+
+        if (response.results.length < 2) {
+          return response;
+        }
+
+        const { rerankBookSearchResponse } = await import('../books/bookSearchRanking.ts');
+        return rerankBookSearchResponse(normalizedQuery, response);
       },
     enabled: normalizedQuery.length >= 2,
     staleTime: 20_000,

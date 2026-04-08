@@ -114,6 +114,52 @@ type CursorPayload = {
 
 type QueryIntent = "ISBN" | "AUTHOR_INTENT" | "TITLE_INTENT" | "MIXED_INTENT";
 
+type QueryCandidate = {
+  normalized: string;
+  tokens: string[];
+  source: "original" | "corrected";
+};
+
+type RankComputation = {
+  confidence: number;
+  rankTier: number;
+  computedScore: number;
+  tokenCoverageRatio: number;
+  query: QueryCandidate;
+};
+
+type CanonicalDoc = {
+  id: string;
+  data: Record<string, unknown>;
+};
+
+type CanonicalRetrievalArtifacts = {
+  candidates: RankedResult[];
+  rawDocs: CanonicalDoc[];
+  phaseCounts: {
+    isbn: number;
+    tokens: number;
+    prefix: number;
+    author: number;
+    titleAuthor: number;
+  };
+};
+
+type ExternalSeedCandidate = {
+  source: SearchSource;
+  externalId: string;
+  title: string;
+  authors: string[];
+  description: string;
+  coverUrl: string;
+  language: string;
+  isbn13?: string;
+  isbn10?: string;
+  hasExternalEbookSignal: boolean;
+  externalReadableSources?: ExternalReadableSourceRecord[];
+  rawBook?: Record<string, unknown>;
+};
+
 const INTERNAL_FETCH_POOL = 100;
 const DEFAULT_RETURN_COUNT = 15;
 const MAX_RETURN_COUNT = 30;
@@ -121,6 +167,12 @@ const EXTERNAL_FALLBACK_TRIGGER = 5;
 const CONFIDENCE_THRESHOLD = 0.72;
 const EXTERNAL_PROVIDER_TIMEOUT_MS = 3000;
 const AVAILABILITY_PROBE_LIMIT = 10;
+const MAX_CORRECTED_QUERY_BRANCHES = 2;
+const MIN_TYPO_TOKEN_LENGTH = 4;
+const MAX_TYPO_EDIT_DISTANCE = 2;
+const MAX_LONG_TYPO_EDIT_DISTANCE = 3;
+const MIN_PREFIX_SEED_LENGTH = 4;
+const LOW_CONFIDENCE_COVERAGE_THRESHOLD = 0.6;
 const EXCLUDED_TYPE_PATTERN =
   /\b(academic journal|research paper|conference proceedings?|technical manual|whitepaper|government report|report|reports|thesis|magazine issue|in re|\bvs\b|hearing|hearings)\b/i;
 
@@ -163,6 +215,38 @@ const DERIVATIVE_TITLE_KEYWORDS = new Set([
   "quiz",
   "trivia",
 ]);
+
+const AUTHOR_BIOGRAPHY_CRITICISM_PATTERNS = [
+  /\blife\b/u,
+  /\bromance\b/u,
+  /\bcritical\b/u,
+  /\bcriticism\b/u,
+  /\bexamination\b/u,
+  /\bbiography\b/u,
+  /\bstudy\b/u,
+  /\breader\b/u,
+  /\bintroduction\b/u,
+  /\bcompanion\b/u,
+  /\bessays\b/u,
+  /\bwriter\b/u,
+  /\bat\b/u,
+  /\bcombat\b/u,
+  /\bletters\b/u,
+];
+
+const AUTHOR_ANTHOLOGY_PATTERNS = [
+  /\bcomplete works\b/u,
+  /\bcollected works\b/u,
+  /\bselected works\b/u,
+  /\bcollected novels\b/u,
+  /\bcomplete novels\b/u,
+  /\bcurated works\b/u,
+  /\bbooks set\b/u,
+  /\bnovels of\b/u,
+  /\bstories of\b/u,
+  /\bworks of\b/u,
+  /\bcollection\b/u,
+];
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
@@ -235,6 +319,77 @@ function tokenize(value?: string | null): string[] {
   return normalized
     .split(" ")
     .filter((token) => token.length > 1 && !SEARCH_STOPWORDS.has(token));
+}
+
+function toQueryCandidate(
+  value: string,
+  source: QueryCandidate["source"]
+): QueryCandidate | null {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) return null;
+  return {
+    normalized,
+    tokens: tokenize(normalized),
+    source,
+  };
+}
+
+function dedupeQueryCandidates(candidates: QueryCandidate[]): QueryCandidate[] {
+  const deduped = new Map<string, QueryCandidate>();
+  for (const candidate of candidates) {
+    if (!deduped.has(candidate.normalized)) {
+      deduped.set(candidate.normalized, candidate);
+    }
+  }
+  return Array.from(deduped.values());
+}
+
+function commonPrefixLength(a: string, b: string): number {
+  const limit = Math.min(a.length, b.length);
+  let index = 0;
+  while (index < limit && a[index] === b[index]) {
+    index += 1;
+  }
+  return index;
+}
+
+function boundedEditDistance(a: string, b: string, maxDistance: number): number | null {
+  const aLength = a.length;
+  const bLength = b.length;
+  if (Math.abs(aLength - bLength) > maxDistance) {
+    return null;
+  }
+
+  const previous = new Array<number>(bLength + 1);
+  const current = new Array<number>(bLength + 1);
+
+  for (let j = 0; j <= bLength; j += 1) {
+    previous[j] = j;
+  }
+
+  for (let i = 1; i <= aLength; i += 1) {
+    current[0] = i;
+    let rowMin = current[0];
+    for (let j = 1; j <= bLength; j += 1) {
+      const substitutionCost = a[i - 1] === b[j - 1] ? 0 : 1;
+      current[j] = Math.min(
+        previous[j] + 1,
+        current[j - 1] + 1,
+        previous[j - 1] + substitutionCost
+      );
+      rowMin = Math.min(rowMin, current[j]);
+    }
+
+    if (rowMin > maxDistance) {
+      return null;
+    }
+
+    for (let j = 0; j <= bLength; j += 1) {
+      previous[j] = current[j];
+    }
+  }
+
+  return previous[bLength] <= maxDistance ? previous[bLength] : null;
 }
 
 function normalizeIsbn(value: unknown, length: 10 | 13): string {
@@ -612,62 +767,109 @@ function computeTierSubScore(params: {
 }
 
 function detectQueryIntent(
-  queryNorm: string,
-  queryTokens: string[],
+  queryCandidates: QueryCandidate[],
   candidates: Array<{ title: string; authors: string[] }>
 ): QueryIntent {
-  const isbnQuery = parseIsbnQuery(queryNorm);
-  if (isbnQuery.isbn13 || isbnQuery.isbn10) {
+  if (
+    queryCandidates.some((entry) => {
+      const isbnQuery = parseIsbnQuery(entry.normalized);
+      return Boolean(isbnQuery.isbn13 || isbnQuery.isbn10);
+    })
+  ) {
     return "ISBN";
   }
 
-  if (queryTokens.length === 0) {
+  const dedupedQueries = dedupeQueryCandidates(queryCandidates);
+  if (dedupedQueries.length === 0 || candidates.length === 0) {
     return "MIXED_INTENT";
   }
 
-  let authorPrefixMatches = 0;
-  let titleTokenHits = 0;
-  let authorTokenHits = 0;
+  let bestAuthorLikeStrength = 0;
+  let bestTitleLikeStrength = 0;
 
-  const singleToken = queryTokens.length === 1 ? queryTokens[0] : "";
+  for (const queryCandidate of dedupedQueries) {
+    if (queryCandidate.tokens.length === 0) continue;
 
-  for (const candidate of candidates) {
-    const titleNorm = normalizeSearchText(candidate.title);
-    const authorNorm = normalizeSearchText((candidate.authors || []).join(" "));
-    const titleTokenSet = new Set(tokenize(titleNorm));
-    const authorTokenSet = new Set(tokenize(authorNorm));
+    let authorPrefixMatches = 0;
+    let titleTokenHits = 0;
+    let authorTokenHits = 0;
+    let authorPhraseEvidence = 0;
+    const singleToken = queryCandidate.tokens.length === 1 ? queryCandidate.tokens[0] : "";
+    const surnameToken = queryCandidate.tokens[queryCandidate.tokens.length - 1] || "";
 
-    if (singleToken) {
-      let matchedAuthorPrefix = false;
-      for (const token of authorTokenSet) {
-        if (token.startsWith(singleToken)) {
-          matchedAuthorPrefix = true;
-          break;
+    for (const candidate of candidates) {
+      const titleNorm = normalizeSearchText(candidate.title);
+      const authorNorm = normalizeSearchText((candidate.authors || []).join(" "));
+      const titleTokenSet = new Set(tokenize(titleNorm));
+      const authorTokenSet = new Set(tokenize(authorNorm));
+
+      if (authorNorm) {
+        if (authorNorm === queryCandidate.normalized) {
+          authorPhraseEvidence += 6;
+        } else if (authorNorm.startsWith(`${queryCandidate.normalized} `)) {
+          authorPhraseEvidence += 5;
+        } else if (
+          surnameToken &&
+          (authorNorm === surnameToken || authorNorm.endsWith(` ${surnameToken}`))
+        ) {
+          authorPhraseEvidence += queryCandidate.tokens.length >= 2 ? 4 : 3;
         }
       }
-      if (matchedAuthorPrefix) {
-        authorPrefixMatches += 1;
+
+      if (singleToken) {
+        let matchedAuthorPrefix = false;
+        for (const token of authorTokenSet) {
+          if (token === singleToken || token.startsWith(singleToken)) {
+            matchedAuthorPrefix = true;
+            break;
+          }
+        }
+        if (matchedAuthorPrefix) {
+          authorPrefixMatches += 1;
+        }
+      }
+
+      for (const token of queryCandidate.tokens) {
+        if (titleTokenSet.has(token)) titleTokenHits += 1;
+        if (authorTokenSet.has(token)) authorTokenHits += 1;
       }
     }
 
-    for (const token of queryTokens) {
-      if (titleTokenSet.has(token)) titleTokenHits += 1;
-      if (authorTokenSet.has(token)) authorTokenHits += 1;
+    if (singleToken) {
+      const authorPrefixThreshold = Math.max(1, Math.ceil(candidates.length * 0.25));
+      if (
+        authorPhraseEvidence >= 3 ||
+        authorPrefixMatches >= authorPrefixThreshold ||
+        authorTokenHits >= authorPrefixThreshold
+      ) {
+        bestAuthorLikeStrength = Math.max(
+          bestAuthorLikeStrength,
+          authorTokenHits + authorPrefixMatches + authorPhraseEvidence
+        );
+      }
+      bestTitleLikeStrength = Math.max(bestTitleLikeStrength, titleTokenHits);
+      continue;
     }
+
+    if (
+      authorPhraseEvidence >= 4 ||
+      (authorTokenHits >= queryCandidate.tokens.length &&
+        authorTokenHits >= titleTokenHits)
+    ) {
+      bestAuthorLikeStrength = Math.max(
+        bestAuthorLikeStrength,
+        authorTokenHits + authorPhraseEvidence
+      );
+    }
+    bestTitleLikeStrength = Math.max(bestTitleLikeStrength, titleTokenHits);
   }
 
-  if (singleToken) {
-    const authorPrefixThreshold = Math.max(2, Math.ceil(candidates.length * 0.35));
-    if (authorPrefixMatches >= authorPrefixThreshold) {
-      return "AUTHOR_INTENT";
-    }
-    return "MIXED_INTENT";
+  if (bestAuthorLikeStrength > 0 && bestAuthorLikeStrength >= bestTitleLikeStrength) {
+    return "AUTHOR_INTENT";
   }
-
-  if (titleTokenHits > authorTokenHits) {
+  if (bestTitleLikeStrength > 0) {
     return "TITLE_INTENT";
   }
-
   return "MIXED_INTENT";
 }
 
@@ -920,6 +1122,301 @@ function computeRank(
   };
 }
 
+function compareRankComputation(
+  left: RankComputation,
+  right: RankComputation
+): number {
+  if (left.rankTier !== right.rankTier) return left.rankTier - right.rankTier;
+  if (right.confidence !== left.confidence) return right.confidence - left.confidence;
+  if (right.tokenCoverageRatio !== left.tokenCoverageRatio) {
+    return right.tokenCoverageRatio - left.tokenCoverageRatio;
+  }
+  if (right.computedScore !== left.computedScore) {
+    return right.computedScore - left.computedScore;
+  }
+  if (left.query.source !== right.query.source) {
+    return left.query.source === "original" ? -1 : 1;
+  }
+  return left.query.normalized.localeCompare(right.query.normalized);
+}
+
+function computeBestRankForQueries(
+  queryCandidates: QueryCandidate[],
+  params: {
+    title: string;
+    titleVariants?: string[];
+    authors: string[];
+    synopsis?: string;
+    isbn13?: string;
+    isbn10?: string;
+    queryIntent: QueryIntent;
+  }
+): RankComputation {
+  const fallbacks = dedupeQueryCandidates(queryCandidates);
+  const [first] = fallbacks;
+  if (!first) {
+    throw new Error("BOOK_SEARCH_V2_QUERY_CANDIDATES_REQUIRED");
+  }
+
+  let best: RankComputation | null = null;
+  for (const queryCandidate of fallbacks) {
+    const rank = computeRank(queryCandidate.normalized, queryCandidate.tokens, params);
+    const candidateRank: RankComputation = {
+      ...rank,
+      query: queryCandidate,
+    };
+    if (!best || compareRankComputation(candidateRank, best) < 0) {
+      best = candidateRank;
+    }
+  }
+
+  return best || {
+    confidence: 0,
+    rankTier: 3,
+    computedScore: 0,
+    tokenCoverageRatio: 0,
+    query: first,
+  };
+}
+
+function topCoverageScores(results: RankedResult[]): number[] {
+  return results
+    .slice(0, 3)
+    .map((entry) => Math.round(entry.tokenCoverageRatio * 1_000_000) / 1_000_000);
+}
+
+function hasWeakCanonicalQuality(results: RankedResult[]): boolean {
+  const scores = topCoverageScores(results);
+  return scores.length === 3 && scores.every((score) => score < LOW_CONFIDENCE_COVERAGE_THRESHOLD);
+}
+
+function countTokenHits(queryTokens: string[], haystackTokens: Set<string>): number {
+  let hits = 0;
+  for (const token of queryTokens) {
+    if (haystackTokens.has(token)) {
+      hits += 1;
+    }
+  }
+  return hits;
+}
+
+function countSharedTokens(left: Set<string>, right: Set<string>): number {
+  let shared = 0;
+  for (const token of left) {
+    if (right.has(token)) {
+      shared += 1;
+    }
+  }
+  return shared;
+}
+
+function hasBiographyCriticismPattern(titleNorm: string): boolean {
+  return AUTHOR_BIOGRAPHY_CRITICISM_PATTERNS.some((pattern) => pattern.test(titleNorm));
+}
+
+function hasAnthologyPattern(titleNorm: string): boolean {
+  return AUTHOR_ANTHOLOGY_PATTERNS.some((pattern) => pattern.test(titleNorm));
+}
+
+function getPrimaryAuthorSurname(authorNorm: string): string {
+  const authorTokens = tokenize(authorNorm);
+  return authorTokens[authorTokens.length - 1] || "";
+}
+
+function startsWithQueriedSurname(params: {
+  titleTokens: string[];
+  queryTokens: string[];
+  authorNorm: string;
+}): boolean {
+  const surname = getPrimaryAuthorSurname(params.authorNorm);
+  if (!surname) return false;
+  if (!params.queryTokens.some((token) => surname.startsWith(token) || token === surname)) {
+    return false;
+  }
+  if (params.titleTokens[0] !== surname) {
+    return false;
+  }
+  return params.titleTokens.length > 2;
+}
+
+function isCompactPrimaryLiteraryTitle(params: {
+  titleTokens: string[];
+  authorTokenSet: Set<string>;
+  strongAuthorMatch: boolean;
+  titleHits: number;
+  queryTokens: string[];
+  biographyCriticismPattern: boolean;
+  anthologyPattern: boolean;
+  titleLeadingSurname: boolean;
+}): boolean {
+  if (!params.strongAuthorMatch) return false;
+  if (params.biographyCriticismPattern || params.anthologyPattern || params.titleLeadingSurname) {
+    return false;
+  }
+  if (params.titleTokens.length === 0 || params.titleTokens.length > 6) return false;
+
+  const sharedAuthorTokens = params.titleTokens.filter((token) => params.authorTokenSet.has(token));
+  if (sharedAuthorTokens.length > 0) return false;
+
+  if (params.queryTokens.length >= 2) {
+    return params.titleHits >= Math.max(2, Math.ceil(params.queryTokens.length * 0.6));
+  }
+
+  return true;
+}
+
+function computeLiteraryCorrection(params: {
+  result: RankedResult;
+  query: QueryCandidate;
+  queryIntent: QueryIntent;
+}): number {
+  const titleNorm = normalizeSearchText(params.result.title);
+  const authorNorm = normalizeSearchText(
+    params.result.authors.join(" ") || params.result.authorEn || ""
+  );
+  const titleTokens = tokenize(titleNorm);
+  const titleTokenSet = new Set(titleTokens);
+  const authorTokenSet = new Set(tokenize(authorNorm));
+  const queryTokens = params.query.tokens;
+
+  const authorHits = countTokenHits(queryTokens, authorTokenSet);
+  const titleHits = countTokenHits(queryTokens, titleTokenSet);
+  const sharedTitleAuthorTokens = countSharedTokens(titleTokenSet, authorTokenSet);
+  const titleDominatedByAuthorName =
+    sharedTitleAuthorTokens >= Math.min(2, authorTokenSet.size) &&
+    sharedTitleAuthorTokens / Math.max(titleTokenSet.size, 1) >= 0.4;
+  const strongAuthorMatch =
+    queryTokens.length === 1
+      ? authorHits >= 1 ||
+        Array.from(authorTokenSet).some((token) => token.startsWith(queryTokens[0] || ""))
+      : authorHits >= Math.max(1, Math.ceil(queryTokens.length * 0.6));
+  const biographyCriticismPattern = hasBiographyCriticismPattern(titleNorm);
+  const anthologyPattern = hasAnthologyPattern(titleNorm);
+  const titleLeadingSurname = startsWithQueriedSurname({
+    titleTokens,
+    queryTokens,
+    authorNorm,
+  });
+  const strongCanonicalPrimaryWork =
+    params.result.resultType === "canonical" &&
+    params.result.workType === "work" &&
+    isCompactPrimaryLiteraryTitle({
+      titleTokens,
+      authorTokenSet,
+      strongAuthorMatch,
+      titleHits,
+      queryTokens,
+      biographyCriticismPattern,
+      anthologyPattern,
+      titleLeadingSurname,
+    });
+  const strongTitleFamilyMatch =
+    queryTokens.length >= 2 &&
+    titleHits >= Math.max(2, Math.ceil(queryTokens.length * 0.6));
+  const titleStartsWithFullQuery =
+    titleNorm === params.query.normalized ||
+    titleNorm.startsWith(`${params.query.normalized} `);
+  const trailingAfterQuery = titleStartsWithFullQuery
+    ? titleNorm.slice(params.query.normalized.length).trim()
+    : "";
+  const titleLeadingHardSecondary =
+    (titleLeadingSurname || titleStartsWithFullQuery) &&
+    (trailingAfterQuery.length > 0 || titleTokens.length > queryTokens.length) &&
+    (/^\d{3,4}\b/u.test(trailingAfterQuery) ||
+      /^(?:\d{3,4}\b|reader\b|companion\b|introduction\b|letters?\b|essays?\b|writer\b|biography\b|life\b|study\b|critical\b|criticism\b|examination\b|at\b)/u.test(
+        trailingAfterQuery
+      ) ||
+      (titleTokens.length > queryTokens.length &&
+        [",", "reader", "companion", "introduction", "letters", "letter", "essays", "essay", "writer"]
+          .some((token) => trailingAfterQuery.includes(token))));
+  const derivativeQueryTail =
+    titleNorm.includes(params.query.normalized) &&
+    titleNorm !== params.query.normalized &&
+    (biographyCriticismPattern ||
+      anthologyPattern ||
+      /\b(reader|companion|introduction|letters?|essays?|writer|guide|study|analysis|summary|set)\b/u.test(
+        trailingAfterQuery || titleNorm
+      ));
+  const likelyPrimaryCompactWork =
+    params.result.workType === "work" &&
+    titleTokens.length > 0 &&
+    titleTokens.length <= 5 &&
+    !biographyCriticismPattern &&
+    !anthologyPattern &&
+    !titleLeadingSurname &&
+    !titleDominatedByAuthorName;
+  const exactShortClassicTitleMatch =
+    params.queryIntent === "TITLE_INTENT" &&
+    queryTokens.length >= 2 &&
+    titleNorm === params.query.normalized &&
+    likelyPrimaryCompactWork;
+  const strongSecondaryCanonicalRow =
+    params.result.resultType === "canonical" &&
+    (biographyCriticismPattern ||
+      anthologyPattern ||
+      titleLeadingSurname ||
+      titleLeadingHardSecondary ||
+      (titleDominatedByAuthorName && strongAuthorMatch));
+
+  let adjustment = 0;
+
+  if (params.queryIntent === "AUTHOR_INTENT") {
+    if (strongCanonicalPrimaryWork) {
+      adjustment += 2.4;
+    }
+
+    if (biographyCriticismPattern) {
+      adjustment -= 2.45;
+    }
+
+    if (anthologyPattern) {
+      adjustment -= 2.05;
+    }
+
+    if (titleLeadingSurname && !strongCanonicalPrimaryWork) {
+      adjustment -= 1.8;
+    }
+
+    if (titleLeadingHardSecondary) {
+      adjustment -= 2.25;
+    }
+
+    if (!strongCanonicalPrimaryWork && titleDominatedByAuthorName && strongAuthorMatch) {
+      adjustment -= 0.9;
+    }
+
+    if (strongSecondaryCanonicalRow) {
+      adjustment -= 0.45;
+    }
+  } else if (
+    strongTitleFamilyMatch &&
+    !biographyCriticismPattern &&
+    !anthologyPattern &&
+    params.result.workType === "work"
+  ) {
+    adjustment += 0.65;
+  }
+
+  if (exactShortClassicTitleMatch) {
+    adjustment += 3.4;
+  }
+
+  if (
+    params.queryIntent === "TITLE_INTENT" &&
+    titleNorm !== params.query.normalized &&
+    (strongAuthorMatch || titleStartsWithFullQuery) &&
+    (biographyCriticismPattern ||
+      anthologyPattern ||
+      titleLeadingSurname ||
+      titleLeadingHardSecondary ||
+      derivativeQueryTail)
+  ) {
+    adjustment -= anthologyPattern ? 2.2 : 2.7;
+  }
+
+  return Math.round(adjustment * 1_000_000) / 1_000_000;
+}
+
 function canonicalIdentityKey(result: UnifiedSearchResult): string {
   const isbn13 = normalizeIsbn(result.isbn13 || "", 13);
   if (isbn13) return `isbn13:${isbn13}`;
@@ -936,6 +1433,254 @@ function canonicalIdentityKey(result: UnifiedSearchResult): string {
   return `canonical:${author}::${title}`;
 }
 
+function extractCanonicalSeedTexts(doc: CanonicalDoc): Array<string> {
+  const title =
+    asNonEmptyString(doc.data.title) ||
+    asNonEmptyString(doc.data.titleEn) ||
+    asNonEmptyString(doc.data.titleAr);
+  const authors =
+    asStringArray(doc.data.authors).length > 0
+      ? asStringArray(doc.data.authors)
+      : [
+          asNonEmptyString(doc.data.authorEn) ||
+            asNonEmptyString(doc.data.author) ||
+            asNonEmptyString(doc.data.authorAr),
+        ].filter(Boolean);
+
+  return [title, ...authors].filter((entry) => entry.length > 0);
+}
+
+function extractExternalSeedTexts(candidate: ExternalSeedCandidate): Array<string> {
+  return [candidate.title, ...candidate.authors].filter((entry) => entry.length > 0);
+}
+
+function deriveCorrectedQueryCandidates(params: {
+  originalQuery: QueryCandidate;
+  canonicalDocs: CanonicalDoc[];
+  externalSeeds?: ExternalSeedCandidate[];
+  existingQueries?: QueryCandidate[];
+}): QueryCandidate[] {
+  const candidateTokens = new Set<string>();
+  const seenAuthorPhrases = new Set<string>();
+  const seenSeedPhrases = new Set<string>();
+  const isOrderedSubsequence = (needle: string, haystack: string): boolean => {
+    let cursor = 0;
+    for (const char of haystack) {
+      if (char === needle[cursor]) {
+        cursor += 1;
+        if (cursor === needle.length) return true;
+      }
+    }
+    return cursor === needle.length;
+  };
+
+  for (const doc of params.canonicalDocs) {
+    const seeds = extractCanonicalSeedTexts(doc);
+    const [titleSeed] = seeds;
+    for (const seed of seeds) {
+      const normalized = normalizeSearchText(seed);
+      if (!normalized) continue;
+       seenSeedPhrases.add(normalized);
+      if (seed !== titleSeed) {
+        seenAuthorPhrases.add(normalized);
+      }
+      for (const token of tokenize(normalized)) {
+        if (token.length >= MIN_TYPO_TOKEN_LENGTH || token.length === 3) {
+          candidateTokens.add(token);
+        }
+      }
+    }
+  }
+
+  for (const seed of params.externalSeeds || []) {
+    for (const entry of extractExternalSeedTexts(seed)) {
+      const normalized = normalizeSearchText(entry);
+      if (!normalized) continue;
+      seenSeedPhrases.add(normalized);
+      if (entry !== seed.title) {
+        seenAuthorPhrases.add(normalized);
+      }
+      for (const token of tokenize(normalized)) {
+        if (token.length >= MIN_TYPO_TOKEN_LENGTH || token.length === 3) {
+          candidateTokens.add(token);
+        }
+      }
+    }
+  }
+
+  const replacements: Array<{ index: number; replacement: string; distance: number; prefix: number }> = [];
+  let shortTokenReplacementAdded = false;
+  for (const [index, token] of params.originalQuery.tokens.entries()) {
+    const anchoredShortToken =
+      token.length === 3 &&
+      !shortTokenReplacementAdded &&
+      params.originalQuery.tokens.some(
+        (entry, entryIndex) => entryIndex !== index && entry.length >= MIN_TYPO_TOKEN_LENGTH
+      );
+    if (token.length < MIN_TYPO_TOKEN_LENGTH && !anchoredShortToken) continue;
+    const maxDistance = anchoredShortToken
+      ? 1
+      : token.length >= 9
+        ? MAX_LONG_TYPO_EDIT_DISTANCE
+        : MAX_TYPO_EDIT_DISTANCE;
+
+    let bestReplacement: { replacement: string; distance: number; prefix: number } | null = null;
+    for (const candidateToken of candidateTokens) {
+      if (candidateToken === token) continue;
+      if (!anchoredShortToken && Math.abs(candidateToken.length - token.length) > maxDistance) {
+        continue;
+      }
+
+      const prefix = commonPrefixLength(token, candidateToken);
+      if (!anchoredShortToken && prefix < 2) continue;
+
+      const shortTokenMatch =
+        anchoredShortToken &&
+        candidateToken.length >= MIN_TYPO_TOKEN_LENGTH &&
+        candidateToken.length <= 8 &&
+        prefix >= 1 &&
+        isOrderedSubsequence(token, candidateToken);
+      const distance = shortTokenMatch
+        ? candidateToken.length - token.length
+        : boundedEditDistance(token, candidateToken, maxDistance);
+      if (distance === null) continue;
+      if (!shortTokenMatch && anchoredShortToken) continue;
+
+      if (
+        !bestReplacement ||
+        distance < bestReplacement.distance ||
+        (distance === bestReplacement.distance && prefix > bestReplacement.prefix) ||
+        (distance === bestReplacement.distance &&
+          prefix === bestReplacement.prefix &&
+          candidateToken.length > bestReplacement.replacement.length)
+      ) {
+        bestReplacement = { replacement: candidateToken, distance, prefix };
+      }
+    }
+
+    if (bestReplacement) {
+      replacements.push({ index, ...bestReplacement });
+      if (anchoredShortToken) {
+        shortTokenReplacementAdded = true;
+      }
+    }
+  }
+
+  replacements.sort((a, b) => {
+    if (a.distance !== b.distance) return a.distance - b.distance;
+    if (b.prefix !== a.prefix) return b.prefix - a.prefix;
+    return b.replacement.length - a.replacement.length;
+  });
+
+  const nextQueries: QueryCandidate[] = [];
+  const baseTokens = [...params.originalQuery.tokens];
+  const uniqueExisting = new Set(
+    dedupeQueryCandidates([params.originalQuery, ...(params.existingQueries || [])]).map(
+      (entry) => entry.normalized
+    )
+  );
+
+  const topReplacements = replacements.slice(0, MAX_CORRECTED_QUERY_BRANCHES);
+  if (topReplacements.length > 0) {
+    const combinedTokens = [...baseTokens];
+    topReplacements.forEach((replacement) => {
+      combinedTokens[replacement.index] = replacement.replacement;
+    });
+    const combinedCandidate = toQueryCandidate(combinedTokens.join(" "), "corrected");
+    if (combinedCandidate && !uniqueExisting.has(combinedCandidate.normalized)) {
+      nextQueries.push(combinedCandidate);
+      uniqueExisting.add(combinedCandidate.normalized);
+    }
+  }
+
+  for (const replacement of topReplacements) {
+    if (nextQueries.length >= MAX_CORRECTED_QUERY_BRANCHES) break;
+    const singleTokens = [...baseTokens];
+    singleTokens[replacement.index] = replacement.replacement;
+    const singleCandidate = toQueryCandidate(singleTokens.join(" "), "corrected");
+    if (singleCandidate && !uniqueExisting.has(singleCandidate.normalized)) {
+      nextQueries.push(singleCandidate);
+      uniqueExisting.add(singleCandidate.normalized);
+    }
+  }
+
+  if (
+    nextQueries.length < MAX_CORRECTED_QUERY_BRANCHES &&
+    params.originalQuery.tokens.length >= 2
+  ) {
+    const anchorTokens = params.originalQuery.tokens.filter(
+      (token) => token.length >= MIN_TYPO_TOKEN_LENGTH
+    );
+    const shortTokens = params.originalQuery.tokens.filter((token) => token.length === 3);
+    const phraseCandidates = Array.from(seenSeedPhrases).sort((left, right) => left.length - right.length);
+    for (const phrase of phraseCandidates) {
+      if (nextQueries.length >= MAX_CORRECTED_QUERY_BRANCHES) break;
+      const phraseTokens = tokenize(phrase);
+      const hasAnchor = anchorTokens.some((token) => phraseTokens.includes(token));
+      const hasShortRescue = shortTokens.some(
+        (token) =>
+          !phraseTokens.includes(token) &&
+          phraseTokens.some(
+            (phraseToken) =>
+              phraseToken.length >= MIN_TYPO_TOKEN_LENGTH &&
+              phraseToken.length <= 8 &&
+              commonPrefixLength(token, phraseToken) >= 1 &&
+              isOrderedSubsequence(token, phraseToken)
+          )
+      );
+      if (!hasAnchor || !hasShortRescue) continue;
+      const phraseCandidate = toQueryCandidate(phrase, "corrected");
+      if (phraseCandidate && !uniqueExisting.has(phraseCandidate.normalized)) {
+        nextQueries.push(phraseCandidate);
+        uniqueExisting.add(phraseCandidate.normalized);
+      }
+    }
+  }
+
+  const strongestReplacement = topReplacements[0];
+  if (
+    strongestReplacement &&
+    params.originalQuery.tokens.length === 1 &&
+    nextQueries.length < MAX_CORRECTED_QUERY_BRANCHES
+  ) {
+    for (const authorPhrase of seenAuthorPhrases) {
+      if (nextQueries.length >= MAX_CORRECTED_QUERY_BRANCHES) break;
+      if (!authorPhrase.includes(strongestReplacement.replacement)) continue;
+      const authorCandidate = toQueryCandidate(authorPhrase, "corrected");
+      if (authorCandidate && !uniqueExisting.has(authorCandidate.normalized)) {
+        nextQueries.push(authorCandidate);
+        uniqueExisting.add(authorCandidate.normalized);
+      }
+    }
+  }
+
+  if (
+    params.originalQuery.tokens.length === 1 &&
+    params.canonicalDocs.length === 0 &&
+    nextQueries.length < MAX_CORRECTED_QUERY_BRANCHES
+  ) {
+    const surnameToken = params.originalQuery.tokens[0] || "";
+    const matchingAuthorPhrase = Array.from(seenAuthorPhrases)
+      .filter((phrase) => {
+        const phraseTokens = tokenize(phrase);
+        return (
+          phraseTokens.length >= 2 &&
+          phraseTokens[phraseTokens.length - 1] === surnameToken
+        );
+      })
+      .sort((left, right) => left.length - right.length)[0];
+    const surnameCandidate = matchingAuthorPhrase
+      ? toQueryCandidate(matchingAuthorPhrase, "corrected")
+      : null;
+    if (surnameCandidate && !uniqueExisting.has(surnameCandidate.normalized)) {
+      nextQueries.push(surnameCandidate);
+      uniqueExisting.add(surnameCandidate.normalized);
+    }
+  }
+
+  return nextQueries.slice(0, MAX_CORRECTED_QUERY_BRANCHES);
+}
+
 function buildIdentityKeys(result: UnifiedSearchResult): string[] {
   return [
     result.isbn13 ? `isbn13:${result.isbn13}` : "",
@@ -950,8 +1695,7 @@ function buildIdentityKeys(result: UnifiedSearchResult): string[] {
 function mapCanonicalBook(
   docId: string,
   data: Record<string, unknown>,
-  queryNorm: string,
-  queryTokens: string[],
+  queryCandidates: QueryCandidate[],
   options: SearchOptions,
   queryIntent: QueryIntent = "MIXED_INTENT"
 ): RankedResult | null {
@@ -986,7 +1730,7 @@ function mapCanonicalBook(
   const isbn13 = normalizeIsbn(asNonEmptyString(data.isbn13), 13);
   const isbn10 = normalizeIsbn(asNonEmptyString(data.isbn10), 10);
 
-  const rank = computeRank(queryNorm, queryTokens, {
+  const rank = computeBestRankForQueries(queryCandidates, {
     title,
     titleVariants: [asNonEmptyString(data.titleEn), asNonEmptyString(data.titleAr)],
     authors,
@@ -1076,75 +1820,147 @@ function mapCanonicalBook(
 }
 
 async function collectCanonicalCandidates(
-  queryNorm: string,
-  queryTokens: string[],
+  queryCandidates: QueryCandidate[],
   options: SearchOptions
-): Promise<RankedResult[]> {
+): Promise<CanonicalRetrievalArtifacts> {
   const db = getFirestore();
   const books = db.collection("books");
   const dedup = new Map<string, RankedResult>();
+  const rawDocs = new Map<string, CanonicalDoc>();
+  const phaseCounts = {
+    isbn: 0,
+    tokens: 0,
+    prefix: 0,
+    author: 0,
+    titleAuthor: 0,
+  };
 
-  const isbnQuery = parseIsbnQuery(queryNorm);
-
-  const snapshots: FirebaseFirestore.QuerySnapshot<FirebaseFirestore.DocumentData>[] = [];
-
-  if (isbnQuery.isbn13) {
-    snapshots.push(await books.where("isbn13", "==", isbnQuery.isbn13).limit(5).get());
-  }
-
-  if (isbnQuery.isbn10) {
-    snapshots.push(await books.where("isbn10", "==", isbnQuery.isbn10).limit(5).get());
-  }
-
-  if (queryTokens.length > 0) {
-    snapshots.push(
-      await books
-        .where("search.tokens", "array-contains-any", queryTokens.slice(0, 10))
-        .limit(INTERNAL_FETCH_POOL)
-        .get()
-    );
-  }
-
-  if (queryNorm.length >= 2) {
-    try {
-      snapshots.push(
-        await books
-          .orderBy("normalizedTitle")
-          .startAt(queryNorm)
-          .endAt(`${queryNorm}\uf8ff`)
-          .limit(INTERNAL_FETCH_POOL)
-          .get()
-      );
-    } catch {
-      // If prefix index is not deployed yet, token-query remains authoritative.
+  const candidates = dedupeQueryCandidates(queryCandidates);
+  const correctedAuthorPhraseBySurname = new Map<string, string[]>();
+  for (const candidate of candidates) {
+    if (candidate.source !== "corrected" || candidate.tokens.length < 2) continue;
+    const surname = candidate.tokens[candidate.tokens.length - 1] || "";
+    if (!surname) continue;
+    const current = correctedAuthorPhraseBySurname.get(surname) || [];
+    if (!current.includes(candidate.normalized)) {
+      current.push(candidate.normalized);
+      correctedAuthorPhraseBySurname.set(surname, current.slice(0, 4));
     }
   }
 
-  for (const snapshot of snapshots) {
-    snapshot.forEach((doc) => {
-      const mapped = mapCanonicalBook(
-        doc.id,
-        doc.data() as Record<string, unknown>,
-        queryNorm,
-        queryTokens,
-        options
-      );
-      if (!mapped) return;
-      if (!isLikelyBook(mapped.title, "book")) return;
+  const registerSnapshot = (
+    docs: Array<{ id: string; data: () => Record<string, unknown> }>,
+    phase: keyof CanonicalRetrievalArtifacts["phaseCounts"]
+  ) => {
+    for (const doc of docs) {
+      const rawData = doc.data() as Record<string, unknown>;
+      rawDocs.set(doc.id, {
+        id: doc.id,
+        data: rawData,
+      });
+      const mapped = mapCanonicalBook(doc.id, rawData, candidates, options);
+      if (!mapped) continue;
+      if (!isLikelyBook(mapped.title, "book")) continue;
       dedup.set(doc.id, mapped);
-    });
+      phaseCounts[phase] += 1;
+    }
+  };
+
+  for (const queryCandidate of candidates) {
+    const isbnQuery = parseIsbnQuery(queryCandidate.normalized);
+
+    if (isbnQuery.isbn13) {
+      const snapshot = await books.where("isbn13", "==", isbnQuery.isbn13).limit(5).get();
+      registerSnapshot(snapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>, "isbn");
+    }
+
+    if (isbnQuery.isbn10) {
+      const snapshot = await books.where("isbn10", "==", isbnQuery.isbn10).limit(5).get();
+      registerSnapshot(snapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>, "isbn");
+    }
+
+    if (queryCandidate.tokens.length > 0) {
+      const tokenSnapshot = await books
+        .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
+        .limit(INTERNAL_FETCH_POOL)
+        .get();
+      registerSnapshot(
+        tokenSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
+        "tokens"
+      );
+    }
+
+    if (queryCandidate.normalized.length >= 2) {
+      try {
+        const prefixSnapshot = await books
+          .orderBy("normalizedTitle")
+          .startAt(queryCandidate.normalized)
+          .endAt(`${queryCandidate.normalized}\uf8ff`)
+          .limit(INTERNAL_FETCH_POOL)
+          .get();
+        registerSnapshot(
+          prefixSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
+          "prefix"
+        );
+      } catch {
+        // If the prefix index is unavailable, token-query remains authoritative.
+      }
+
+      if (queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) {
+        try {
+          const titleAuthorSnapshot = await books
+            .orderBy("searchableTitleAuthor")
+            .startAt(queryCandidate.normalized)
+            .endAt(`${queryCandidate.normalized}\uf8ff`)
+            .limit(INTERNAL_FETCH_POOL)
+            .get();
+          registerSnapshot(
+            titleAuthorSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
+            "titleAuthor"
+          );
+        } catch {
+          // If the title-author prefix index is unavailable, canonical token retrieval remains authoritative.
+        }
+
+        try {
+          const authorQueryValues =
+            queryCandidate.tokens.length === 1 && queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH
+              ? Array.from(
+                  new Set([
+                    queryCandidate.normalized,
+                    ...(correctedAuthorPhraseBySurname.get(queryCandidate.normalized) || []),
+                  ])
+                ).slice(0, 10)
+              : [queryCandidate.normalized];
+          const authorSnapshot =
+            authorQueryValues.length > 1
+              ? await books
+                  .where("authorNamesNormalized", "array-contains-any", authorQueryValues)
+                  .limit(INTERNAL_FETCH_POOL)
+                  .get()
+              : await books
+                  .where("authorNamesNormalized", "array-contains", queryCandidate.normalized)
+                  .limit(INTERNAL_FETCH_POOL)
+                  .get();
+          registerSnapshot(
+            authorSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
+            "author"
+          );
+        } catch {
+          // If the author normalized index is unavailable, token-query remains authoritative.
+        }
+      }
+    }
   }
 
-  return Array.from(dedup.values());
+  return {
+    candidates: Array.from(dedup.values()),
+    rawDocs: Array.from(rawDocs.values()),
+    phaseCounts,
+  };
 }
 
-async function fetchGoogleExternal(
-  query: string,
-  queryNorm: string,
-  queryTokens: string[],
-  queryIntent: QueryIntent,
-  requestedLanguage?: string
-): Promise<RankedResult[]> {
+async function fetchGoogleExternalRaw(query: string): Promise<ExternalSeedCandidate[]> {
   const baseUrl = new URL("https://www.googleapis.com/books/v1/volumes");
   baseUrl.searchParams.set("q", query);
   baseUrl.searchParams.set("maxResults", "20");
@@ -1161,7 +1977,7 @@ async function fetchGoogleExternal(
   if (!payload) return [];
 
   const items = Array.isArray(payload.items) ? payload.items : [];
-  const mapped: RankedResult[] = [];
+  const mapped: ExternalSeedCandidate[] = [];
 
   for (const item of items) {
     const volumeInfo = asRecord(item.volumeInfo);
@@ -1196,21 +2012,6 @@ async function fetchGoogleExternal(
       if (!isbn10 && type.includes("ISBN_10")) isbn10 = normalizeIsbn(value, 10);
     }
 
-    const rank = computeRank(queryNorm, queryTokens, {
-      title,
-      authors: normalizedAuthors,
-      isbn13,
-      isbn10,
-      queryIntent,
-    });
-
-    if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
-      continue;
-    }
-    if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
-      continue;
-    }
-
     const externalId = asNonEmptyString(item.id);
     if (!externalId) continue;
 
@@ -1218,54 +2019,17 @@ async function fetchGoogleExternal(
     const thumbnail = asNonEmptyString(imageLinks?.thumbnail).replace(/^http:\/\//i, "https://");
 
     const language = asNonEmptyString(volumeInfo.language) || "en";
-    const hasTrustedExternalAvailability = false;
-    const languageTruth = resolveLanguageTruth(language, requestedLanguage);
-
     mapped.push({
-      id: `gb_${externalId}`,
-      editionId: `gb_${externalId}`,
-      bookId: `gb_${externalId}`,
-      workId: null,
       externalId,
       source: "googleBooks",
-      resultType: "external",
-      workType: "edition",
-      editionPresence: "edition",
-      ebookClass: computeExternalEbookClass(hasTrustedExternalAvailability),
-      sourceClass: "external_provider",
-      languageTruth,
       title,
-      titleEn: title,
-      titleAr: "",
-      authors: normalizedAuthors,
-      authorEn: normalizedAuthors[0],
-      authorAr: "",
       description: asNonEmptyString(volumeInfo.description) || "",
-      descriptionEn: asNonEmptyString(volumeInfo.description) || "",
-      descriptionAr: "",
       coverUrl: thumbnail,
       language,
-      available: false,
-      acquired: false,
-      readAccess: "none",
-      readProvider: null,
-      hasEbook: false,
-      downloadable: false,
-      isEbookAvailable: false,
-      confidence: rank.confidence,
-      rank: rank.rankTier,
-      rankTier: rank.rankTier,
-      computedScore: rank.computedScore,
-      tokenCoverageRatio: rank.tokenCoverageRatio,
-      popularityScore: 0,
-      engagementScore: 0,
-      recentActivityMs: 0,
-      normalizedTitle: normalizeSearchText(title),
-      languageMatchScore: toLanguageMatchScore(languageTruth),
+      authors: normalizedAuthors,
       isbn13: isbn13 || undefined,
       isbn10: isbn10 || undefined,
-      canonicalKey: `${normalizeSearchText(normalizedAuthors[0])}::${normalizeSearchText(title)}`,
-      canonicalProviderExternalIds: [],
+      hasExternalEbookSignal: false,
       rawBook: {
         ...volumeInfo,
         id: externalId,
@@ -1278,13 +2042,11 @@ async function fetchGoogleExternal(
   return mapped;
 }
 
-async function fetchOpenLibraryExternal(
-  query: string,
-  queryNorm: string,
-  queryTokens: string[],
-  queryIntent: QueryIntent,
-  requestedLanguage?: string
-): Promise<RankedResult[]> {
+async function fetchGoogleExternalByIsbnRaw(isbn: string): Promise<ExternalSeedCandidate[]> {
+  return fetchGoogleExternalRaw(`isbn:${isbn}`);
+}
+
+async function fetchOpenLibraryExternalRaw(query: string): Promise<ExternalSeedCandidate[]> {
   const baseUrl = new URL("https://openlibrary.org/search.json");
   baseUrl.searchParams.set("q", query);
   baseUrl.searchParams.set("limit", "20");
@@ -1296,7 +2058,7 @@ async function fetchOpenLibraryExternal(
   if (!payload) return [];
 
   const docs = Array.isArray(payload.docs) ? payload.docs : [];
-  const mapped: RankedResult[] = [];
+  const mapped: ExternalSeedCandidate[] = [];
 
   for (const doc of docs) {
     const title = asNonEmptyString(doc.title);
@@ -1317,21 +2079,6 @@ async function fetchOpenLibraryExternal(
       if (isbn13 && isbn10) break;
     }
 
-    const rank = computeRank(queryNorm, queryTokens, {
-      title,
-      authors: normalizedAuthors,
-      isbn13,
-      isbn10,
-      queryIntent,
-    });
-
-    if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
-      continue;
-    }
-    if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
-      continue;
-    }
-
     const key = asNonEmptyString(doc.key).replace(/^\/works\//, "");
     if (!key) continue;
 
@@ -1344,52 +2091,15 @@ async function fetchOpenLibraryExternal(
     const hasExternalEbookSignal = hasOpenLibraryReadableAvailability(doc);
     const lendingEditionId = asNonEmptyString(doc.lending_edition_s);
     const lendingIdentifier = asNonEmptyString(doc.lending_identifier_s);
-    const languageTruth = resolveLanguageTruth(language, requestedLanguage);
-    const externalReadSignals = hasExternalEbookSignal
-      ? {
-          available: true,
-          acquired: false,
-          readAccess: "trusted_external" as const,
-          readProvider: "openLibrary" as const,
-        }
-      : {
-          available: false,
-          acquired: false,
-          readAccess: "none" as const,
-          readProvider: null,
-        };
 
     mapped.push({
-      id: `ol_${key}`,
-      editionId: `ol_${key}`,
-      bookId: `ol_${key}`,
-      workId: null,
       externalId: key,
       source: "openLibrary",
-      resultType: "external",
-      workType: "edition",
-      editionPresence: "edition",
-      ebookClass: computeExternalEbookClass(hasExternalEbookSignal),
-      sourceClass: "external_provider",
-      languageTruth,
       title,
-      titleEn: title,
-      titleAr: "",
       authors: normalizedAuthors,
-      authorEn: normalizedAuthors[0],
-      authorAr: "",
       description: "",
-      descriptionEn: "",
-      descriptionAr: "",
       coverUrl,
       language,
-      available: externalReadSignals.available,
-      acquired: externalReadSignals.acquired,
-      readAccess: externalReadSignals.readAccess,
-      readProvider: externalReadSignals.readProvider,
-      hasEbook: false,
-      downloadable: false,
-      isEbookAvailable: false,
       ...(hasExternalEbookSignal
         ? {
             externalReadableSources: [
@@ -1403,20 +2113,9 @@ async function fetchOpenLibraryExternal(
             ],
           }
         : {}),
-      confidence: rank.confidence,
-      rank: rank.rankTier,
-      rankTier: rank.rankTier,
-      computedScore: rank.computedScore,
-      tokenCoverageRatio: rank.tokenCoverageRatio,
-      popularityScore: 0,
-      engagementScore: 0,
-      recentActivityMs: 0,
-      normalizedTitle: normalizeSearchText(title),
-      languageMatchScore: toLanguageMatchScore(languageTruth),
       isbn13: isbn13 || undefined,
       isbn10: isbn10 || undefined,
-      canonicalKey: `${normalizeSearchText(normalizedAuthors[0])}::${normalizeSearchText(title)}`,
-      canonicalProviderExternalIds: [],
+      hasExternalEbookSignal,
       rawBook: {
         ...doc,
         id: key,
@@ -1429,13 +2128,185 @@ async function fetchOpenLibraryExternal(
   return mapped;
 }
 
+async function fetchOpenLibraryExternalByIsbnRaw(isbn: string): Promise<ExternalSeedCandidate[]> {
+  const payload = await fetchJsonWithTimeout({
+    url: `https://openlibrary.org/isbn/${encodeURIComponent(isbn)}.json`,
+    provider: "openLibrary",
+  });
+  if (!payload) return [];
+
+  const title = asNonEmptyString(payload.title);
+  if (!title) return [];
+
+  const coverIds = Array.isArray(payload.covers) ? payload.covers : [];
+  const firstCoverId = coverIds.find((entry) => typeof entry === "number" || typeof entry === "string");
+  const coverUrl =
+    typeof firstCoverId === "number" || typeof firstCoverId === "string"
+      ? `https://covers.openlibrary.org/b/id/${String(firstCoverId)}-L.jpg`
+      : "";
+  const byStatement = asNonEmptyString(payload.by_statement);
+  const authors =
+    Array.isArray(payload.authors) && payload.authors.length > 0
+      ? payload.authors
+          .map((entry) => asRecord(entry))
+          .map((entry) => asNonEmptyString(entry?.name))
+          .filter(Boolean)
+      : [];
+
+  const resolvedIsbn13 = normalizeIsbn(isbn, 13) || normalizeIsbn(asNonEmptyString(payload.isbn_13), 13);
+  const resolvedIsbn10 = normalizeIsbn(isbn, 10) || normalizeIsbn(asNonEmptyString(payload.isbn_10), 10);
+  const externalId =
+    asNonEmptyString(payload.key).replace(/^\/books\//, "") ||
+    asNonEmptyString(payload.ocaid) ||
+    isbn;
+
+  return [
+    {
+      source: "openLibrary",
+      externalId,
+      title,
+      authors: authors.length > 0 ? authors : [byStatement || "Unknown"],
+      description: "",
+      coverUrl,
+      language: asStringArray(payload.languages)[0] || "en",
+      isbn13: resolvedIsbn13 || undefined,
+      isbn10: resolvedIsbn10 || undefined,
+      hasExternalEbookSignal: false,
+      rawBook: {
+        ...payload,
+        id: externalId,
+        externalId,
+        source: "openLibrary",
+      },
+    },
+  ];
+}
+
+function mapExternalCandidateToRanked(
+  candidate: ExternalSeedCandidate,
+  queryCandidates: QueryCandidate[],
+  queryIntent: QueryIntent,
+  requestedLanguage?: string
+): RankedResult | null {
+  const authors = candidate.authors.length > 0 ? candidate.authors : ["Unknown"];
+  const rank = computeBestRankForQueries(queryCandidates, {
+    title: candidate.title,
+    authors,
+    isbn13: candidate.isbn13,
+    isbn10: candidate.isbn10,
+    queryIntent,
+  });
+
+  if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+    return null;
+  }
+  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
+    return null;
+  }
+
+  const languageTruth = resolveLanguageTruth(candidate.language, requestedLanguage);
+  const externalReadSignals = candidate.hasExternalEbookSignal
+    ? {
+        available: true,
+        acquired: false,
+        readAccess: "trusted_external" as const,
+        readProvider: candidate.source === "openLibrary" ? "openLibrary" as const : null,
+      }
+    : {
+        available: false,
+        acquired: false,
+        readAccess: "none" as const,
+        readProvider: null,
+      };
+
+  return {
+    id: `${candidate.source === "googleBooks" ? "gb" : "ol"}_${candidate.externalId}`,
+    editionId: `${candidate.source === "googleBooks" ? "gb" : "ol"}_${candidate.externalId}`,
+    bookId: `${candidate.source === "googleBooks" ? "gb" : "ol"}_${candidate.externalId}`,
+    workId: null,
+    externalId: candidate.externalId,
+    source: candidate.source,
+    resultType: "external",
+    workType: "edition",
+    editionPresence: "edition",
+    ebookClass: computeExternalEbookClass(candidate.hasExternalEbookSignal),
+    sourceClass: "external_provider",
+    languageTruth,
+    title: candidate.title,
+    titleEn: candidate.title,
+    titleAr: "",
+    authors,
+    authorEn: authors[0] || "Unknown",
+    authorAr: "",
+    description: candidate.description,
+    descriptionEn: candidate.description,
+    descriptionAr: "",
+    coverUrl: candidate.coverUrl,
+    language: candidate.language,
+    available: externalReadSignals.available,
+    acquired: externalReadSignals.acquired,
+    readAccess: externalReadSignals.readAccess,
+    readProvider: externalReadSignals.readProvider,
+    hasEbook: false,
+    downloadable: false,
+    isEbookAvailable: false,
+    ...(candidate.externalReadableSources
+      ? { externalReadableSources: candidate.externalReadableSources }
+      : {}),
+    confidence: rank.confidence,
+    rank: rank.rankTier,
+    rankTier: rank.rankTier,
+    computedScore: rank.computedScore,
+    tokenCoverageRatio: rank.tokenCoverageRatio,
+    popularityScore: 0,
+    engagementScore: 0,
+    recentActivityMs: 0,
+    normalizedTitle: normalizeSearchText(candidate.title),
+    languageMatchScore: toLanguageMatchScore(languageTruth),
+    isbn13: candidate.isbn13,
+    isbn10: candidate.isbn10,
+    canonicalKey: `${normalizeSearchText(authors[0])}::${normalizeSearchText(candidate.title)}`,
+    canonicalProviderExternalIds: [],
+    rawBook: candidate.rawBook,
+  };
+}
+
+async function fetchGoogleExternal(
+  query: string,
+  queryCandidates: QueryCandidate[],
+  queryIntent: QueryIntent,
+  requestedLanguage?: string
+): Promise<{ ranked: RankedResult[]; raw: ExternalSeedCandidate[] }> {
+  const raw = await fetchGoogleExternalRaw(query);
+  return {
+    raw,
+    ranked: raw
+      .map((entry) => mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, requestedLanguage))
+      .filter((entry): entry is RankedResult => Boolean(entry)),
+  };
+}
+
+async function fetchOpenLibraryExternal(
+  query: string,
+  queryCandidates: QueryCandidate[],
+  queryIntent: QueryIntent,
+  requestedLanguage?: string
+): Promise<{ ranked: RankedResult[]; raw: ExternalSeedCandidate[] }> {
+  const raw = await fetchOpenLibraryExternalRaw(query);
+  return {
+    raw,
+    ranked: raw
+      .map((entry) => mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, requestedLanguage))
+      .filter((entry): entry is RankedResult => Boolean(entry)),
+  };
+}
+
 function rerankWithIntent(
   result: RankedResult,
-  queryNorm: string,
-  queryTokens: string[],
+  queryCandidates: QueryCandidate[],
   queryIntent: QueryIntent
 ): RankedResult | null {
-  const rank = computeRank(queryNorm, queryTokens, {
+  const rank = computeBestRankForQueries(queryCandidates, {
     title: result.title,
     titleVariants: [result.titleEn, result.titleAr],
     authors: result.authors,
@@ -1458,21 +2329,35 @@ function rerankWithIntent(
     rankTier: rank.rankTier,
     computedScore:
       result.resultType === "canonical"
-        ? Math.round((rank.computedScore + computeCanonicalTitleAdjustment(queryNorm, result.title)) * 1_000_000) /
+        ? Math.round((
+            rank.computedScore +
+            computeCanonicalTitleAdjustment(rank.query.normalized, result.title) +
+            computeLiteraryCorrection({
+              result,
+              query: rank.query,
+              queryIntent,
+            })
+          ) * 1_000_000) /
           1_000_000
-        : rank.computedScore,
+        : Math.round((
+            rank.computedScore +
+            computeLiteraryCorrection({
+              result,
+              query: rank.query,
+              queryIntent,
+            })
+          ) * 1_000_000) / 1_000_000,
     tokenCoverageRatio: rank.tokenCoverageRatio,
   };
 }
 
 function rankCanonicalResults(
   canonicalCandidates: RankedResult[],
-  queryNorm: string,
-  queryTokens: string[],
+  queryCandidates: QueryCandidate[],
   queryIntent: QueryIntent
 ): RankedResult[] {
   return canonicalCandidates
-    .map((entry) => rerankWithIntent(entry, queryNorm, queryTokens, queryIntent))
+    .map((entry) => rerankWithIntent(entry, queryCandidates, queryIntent))
     .filter((entry): entry is RankedResult => Boolean(entry))
     .sort(compareRanked);
 }
@@ -1608,6 +2493,29 @@ function mergeCanonicalAvailability(
   };
 }
 
+function selectSecondaryExternalQuery(queryCandidates: QueryCandidate[]): QueryCandidate | null {
+  return (
+    queryCandidates.find(
+      (entry) => entry.source === "corrected" && entry.normalized.length >= MIN_PREFIX_SEED_LENGTH
+    ) || null
+  );
+}
+
+function mergeExternalSeedCandidates(
+  ...groups: Array<ExternalSeedCandidate[]>
+): ExternalSeedCandidate[] {
+  const deduped = new Map<string, ExternalSeedCandidate>();
+  for (const group of groups) {
+    for (const entry of group) {
+      const key = `${entry.source}:${entry.externalId}`;
+      if (!deduped.has(key)) {
+        deduped.set(key, entry);
+      }
+    }
+  }
+  return Array.from(deduped.values());
+}
+
 /**
  * Canonical-first deterministic search engine.
  *
@@ -1653,7 +2561,6 @@ export async function unifiedSearch(
     };
   }
 
-  const queryTokens = tokenize(queryNorm);
   const limit = normalizeLimit(options.limit);
   const fingerprint = computeFingerprint(queryNorm, options);
   const decodedCursor = decodeCursor(options.cursor);
@@ -1661,168 +2568,164 @@ export async function unifiedSearch(
     decodedCursor && decodedCursor.fingerprint === fingerprint
       ? decodedCursor.offset
       : 0;
-
-  const canonicalPhaseIds = {
-    isbn: new Set<string>(),
-    tokens: new Set<string>(),
-    prefix: new Set<string>(),
-  };
-
-  phaseOrder.push("canonical_isbn");
-  const db = getFirestore();
-  const books = db.collection("books");
-  const isbnQuery = parseIsbnQuery(queryNorm);
-  const canonicalDedup = new Map<string, RankedResult>();
-
-  if (isbnQuery.isbn13) {
-    const isbn13Snap = await books.where("isbn13", "==", isbnQuery.isbn13).limit(5).get();
-    isbn13Snap.forEach((doc) => {
-      const mapped = mapCanonicalBook(
-        doc.id,
-        doc.data() as Record<string, unknown>,
-        queryNorm,
-        queryTokens,
-        options
-      );
-      if (!mapped) return;
-      if (!isLikelyBook(mapped.title, "book")) return;
-      canonicalDedup.set(doc.id, mapped);
-      canonicalPhaseIds.isbn.add(doc.id);
-    });
+  const originalQuery = toQueryCandidate(queryNorm, "original");
+  if (!originalQuery) {
+    return {
+      results: [],
+      nextCursor: null,
+      hasMore: false,
+      cursorUsed: false,
+      canonicalCount: 0,
+      externalCount: 0,
+    };
   }
 
-  if (isbnQuery.isbn10) {
-    const isbn10Snap = await books.where("isbn10", "==", isbnQuery.isbn10).limit(5).get();
-    isbn10Snap.forEach((doc) => {
-      const mapped = mapCanonicalBook(
-        doc.id,
-        doc.data() as Record<string, unknown>,
-        queryNorm,
-        queryTokens,
-        options
-      );
-      if (!mapped) return;
-      if (!isLikelyBook(mapped.title, "book")) return;
-      canonicalDedup.set(doc.id, mapped);
-      canonicalPhaseIds.isbn.add(doc.id);
-    });
+  let queryCandidates = [originalQuery];
+  phaseOrder.push("canonical_initial");
+  let canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
+
+  const correctedFromCanonical = deriveCorrectedQueryCandidates({
+    originalQuery,
+    canonicalDocs: canonicalArtifacts.rawDocs,
+    existingQueries: queryCandidates,
+  });
+  if (correctedFromCanonical.length > 0) {
+    queryCandidates = dedupeQueryCandidates([...queryCandidates, ...correctedFromCanonical]);
+    phaseOrder.push("canonical_corrected_local");
+    canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
   }
 
-  phaseOrder.push("canonical_tokens");
-  if (queryTokens.length > 0) {
-    const tokenSnap = await books
-      .where("search.tokens", "array-contains-any", queryTokens.slice(0, 10))
-      .limit(INTERNAL_FETCH_POOL)
-      .get();
-    tokenSnap.forEach((doc) => {
-      const mapped = mapCanonicalBook(
-        doc.id,
-        doc.data() as Record<string, unknown>,
-        queryNorm,
-        queryTokens,
-        options
-      );
-      if (!mapped) return;
-      if (!isLikelyBook(mapped.title, "book")) return;
-      canonicalDedup.set(doc.id, mapped);
-      canonicalPhaseIds.tokens.add(doc.id);
-    });
-  }
-
-  phaseOrder.push("canonical_prefix");
-  if (queryNorm.length >= 2) {
-    try {
-      const prefixSnap = await books
-        .orderBy("normalizedTitle")
-        .startAt(queryNorm)
-        .endAt(`${queryNorm}\uf8ff`)
-        .limit(INTERNAL_FETCH_POOL)
-        .get();
-      prefixSnap.forEach((doc) => {
-        const mapped = mapCanonicalBook(
-          doc.id,
-          doc.data() as Record<string, unknown>,
-          queryNorm,
-          queryTokens,
-          options
-        );
-        if (!mapped) return;
-        if (!isLikelyBook(mapped.title, "book")) return;
-        canonicalDedup.set(doc.id, mapped);
-        canonicalPhaseIds.prefix.add(doc.id);
-      });
-    } catch {
-      // If prefix index is not deployed yet, token-query remains authoritative.
-    }
-  }
-
-  const canonicalCandidates = Array.from(canonicalDedup.values());
-  const queryIntent = detectQueryIntent(
-    queryNorm,
-    queryTokens,
-    canonicalCandidates.map((entry) => ({
+  let queryIntent = detectQueryIntent(
+    queryCandidates,
+    canonicalArtifacts.candidates.map((entry) => ({
       title: entry.title,
       authors: entry.authors,
     }))
   );
 
-  const rerankedCanonical = rankCanonicalResults(
-    canonicalCandidates,
-    queryNorm,
-    queryTokens,
+  let rerankedCanonical = rankCanonicalResults(
+    canonicalArtifacts.candidates,
+    queryCandidates,
     queryIntent
   );
-  const canonicalAvailability = options.availabilityOnly
+  let canonicalAvailability = options.availabilityOnly
     ? await enrichCanonicalAvailability(rerankedCanonical, limit)
     : rerankedCanonical.slice();
-  const internalSearchDurationMs = Date.now() - totalStartMs;
+  let lowConfidenceTopThree = hasWeakCanonicalQuality(rerankedCanonical);
 
+  const externalFallbackEnabled = process.env.NODE_ENV !== "test";
   let externalCandidates: RankedResult[] = [];
-  const externalFallbackEnabled = process.env.NODE_ENV !== 'test';
   let googleCount = 0;
   let openLibraryCount = 0;
-  const canonicalAvailabilityCount = canonicalAvailability.filter(
-    (entry) => entry.available
-  ).length;
+  let rawExternalPrimary: ExternalSeedCandidate[] = [];
+  let rawExternalSecondary: ExternalSeedCandidate[] = [];
 
+  const isbnQuery = parseIsbnQuery(queryNorm);
+  const isIsbnLookup = Boolean(isbnQuery.isbn13 || isbnQuery.isbn10);
+  const canonicalAvailabilityCount = canonicalAvailability.filter((entry) => entry.available).length;
   const shouldUseExternalFallback =
     externalFallbackEnabled &&
     !options.ebookOnly &&
     (options.availabilityOnly
-      ? canonicalAvailabilityCount < limit
-      : rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER);
+      ? canonicalAvailabilityCount < limit || lowConfidenceTopThree
+      : rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER || lowConfidenceTopThree);
 
   if (shouldUseExternalFallback) {
-    phaseOrder.push("external_fallback");
-    const [google, openLibrary] = options.availabilityOnly
-      ? await Promise.all([
-          Promise.resolve([] as RankedResult[]),
-          fetchOpenLibraryExternal(
-            queryNorm,
-            queryNorm,
-            queryTokens,
-            queryIntent,
-            options.language
-          ),
-        ])
-      : await Promise.all([
-          fetchGoogleExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
-          fetchOpenLibraryExternal(queryNorm, queryNorm, queryTokens, queryIntent, options.language),
+    phaseOrder.push("external_primary");
+    if (options.availabilityOnly) {
+      rawExternalPrimary = await fetchOpenLibraryExternalRaw(originalQuery.normalized);
+    } else if (isIsbnLookup) {
+      const isbn = isbnQuery.isbn13 || isbnQuery.isbn10;
+      const [googleIsbn, openLibraryIsbn] = await Promise.all([
+        fetchGoogleExternalByIsbnRaw(isbn),
+        fetchOpenLibraryExternalByIsbnRaw(isbn),
+      ]);
+      rawExternalPrimary = mergeExternalSeedCandidates(googleIsbn, openLibraryIsbn);
+      if (rawExternalPrimary.length === 0) {
+        const [googleGeneric, openLibraryGeneric] = await Promise.all([
+          fetchGoogleExternalRaw(originalQuery.normalized),
+          fetchOpenLibraryExternalRaw(originalQuery.normalized),
         ]);
+        rawExternalPrimary = mergeExternalSeedCandidates(googleGeneric, openLibraryGeneric);
+      }
+    } else {
+      const [googleGeneric, openLibraryGeneric] = await Promise.all([
+        fetchGoogleExternalRaw(originalQuery.normalized),
+        fetchOpenLibraryExternalRaw(originalQuery.normalized),
+      ]);
+      rawExternalPrimary = mergeExternalSeedCandidates(googleGeneric, openLibraryGeneric);
+    }
+
+    const correctedFromExternal = deriveCorrectedQueryCandidates({
+      originalQuery,
+      canonicalDocs: canonicalArtifacts.rawDocs,
+      externalSeeds: rawExternalPrimary,
+      existingQueries: queryCandidates,
+    });
+    if (correctedFromExternal.length > 0) {
+      queryCandidates = dedupeQueryCandidates([...queryCandidates, ...correctedFromExternal]);
+      phaseOrder.push("canonical_corrected_external");
+      canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
+      queryIntent = detectQueryIntent(
+        queryCandidates,
+        canonicalArtifacts.candidates.map((entry) => ({
+          title: entry.title,
+          authors: entry.authors,
+        }))
+      );
+      rerankedCanonical = rankCanonicalResults(
+        canonicalArtifacts.candidates,
+        queryCandidates,
+        queryIntent
+      );
+      canonicalAvailability = options.availabilityOnly
+        ? await enrichCanonicalAvailability(rerankedCanonical, limit)
+        : rerankedCanonical.slice();
+      lowConfidenceTopThree = hasWeakCanonicalQuality(rerankedCanonical);
+    }
+
+    const secondaryQuery = selectSecondaryExternalQuery(queryCandidates);
+    if (
+      secondaryQuery &&
+      secondaryQuery.normalized !== originalQuery.normalized &&
+      !isIsbnLookup
+    ) {
+      phaseOrder.push("external_secondary");
+      if (options.availabilityOnly) {
+        rawExternalSecondary = await fetchOpenLibraryExternalRaw(secondaryQuery.normalized);
+      } else {
+        const [googleSecondary, openLibrarySecondary] = await Promise.all([
+          fetchGoogleExternalRaw(secondaryQuery.normalized),
+          fetchOpenLibraryExternalRaw(secondaryQuery.normalized),
+        ]);
+        rawExternalSecondary = mergeExternalSeedCandidates(
+          googleSecondary,
+          openLibrarySecondary
+        );
+      }
+    }
+
+    const mergedExternalSeeds = mergeExternalSeedCandidates(
+      rawExternalPrimary,
+      rawExternalSecondary
+    );
+    externalCandidates = mergedExternalSeeds
+      .map((entry) =>
+        mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, options.language)
+      )
+      .filter((entry): entry is RankedResult => Boolean(entry));
 
     const mergedAvailability = mergeCanonicalAvailability(
-      [...google, ...openLibrary],
+      externalCandidates,
       canonicalAvailability
     );
-    canonicalAvailability.splice(
-      0,
-      canonicalAvailability.length,
-      ...mergedAvailability.canonicalResults
-    );
+    canonicalAvailability = mergedAvailability.canonicalResults;
     externalCandidates = mergedAvailability.externalResults;
     googleCount = externalCandidates.filter((entry) => entry.source === "googleBooks").length;
     openLibraryCount = externalCandidates.filter((entry) => entry.source === "openLibrary").length;
   }
+
+  const internalSearchDurationMs = Date.now() - totalStartMs;
 
   if (options.availabilityOnly) {
     externalCandidates = externalCandidates.filter((entry) => entry.available);
@@ -1844,24 +2747,17 @@ export async function unifiedSearch(
         fingerprint,
       })
     : null;
-  const topCoverageScores = merged
-    .slice(0, 3)
-    .map((entry) => Math.round(entry.tokenCoverageRatio * 1_000_000) / 1_000_000);
-  const topCoverageScore = topCoverageScores[0] ?? 0;
-  const lowConfidenceTopThree =
-    topCoverageScores.length === 3 && topCoverageScores.every((score) => score < 0.6);
+  const mergedTopCoverageScores = topCoverageScores(merged as RankedResult[]);
+  const topCoverageScore = mergedTopCoverageScores[0] ?? 0;
 
   logger.info("BOOK_SEARCH_V2_ENGINE_TRACE", {
     query: queryNorm.slice(0, 80),
     phaseOrder,
     canonicalPhaseCounts: {
-      isbn: canonicalPhaseIds.isbn.size,
-      tokens: canonicalPhaseIds.tokens.size,
-      prefix: canonicalPhaseIds.prefix.size,
+      ...canonicalArtifacts.phaseCounts,
       canonical: canonicalResultsForResponse.length,
     },
-    externalFallbackCalled:
-      shouldUseExternalFallback,
+    externalFallbackCalled: shouldUseExternalFallback,
     queryIntent,
     providers: {
       googleBooks: googleCount,
@@ -1903,10 +2799,9 @@ export async function unifiedSearch(
       intentType: queryIntent,
       internalSearchDurationMs,
       totalDurationMs,
-      externalFallbackTriggered:
-        shouldUseExternalFallback,
+      externalFallbackTriggered: shouldUseExternalFallback,
       topCoverageScore,
-      topCoverageScores,
+      topCoverageScores: mergedTopCoverageScores,
       lowConfidenceTopThree,
       timestamp: new Date().toISOString(),
     },

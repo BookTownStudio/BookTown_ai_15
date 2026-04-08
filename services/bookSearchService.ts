@@ -188,6 +188,9 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     isEbookAvailable: Boolean(record.isEbookAvailable),
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? Math.max(0, Math.trunc(rankRaw)) : 999,
+    ...(asString(record.isbn13) ? { isbn13: asString(record.isbn13) } : {}),
+    ...(asString(record.isbn10) ? { isbn10: asString(record.isbn10) } : {}),
+    ...(asString(record.canonicalKey) ? { canonicalKey: asString(record.canonicalKey) } : {}),
     ...(externalReadableSources.length > 0
       ? { externalReadableSources }
       : {}),

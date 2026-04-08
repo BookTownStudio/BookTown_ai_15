@@ -21,6 +21,7 @@ type LocalEditionFixture = {
   isbn10?: string;
   normalizedTitle: string;
   authorNamesNormalized: string[];
+  searchableTitleAuthor?: string;
   search: {
     tokens: string[];
   };
@@ -60,6 +61,7 @@ const base = (
     downloadable,
     normalizedTitle: titleNorm,
     authorNamesNormalized: [authorNorm],
+    searchableTitleAuthor: `${titleNorm} ${authorNorm}`.trim(),
     search: {
       tokens: Array.from(
       new Set([
@@ -305,6 +307,118 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
       },
       canonicalKey: `${normalize("Taha Hussein")}::${normalize("Al-Ayyam")}`,
     }
+  ),
+  base(
+    "e24",
+    "booktown",
+    "The Trial",
+    ["Franz Kafka"],
+    false
+  ),
+  base(
+    "e25",
+    "booktown",
+    "The Metamorphosis",
+    ["Franz Kafka"],
+    false
+  ),
+  base(
+    "e32",
+    "booktown",
+    "Franz Kafka Writer 1913",
+    ["Scholar"],
+    false
+  ),
+  base(
+    "e33",
+    "booktown",
+    "The Castle",
+    ["Franz Kafka"],
+    false
+  ),
+  base(
+    "e26",
+    "booktown",
+    "The Stranger",
+    ["Albert Camus"],
+    false
+  ),
+  base(
+    "e27",
+    "booktown",
+    "The Plague",
+    ["Albert Camus"],
+    false
+  ),
+  base(
+    "e34",
+    "booktown",
+    "Albert Camus A Biography",
+    ["Scholar"],
+    false
+  ),
+  base(
+    "e35",
+    "booktown",
+    "The Fall",
+    ["Albert Camus"],
+    false
+  ),
+  base(
+    "e36",
+    "booktown",
+    "Caligula",
+    ["Albert Camus"],
+    false
+  ),
+  base(
+    "e28",
+    "booktown",
+    "Crime and Punishment",
+    ["Fyodor Dostoevsky"],
+    false
+  ),
+  base(
+    "e29",
+    "booktown",
+    "The Brothers Karamazov",
+    ["Fyodor Dostoevsky"],
+    false
+  ),
+  base(
+    "e37",
+    "booktown",
+    "The Complete Works of Dostoevsky 1913",
+    ["Editor"],
+    false
+  ),
+  base(
+    "e38",
+    "booktown",
+    "Notes from Underground",
+    ["Fyodor Dostoevsky"],
+    false
+  ),
+  base(
+    "e30",
+    "booktown",
+    "War and Peace",
+    ["Leo Tolstoy"],
+    false
+  ),
+  base(
+    "e31",
+    "booktown",
+    "Anna Karenina",
+    ["Leo Tolstoy"],
+    false
+  ),
+  base(
+    "e39",
+    "booktown",
+    "Harry Potter Critical Study",
+    ["Scholar"],
+    false
   ),
 ];
 
