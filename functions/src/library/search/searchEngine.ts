@@ -786,6 +786,9 @@ function detectQueryIntent(
 
   let bestAuthorLikeStrength = 0;
   let bestTitleLikeStrength = 0;
+  const shortAuthorQueryPresent = dedupedQueries.some(
+    (entry) => entry.tokens.length > 0 && entry.tokens.length <= 2
+  );
 
   for (const queryCandidate of dedupedQueries) {
     if (queryCandidate.tokens.length === 0) continue;
@@ -864,6 +867,9 @@ function detectQueryIntent(
     bestTitleLikeStrength = Math.max(bestTitleLikeStrength, titleTokenHits);
   }
 
+  if (shortAuthorQueryPresent && bestAuthorLikeStrength >= 4) {
+    return "AUTHOR_INTENT";
+  }
   if (bestAuthorLikeStrength > 0 && bestAuthorLikeStrength >= bestTitleLikeStrength) {
     return "AUTHOR_INTENT";
   }
@@ -1271,6 +1277,8 @@ function computeLiteraryCorrection(params: {
   queryIntent: QueryIntent;
 }): number {
   const titleNorm = normalizeSearchText(params.result.title);
+  const titleEnNorm = normalizeSearchText(params.result.titleEn || "");
+  const titleArNorm = normalizeSearchText(params.result.titleAr || "");
   const authorNorm = normalizeSearchText(
     params.result.authors.join(" ") || params.result.authorEn || ""
   );
@@ -1313,14 +1321,21 @@ function computeLiteraryCorrection(params: {
   const strongTitleFamilyMatch =
     queryTokens.length >= 2 &&
     titleHits >= Math.max(2, Math.ceil(queryTokens.length * 0.6));
+  const queriedSurname = queryTokens[queryTokens.length - 1] || "";
   const titleStartsWithFullQuery =
     titleNorm === params.query.normalized ||
     titleNorm.startsWith(`${params.query.normalized} `);
+  const titleStartsWithQueriedSurname =
+    Boolean(queriedSurname) &&
+    titleTokens[0] === queriedSurname &&
+    titleTokens.length > 1;
   const trailingAfterQuery = titleStartsWithFullQuery
     ? titleNorm.slice(params.query.normalized.length).trim()
-    : "";
+    : titleStartsWithQueriedSurname
+      ? titleTokens.slice(1).join(" ").trim()
+      : "";
   const titleLeadingHardSecondary =
-    (titleLeadingSurname || titleStartsWithFullQuery) &&
+    (titleLeadingSurname || titleStartsWithFullQuery || titleStartsWithQueriedSurname) &&
     (trailingAfterQuery.length > 0 || titleTokens.length > queryTokens.length) &&
     (/^\d{3,4}\b/u.test(trailingAfterQuery) ||
       /^(?:\d{3,4}\b|reader\b|companion\b|introduction\b|letters?\b|essays?\b|writer\b|biography\b|life\b|study\b|critical\b|criticism\b|examination\b|at\b)/u.test(
@@ -1348,7 +1363,7 @@ function computeLiteraryCorrection(params: {
   const exactShortClassicTitleMatch =
     params.queryIntent === "TITLE_INTENT" &&
     queryTokens.length >= 2 &&
-    titleNorm === params.query.normalized &&
+    [titleNorm, titleEnNorm, titleArNorm].includes(params.query.normalized) &&
     likelyPrimaryCompactWork;
   const strongSecondaryCanonicalRow =
     params.result.resultType === "canonical" &&
@@ -1370,7 +1385,7 @@ function computeLiteraryCorrection(params: {
     }
 
     if (anthologyPattern) {
-      adjustment -= 2.05;
+      adjustment -= 2.45;
     }
 
     if (titleLeadingSurname && !strongCanonicalPrimaryWork) {
@@ -1378,7 +1393,7 @@ function computeLiteraryCorrection(params: {
     }
 
     if (titleLeadingHardSecondary) {
-      adjustment -= 2.25;
+      adjustment -= 2.85;
     }
 
     if (!strongCanonicalPrimaryWork && titleDominatedByAuthorName && strongAuthorMatch) {
@@ -1386,7 +1401,7 @@ function computeLiteraryCorrection(params: {
     }
 
     if (strongSecondaryCanonicalRow) {
-      adjustment -= 0.45;
+      adjustment -= anthologyPattern ? 0.95 : 0.55;
     }
   } else if (
     strongTitleFamilyMatch &&
@@ -1398,7 +1413,7 @@ function computeLiteraryCorrection(params: {
   }
 
   if (exactShortClassicTitleMatch) {
-    adjustment += 3.4;
+    adjustment += 4.1;
   }
 
   if (
@@ -1836,7 +1851,10 @@ async function collectCanonicalCandidates(
   };
 
   const candidates = dedupeQueryCandidates(queryCandidates);
+  const COMPACT_CLASSIC_LEADING_TOKENS = new Set(["the", "a", "an", "la", "le", "el"]);
   const correctedAuthorPhraseBySurname = new Map<string, string[]>();
+  const authorAliasByQuery = new Map<string, Set<string>>();
+  const exactCompactTitleMatchByQuery = new Set<string>();
   for (const candidate of candidates) {
     if (candidate.source !== "corrected" || candidate.tokens.length < 2) continue;
     const surname = candidate.tokens[candidate.tokens.length - 1] || "";
@@ -1847,17 +1865,210 @@ async function collectCanonicalCandidates(
       correctedAuthorPhraseBySurname.set(surname, current.slice(0, 4));
     }
   }
+  const resolveDocAuthors = (rawData: Record<string, unknown>): string[] =>
+    asStringArray(rawData.authors).length > 0
+      ? asStringArray(rawData.authors)
+      : [
+          asNonEmptyString(rawData.authorEn) ||
+            asNonEmptyString(rawData.author) ||
+            asNonEmptyString(rawData.authorAr),
+        ].filter(Boolean);
+  const resolveNormalizedTitleVariants = (rawData: Record<string, unknown>): string[] =>
+    Array.from(
+      new Set(
+        [
+          asNonEmptyString(rawData.title),
+          asNonEmptyString(rawData.titleEn),
+          asNonEmptyString(rawData.titleAr),
+        ]
+          .map((entry) => normalizeSearchText(entry))
+          .filter((entry) => entry.length > 0)
+      )
+    );
+  const deriveAuthorLikeTitleAliases = (
+    rawData: Record<string, unknown>,
+    surname: string
+  ): string[] => {
+    if (!surname) return [];
+    const aliases = new Set<string>();
+    for (const titleNorm of resolveNormalizedTitleVariants(rawData)) {
+      const words = splitNormalizedWords(titleNorm);
+      if (words.length === 2 && words[1] === surname) {
+        aliases.add(words.join(" "));
+      } else if (words.length >= 3 && words[1] === surname) {
+        aliases.add(words.slice(0, 2).join(" "));
+      }
+    }
+    return Array.from(aliases);
+  };
+  const isLikelyAuthorQuery = (queryCandidate: QueryCandidate): boolean =>
+    (queryCandidate.tokens.length === 1 && queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) ||
+    (queryCandidate.tokens.length === 2 &&
+      queryCandidate.tokens.every((token) => token.length >= MIN_PREFIX_SEED_LENGTH));
+  const isCompactTitleQuery = (queryCandidate: QueryCandidate): boolean =>
+    splitNormalizedWords(queryCandidate.normalized).length === 2;
+  const shouldPrioritizeAuthorBeforeCompact = (queryCandidate: QueryCandidate): boolean =>
+    queryCandidate.tokens.length === 2 &&
+    queryCandidate.tokens.every((token) => token.length >= MIN_PREFIX_SEED_LENGTH) &&
+    !COMPACT_CLASSIC_LEADING_TOKENS.has(queryCandidate.tokens[0] || "");
+  const isCompactClassicQuery = (queryCandidate: QueryCandidate): boolean =>
+    isCompactTitleQuery(queryCandidate) &&
+    COMPACT_CLASSIC_LEADING_TOKENS.has(queryCandidate.tokens[0] || "");
+  const matchesAuthorPhrase = (authorNorm: string, queryCandidate: QueryCandidate): boolean => {
+    if (!authorNorm) return false;
+    const surname = queryCandidate.tokens[queryCandidate.tokens.length - 1] || "";
+    if (authorNorm === queryCandidate.normalized) return true;
+    if (authorNorm.startsWith(`${queryCandidate.normalized} `)) return true;
+    if (
+      surname &&
+      (authorNorm === surname || authorNorm.endsWith(` ${surname}`))
+    ) {
+      return true;
+    }
+    return false;
+  };
+  const collectAuthorPhraseExpansions = (surname: string): string[] => {
+    if (!surname) return [];
+    const expansions = new Set(correctedAuthorPhraseBySurname.get(surname) || []);
+    for (const doc of rawDocs.values()) {
+      const authors = resolveDocAuthors(doc.data);
+      for (const author of authors) {
+        const normalizedAuthor = normalizeSearchText(author);
+        const authorTokens = tokenize(normalizedAuthor);
+        if (
+          authorTokens.length >= 2 &&
+          authorTokens[authorTokens.length - 1] === surname
+        ) {
+          expansions.add(normalizedAuthor);
+        }
+      }
+      deriveAuthorLikeTitleAliases(doc.data, surname).forEach((alias) => expansions.add(alias));
+    }
+    return Array.from(expansions).slice(0, 4);
+  };
+  const safeSnapshotDocs = async (
+    run: () => Promise<{ docs: Array<{ id: string; data: () => Record<string, unknown> }> }>
+  ): Promise<Array<{ id: string; data: () => Record<string, unknown> }>> => {
+    try {
+      const snapshot = await run();
+      return snapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>;
+    } catch (error) {
+      logger.warn("BOOK_SEARCH_V2_CANONICAL_QUERY_FAILED", {
+        error: String(error),
+      });
+      return [];
+    }
+  };
+  const getAuthorAliasesForQuery = (queryCandidate: QueryCandidate): string[] =>
+    Array.from(authorAliasByQuery.get(queryCandidate.normalized) || []);
+  const hasExactCompactAliasMatch = (
+    queryCandidate: QueryCandidate,
+    titleVariantsNorm: string[]
+  ): boolean =>
+    isCompactTitleQuery(queryCandidate) &&
+    titleVariantsNorm.some((entry) => entry === queryCandidate.normalized);
+  const isSecondaryAuthorTitleShape = (
+    queryCandidate: QueryCandidate,
+    titleNorm: string
+  ): boolean => {
+    if (!titleNorm) return false;
+    const surname = queryCandidate.tokens[queryCandidate.tokens.length - 1] || "";
+    if (titleNorm === queryCandidate.normalized) return true;
+    if (titleNorm.startsWith(`${queryCandidate.normalized} `)) return true;
+    if (surname && titleNorm.startsWith(`${surname} `)) return true;
+    return false;
+  };
+  const isLexicalNeighborForCompactTitle = (
+    queryCandidate: QueryCandidate,
+    titleVariantsNorm: string[]
+  ): boolean => {
+    if (!isCompactTitleQuery(queryCandidate)) return false;
+    if (titleVariantsNorm.some((entry) => entry === queryCandidate.normalized)) return false;
+    return titleVariantsNorm.some((entry) => {
+      const entryTokens = new Set(tokenize(entry));
+      return (
+        entry.startsWith(`${queryCandidate.normalized} `) ||
+        queryCandidate.tokens.every((token) => entryTokens.has(token))
+      );
+    });
+  };
 
   const registerSnapshot = (
     docs: Array<{ id: string; data: () => Record<string, unknown> }>,
-    phase: keyof CanonicalRetrievalArtifacts["phaseCounts"]
+    phase: keyof CanonicalRetrievalArtifacts["phaseCounts"],
+    queryCandidate: QueryCandidate
   ) => {
+    const preprocessed = docs.map((doc) => {
+      const rawData = doc.data() as Record<string, unknown>;
+      const authors = resolveDocAuthors(rawData);
+      const normalizedAuthors = authors
+        .map((entry) => normalizeSearchText(entry))
+        .filter((entry) => entry.length > 0);
+      const titleVariantsNorm = resolveNormalizedTitleVariants(rawData);
+      return {
+        doc,
+        rawData,
+        normalizedAuthors,
+        titleVariantsNorm,
+      };
+    });
+
+    const queryAliases =
+      authorAliasByQuery.get(queryCandidate.normalized) || new Set<string>();
+    for (const entry of preprocessed) {
+      if (
+        entry.normalizedAuthors.some((authorNorm) => matchesAuthorPhrase(authorNorm, queryCandidate))
+      ) {
+        entry.normalizedAuthors.forEach((authorNorm) => queryAliases.add(authorNorm));
+      }
+      if (queryCandidate.tokens.length === 1) {
+        const surname = queryCandidate.tokens[queryCandidate.tokens.length - 1] || "";
+        deriveAuthorLikeTitleAliases(entry.rawData, surname).forEach((alias) =>
+          queryAliases.add(alias)
+        );
+      }
+      if (hasExactCompactAliasMatch(queryCandidate, entry.titleVariantsNorm)) {
+        exactCompactTitleMatchByQuery.add(queryCandidate.normalized);
+      }
+    }
+    if (queryAliases.size > 0) {
+      authorAliasByQuery.set(queryCandidate.normalized, queryAliases);
+    }
+
     for (const doc of docs) {
       const rawData = doc.data() as Record<string, unknown>;
       rawDocs.set(doc.id, {
         id: doc.id,
         data: rawData,
       });
+      const normalizedAuthors = resolveDocAuthors(rawData)
+        .map((entry) => normalizeSearchText(entry))
+        .filter((entry) => entry.length > 0);
+      const titleVariantsNorm = resolveNormalizedTitleVariants(rawData);
+      const primaryTitleNorm = titleVariantsNorm[0] || "";
+      const authorAliases = getAuthorAliasesForQuery(queryCandidate);
+      const hasAuthorAliasEvidence = authorAliases.length > 0;
+      const authorMatchesAlias = normalizedAuthors.some((authorNorm) =>
+        authorAliases.includes(authorNorm)
+      );
+      const titleLooksLikeSecondaryAuthorRow = isSecondaryAuthorTitleShape(
+        queryCandidate,
+        primaryTitleNorm
+      );
+      if (
+        isLikelyAuthorQuery(queryCandidate) &&
+        hasAuthorAliasEvidence &&
+        titleLooksLikeSecondaryAuthorRow &&
+        !authorMatchesAlias
+      ) {
+        continue;
+      }
+      if (
+        exactCompactTitleMatchByQuery.has(queryCandidate.normalized) &&
+        isLexicalNeighborForCompactTitle(queryCandidate, titleVariantsNorm)
+      ) {
+        continue;
+      }
       const mapped = mapCanonicalBook(doc.id, rawData, candidates, options);
       if (!mapped) continue;
       if (!isLikelyBook(mapped.title, "book")) continue;
@@ -1868,86 +2079,161 @@ async function collectCanonicalCandidates(
 
   for (const queryCandidate of candidates) {
     const isbnQuery = parseIsbnQuery(queryCandidate.normalized);
+    const authorLikeQuery = isLikelyAuthorQuery(queryCandidate);
+    const compactTitleQuery = isCompactTitleQuery(queryCandidate);
+    const prioritizeAuthorBeforeCompact = shouldPrioritizeAuthorBeforeCompact(queryCandidate);
+    const compactClassicQuery = isCompactClassicQuery(queryCandidate);
+    const singleTokenAuthorQuery =
+      authorLikeQuery && queryCandidate.tokens.length === 1;
 
     if (isbnQuery.isbn13) {
-      const snapshot = await books.where("isbn13", "==", isbnQuery.isbn13).limit(5).get();
-      registerSnapshot(snapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>, "isbn");
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books.where("isbn13", "==", isbnQuery.isbn13).limit(5).get()
+        ),
+        "isbn",
+        queryCandidate
+      );
     }
 
     if (isbnQuery.isbn10) {
-      const snapshot = await books.where("isbn10", "==", isbnQuery.isbn10).limit(5).get();
-      registerSnapshot(snapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>, "isbn");
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books.where("isbn10", "==", isbnQuery.isbn10).limit(5).get()
+        ),
+        "isbn",
+        queryCandidate
+      );
     }
 
-    if (queryCandidate.tokens.length > 0) {
-      const tokenSnapshot = await books
-        .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
-        .limit(INTERNAL_FETCH_POOL)
-        .get();
+    if (compactTitleQuery && !prioritizeAuthorBeforeCompact) {
       registerSnapshot(
-        tokenSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
-        "tokens"
+        await safeSnapshotDocs(() =>
+          books
+            .where("normalizedTitle", "==", queryCandidate.normalized)
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "prefix",
+        queryCandidate
+      );
+    }
+
+    if (singleTokenAuthorQuery && queryCandidate.tokens.length > 0) {
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "tokens",
+        queryCandidate
+      );
+    }
+
+    if (authorLikeQuery && queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) {
+      const authorQueryValues =
+        queryCandidate.tokens.length === 1
+          ? Array.from(
+              new Set([
+                queryCandidate.normalized,
+                ...collectAuthorPhraseExpansions(queryCandidate.normalized),
+              ])
+            ).slice(0, 10)
+          : [queryCandidate.normalized];
+      const authorDocs =
+        authorQueryValues.length > 1
+          ? await safeSnapshotDocs(() =>
+              books
+                .where("authorNamesNormalized", "array-contains-any", authorQueryValues)
+                .limit(INTERNAL_FETCH_POOL)
+                .get()
+            )
+          : await safeSnapshotDocs(() =>
+              books
+                .where("authorNamesNormalized", "array-contains", queryCandidate.normalized)
+                .limit(INTERNAL_FETCH_POOL)
+                .get()
+            );
+      registerSnapshot(authorDocs, "author", queryCandidate);
+    }
+
+    if (compactTitleQuery && prioritizeAuthorBeforeCompact) {
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .where("normalizedTitle", "==", queryCandidate.normalized)
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "prefix",
+        queryCandidate
+      );
+    }
+
+    const exactCompactResolved =
+      compactClassicQuery && exactCompactTitleMatchByQuery.has(queryCandidate.normalized);
+    if (exactCompactResolved) {
+      continue;
+    }
+
+    if (!singleTokenAuthorQuery && queryCandidate.tokens.length > 0) {
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "tokens",
+        queryCandidate
       );
     }
 
     if (queryCandidate.normalized.length >= 2) {
-      try {
-        const prefixSnapshot = await books
-          .orderBy("normalizedTitle")
-          .startAt(queryCandidate.normalized)
-          .endAt(`${queryCandidate.normalized}\uf8ff`)
-          .limit(INTERNAL_FETCH_POOL)
-          .get();
-        registerSnapshot(
-          prefixSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
-          "prefix"
-        );
-      } catch {
-        // If the prefix index is unavailable, token-query remains authoritative.
-      }
-
-      if (queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) {
-        try {
-          const titleAuthorSnapshot = await books
-            .orderBy("searchableTitleAuthor")
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .orderBy("normalizedTitle")
             .startAt(queryCandidate.normalized)
             .endAt(`${queryCandidate.normalized}\uf8ff`)
             .limit(INTERNAL_FETCH_POOL)
-            .get();
+            .get()
+        ),
+        "prefix",
+        queryCandidate
+      );
+
+      if (queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) {
+        const canUseTitleAuthorPrefix =
+          !authorLikeQuery || getAuthorAliasesForQuery(queryCandidate).length > 0;
+        if (canUseTitleAuthorPrefix) {
           registerSnapshot(
-            titleAuthorSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
-            "titleAuthor"
+            await safeSnapshotDocs(() =>
+              books
+                .orderBy("searchableTitleAuthor")
+                .startAt(queryCandidate.normalized)
+                .endAt(`${queryCandidate.normalized}\uf8ff`)
+                .limit(INTERNAL_FETCH_POOL)
+                .get()
+            ),
+            "titleAuthor",
+            queryCandidate
           );
-        } catch {
-          // If the title-author prefix index is unavailable, canonical token retrieval remains authoritative.
         }
 
-        try {
-          const authorQueryValues =
-            queryCandidate.tokens.length === 1 && queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH
-              ? Array.from(
-                  new Set([
-                    queryCandidate.normalized,
-                    ...(correctedAuthorPhraseBySurname.get(queryCandidate.normalized) || []),
-                  ])
-                ).slice(0, 10)
-              : [queryCandidate.normalized];
-          const authorSnapshot =
-            authorQueryValues.length > 1
-              ? await books
-                  .where("authorNamesNormalized", "array-contains-any", authorQueryValues)
-                  .limit(INTERNAL_FETCH_POOL)
-                  .get()
-              : await books
-                  .where("authorNamesNormalized", "array-contains", queryCandidate.normalized)
-                  .limit(INTERNAL_FETCH_POOL)
-                  .get();
+        if (!authorLikeQuery) {
           registerSnapshot(
-            authorSnapshot.docs as Array<{ id: string; data: () => Record<string, unknown> }>,
-            "author"
+            await safeSnapshotDocs(() =>
+              books
+                .where("authorNamesNormalized", "array-contains", queryCandidate.normalized)
+                .limit(INTERNAL_FETCH_POOL)
+                .get()
+            ),
+            "author",
+            queryCandidate
           );
-        } catch {
-          // If the author normalized index is unavailable, token-query remains authoritative.
         }
       }
     }

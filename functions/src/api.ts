@@ -757,6 +757,13 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
         }
       })
     );
+    const sanitizedResults = results.map((row: any) => ({
+      ...row,
+      confidence:
+        typeof row.confidence === "number"
+          ? Math.max(0, Math.min(1, row.confidence))
+          : row.confidence,
+    }));
 
     const latencyMs = Date.now() - startTime;
     const normalizedQuery = normalizeSearchText(q);
@@ -767,6 +774,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     const topCoverageScores = Array.isArray(telemetry?.topCoverageScores)
       ? telemetry.topCoverageScores
           .filter((score) => typeof score === "number" && Number.isFinite(score))
+          .map((score) => Math.max(0, Math.min(1, score)))
           .slice(0, 3)
       : [];
 
@@ -776,7 +784,7 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
         intentType,
         canonicalResultCount: searchResponse.canonicalCount,
         externalResultCount: searchResponse.externalCount,
-        totalReturned: results.length,
+        totalReturned: sanitizedResults.length,
         latencyMs,
         internalSearchDurationMs:
           typeof telemetry?.internalSearchDurationMs === "number" &&
@@ -788,11 +796,11 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
         topCoverageScore:
           typeof telemetry?.topCoverageScore === "number" &&
           Number.isFinite(telemetry.topCoverageScore)
-            ? telemetry.topCoverageScore
+            ? Math.max(0, Math.min(1, telemetry.topCoverageScore))
             : 0,
         topCoverageScores,
         lowConfidenceTopThree: Boolean(telemetry?.lowConfidenceTopThree),
-      });
+              });
     });
 
     logger.info("BOOK_SEARCH_V2_API", {
@@ -815,16 +823,16 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     });
 
     return res.status(200).json({
-      results,
+      results: sanitizedResults,
       nextCursor: searchResponse.nextCursor,
       hasMore: searchResponse.hasMore,
       cursorUsed: searchResponse.cursorUsed,
     });
   } catch (error) {
-    console.error("[API][SEARCH_BOOKS_ERROR]", error);
-    logger.error("BOOK_SEARCH_V2_API", {
-      phase: "error",
-      error: String(error),
+    logger.error("[BOOK_SEARCH][FAILED_FULL]", {
+      error,
+      message: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : null,
       uid: searchQuotaUid,
     });
 
