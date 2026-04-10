@@ -34,18 +34,45 @@ function resolveAuthors(data: Record<string, unknown>): string[] {
   return fallbackAuthor ? [fallbackAuthor] : [];
 }
 
-function resolveSearchTokens(data: Record<string, unknown>): string[] {
-  const title =
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((entry) => entry.length > 0)));
+}
+
+function resolveTitleAuthorities(data: Record<string, unknown>): string[] {
+  return uniqueStrings([
+    asNonEmptyString(data.title),
+    asNonEmptyString(data.titleEn),
+    asNonEmptyString(data.titleAr),
+    ...asStringArray(data.aliases),
+    ...asStringArray(data.titleAliases),
+    ...asStringArray(data.alternateTitles),
+    ...asStringArray(data.otherTitles),
+  ]);
+}
+
+function resolvePrimaryVisibleTitle(data: Record<string, unknown>): string {
+  return (
     asNonEmptyString(data.title) ||
     asNonEmptyString(data.titleEn) ||
-    asNonEmptyString(data.titleAr);
+    asNonEmptyString(data.titleAr)
+  );
+}
+
+function resolvePrimaryRetrievalTitle(data: Record<string, unknown>): string {
+  return (
+    asNonEmptyString(data.titleEn) ||
+    asNonEmptyString(data.title) ||
+    asNonEmptyString(data.titleAr)
+  );
+}
+
+function resolveSearchTokens(data: Record<string, unknown>): string[] {
+  const titleAuthorities = resolveTitleAuthorities(data);
   const authors = resolveAuthors(data);
   const isbn13 = normalizeIsbn(data.isbn13, 13);
   const isbn10 = normalizeIsbn(data.isbn10, 10);
   const searchFields = buildSearchFieldsFromTextParts([
-    title,
-    asNonEmptyString(data.titleEn),
-    asNonEmptyString(data.titleAr),
+    ...titleAuthorities,
     ...authors,
     asNonEmptyString(data.authorEn),
     asNonEmptyString(data.authorAr),
@@ -70,20 +97,25 @@ function stringArrayEquals(a: string[], b: string[]): boolean {
 }
 
 export function buildBookSearchPatch(data: Record<string, unknown>): Record<string, unknown> {
-  const title =
-    asNonEmptyString(data.title) ||
-    asNonEmptyString(data.titleEn) ||
-    asNonEmptyString(data.titleAr);
+  const title = resolvePrimaryVisibleTitle(data);
+  const retrievalTitle = resolvePrimaryRetrievalTitle(data);
+  const titleAuthorities = resolveTitleAuthorities(data);
   const authors = resolveAuthors(data);
-  const normalizedTitle = normalizeSearchText(title);
+  const normalizedTitle = normalizeSearchText(retrievalTitle || title);
+  const titleEnNormalized =
+    normalizeSearchText(asNonEmptyString(data.titleEn)) || normalizedTitle;
   const authorNamesNormalized = authors.map((entry) => normalizeSearchText(entry)).filter(Boolean);
   const searchableTitleAuthor = `${normalizedTitle} ${authorNamesNormalized.join(" ")}`.trim();
   const tokens = resolveSearchTokens(data);
   const downloadable = resolveDownloadable(data);
+  const canonicalTitleAuthorities = uniqueStrings(
+    titleAuthorities.map((entry) => normalizeSearchText(entry))
+  );
 
   return {
     normalizedTitle,
-    titleEnNormalized: normalizedTitle,
+    titleEnNormalized,
+    canonicalTitleAuthorities,
     authorNamesNormalized,
     searchableTitleAuthor,
     search: {
@@ -124,10 +156,13 @@ export function bookSearchPatchNeedsUpdate(
   const nextTokens = asStringArray((patch.search as Record<string, unknown> | undefined)?.tokens);
   const currentAuthorNames = asStringArray(data.authorNamesNormalized);
   const nextAuthorNames = asStringArray(patch.authorNamesNormalized);
+  const currentCanonicalTitleAuthorities = asStringArray(data.canonicalTitleAuthorities);
+  const nextCanonicalTitleAuthorities = asStringArray(patch.canonicalTitleAuthorities);
 
   return (
     asNonEmptyString(data.normalizedTitle) !== asNonEmptyString(patch.normalizedTitle) ||
     asNonEmptyString(data.titleEnNormalized) !== asNonEmptyString(patch.titleEnNormalized) ||
+    !stringArrayEquals(currentCanonicalTitleAuthorities, nextCanonicalTitleAuthorities) ||
     asNonEmptyString(data.searchableTitleAuthor) !== asNonEmptyString(patch.searchableTitleAuthor) ||
     !stringArrayEquals(currentAuthorNames, nextAuthorNames) ||
     !stringArrayEquals(currentTokens, nextTokens) ||

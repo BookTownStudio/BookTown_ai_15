@@ -3,6 +3,7 @@ type LocalEditionFixture = {
   editionId: string;
   bookId: string;
   source: "booktown";
+  workType?: "canonical";
   externalId: string;
   title: string;
   titleEn: string;
@@ -27,6 +28,7 @@ type LocalEditionFixture = {
   };
   canonicalKey: string;
   providerExternalIds?: string[];
+  literaryAuthorityClass?: "classic_work";
 };
 
 const base = (
@@ -313,14 +315,16 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
     "booktown",
     "The Trial",
     ["Franz Kafka"],
-    false
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
   ),
   base(
     "e25",
     "booktown",
     "The Metamorphosis",
     ["Franz Kafka"],
-    false
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
   ),
   base(
     "e32",
@@ -341,14 +345,16 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
     "booktown",
     "The Stranger",
     ["Albert Camus"],
-    false
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
   ),
   base(
     "e27",
     "booktown",
     "The Plague",
     ["Albert Camus"],
-    false
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
   ),
   base(
     "e34",
@@ -376,7 +382,16 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
     "booktown",
     "Crime and Punishment",
     ["Fyodor Dostoevsky"],
-    false
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
+  ),
+  base(
+    "e43",
+    "booktown",
+    "The Idiot",
+    ["Fyodor Dostoevsky"],
+    false,
+    { literaryAuthorityClass: "classic_work", workType: "canonical" }
   ),
   base(
     "e29",

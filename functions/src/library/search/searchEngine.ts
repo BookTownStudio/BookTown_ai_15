@@ -35,6 +35,8 @@ export type SearchReadProvider =
   | "gallica"
   | null;
 
+type LiteraryAuthorityClass = "classic_work";
+
 export interface UnifiedSearchResult {
   id: string;
   editionId: string;
@@ -105,6 +107,7 @@ type RankedResult = UnifiedSearchResult & {
   normalizedTitle: string;
   languageMatchScore: number;
   canonicalProviderExternalIds: string[];
+  literaryAuthorityClass?: LiteraryAuthorityClass | null;
   };
 
 type CursorPayload = {
@@ -173,6 +176,31 @@ const MAX_TYPO_EDIT_DISTANCE = 2;
 const MAX_LONG_TYPO_EDIT_DISTANCE = 3;
 const MIN_PREFIX_SEED_LENGTH = 4;
 const LOW_CONFIDENCE_COVERAGE_THRESHOLD = 0.6;
+const DOMINANT_FAMILY_MIN_CLUSTER = 2;
+const DOMINANT_FAMILY_MIN_SCORE_GAP = 0.85;
+const DOMINANT_FAMILY_DERIVATIVE_PATTERNS = [
+  /\bselected\b/u,
+  /\banthology\b/u,
+  /\bcomplete works\b/u,
+  /\bcollected\b/u,
+  /\bmasterpieces\b/u,
+  /\bbest of\b/u,
+  /\bessays on\b/u,
+  /\bintroduction to\b/u,
+  /\bunderstanding\b/u,
+  /\bin context\b/u,
+];
+const EXACT_TITLE_FAMILY_VARIANT_PATTERNS = [
+  /\bannotated\b/u,
+  /\billustrated\b/u,
+  /\btranslated\b/u,
+  /\btranslation\b/u,
+  /\bnotes?\b/u,
+  /\bcommentary\b/u,
+  /\bcompanion\b/u,
+  /\bintroduction\b/u,
+  /\bedition\b/u,
+];
 const EXCLUDED_TYPE_PATTERN =
   /\b(academic journal|research paper|conference proceedings?|technical manual|whitepaper|government report|report|reports|thesis|magazine issue|in re|\bvs\b|hearing|hearings)\b/i;
 
@@ -204,7 +232,11 @@ const DERIVATIVE_TITLE_KEYWORDS = new Set([
   "coloring",
   "colouring",
   "cookbook",
+  "dictionary",
+  "encyclopedia",
+  "glossary",
   "guide",
+  "lexicon",
   "workbook",
   "summary",
   "analysis",
@@ -715,8 +747,8 @@ function computeCanonicalTitleAdjustment(queryNorm: string, title: string): numb
   const queryWords = splitNormalizedWords(queryNorm);
   const titleWords = splitNormalizedWords(titleNorm);
 
-  if (queryNorm === titleNorm && titleWords.length >= 3) {
-    adjustment += 6;
+  if (queryNorm === titleNorm && titleWords.length >= 1) {
+    adjustment += 8.5;
   }
 
   if (
@@ -729,8 +761,19 @@ function computeCanonicalTitleAdjustment(queryNorm: string, title: string): numb
     adjustment += 0.25;
   }
 
+  if (
+    queryNorm !== titleNorm &&
+    queryWords.length >= 2 &&
+    titleWords.length > queryWords.length &&
+    (titleNorm.startsWith(`${queryNorm} `) ||
+      titleNorm.endsWith(` ${queryNorm}`) ||
+      titleNorm.includes(` ${queryNorm} `))
+  ) {
+    adjustment -= 4.25;
+  }
+
   if (titleWords.some((word) => DERIVATIVE_TITLE_KEYWORDS.has(word))) {
-    adjustment -= 5;
+    adjustment -= 6;
   }
 
   return adjustment;
@@ -1084,7 +1127,7 @@ function computeRank(
 
   let confidence = 0;
   if (titleExact) confidence += 0.82;
-  if (authorExact) confidence += 0.3;
+  if (authorExact) confidence += params.queryIntent === "AUTHOR_INTENT" ? 0.72 : 0.56;
   confidence += Math.min(0.16, titleCoverage * 0.16);
   confidence += Math.min(0.2, authorCoverage * 0.2);
   confidence += synopsisSignal;
@@ -1105,6 +1148,21 @@ function computeRank(
       confidence: exactTitleScore,
       rankTier: 1,
       computedScore: unknownAuthor ? exactTitleScore - 1.25 : exactTitleScore,
+      tokenCoverageRatio,
+    };
+  }
+
+  if (
+    queryTokens.length === 1 &&
+    params.queryIntent !== "AUTHOR_INTENT" &&
+    titlePrefix &&
+    titleHits >= 1
+  ) {
+    const broadTitleScore = tierSubScore + synopsisSignal;
+    return {
+      confidence: Math.max(confidence, 0.73),
+      rankTier: 2,
+      computedScore: unknownAuthor ? broadTitleScore - 1.25 : broadTitleScore,
       tokenCoverageRatio,
     };
   }
@@ -1349,9 +1407,14 @@ function computeLiteraryCorrection(params: {
     titleNorm !== params.query.normalized &&
     (biographyCriticismPattern ||
       anthologyPattern ||
-      /\b(reader|companion|introduction|letters?|essays?|writer|guide|study|analysis|summary|set)\b/u.test(
+      /\b(reader|companion|introduction|letters?|essays?|writer|guide|study|analysis|summary|set|dictionary|encyclopedia|glossary|lexicon)\b/u.test(
         trailingAfterQuery || titleNorm
       ));
+  const exactTitleSuperstring =
+    params.queryIntent === "TITLE_INTENT" &&
+    queryTokens.length >= 2 &&
+    titleNorm !== params.query.normalized &&
+    titleNorm.startsWith(`${params.query.normalized} `);
   const likelyPrimaryCompactWork =
     params.result.workType === "work" &&
     titleTokens.length > 0 &&
@@ -1413,7 +1476,11 @@ function computeLiteraryCorrection(params: {
   }
 
   if (exactShortClassicTitleMatch) {
-    adjustment += 4.1;
+    adjustment += params.result.resultType === "canonical" ? 5.4 : 4.4;
+  }
+
+  if (exactTitleSuperstring) {
+    adjustment -= 3.6;
   }
 
   if (
@@ -1724,6 +1791,22 @@ function mapCanonicalBook(
     "";
   if (!title) return null;
   const normalizedTitle = asNonEmptyString(data.normalizedTitle) || normalizeSearchText(title);
+  const literaryAuthorityClass =
+    asNonEmptyString(data.literaryAuthorityClass) === "classic_work"
+      ? "classic_work"
+      : null;
+  const canonicalStandaloneWork = asNonEmptyString(data.workType) === "canonical";
+  const exactClassicTitleAdmission = Boolean(
+    literaryAuthorityClass === "classic_work" &&
+      canonicalStandaloneWork &&
+      queryCandidates.some((queryCandidate) => {
+        const wordCount = splitNormalizedWords(queryCandidate.normalized).length;
+        if (wordCount < 2 || wordCount > 3) return false;
+        return resolveTitleVariants([title, asNonEmptyString(data.titleEn), asNonEmptyString(data.titleAr)])
+          .map((entry) => normalizeSearchText(entry))
+          .some((entry) => entry === queryCandidate.normalized);
+      })
+  );
 
   const authors =
     asStringArray(data.authors).length > 0
@@ -1759,10 +1842,10 @@ function mapCanonicalBook(
     queryIntent,
   });
 
-  if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+  if (!exactClassicTitleAdmission && rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
     return null;
   }
-  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
+  if (!exactClassicTitleAdmission && rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
     return null;
   }
 
@@ -1827,6 +1910,7 @@ function mapCanonicalBook(
     isbn13: isbn13 || undefined,
     isbn10: isbn10 || undefined,
     canonicalKey,
+    ...(literaryAuthorityClass ? { literaryAuthorityClass } : {}),
     ...(asExternalReadableSources(data.externalReadableSources).length > 0
       ? { externalReadableSources: asExternalReadableSources(data.externalReadableSources) }
       : {}),
@@ -1855,6 +1939,7 @@ async function collectCanonicalCandidates(
   const correctedAuthorPhraseBySurname = new Map<string, string[]>();
   const authorAliasByQuery = new Map<string, Set<string>>();
   const exactCompactTitleMatchByQuery = new Set<string>();
+  const exactAliasAdmittedByQuery = new Set<string>();
   for (const candidate of candidates) {
     if (candidate.source !== "corrected" || candidate.tokens.length < 2) continue;
     const surname = candidate.tokens[candidate.tokens.length - 1] || "";
@@ -1905,6 +1990,14 @@ async function collectCanonicalCandidates(
     (queryCandidate.tokens.length === 1 && queryCandidate.normalized.length >= MIN_PREFIX_SEED_LENGTH) ||
     (queryCandidate.tokens.length === 2 &&
       queryCandidate.tokens.every((token) => token.length >= MIN_PREFIX_SEED_LENGTH));
+  const isShortArticleLedTitleQuery = (queryCandidate: QueryCandidate): boolean => {
+    const queryWords = splitNormalizedWords(queryCandidate.normalized);
+    return (
+      queryWords.length >= 2 &&
+      queryWords.length <= 3 &&
+      COMPACT_CLASSIC_LEADING_TOKENS.has(queryWords[0] || "")
+    );
+  };
   const isCompactTitleQuery = (queryCandidate: QueryCandidate): boolean =>
     splitNormalizedWords(queryCandidate.normalized).length === 2;
   const shouldPrioritizeAuthorBeforeCompact = (queryCandidate: QueryCandidate): boolean =>
@@ -1967,6 +2060,14 @@ async function collectCanonicalCandidates(
   ): boolean =>
     isCompactTitleQuery(queryCandidate) &&
     titleVariantsNorm.some((entry) => entry === queryCandidate.normalized);
+  const isExactClassicCanonicalMatch = (
+    rawData: Record<string, unknown>,
+    queryCandidate: QueryCandidate,
+    titleVariantsNorm: string[]
+  ): boolean =>
+    asNonEmptyString(rawData.workType) === "canonical" &&
+    asNonEmptyString(rawData.literaryAuthorityClass) === "classic_work" &&
+    (asNonEmptyString(rawData.normalizedTitle) || titleVariantsNorm[0] || "") === queryCandidate.normalized;
   const isSecondaryAuthorTitleShape = (
     queryCandidate: QueryCandidate,
     titleNorm: string
@@ -1996,8 +2097,14 @@ async function collectCanonicalCandidates(
   const registerSnapshot = (
     docs: Array<{ id: string; data: () => Record<string, unknown> }>,
     phase: keyof CanonicalRetrievalArtifacts["phaseCounts"],
-    queryCandidate: QueryCandidate
+    queryCandidate: QueryCandidate,
+    optionsOverride: {
+      exactAliasOnly?: boolean;
+      exactClassicCanonicalOnly?: boolean;
+      suppressCompactNeighborSkip?: boolean;
+    } = {}
   ) => {
+    const shortArticleLedTitleQuery = isShortArticleLedTitleQuery(queryCandidate);
     const preprocessed = docs.map((doc) => {
       const rawData = doc.data() as Record<string, unknown>;
       const authors = resolveDocAuthors(rawData);
@@ -2021,7 +2128,7 @@ async function collectCanonicalCandidates(
       ) {
         entry.normalizedAuthors.forEach((authorNorm) => queryAliases.add(authorNorm));
       }
-      if (queryCandidate.tokens.length === 1) {
+      if (queryCandidate.tokens.length === 1 && !shortArticleLedTitleQuery) {
         const surname = queryCandidate.tokens[queryCandidate.tokens.length - 1] || "";
         deriveAuthorLikeTitleAliases(entry.rawData, surname).forEach((alias) =>
           queryAliases.add(alias)
@@ -2051,12 +2158,19 @@ async function collectCanonicalCandidates(
       const authorMatchesAlias = normalizedAuthors.some((authorNorm) =>
         authorAliases.includes(authorNorm)
       );
+      const exactClassicCanonicalRow = isExactClassicCanonicalMatch(
+        rawData,
+        queryCandidate,
+        titleVariantsNorm
+      );
       const titleLooksLikeSecondaryAuthorRow = isSecondaryAuthorTitleShape(
         queryCandidate,
         primaryTitleNorm
       );
       if (
         isLikelyAuthorQuery(queryCandidate) &&
+        !shortArticleLedTitleQuery &&
+        !exactClassicCanonicalRow &&
         hasAuthorAliasEvidence &&
         titleLooksLikeSecondaryAuthorRow &&
         !authorMatchesAlias
@@ -2064,14 +2178,34 @@ async function collectCanonicalCandidates(
         continue;
       }
       if (
+        !optionsOverride.suppressCompactNeighborSkip &&
         exactCompactTitleMatchByQuery.has(queryCandidate.normalized) &&
         isLexicalNeighborForCompactTitle(queryCandidate, titleVariantsNorm)
+      ) {
+        continue;
+      }
+      if (
+        optionsOverride.exactAliasOnly &&
+        !titleVariantsNorm.some((entry) => entry === queryCandidate.normalized)
+      ) {
+        continue;
+      }
+      if (
+        optionsOverride.exactClassicCanonicalOnly &&
+        !isExactClassicCanonicalMatch(rawData, queryCandidate, titleVariantsNorm)
       ) {
         continue;
       }
       const mapped = mapCanonicalBook(doc.id, rawData, candidates, options);
       if (!mapped) continue;
       if (!isLikelyBook(mapped.title, "book")) continue;
+      if (
+        (optionsOverride.exactAliasOnly &&
+          titleVariantsNorm.some((entry) => entry === queryCandidate.normalized)) ||
+        optionsOverride.exactClassicCanonicalOnly
+      ) {
+        exactAliasAdmittedByQuery.add(queryCandidate.normalized);
+      }
       dedup.set(doc.id, mapped);
       phaseCounts[phase] += 1;
     }
@@ -2079,10 +2213,15 @@ async function collectCanonicalCandidates(
 
   for (const queryCandidate of candidates) {
     const isbnQuery = parseIsbnQuery(queryCandidate.normalized);
-    const authorLikeQuery = isLikelyAuthorQuery(queryCandidate);
+    const shortArticleLedTitleQuery = isShortArticleLedTitleQuery(queryCandidate);
+    const authorLikeQuery =
+      !shortArticleLedTitleQuery && isLikelyAuthorQuery(queryCandidate);
     const compactTitleQuery = isCompactTitleQuery(queryCandidate);
     const prioritizeAuthorBeforeCompact = shouldPrioritizeAuthorBeforeCompact(queryCandidate);
     const compactClassicQuery = isCompactClassicQuery(queryCandidate);
+    const shortCanonicalTitleQuery =
+      splitNormalizedWords(queryCandidate.normalized).length >= 2 &&
+      splitNormalizedWords(queryCandidate.normalized).length <= 3;
     const singleTokenAuthorQuery =
       authorLikeQuery && queryCandidate.tokens.length === 1;
 
@@ -2107,6 +2246,22 @@ async function collectCanonicalCandidates(
     }
 
     if (compactTitleQuery && !prioritizeAuthorBeforeCompact) {
+      if (shortCanonicalTitleQuery) {
+        registerSnapshot(
+          await safeSnapshotDocs(() =>
+            books
+              .where("normalizedTitle", "==", queryCandidate.normalized)
+              .limit(INTERNAL_FETCH_POOL)
+              .get()
+          ),
+          "prefix",
+          queryCandidate,
+          {
+            exactClassicCanonicalOnly: true,
+            suppressCompactNeighborSkip: true,
+          }
+        );
+      }
       registerSnapshot(
         await safeSnapshotDocs(() =>
           books
@@ -2116,6 +2271,20 @@ async function collectCanonicalCandidates(
         ),
         "prefix",
         queryCandidate
+      );
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "tokens",
+        queryCandidate,
+        {
+          exactAliasOnly: true,
+          suppressCompactNeighborSkip: true,
+        }
       );
     }
 
@@ -2160,6 +2329,22 @@ async function collectCanonicalCandidates(
     }
 
     if (compactTitleQuery && prioritizeAuthorBeforeCompact) {
+      if (shortCanonicalTitleQuery) {
+        registerSnapshot(
+          await safeSnapshotDocs(() =>
+            books
+              .where("normalizedTitle", "==", queryCandidate.normalized)
+              .limit(INTERNAL_FETCH_POOL)
+              .get()
+          ),
+          "prefix",
+          queryCandidate,
+          {
+            exactClassicCanonicalOnly: true,
+            suppressCompactNeighborSkip: true,
+          }
+        );
+      }
       registerSnapshot(
         await safeSnapshotDocs(() =>
           books
@@ -2170,10 +2355,24 @@ async function collectCanonicalCandidates(
         "prefix",
         queryCandidate
       );
+      registerSnapshot(
+        await safeSnapshotDocs(() =>
+          books
+            .where("search.tokens", "array-contains-any", queryCandidate.tokens.slice(0, 10))
+            .limit(INTERNAL_FETCH_POOL)
+            .get()
+        ),
+        "tokens",
+        queryCandidate,
+        {
+          exactAliasOnly: true,
+          suppressCompactNeighborSkip: true,
+        }
+      );
     }
 
     const exactCompactResolved =
-      compactClassicQuery && exactCompactTitleMatchByQuery.has(queryCandidate.normalized);
+      compactClassicQuery && exactAliasAdmittedByQuery.has(queryCandidate.normalized);
     if (exactCompactResolved) {
       continue;
     }
@@ -2483,10 +2682,19 @@ function mapExternalCandidateToRanked(
     queryIntent,
   });
 
-  if (rank.rankTier > 0 && rank.confidence < CONFIDENCE_THRESHOLD) {
+  const broadProviderRescue =
+    rank.query.tokens.length === 1 &&
+    rank.query.normalized.length >= MIN_PREFIX_SEED_LENGTH &&
+    normalizeSearchText(candidate.title).startsWith(rank.query.normalized);
+  if (
+    rank.rankTier > 0 &&
+    rank.confidence < CONFIDENCE_THRESHOLD &&
+    !(rank.rankTier === 3 && rank.tokenCoverageRatio >= 0.5) &&
+    !broadProviderRescue
+  ) {
     return null;
   }
-  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5) {
+  if (rank.rankTier === 3 && rank.tokenCoverageRatio < 0.5 && !broadProviderRescue) {
     return null;
   }
 
@@ -2802,6 +3010,670 @@ function mergeExternalSeedCandidates(
   return Array.from(deduped.values());
 }
 
+type IntentGateEntry = {
+  title: string;
+  authors: string[];
+  titleEn?: string;
+  titleAr?: string;
+  computedScore?: number;
+  rankTier?: number;
+};
+
+type DominantEntityFamily =
+  | {
+      kind: "author";
+      authorAliases: Set<string>;
+    }
+  | {
+      kind: "title";
+    }
+  | null;
+
+function looksLikeFullPersonNameQuery(query: QueryCandidate): boolean {
+  return (
+    query.tokens.length >= 2 &&
+    query.tokens.length <= 4 &&
+    query.tokens.every((token) => token.length >= 2 && !SEARCH_STOPWORDS.has(token))
+  );
+}
+
+function resolveIntentGateTitleVariants(entry: IntentGateEntry): string[] {
+  return resolveTitleVariants([entry.title, entry.titleEn || "", entry.titleAr || ""]).map(
+    (value) => normalizeSearchText(value)
+  );
+}
+
+function trimLiterarySubtitle(value: string): string {
+  return value
+    .split(/\s[:;|]\s| - | – | — |\(|\[/u)[0]
+    ?.trim() || value;
+}
+
+function stripLeadingArticles(value: string): string {
+  return value.replace(/^(the|a|an|le|la|les|el|los|las|il|lo|gli)\s+/u, "").trim();
+}
+
+function normalizeLiteraryFamilyText(value: string): string {
+  if (!value) return "";
+  const normalized = normalizeSearchText(trimLiterarySubtitle(value));
+  if (!normalized) return "";
+  return normalized.replace(/\s+/g, " ").trim();
+}
+
+function resolveLiteraryFamilyForms(value: string): string[] {
+  const base = normalizeLiteraryFamilyText(value);
+  if (!base) return [];
+  const articleStripped = stripLeadingArticles(base);
+  const forms = [base];
+  if (articleStripped && articleStripped !== base && splitNormalizedWords(articleStripped).length >= 2) {
+    forms.push(articleStripped);
+  }
+  return Array.from(new Set(forms));
+}
+
+function normalizeFamilyToken(token: string): string {
+  return token.replace(/ph/gu, "f").replace(/ck/gu, "k");
+}
+
+function familyTokenEquivalent(left: string, right: string): boolean {
+  const normalizedLeft = normalizeFamilyToken(left);
+  const normalizedRight = normalizeFamilyToken(right);
+  if (normalizedLeft === normalizedRight) return true;
+  if (normalizedLeft.length < 5 || normalizedRight.length < 5) return false;
+  if (boundedEditDistance(normalizedLeft, normalizedRight, 1) !== null) return true;
+  return (
+    commonPrefixLength(normalizedLeft, normalizedRight) >= 4 &&
+    Math.abs(normalizedLeft.length - normalizedRight.length) <= 1
+  );
+}
+
+function familyWordsCoverQuery(queryWords: string[], candidateWords: string[]): boolean {
+  if (queryWords.length === 0 || candidateWords.length === 0) return false;
+  const remaining = candidateWords.slice();
+  for (const queryWord of queryWords) {
+    const matchIndex = remaining.findIndex((candidateWord) =>
+      queryWord.length < 5 || candidateWord.length < 5
+        ? queryWord === candidateWord
+        : familyTokenEquivalent(queryWord, candidateWord)
+    );
+    if (matchIndex === -1) {
+      return false;
+    }
+    remaining.splice(matchIndex, 1);
+  }
+  return true;
+}
+
+function hasExactAuthorAnchor(authors: string[], queryCandidates: QueryCandidate[]): boolean {
+  const authorQueries = queryCandidates.filter(looksLikeFullPersonNameQuery);
+  if (authorQueries.length === 0) return false;
+
+  return authors.some((author) => {
+    const authorForms = resolveLiteraryFamilyForms(author);
+    return authorQueries.some((query) => {
+      const queryWords = splitNormalizedWords(query.normalized).sort();
+      return authorForms.some((form) => {
+        const authorWords = splitNormalizedWords(form).sort();
+        return (
+          authorWords.length >= queryWords.length &&
+          familyWordsCoverQuery(queryWords, authorWords)
+        );
+      });
+    });
+  });
+}
+
+function matchesTitleFamily(entry: IntentGateEntry, queryCandidates: QueryCandidate[]): boolean {
+  const titleForms = resolveTitleVariants([entry.title, entry.titleEn || "", entry.titleAr || ""]).flatMap(
+    (value) => resolveLiteraryFamilyForms(value)
+  );
+  if (titleForms.length === 0) return false;
+
+  return queryCandidates.some((query) => {
+    const queryForms = resolveLiteraryFamilyForms(query.normalized);
+    return queryForms.some((queryForm) => {
+      const queryWords = splitNormalizedWords(queryForm);
+      return titleForms.some((titleForm) => {
+        const titleWords = splitNormalizedWords(titleForm);
+        return familyWordsCoverQuery(queryWords, titleWords);
+      });
+    });
+  });
+}
+
+function hasExactTitleAnchor(entries: IntentGateEntry[], queryCandidates: QueryCandidate[]): boolean {
+  const queryNorms = new Set(queryCandidates.map((entry) => entry.normalized));
+  return entries.some((entry) =>
+    resolveTitleVariants([entry.title, entry.titleEn || "", entry.titleAr || ""])
+      .map((value) => normalizeSearchText(value))
+      .some((titleNorm) => queryNorms.has(titleNorm))
+  );
+}
+
+function compareDominantEntries(left: IntentGateEntry, right: IntentGateEntry): number {
+  const leftRankTier = typeof left.rankTier === "number" ? left.rankTier : Number.MAX_SAFE_INTEGER;
+  const rightRankTier = typeof right.rankTier === "number" ? right.rankTier : Number.MAX_SAFE_INTEGER;
+  if (leftRankTier !== rightRankTier) {
+    return leftRankTier - rightRankTier;
+  }
+  const leftScore = typeof left.computedScore === "number" ? left.computedScore : Number.NEGATIVE_INFINITY;
+  const rightScore = typeof right.computedScore === "number" ? right.computedScore : Number.NEGATIVE_INFINITY;
+  return rightScore - leftScore;
+}
+
+function hasDominantScoreSeparation(
+  leader: IntentGateEntry | undefined,
+  outsider: IntentGateEntry | undefined
+): boolean {
+  if (!leader) return false;
+  if (!outsider) return true;
+
+  const leaderRankTier = typeof leader.rankTier === "number" ? leader.rankTier : Number.MAX_SAFE_INTEGER;
+  const outsiderRankTier =
+    typeof outsider.rankTier === "number" ? outsider.rankTier : Number.MAX_SAFE_INTEGER;
+  if (leaderRankTier < outsiderRankTier) return true;
+
+  const leaderScore = typeof leader.computedScore === "number" ? leader.computedScore : Number.NEGATIVE_INFINITY;
+  const outsiderScore =
+    typeof outsider.computedScore === "number" ? outsider.computedScore : Number.NEGATIVE_INFINITY;
+  return leaderScore >= outsiderScore + DOMINANT_FAMILY_MIN_SCORE_GAP;
+}
+
+function dominantEntityFamily(params: {
+  entries: IntentGateEntry[];
+  queryCandidates: QueryCandidate[];
+  queryIntent: QueryIntent;
+}): DominantEntityFamily {
+  if (params.entries.length === 0) return null;
+
+  if (params.queryIntent === "AUTHOR_INTENT") {
+    const authorQueries = params.queryCandidates.filter(looksLikeFullPersonNameQuery);
+    if (authorQueries.length === 0) return null;
+
+    const exactAnchorExists = params.entries.some((entry) =>
+      hasExactAuthorAnchor(entry.authors, params.queryCandidates)
+    );
+    if (!exactAnchorExists) return null;
+
+    const familyEntries = params.entries.filter((entry) =>
+      matchesStrongAuthorIntentEntry(entry.authors, params.queryCandidates)
+    );
+    if (familyEntries.length < DOMINANT_FAMILY_MIN_CLUSTER) return null;
+
+    const outsiderEntries = params.entries.filter(
+      (entry) => !matchesStrongAuthorIntentEntry(entry.authors, params.queryCandidates)
+    );
+    const leader = familyEntries.slice().sort(compareDominantEntries)[0];
+    const outsider = outsiderEntries.slice().sort(compareDominantEntries)[0];
+    if (!hasDominantScoreSeparation(leader, outsider)) return null;
+
+    const authorAliases = new Set<string>();
+    familyEntries.forEach((entry) => {
+      entry.authors
+        .map((author) => normalizeSearchText(author))
+        .filter((author) => author.length > 0)
+        .forEach((author) => authorAliases.add(author));
+    });
+    return authorAliases.size > 0 ? { kind: "author", authorAliases } : null;
+  }
+
+  if (params.queryIntent === "TITLE_INTENT") {
+    if (!hasExactTitleAnchor(params.entries, params.queryCandidates)) return null;
+
+    const familyEntries = params.entries.filter((entry) =>
+      matchesTitleFamily(entry, params.queryCandidates)
+    );
+    if (familyEntries.length < DOMINANT_FAMILY_MIN_CLUSTER) return null;
+
+    const outsiderEntries = params.entries.filter(
+      (entry) => !matchesTitleFamily(entry, params.queryCandidates)
+    );
+    const leader = familyEntries.slice().sort(compareDominantEntries)[0];
+    const outsider = outsiderEntries.slice().sort(compareDominantEntries)[0];
+    if (!hasDominantScoreSeparation(leader, outsider)) return null;
+
+    return { kind: "title" };
+  }
+
+  return null;
+}
+
+function applyDominantFamilyToCanonicalCandidates(params: {
+  candidates: RankedResult[];
+  queryCandidates: QueryCandidate[];
+  dominantFamily: DominantEntityFamily;
+}): RankedResult[] {
+  const { dominantFamily } = params;
+  if (!dominantFamily) return params.candidates;
+
+  const filtered = params.candidates.filter((entry) => {
+    if (dominantFamily.kind === "author") {
+      return entry.authors.some((author) =>
+        dominantFamily.authorAliases.has(normalizeSearchText(author))
+      );
+    }
+    return matchesTitleFamily(entry, params.queryCandidates);
+  });
+
+  return filtered.length > 0 ? filtered : params.candidates;
+}
+
+function applyDominantFamilyToExternalSeeds(params: {
+  seeds: ExternalSeedCandidate[];
+  queryCandidates: QueryCandidate[];
+  dominantFamily: DominantEntityFamily;
+}): ExternalSeedCandidate[] {
+  const { dominantFamily } = params;
+  if (!dominantFamily) return params.seeds;
+
+  const filtered = params.seeds.filter((entry) => {
+    if (dominantFamily.kind === "author") {
+      return entry.authors.some((author) =>
+        dominantFamily.authorAliases.has(normalizeSearchText(author))
+      );
+    }
+    return matchesTitleFamily(entry, params.queryCandidates);
+  });
+
+  return filtered.length > 0 ? filtered : params.seeds;
+}
+
+function isDominantFamilyDerivativeTitle(titleNorm: string): boolean {
+  if (!titleNorm) return false;
+  if (isIntentGateSecondaryTitle(titleNorm)) return true;
+  return DOMINANT_FAMILY_DERIVATIVE_PATTERNS.some((pattern) => pattern.test(titleNorm));
+}
+
+function applyDominantFamilyOrderingToRanked(params: {
+  results: RankedResult[];
+  queryCandidates: QueryCandidate[];
+  dominantFamily: DominantEntityFamily;
+}): RankedResult[] {
+  const { dominantFamily } = params;
+  if (!dominantFamily || params.results.length === 0) return params.results;
+
+  const queryNorms = new Set(params.queryCandidates.map((entry) => entry.normalized));
+  const shortCanonicalTitleAuthority =
+    dominantFamily.kind === "title" &&
+    params.queryCandidates.some((entry) => splitNormalizedWords(entry.normalized).length <= 3) &&
+    params.results.some((entry) =>
+      resolveIntentGateTitleVariants(entry).some((variant) => queryNorms.has(variant))
+    );
+  const exactClassicWorkLeaderExists =
+    dominantFamily.kind === "title" &&
+    params.queryCandidates.some((entry) => {
+      const wordCount = splitNormalizedWords(entry.normalized).length;
+      return wordCount >= 2 && wordCount <= 3;
+    }) &&
+    params.results.some((entry) => {
+      const titleVariants = resolveIntentGateTitleVariants(entry);
+      const exactTitle = titleVariants.some((variant) => queryNorms.has(variant));
+      return exactTitle && entry.literaryAuthorityClass === "classic_work";
+    });
+
+  return params.results
+    .map((entry) => {
+      const titleNorm = normalizeSearchText(entry.title);
+      const titleVariants = resolveIntentGateTitleVariants(entry);
+      const exactTitle = titleVariants.some((variant) => queryNorms.has(variant));
+      const derivative = isDominantFamilyDerivativeTitle(titleNorm);
+      const exactTitleVariant =
+        exactClassicWorkLeaderExists &&
+        exactTitle &&
+        (entry.workType !== "work" ||
+          EXACT_TITLE_FAMILY_VARIANT_PATTERNS.some((pattern) => pattern.test(titleNorm)) ||
+          derivative);
+      const exactShortCanonicalBoost =
+        shortCanonicalTitleAuthority && exactTitle ? 3.4 : 0;
+      const nonExactShortCanonicalPenalty =
+        shortCanonicalTitleAuthority && !exactTitle ? 0.8 : 0;
+      let nextRankTier = entry.rankTier;
+      let nextScore = entry.computedScore;
+
+      if (exactClassicWorkLeaderExists && exactTitle) {
+        if (entry.literaryAuthorityClass === "classic_work") {
+          nextRankTier = Math.min(nextRankTier, 0);
+          nextScore = Math.round((nextScore + 2.8) * 1_000_000) / 1_000_000;
+        } else if (exactTitleVariant) {
+          nextRankTier = Math.min(3, nextRankTier + 1);
+          nextScore = Math.round((nextScore - 2.4) * 1_000_000) / 1_000_000;
+        }
+      }
+
+      if (exactShortCanonicalBoost > 0) {
+        nextRankTier = Math.min(nextRankTier, 1);
+        nextScore = Math.round((nextScore + exactShortCanonicalBoost) * 1_000_000) / 1_000_000;
+      } else if (nonExactShortCanonicalPenalty > 0) {
+        nextScore = Math.round((nextScore - nonExactShortCanonicalPenalty) * 1_000_000) / 1_000_000;
+      }
+
+      if (!derivative || exactTitle) {
+        if (nextRankTier === entry.rankTier && nextScore === entry.computedScore) {
+          return entry;
+        }
+        return {
+          ...entry,
+          rankTier: nextRankTier,
+          rank: nextRankTier,
+          computedScore: nextScore,
+        };
+      }
+
+      const adjustedRankTier = Math.min(3, entry.rankTier + 1);
+      const adjustedScore = Math.round((nextScore - 2.1) * 1_000_000) / 1_000_000;
+      return {
+        ...entry,
+        rankTier: adjustedRankTier,
+        rank: adjustedRankTier,
+        computedScore: adjustedScore,
+      };
+    })
+    .sort(compareRanked);
+}
+
+function isIntentGateSecondaryTitle(titleNorm: string): boolean {
+  if (!titleNorm) return false;
+  if (AUTHOR_BIOGRAPHY_CRITICISM_PATTERNS.some((pattern) => pattern.test(titleNorm))) {
+    return true;
+  }
+  if (AUTHOR_ANTHOLOGY_PATTERNS.some((pattern) => pattern.test(titleNorm))) {
+    return true;
+  }
+  if (
+    /\b(dictionary|encyclopedia|glossary|lexicon|commentary|commentaries|companion|reader|introduction|adaptation|adapted|retold|guide)\b/u.test(
+      titleNorm
+    )
+  ) {
+    return true;
+  }
+  return splitNormalizedWords(titleNorm).some((word) => DERIVATIVE_TITLE_KEYWORDS.has(word));
+}
+
+function matchesStrongAuthorIntentEntry(
+  authors: string[],
+  queryCandidates: QueryCandidate[]
+): boolean {
+  const authorValues = authors
+    .map((author) => normalizeSearchText(author))
+    .filter((author) => author.length > 0);
+  if (authorValues.length === 0) return false;
+
+  return queryCandidates.some((query) => {
+    const surname = query.tokens[query.tokens.length - 1] || "";
+    return authorValues.some((authorNorm) => {
+      if (authorNorm === query.normalized || authorNorm.startsWith(`${query.normalized} `)) {
+        return true;
+      }
+      if (!surname) return false;
+      const authorTokens = tokenize(authorNorm);
+      const sharedTokens = query.tokens.filter((token) => authorTokens.includes(token)).length;
+      return (
+        (authorNorm === surname || authorNorm.endsWith(` ${surname}`)) &&
+        sharedTokens >= Math.min(query.tokens.length, 2)
+      );
+    });
+  });
+}
+
+function deriveIntentGateSignals(
+  entries: IntentGateEntry[],
+  queryCandidates: QueryCandidate[],
+  queryIntent: QueryIntent
+): {
+  authorLike: boolean;
+  exactTitleAuthority: boolean;
+  authorAliases: Set<string>;
+} {
+  const authorLike =
+    queryIntent === "AUTHOR_INTENT" || queryCandidates.some(looksLikeFullPersonNameQuery);
+  const queryNorms = new Set(queryCandidates.map((entry) => entry.normalized));
+  const exactTitleAuthority =
+    queryIntent === "TITLE_INTENT" &&
+    entries.some((entry) =>
+      resolveIntentGateTitleVariants(entry).some((titleNorm) => queryNorms.has(titleNorm))
+    );
+  const authorAliases = new Set<string>();
+
+  if (authorLike) {
+    for (const entry of entries) {
+      if (!matchesStrongAuthorIntentEntry(entry.authors, queryCandidates)) continue;
+      entry.authors
+        .map((author) => normalizeSearchText(author))
+        .filter((author) => author.length > 0)
+        .forEach((author) => authorAliases.add(author));
+    }
+  }
+
+  return {
+    authorLike,
+    exactTitleAuthority,
+    authorAliases,
+  };
+}
+
+function gateCanonicalCandidatesForIntent(params: {
+  candidates: RankedResult[];
+  queryCandidates: QueryCandidate[];
+  queryIntent: QueryIntent;
+  authorityEntries?: IntentGateEntry[];
+}): RankedResult[] {
+  if (params.candidates.length === 0) return params.candidates;
+
+  const authorityEntries = params.authorityEntries || params.candidates;
+  const signals = deriveIntentGateSignals(
+    authorityEntries,
+    params.queryCandidates,
+    params.queryIntent
+  );
+  const authorQueries = params.queryCandidates.filter(looksLikeFullPersonNameQuery);
+  const queryNorms = new Set(params.queryCandidates.map((entry) => entry.normalized));
+
+  const filtered = params.candidates.filter((entry) => {
+    const titleNorm = normalizeSearchText(entry.title);
+    const titleVariants = resolveIntentGateTitleVariants(entry);
+    const exactTitle = titleVariants.some((variant) => queryNorms.has(variant));
+    const authorMatch =
+      signals.authorAliases.size > 0
+        ? entry.authors.some((author) => signals.authorAliases.has(normalizeSearchText(author)))
+        : matchesStrongAuthorIntentEntry(entry.authors, params.queryCandidates);
+
+    if (signals.authorLike && signals.authorAliases.size > 0 && !authorMatch) {
+      const titleLedSecondary = authorQueries.some((query) => {
+        const surname = query.tokens[query.tokens.length - 1] || "";
+        const startsWithQuery =
+          titleNorm === query.normalized || titleNorm.startsWith(`${query.normalized} `);
+        const startsWithSurname =
+          Boolean(surname) && (titleNorm === surname || titleNorm.startsWith(`${surname} `));
+        if (!startsWithQuery && !startsWithSurname) return false;
+
+        const trailing = startsWithQuery
+          ? titleNorm.slice(query.normalized.length).trim()
+          : titleNorm.slice(surname.length).trim();
+        return (
+          trailing.length === 0 ||
+          /^[,\d]/u.test(trailing) ||
+          isIntentGateSecondaryTitle(trailing || titleNorm)
+        );
+      });
+
+      if (titleLedSecondary) {
+        return false;
+      }
+    }
+
+    if (signals.exactTitleAuthority && !exactTitle) {
+      const contaminatingSuperstring = params.queryCandidates.some((query) => {
+        const queryWordCount = splitNormalizedWords(query.normalized).length;
+        if (queryWordCount !== 2) return false;
+        return titleVariants.some((variant) => {
+          if (variant === query.normalized) return false;
+          const containsQuery =
+            variant.startsWith(`${query.normalized} `) ||
+            variant.endsWith(` ${query.normalized}`) ||
+            variant.includes(` ${query.normalized} `);
+          if (!containsQuery) return false;
+          return true;
+        });
+      });
+
+      if (contaminatingSuperstring) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return filtered.length > 0 ? filtered : params.candidates;
+}
+
+function gateExternalSeedsForIntent(params: {
+  seeds: ExternalSeedCandidate[];
+  queryCandidates: QueryCandidate[];
+  queryIntent: QueryIntent;
+  authorityEntries: IntentGateEntry[];
+}): ExternalSeedCandidate[] {
+  if (params.seeds.length === 0) return params.seeds;
+
+  const signals = deriveIntentGateSignals(
+    params.authorityEntries,
+    params.queryCandidates,
+    params.queryIntent
+  );
+  const authorQueries = params.queryCandidates.filter(looksLikeFullPersonNameQuery);
+  const queryNorms = new Set(params.queryCandidates.map((entry) => entry.normalized));
+
+  const filtered = params.seeds.filter((entry) => {
+    const titleNorm = normalizeSearchText(entry.title);
+    const exactTitle = queryNorms.has(titleNorm);
+    const authorMatch =
+      signals.authorAliases.size > 0
+        ? entry.authors.some((author) => signals.authorAliases.has(normalizeSearchText(author)))
+        : matchesStrongAuthorIntentEntry(entry.authors, params.queryCandidates);
+
+    if (signals.authorLike && signals.authorAliases.size > 0 && !authorMatch) {
+      const titleLedSecondary = authorQueries.some((query) => {
+        const surname = query.tokens[query.tokens.length - 1] || "";
+        const startsWithQuery =
+          titleNorm === query.normalized || titleNorm.startsWith(`${query.normalized} `);
+        const startsWithSurname =
+          Boolean(surname) && (titleNorm === surname || titleNorm.startsWith(`${surname} `));
+        if (!startsWithQuery && !startsWithSurname) return false;
+
+        const trailing = startsWithQuery
+          ? titleNorm.slice(query.normalized.length).trim()
+          : titleNorm.slice(surname.length).trim();
+        return (
+          trailing.length === 0 ||
+          /^[,\d]/u.test(trailing) ||
+          isIntentGateSecondaryTitle(trailing || titleNorm)
+        );
+      });
+
+      if (titleLedSecondary) {
+        return false;
+      }
+    }
+
+    if (signals.exactTitleAuthority && !exactTitle) {
+      const contaminatingSuperstring = params.queryCandidates.some((query) => {
+        const queryWordCount = splitNormalizedWords(query.normalized).length;
+        if (queryWordCount !== 2) return false;
+        const containsQuery =
+          titleNorm.startsWith(`${query.normalized} `) ||
+          titleNorm.endsWith(` ${query.normalized}`) ||
+          titleNorm.includes(` ${query.normalized} `);
+        if (!containsQuery) return false;
+        return true;
+      });
+
+      if (contaminatingSuperstring) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  return filtered.length > 0 ? filtered : params.seeds;
+}
+
+function selectShortExactTitleAuthorityQuery(
+  queryCandidates: QueryCandidate[]
+): QueryCandidate | null {
+  const deduped = dedupeQueryCandidates(queryCandidates);
+  return (
+    deduped.find((entry) => {
+      const wordCount = splitNormalizedWords(entry.normalized).length;
+      return entry.source === "original" && wordCount >= 2 && wordCount <= 3;
+    }) ||
+    deduped.find((entry) => {
+      const wordCount = splitNormalizedWords(entry.normalized).length;
+      return wordCount >= 2 && wordCount <= 3;
+    }) ||
+    null
+  );
+}
+
+function hasExactShortCanonicalTitleAuthority(
+  canonicalResults: RankedResult[],
+  query: QueryCandidate
+): boolean {
+  return canonicalResults.some((entry) =>
+    entry.literaryAuthorityClass === "classic_work" &&
+    resolveIntentGateTitleVariants(entry).some((variant) => variant === query.normalized)
+  );
+}
+
+function isShortTitleLexicalExternalContaminant(
+  result: RankedResult,
+  query: QueryCandidate
+): boolean {
+  const titleVariants = resolveIntentGateTitleVariants(result);
+  if (titleVariants.some((variant) => variant === query.normalized)) {
+    return false;
+  }
+
+  const queryWords = splitNormalizedWords(query.normalized);
+  if (queryWords.length < 2 || queryWords.length > 3) {
+    return false;
+  }
+
+  const titleNorm = normalizeSearchText(result.title);
+  if (!titleNorm) return false;
+
+  if (
+    titleNorm.startsWith(`${query.normalized} `) ||
+    titleNorm.endsWith(` ${query.normalized}`) ||
+    titleNorm.includes(` ${query.normalized} `)
+  ) {
+    return true;
+  }
+
+  if (query.tokens.length === 0) return false;
+  const titleTokens = new Set(tokenize(titleNorm));
+  return query.tokens.every((token) => titleTokens.has(token));
+}
+
+function applyShortCanonicalVisibleAuthority(params: {
+  canonicalResults: RankedResult[];
+  externalResults: RankedResult[];
+  queryCandidates: QueryCandidate[];
+}): RankedResult[] {
+  if (params.externalResults.length === 0) return params.externalResults;
+
+  const authorityQuery = selectShortExactTitleAuthorityQuery(params.queryCandidates);
+  if (!authorityQuery) return params.externalResults;
+
+  if (!hasExactShortCanonicalTitleAuthority(params.canonicalResults, authorityQuery)) {
+    return params.externalResults;
+  }
+
+  return params.externalResults.filter(
+    (entry) => !isShortTitleLexicalExternalContaminant(entry, authorityQuery)
+  );
+}
+
 /**
  * Canonical-first deterministic search engine.
  *
@@ -2848,6 +3720,7 @@ export async function unifiedSearch(
   }
 
   const limit = normalizeLimit(options.limit);
+  const retrievalOptions = options.ebookOnly ? { ...options, ebookOnly: false } : options;
   const fingerprint = computeFingerprint(queryNorm, options);
   const decodedCursor = decodeCursor(options.cursor);
   const startOffset =
@@ -2868,7 +3741,7 @@ export async function unifiedSearch(
 
   let queryCandidates = [originalQuery];
   phaseOrder.push("canonical_initial");
-  let canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
+  let canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, retrievalOptions);
 
   const correctedFromCanonical = deriveCorrectedQueryCandidates({
     originalQuery,
@@ -2878,7 +3751,7 @@ export async function unifiedSearch(
   if (correctedFromCanonical.length > 0) {
     queryCandidates = dedupeQueryCandidates([...queryCandidates, ...correctedFromCanonical]);
     phaseOrder.push("canonical_corrected_local");
-    canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
+    canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, retrievalOptions);
   }
 
   let queryIntent = detectQueryIntent(
@@ -2888,12 +3761,42 @@ export async function unifiedSearch(
       authors: entry.authors,
     }))
   );
+  canonicalArtifacts = {
+    ...canonicalArtifacts,
+    candidates: gateCanonicalCandidatesForIntent({
+      candidates: canonicalArtifacts.candidates,
+      queryCandidates,
+      queryIntent,
+    }),
+  };
+  const initialDominantFamily = dominantEntityFamily({
+    entries: canonicalArtifacts.candidates,
+    queryCandidates,
+    queryIntent,
+  });
+  if (initialDominantFamily) {
+    canonicalArtifacts = {
+      ...canonicalArtifacts,
+      candidates: applyDominantFamilyToCanonicalCandidates({
+        candidates: canonicalArtifacts.candidates,
+        queryCandidates,
+        dominantFamily: initialDominantFamily,
+      }),
+    };
+  }
 
   let rerankedCanonical = rankCanonicalResults(
     canonicalArtifacts.candidates,
     queryCandidates,
     queryIntent
   );
+  if (initialDominantFamily) {
+    rerankedCanonical = applyDominantFamilyOrderingToRanked({
+      results: rerankedCanonical,
+      queryCandidates,
+      dominantFamily: initialDominantFamily,
+    });
+  }
   let canonicalAvailability = options.availabilityOnly
     ? await enrichCanonicalAvailability(rerankedCanonical, limit)
     : rerankedCanonical.slice();
@@ -2911,7 +3814,6 @@ export async function unifiedSearch(
   const canonicalAvailabilityCount = canonicalAvailability.filter((entry) => entry.available).length;
   const shouldUseExternalFallback =
     externalFallbackEnabled &&
-    !options.ebookOnly &&
     (options.availabilityOnly
       ? canonicalAvailabilityCount < limit || lowConfidenceTopThree
       : rerankedCanonical.length < EXTERNAL_FALLBACK_TRIGGER || lowConfidenceTopThree);
@@ -2951,7 +3853,7 @@ export async function unifiedSearch(
     if (correctedFromExternal.length > 0) {
       queryCandidates = dedupeQueryCandidates([...queryCandidates, ...correctedFromExternal]);
       phaseOrder.push("canonical_corrected_external");
-      canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, options);
+      canonicalArtifacts = await collectCanonicalCandidates(queryCandidates, retrievalOptions);
       queryIntent = detectQueryIntent(
         queryCandidates,
         canonicalArtifacts.candidates.map((entry) => ({
@@ -2959,11 +3861,41 @@ export async function unifiedSearch(
           authors: entry.authors,
         }))
       );
+      canonicalArtifacts = {
+        ...canonicalArtifacts,
+        candidates: gateCanonicalCandidatesForIntent({
+          candidates: canonicalArtifacts.candidates,
+          queryCandidates,
+          queryIntent,
+        }),
+      };
+      const correctedDominantFamily = dominantEntityFamily({
+        entries: canonicalArtifacts.candidates,
+        queryCandidates,
+        queryIntent,
+      });
+      if (correctedDominantFamily) {
+        canonicalArtifacts = {
+          ...canonicalArtifacts,
+          candidates: applyDominantFamilyToCanonicalCandidates({
+            candidates: canonicalArtifacts.candidates,
+            queryCandidates,
+            dominantFamily: correctedDominantFamily,
+          }),
+        };
+      }
       rerankedCanonical = rankCanonicalResults(
         canonicalArtifacts.candidates,
         queryCandidates,
         queryIntent
       );
+      if (correctedDominantFamily) {
+        rerankedCanonical = applyDominantFamilyOrderingToRanked({
+          results: rerankedCanonical,
+          queryCandidates,
+          dominantFamily: correctedDominantFamily,
+        });
+      }
       canonicalAvailability = options.availabilityOnly
         ? await enrichCanonicalAvailability(rerankedCanonical, limit)
         : rerankedCanonical.slice();
@@ -2995,11 +3927,86 @@ export async function unifiedSearch(
       rawExternalPrimary,
       rawExternalSecondary
     );
-    externalCandidates = mergedExternalSeeds
+    const combinedIntentCandidates = [
+      ...canonicalArtifacts.candidates.map((entry) => ({
+        title: entry.title,
+        authors: entry.authors,
+        titleEn: entry.titleEn,
+        titleAr: entry.titleAr,
+        computedScore: entry.computedScore,
+        rankTier: entry.rankTier,
+      })),
+      ...mergedExternalSeeds.map((entry) => ({
+        title: entry.title,
+        authors: entry.authors,
+      })),
+    ];
+    queryIntent = detectQueryIntent(queryCandidates, combinedIntentCandidates);
+    canonicalArtifacts = {
+      ...canonicalArtifacts,
+      candidates: gateCanonicalCandidatesForIntent({
+        candidates: canonicalArtifacts.candidates,
+        queryCandidates,
+        queryIntent,
+        authorityEntries: combinedIntentCandidates,
+      }),
+    };
+    const mergedDominantFamily = dominantEntityFamily({
+      entries: canonicalArtifacts.candidates,
+      queryCandidates,
+      queryIntent,
+    });
+    if (mergedDominantFamily) {
+      canonicalArtifacts = {
+        ...canonicalArtifacts,
+        candidates: applyDominantFamilyToCanonicalCandidates({
+          candidates: canonicalArtifacts.candidates,
+          queryCandidates,
+          dominantFamily: mergedDominantFamily,
+        }),
+      };
+    }
+    rerankedCanonical = rankCanonicalResults(
+      canonicalArtifacts.candidates,
+      queryCandidates,
+      queryIntent
+    );
+    if (mergedDominantFamily) {
+      rerankedCanonical = applyDominantFamilyOrderingToRanked({
+        results: rerankedCanonical,
+        queryCandidates,
+        dominantFamily: mergedDominantFamily,
+      });
+    }
+    canonicalAvailability = options.availabilityOnly
+      ? await enrichCanonicalAvailability(rerankedCanonical, limit)
+      : rerankedCanonical.slice();
+    lowConfidenceTopThree = hasWeakCanonicalQuality(rerankedCanonical);
+    const gatedExternalSeeds = gateExternalSeedsForIntent({
+      seeds: mergedExternalSeeds,
+      queryCandidates,
+      queryIntent,
+      authorityEntries: combinedIntentCandidates,
+    });
+    const dominantExternalSeeds = mergedDominantFamily
+      ? applyDominantFamilyToExternalSeeds({
+          seeds: gatedExternalSeeds,
+          queryCandidates,
+          dominantFamily: mergedDominantFamily,
+        })
+      : gatedExternalSeeds;
+    externalCandidates = dominantExternalSeeds
       .map((entry) =>
         mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, options.language)
       )
       .filter((entry): entry is RankedResult => Boolean(entry));
+    if (mergedDominantFamily) {
+      externalCandidates = applyDominantFamilyOrderingToRanked({
+        results: externalCandidates,
+        queryCandidates,
+        dominantFamily: mergedDominantFamily,
+      });
+    }
 
     const mergedAvailability = mergeCanonicalAvailability(
       externalCandidates,
@@ -3020,7 +4027,22 @@ export async function unifiedSearch(
   const canonicalResultsForResponse = options.availabilityOnly
     ? canonicalAvailability.filter((entry) => entry.available)
     : canonicalAvailability;
-  const merged = [...canonicalResultsForResponse, ...externalCandidates].sort(compareRanked);
+  const visibleExternalCandidates = applyShortCanonicalVisibleAuthority({
+    canonicalResults: canonicalResultsForResponse,
+    externalResults: externalCandidates,
+    queryCandidates,
+  });
+  let merged = [...canonicalResultsForResponse, ...visibleExternalCandidates].sort(compareRanked);
+  if (options.ebookOnly) {
+    merged = merged.filter(
+      (entry) =>
+        entry.downloadable ||
+        entry.readAccess === "trusted_external" ||
+        entry.available
+    );
+  }
+  const visibleCanonicalCount = merged.filter((entry) => entry.resultType === "canonical").length;
+  const visibleExternalCount = merged.filter((entry) => entry.resultType === "external").length;
   phaseOrder.push("merge_sort");
   const totalDurationMs = Date.now() - totalStartMs;
 
@@ -3063,6 +4085,7 @@ export async function unifiedSearch(
         recentActivityMs,
         normalizedTitle,
         canonicalProviderExternalIds,
+        literaryAuthorityClass,
         ...publicResult
       } = entry;
       void rankTier;
@@ -3073,13 +4096,14 @@ export async function unifiedSearch(
       void recentActivityMs;
       void normalizedTitle;
       void canonicalProviderExternalIds;
+      void literaryAuthorityClass;
       return publicResult;
     }),
     nextCursor,
     hasMore,
     cursorUsed: startOffset > 0,
-    canonicalCount: canonicalResultsForResponse.length,
-    externalCount: externalCandidates.length,
+    canonicalCount: visibleCanonicalCount,
+    externalCount: visibleExternalCount,
     telemetry: {
       normalizedQuery: queryNorm,
       intentType: queryIntent,
