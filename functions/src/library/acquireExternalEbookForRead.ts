@@ -74,6 +74,14 @@ function asNonEmptyString(value: unknown): string {
   return value.trim();
 }
 
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === "string")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+}
+
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
@@ -116,6 +124,40 @@ function normalizeAcquisitionState(value: unknown): AcquisitionState {
     return value;
   }
   return "idle";
+}
+
+async function resolveAuthoritativeBookId(
+  bookId: string,
+  bookData: Record<string, unknown>
+): Promise<string> {
+  const candidates = new Set<string>();
+
+  for (const identityKey of asStringArray(bookData.identityKeys)) {
+    candidates.add(identityKey);
+  }
+
+  const isbn13 = asNonEmptyString(bookData.isbn13);
+  const isbn10 = asNonEmptyString(bookData.isbn10);
+  const canonicalKey = asNonEmptyString(bookData.canonicalKey);
+  if (isbn13) candidates.add(`isbn13:${isbn13}`);
+  if (isbn10) candidates.add(`isbn10:${isbn10}`);
+  if (canonicalKey) candidates.add(`canonical:${canonicalKey}`);
+
+  for (const providerExternalId of asStringArray(bookData.providerExternalIds)) {
+    if (/^(googleBooks|openLibrary):/i.test(providerExternalId)) {
+      candidates.add(`provider:${providerExternalId}`);
+    }
+  }
+
+  for (const candidate of candidates) {
+    const identitySnap = await db.collection("book_identity").doc(candidate).get();
+    const mappedBookId = asNonEmptyString(identitySnap.data()?.bookId);
+    if (mappedBookId) {
+      return mappedBookId;
+    }
+  }
+
+  return bookId;
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -858,6 +900,18 @@ async function resolveCanonicalBookAndEdition(params: {
     const bookSnap = await db.collection("books").doc(bookId).get();
     if (!bookSnap.exists) {
       throw new HttpsError("not-found", "Book not found.");
+    }
+    const authoritativeBookId = await resolveAuthoritativeBookId(
+      bookId,
+      (bookSnap.data() || {}) as Record<string, unknown>
+    );
+    if (authoritativeBookId !== bookId) {
+      const authoritativeSnap = await db.collection("books").doc(authoritativeBookId).get();
+      return {
+        bookId: authoritativeBookId,
+        editionId: asNonEmptyString(authoritativeSnap.data()?.editionId) || null,
+        sourceHint,
+      };
     }
     return {
       bookId,

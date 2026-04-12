@@ -147,6 +147,7 @@ const BookDetailsScreen: React.FC = () => {
   const [acquisitionErrorMessage, setAcquisitionErrorMessage] = useState<string | null>(null);
   const [confirmedReadableAttachmentId, setConfirmedReadableAttachmentId] = useState<string | null>(null);
   const ingestionStartedRef = useRef<string>('');
+  const resolvedCanonicalRef = useRef<string | null>(null);
   const pendingActionRef = useRef<string>('');
   const autoAcquireStartedRef = useRef<string>('');
 
@@ -170,6 +171,7 @@ const BookDetailsScreen: React.FC = () => {
 
   useEffect(() => {
     ingestionStartedRef.current = '';
+    resolvedCanonicalRef.current = null;
     pendingActionRef.current = '';
     autoAcquireStartedRef.current = '';
     setResolvedExternalBookId(null);
@@ -207,6 +209,7 @@ const BookDetailsScreen: React.FC = () => {
 
   useEffect(() => {
     if (!hasExternalPendingSearch && !directExternalRoute) return;
+    if (resolvedCanonicalRef.current || resolvedExternalBookId) return;
 
     const source = pendingSearchResult
       ? resolveIngestionSource(pendingSearchResult)
@@ -265,11 +268,17 @@ const BookDetailsScreen: React.FC = () => {
 
     ensureCanonicalBook(ensureParams)
       .then((result) => {
+        if (resolvedCanonicalRef.current && resolvedCanonicalRef.current === resolvedExternalBookId) {
+          return;
+        }
+
         const canonicalBookId = result?.canonicalBookId;
         if (!canonicalBookId) {
           throw new Error('INGESTION_NO_CANONICAL_BOOK_ID');
         }
+        resolvedCanonicalRef.current = canonicalBookId;
         setResolvedExternalBookId(canonicalBookId);
+        setExternalResolveFailed(false);
         logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
           phase: 'ingest_resolved',
           status: result?.status || 'UNKNOWN',
@@ -278,6 +287,16 @@ const BookDetailsScreen: React.FC = () => {
         });
       })
       .catch((error) => {
+        if (resolvedCanonicalRef.current) {
+          logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
+            phase: 'ingest_failed_ignored_after_resolution',
+            error: String(error),
+            canonicalBookId: resolvedCanonicalRef.current,
+            id: pendingSearchResult?.id || originalBookId || null,
+            source,
+          });
+          return;
+        }
         console.error('[BOOK_DETAILS][INGEST_ON_LOAD_FAILED]', error);
         setExternalResolveFailed(true);
         logBookEngineV2('BOOK_DETAILS_V2_INGEST_TRIGGER', {
@@ -297,6 +316,7 @@ const BookDetailsScreen: React.FC = () => {
     lang,
     originalBookId,
     pendingSearchResult,
+    resolvedExternalBookId,
     showToast,
   ]);
 

@@ -139,6 +139,24 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
   await db.collection("editions").doc(editionId).set(
     {
       ebookAttachmentId: attachmentRef.id,
+      ebookStoragePath: storagePath,
+      hasEbook: true,
+      downloadable: true,
+      isEbookAvailable: true,
+      updatedAt: now,
+    },
+    { merge: true }
+  );
+
+  await db.collection("books").doc(bookId).set(
+    {
+      editionId,
+      ebookAttachmentId: attachmentRef.id,
+      ebookStoragePath: storagePath,
+      ...(mimeType === "application/epub+zip" ? { epubStoragePath: storagePath } : {}),
+      hasEbook: true,
+      downloadable: true,
+      isEbookAvailable: true,
       updatedAt: now,
     },
     { merge: true }

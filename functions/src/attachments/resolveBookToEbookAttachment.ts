@@ -24,7 +24,19 @@ export async function resolveBookToEbookAttachment(
   const bookSnap = await db.doc(`books/${bookId}`).get();
   if (!bookSnap.exists) return null;
 
-  const attachmentId = bookSnap.data()?.ebookAttachmentId;
+  const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
+  let attachmentId =
+    typeof bookData.ebookAttachmentId === "string" ? bookData.ebookAttachmentId.trim() : "";
+
+  if (!attachmentId && typeof bookData.editionId === "string" && bookData.editionId.trim()) {
+    const editionSnap = await db.doc(`editions/${bookData.editionId.trim()}`).get();
+    const editionData = (editionSnap.data() || {}) as Record<string, unknown>;
+    attachmentId =
+      typeof editionData.ebookAttachmentId === "string"
+        ? editionData.ebookAttachmentId.trim()
+        : "";
+  }
+
   if (!attachmentId) return null;
 
   const attachmentRef = db.doc(`attachments/${attachmentId}`);

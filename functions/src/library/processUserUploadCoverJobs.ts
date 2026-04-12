@@ -352,7 +352,7 @@ async function materializeCovers(bookId: string, originalBuffer: Buffer): Promis
 }
 
 async function processCoverJob(bookId: string): Promise<void> {
-  const jobRef = db.collection("coverJobs").doc(bookId);
+  const jobRef = db.collection("cover_jobs").doc(bookId);
   const bookRef = db.collection("books").doc(bookId);
 
   const lock = await db.runTransaction(async (tx) => {
@@ -577,7 +577,7 @@ async function processCoverJob(bookId: string): Promise<void> {
 
 export const processUserUploadCoverJobs = onDocumentWritten(
   {
-    document: "coverJobs/{bookId}",
+    document: "cover_jobs/{bookId}",
     timeoutSeconds: 540,
     memory: "2GiB",
   },

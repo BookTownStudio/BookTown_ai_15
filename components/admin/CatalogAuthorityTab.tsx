@@ -11,13 +11,15 @@ import {
   adminServiceQueryKeys,
   type AdminAuthorImportCandidate,
   type AdminAuthorRecord,
+  type AdminCanonicalBatchRow,
+  type AdminCanonicalBookRecord,
   type AdminQuoteImportJob,
   type AdminQuoteRecord,
 } from '../../lib/services/adminService.ts';
 import { cn } from '../../lib/utils.ts';
 import { useI18n } from '../../store/i18n.tsx';
 
-type CatalogSubview = 'authors' | 'quotes';
+type CatalogSubview = 'authors' | 'books' | 'quotes';
 
 type AuthorDraft = {
   authorId?: string;
@@ -77,6 +79,21 @@ type QuoteDraft = {
   sourceReference: string;
   isPublic: boolean;
   status: 'active' | 'archived';
+};
+
+type BookDraft = {
+  title: string;
+  author: string;
+  language: string;
+  isbn: string;
+  description: string;
+  coverUrl: string;
+};
+
+type BookBatchSummary = {
+  successCount: number;
+  existingCount: number;
+  failedCount: number;
 };
 
 type BulkResult = {
@@ -144,6 +161,17 @@ function emptyQuoteDraft(): QuoteDraft {
     sourceReference: '',
     isPublic: true,
     status: 'active',
+  };
+}
+
+function emptyBookDraft(): BookDraft {
+  return {
+    title: '',
+    author: '',
+    language: '',
+    isbn: '',
+    description: '',
+    coverUrl: '',
   };
 }
 
@@ -363,6 +391,257 @@ const SubtabButton: React.FC<{
     {label}
   </button>
 );
+
+const BooksPanel: React.FC = () => {
+  const [draft, setDraft] = useState<BookDraft>(emptyBookDraft());
+  const [batchInput, setBatchInput] = useState('');
+  const [batchRows, setBatchRows] = useState<AdminCanonicalBatchRow[]>([]);
+  const [batchSummary, setBatchSummary] = useState<BookBatchSummary | null>(null);
+  const [createdBook, setCreatedBook] = useState<AdminCanonicalBookRecord | null>(null);
+  const [submitMessage, setSubmitMessage] = useState('');
+
+  const createMutation = useMutation({
+    mutationFn: async (nextDraft: BookDraft) =>
+      adminService.createCanonicalBook({
+        title: nextDraft.title.trim(),
+        author: nextDraft.author.trim(),
+        ...(nextDraft.language.trim() ? { language: nextDraft.language.trim() } : {}),
+        ...(nextDraft.isbn.trim() ? { isbn: nextDraft.isbn.trim() } : {}),
+        ...(nextDraft.description.trim() ? { description: nextDraft.description.trim() } : {}),
+        ...(nextDraft.coverUrl.trim() ? { coverUrl: nextDraft.coverUrl.trim() } : {}),
+      }),
+    onSuccess: (result) => {
+      setCreatedBook(result.book);
+      setSubmitMessage(
+        result.status === 'MERGED'
+          ? 'Canonical book matched an existing authority row.'
+          : 'Canonical book created through the shared authority engine.'
+      );
+      setDraft(emptyBookDraft());
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Canonical book creation failed.');
+    },
+  });
+  const isSubmitting = createMutation.status === 'pending';
+  const batchMutation = useMutation({
+    mutationFn: async (rows: string) => adminService.seedCanonicalBatch({ rows }),
+    onSuccess: (result) => {
+      setBatchRows(result.rows);
+      setBatchSummary(result.summary);
+      setSubmitMessage(
+        `Batch completed: ${result.summary.successCount} success, ${result.summary.existingCount} existing, ${result.summary.failedCount} failed.`
+      );
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Canonical batch creation failed.');
+    },
+  });
+  const isBatchSubmitting = batchMutation.status === 'pending';
+
+  return (
+    <div className="space-y-6">
+      <GlassCard className="!p-5 space-y-4">
+        <div>
+          <BilingualText role="H1" className="!text-xl">
+            Books Authority
+          </BilingualText>
+          <p className="mt-2 text-sm text-slate-400">
+            Create canonical books through the backend authority materializer.
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-4">
+          <div>
+            <BilingualText role="H2" className="!text-lg">
+              Bulk Canonical Seed
+            </BilingualText>
+            <p className="mt-2 text-sm text-slate-400">
+              Paste one book per line using <span className="font-mono">Title | Author</span>.
+            </p>
+          </div>
+          <TextAreaField
+            id="book-batch-rows"
+            label="Canonical Seed Rows"
+            value={batchInput}
+            onChange={setBatchInput}
+            rows={8}
+          />
+          <div className="flex gap-3">
+            <Button
+              onClick={() => batchMutation.mutate(batchInput)}
+              disabled={isBatchSubmitting || batchInput.trim().length === 0}
+            >
+              Build Canonical Batch
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setBatchInput('');
+                setBatchRows([]);
+                setBatchSummary(null);
+              }}
+            >
+              Clear Batch
+            </Button>
+          </div>
+          {batchSummary ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Success</div>
+                <div>{batchSummary.successCount}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Existing</div>
+                <div>{batchSummary.existingCount}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Failed</div>
+                <div>{batchSummary.failedCount}</div>
+              </div>
+            </div>
+          ) : null}
+          {batchRows.length > 0 ? (
+            <div className="space-y-3">
+              {batchRows.map((row) => (
+                <div
+                  key={`${row.row}-${row.input}`}
+                  className="rounded-lg border border-white/10 bg-black/10 px-3 py-3 text-sm text-slate-300"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+                    <span>Row {row.row}</span>
+                    <span>{row.status}</span>
+                    {row.source ? <span>{row.source}</span> : null}
+                  </div>
+                  <div className="mt-2 font-medium text-white">{row.title}</div>
+                  <div className="text-slate-400">{row.author}</div>
+                  {row.canonicalBookId ? (
+                    <div className="mt-2 text-xs text-slate-400">Canonical ID: {row.canonicalBookId}</div>
+                  ) : null}
+                  {row.message ? (
+                    <div className="mt-2 text-xs text-rose-300">{row.message}</div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="grid gap-4 md:grid-cols-2">
+          <InputField
+            id="book-title"
+            label="Title"
+            value={draft.title}
+            onChange={(event) => setDraft((current) => ({ ...current, title: event.target.value }))}
+          />
+          <InputField
+            id="book-author"
+            label="Author"
+            value={draft.author}
+            onChange={(event) => setDraft((current) => ({ ...current, author: event.target.value }))}
+          />
+          <InputField
+            id="book-language"
+            label="Language"
+            value={draft.language}
+            onChange={(event) => setDraft((current) => ({ ...current, language: event.target.value }))}
+          />
+          <InputField
+            id="book-isbn"
+            label="ISBN"
+            value={draft.isbn}
+            onChange={(event) => setDraft((current) => ({ ...current, isbn: event.target.value }))}
+          />
+          <InputField
+            id="book-cover-url"
+            label="Cover URL"
+            value={draft.coverUrl}
+            onChange={(event) => setDraft((current) => ({ ...current, coverUrl: event.target.value }))}
+          />
+          <div className="md:col-span-2">
+            <TextAreaField
+              id="book-description"
+              label="Description"
+              value={draft.description}
+              onChange={(value) => setDraft((current) => ({ ...current, description: value }))}
+              rows={5}
+            />
+          </div>
+        </div>
+
+        {submitMessage ? (
+          <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+            {submitMessage}
+          </div>
+        ) : null}
+
+        <div className="flex gap-3">
+          <Button
+            onClick={() => createMutation.mutate(draft)}
+            disabled={
+              isSubmitting ||
+              draft.title.trim().length === 0 ||
+              draft.author.trim().length === 0
+            }
+          >
+            Create Canonical Book
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setDraft(emptyBookDraft());
+              setSubmitMessage('');
+            }}
+          >
+            Reset
+          </Button>
+        </div>
+      </GlassCard>
+
+      {createdBook ? (
+        <GlassCard className="!p-5 space-y-3">
+          <BilingualText role="H2" className="!text-lg">
+            Created Book
+          </BilingualText>
+          <div className="grid gap-3 md:grid-cols-2">
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Book ID</div>
+              <div>{createdBook.bookId}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Canonical Key</div>
+              <div>{createdBook.canonicalKey}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Author ID</div>
+              <div>{createdBook.authorId || 'Not set'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Author Canonical Key</div>
+              <div>{createdBook.authorCanonicalKey || 'Not set'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Authority Status</div>
+              <div>{createdBook.authorityStatus}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Canonical Locked</div>
+              <div>{createdBook.canonicalLocked ? 'true' : 'false'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Cover State</div>
+              <div>{createdBook.coverState || 'No cover job'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Edition ID</div>
+              <div>{createdBook.editionId || 'No edition'}</div>
+            </div>
+          </div>
+        </GlassCard>
+      ) : null}
+    </div>
+  );
+};
 
 const AuthorsPanel: React.FC = () => {
   const queryClient = useQueryClient();
@@ -1037,17 +1316,18 @@ const CatalogAuthorityTab: React.FC = () => {
         </BilingualText>
         <p className="text-sm text-slate-400">
           {lang === 'en'
-            ? 'Superadmin-only authority controls for canonical authors and quotes.'
-            : 'ضوابط سلطة المشرف الأعلى للمؤلفين والاقتباسات المعتمدة.'}
+            ? 'Superadmin-only authority controls for canonical authors, books, and quotes.'
+            : 'ضوابط سلطة المشرف الأعلى للمؤلفين والكتب والاقتباسات المعتمدة.'}
         </p>
       </div>
 
       <div className="flex gap-2">
         <SubtabButton active={activeView === 'authors'} label={lang === 'en' ? 'Authors' : 'المؤلفون'} onClick={() => setActiveView('authors')} />
+        <SubtabButton active={activeView === 'books'} label={lang === 'en' ? 'Books' : 'الكتب'} onClick={() => setActiveView('books')} />
         <SubtabButton active={activeView === 'quotes'} label={lang === 'en' ? 'Quotes' : 'الاقتباسات'} onClick={() => setActiveView('quotes')} />
       </div>
 
-      {activeView === 'authors' ? <AuthorsPanel /> : <QuotesPanel />}
+      {activeView === 'authors' ? <AuthorsPanel /> : activeView === 'books' ? <BooksPanel /> : <QuotesPanel />}
     </div>
   );
 };

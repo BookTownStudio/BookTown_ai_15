@@ -5,6 +5,7 @@ import { FieldValue, Timestamp, Transaction } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import { buildCanonicalKey } from "../library/persistence/canonicalKey";
+import { materializeBookAuthorityInTransaction } from "../library/materializeBookAuthority";
 import { iterateCsvCanonicalRows } from "./goodreads/adapters/csvLibraryAdapter";
 import { iterateDsarCanonicalRows } from "./goodreads/adapters/dsarJsonAdapter";
 import {
@@ -202,52 +203,14 @@ function toIdentityKeyFromRow(row: CanonicalImportRow): string {
 }
 
 async function resolveOrCreateBook(tx: Transaction, row: CanonicalImportRow): Promise<string> {
-  const booksRef = db.collection("books");
-
-  if (row.isbn13) {
-    const byIsbn13 = await tx.get(booksRef.where("isbn13", "==", row.isbn13).limit(2));
-    if (byIsbn13.size > 1) {
-      throw new Error("AMBIGUOUS_ISBN13_MATCH");
-    }
-    if (!byIsbn13.empty) {
-      return byIsbn13.docs[0].id;
-    }
-  }
-
-  if (row.isbn10) {
-    const byIsbn10 = await tx.get(booksRef.where("isbn10", "==", row.isbn10).limit(2));
-    if (byIsbn10.size > 1) {
-      throw new Error("AMBIGUOUS_ISBN10_MATCH");
-    }
-    if (!byIsbn10.empty) {
-      return byIsbn10.docs[0].id;
-    }
-  }
-
-  const canonicalKey = buildCanonicalKey({
-    title: row.title,
-    author: row.author,
-  });
-
-  const byCanonical = await tx.get(booksRef.where("canonicalKey", "==", canonicalKey).limit(2));
-  if (byCanonical.size > 1 && !row.isbn13 && !row.isbn10) {
-    throw new Error("LOW_CONFIDENCE_MATCH_REJECTED");
-  }
-  if (!byCanonical.empty) {
-    return byCanonical.docs[0].id;
-  }
-
   const bookId = `gr_${sha256Hex(toIdentityKeyFromRow(row)).slice(0, 24)}`;
-  const bookRef = booksRef.doc(bookId);
-  const editionRef = db.collection("editions").doc(bookId);
-  const now = FieldValue.serverTimestamp();
-
-  tx.set(
-    bookRef,
-    {
+  const result = await materializeBookAuthorityInTransaction({
+    tx,
+    source: "goodreads_import",
+    authorityStatus: "provisional",
+    preferredBookId: bookId,
+    rawBook: {
       id: bookId,
-      source: "goodreads_import",
-      canonicalKey,
       title: row.title,
       titleEn: row.title,
       titleAr: "",
@@ -260,47 +223,28 @@ async function resolveOrCreateBook(tx: Transaction, row: CanonicalImportRow): Pr
       description: "",
       descriptionEn: "",
       descriptionAr: "",
+      language: "en",
       coverUrl: "",
       rating: 0,
       ratingsCount: 0,
-      isEbookAvailable: false,
-      createdAt: now,
-      updatedAt: now,
-    },
-    { merge: true }
-  );
-
-  tx.set(
-    editionRef,
-    {
-      id: bookId,
-      bookId,
-      source: "goodreads_import",
-      canonicalKey,
-      title: row.title,
-      titleEn: row.title,
-      titleAr: "",
-      authorEn: row.author,
-      authorAr: "",
-      authors: [row.author],
-      description: "",
-      descriptionEn: "",
-      descriptionAr: "",
-      isbn10: row.isbn10,
-      isbn13: row.isbn13,
-      coverUrl: "",
-      language: "en",
       hasEbook: false,
       downloadable: false,
+      isEbookAvailable: false,
+      canonicalKey: buildCanonicalKey({
+        title: row.title,
+        author: row.author,
+      }),
+      rightsMode: "public_free",
       visibility: "public",
-      status: "active",
-      createdAt: now,
-      updatedAt: now,
+      publicationState: "published",
     },
-    { merge: true }
-  );
+    createEdition: true,
+    explicitEditionId: `goodreads:${bookId}`,
+    ingestionKey: `goodreads_import:${row.identityKey}`,
+    extraIdentityKeys: [`source:goodreads_import:${row.identityKey}`],
+  });
 
-  return bookId;
+  return result.bookId;
 }
 
 function toSessionShelfDocs(uid: string, row: CanonicalImportRow): Array<{

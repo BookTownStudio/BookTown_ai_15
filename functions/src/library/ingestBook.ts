@@ -1,47 +1,25 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue } from "firebase-admin/firestore";
-import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
-import { v4 as uuidv4 } from "uuid";
 import { Buffer } from "buffer";
 
-import {
-  buildRawAuthorFromBookPayload,
-  materializeCanonicalAuthorInTransaction,
-} from "./authors/authorCatalog";
-import { resolveAuthorProviderPayload } from "./authors/providerSources";
-import { buildCanonicalKey } from "./persistence/canonicalKey";
+import { admin } from "../firebaseAdmin";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
+import {
+  materializeBookAuthority,
+  type BookAuthorityState,
+} from "./materializeBookAuthority";
 import { fetchOpenLibraryCanonicalMetadata } from "./providers/openLibrary";
 
 export type SupportedSource = "googleBooks" | "openLibrary";
 
+type IdentityType = "isbn13" | "isbn10" | "canonical" | "provider";
+
 type IngestionRequest = {
   providerExternalId?: string;
   bookId?: string;
-  source: SupportedSource;
+  source?: SupportedSource;
   rawBook?: Record<string, unknown>;
 };
-
-type IdentityType =
-  | "isbn13"
-  | "isbn10"
-  | "canonical"
-  | "provider";
-
-type IdentityRecord = {
-  identityKey: string;
-  identityType: IdentityType;
-  value: string;
-  precedence: number;
-  bookId: string;
-  createdAt?: FirebaseFirestore.FieldValue;
-  updatedAt: FirebaseFirestore.FieldValue;
-};
-
-type CoverJobStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
-
-const db = admin.firestore();
 
 const SEARCH_STOPWORDS = new Set([
   "a",
@@ -503,16 +481,14 @@ export async function ingestBookServerSide(params: {
 }): Promise<{
   canonicalBookId: string;
   bookId: string;
-  editionId: string;
+  editionId: string | null;
   status: string;
 }> {
   const providerExternalId = asNonEmptyString(params.providerExternalId);
   const source = params.source;
   const hydratedRawBook =
     asRecord(params.rawBook) ||
-    (providerExternalId && source
-      ? await hydrateRawBookFromProvider(source, providerExternalId)
-      : null);
+    (providerExternalId ? await hydrateRawBookFromProvider(source, providerExternalId) : null);
   const rawBook = asRecord(hydratedRawBook);
   if (!providerExternalId || !source || !rawBook) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
@@ -523,334 +499,36 @@ export async function ingestBookServerSide(params: {
     throw new HttpsError("invalid-argument", "Unable to resolve provider external id.");
   }
 
-  const title = extractTitle(rawBook);
-  const authors = extractAuthors(rawBook);
-  const primaryAuthor = authors[0] || "Unknown";
-  const canonicalKey = buildCanonicalKey({ title, author: primaryAuthor });
-  const normalizedTitle = normalizeSearchText(title);
-  const authorNamesNormalized = authors.map((entry) => normalizeSearchText(entry)).filter(Boolean);
-  const description = resolveDescription(rawBook);
-  const { isbn13, isbn10 } = extractIsbns(rawBook);
-  const language = extractLanguage(rawBook);
-  const publicationYear = resolvePublicationYear(rawBook);
-  const downloadable = computeServerVerifiedDownloadable(rawBook);
-  const hasEbook = downloadable;
-
-  const searchTokens = Array.from(
-    new Set<string>([
-      ...tokenizeSearch(title),
-      ...authors.flatMap((entry) => tokenizeSearch(entry)),
-      ...(isbn13 ? [isbn13] : []),
-      ...(isbn10 ? [isbn10] : []),
-    ])
-  ).slice(0, 80);
-
-  const identityCandidates = buildIdentityCandidates({
-    isbn13,
-    isbn10,
-    canonicalKey,
-    source,
-    externalId,
-  });
-
-  const ingestionKey = `${source}:${externalId}`;
-  const ingestionRef = db.collection("book_ingestions").doc(ingestionKey);
-
   const coverCandidates = toCoverCandidates(source, rawBook, externalId);
+  const requestedAuthorityStatus: BookAuthorityState =
+    rawBook.canonicalLocked === true ||
+    asNonEmptyString(rawBook.authorityStatus) === "canonical" ||
+    asNonEmptyString(rawBook.workType) === "canonical"
+      ? "canonical"
+      : "provisional";
 
   logger.info("BOOK_INGEST_V2_TRACE", {
-    phase: "identity_built",
-    ingestionKey,
+    phase: "materialize_start",
     source,
     externalId,
-    identityKeys: identityCandidates.map((entry) => entry.key),
     coverCandidates: coverCandidates.length,
+    authorityStatus: requestedAuthorityStatus,
   });
 
-  const transactionResult = await db.runTransaction(async (tx) => {
-    const ingestionSnap = await tx.get(ingestionRef);
-    const existingIngestion = asRecord(ingestionSnap.data() || null);
-    const ingestedBookId = asNonEmptyString(existingIngestion?.bookId);
-    const ingestedState = asNonEmptyString(existingIngestion?.state);
-
-    let completeIngestedBookSnap: FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData> | null = null;
-
-    if (ingestedBookId && ingestedState === "COMPLETE") {
-      const ingestedBookRef = db.collection("books").doc(ingestedBookId);
-      completeIngestedBookSnap = await tx.get(ingestedBookRef);
-
-      if (completeIngestedBookSnap.exists) {
-        logger.info("BOOK_INGEST_V2_TRACE", {
-          phase: "already_complete",
-          ingestionKey,
-          bookId: ingestedBookId,
-          editionId: `${source}:${externalId}`,
-          outcome: "ALREADY_COMPLETE",
-        });
-
-        return {
-          canonicalBookId: ingestedBookId,
-          bookId: ingestedBookId,
-          editionId: `${source}:${externalId}`,
-          status: "ALREADY_COMPLETE",
-        };
-      }
-
-      logger.warn("[INGEST_V2][CORRUPTED_INGESTION_STATE]", {
-        ingestionKey,
-        ingestedBookId,
-      });
-    }
-
-    let resolvedBookId = ingestedBookId || "";
-    let resolvedByKey = ingestedBookId ? `ingestion:${ingestionKey}` : "";
-    const conflictingBookIds = new Set<string>();
-    const identitySnapshotsByKey = new Map<
-      string,
-      FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>
-    >();
-
-    for (const candidate of identityCandidates) {
-      const identityRef = db.collection("book_identity").doc(candidate.key);
-      const identitySnap = await tx.get(identityRef);
-      identitySnapshotsByKey.set(candidate.key, identitySnap);
-      const identityData = asRecord(identitySnap.data() || null);
-      const mappedBookId = asNonEmptyString(identityData?.bookId);
-      if (!mappedBookId) continue;
-
-      conflictingBookIds.add(mappedBookId);
-      if (!resolvedBookId) {
-        resolvedBookId = mappedBookId;
-        resolvedByKey = candidate.key;
-      }
-    }
-
-    const bookId = resolvedBookId || uuidv4();
-    const bookRef = db.collection("books").doc(bookId);
-    const bookSnap =
-      completeIngestedBookSnap &&
-      ingestedBookId &&
-      ingestedBookId === bookId
-        ? completeIngestedBookSnap
-        : await tx.get(bookRef);
-    const existingBook = asRecord(bookSnap.data() || null);
-    const coverJobRef = db.collection("cover_jobs").doc(bookId);
-    const coverJobSnap = await tx.get(coverJobRef);
-    const existingCoverJob = asRecord(coverJobSnap.data() || null);
-    const existingCandidateUrls = Array.isArray(existingCoverJob?.candidateUrls)
-      ? existingCoverJob?.candidateUrls.filter((entry): entry is string => typeof entry === "string")
-      : [];
-
-    if (conflictingBookIds.size > 1) {
-      logger.warn("[INGEST_V2][IDENTITY_CONFLICT_COLLAPSED]", {
-        ingestionKey,
-        resolvedBookId: bookId,
-        candidates: Array.from(conflictingBookIds),
-      });
-    }
-
-    const existingCover = asRecord(existingBook?.cover);
-    const existingCoverState = asNonEmptyString(existingBook?.coverState) ||
-      asNonEmptyString(existingCover?.state);
-
-    const nextCoverState =
-      existingCoverState === "READY"
-        ? "READY"
-        : coverCandidates.length > 0
-        ? "PENDING"
-        : "FAILED";
-
-    logger.info("BOOK_INGEST_V2_TRACE", {
-      phase: "identity_resolved",
-      ingestionKey,
-      resolvedBy: resolvedByKey || "new_book",
-      bookId,
-      coverCandidates: coverCandidates.length,
-      coverState: nextCoverState,
-    });
-
-    const now = FieldValue.serverTimestamp();
-    const authorMaterializationInput = buildRawAuthorFromBookPayload({
-      source,
-      rawBook,
-      primaryAuthor,
-    });
-    const resolvedAuthorPayload = await resolveAuthorProviderPayload({
-      source,
-      providerExternalId: authorMaterializationInput.providerExternalId,
-      rawAuthor: authorMaterializationInput.rawAuthor,
-    });
-    const canonicalAuthor = await materializeCanonicalAuthorInTransaction({
-      tx,
-      source,
-      providerExternalId: authorMaterializationInput.providerExternalId,
-      rawAuthor: resolvedAuthorPayload,
-    });
-
-    tx.set(
-      bookRef,
-      {
-        id: bookId,
-        title,
-        titleEn: asNonEmptyString(rawBook.titleEn) || title,
-        titleAr: asNonEmptyString(rawBook.titleAr) || "",
-        authorId: canonicalAuthor.authorId,
-        authorCanonicalKey: canonicalAuthor.canonicalKey,
-        author: primaryAuthor,
-        authorEn: asNonEmptyString(rawBook.authorEn) || primaryAuthor,
-        authorAr: asNonEmptyString(rawBook.authorAr) || "",
-        authors,
-        description,
-        descriptionEn: asNonEmptyString(rawBook.descriptionEn) || description,
-        descriptionAr: asNonEmptyString(rawBook.descriptionAr) || "",
-        language,
-        publicationYear,
-        isbn13: isbn13 || null,
-        isbn10: isbn10 || null,
-        canonicalKey,
-        normalizedTitle,
-        authorNamesNormalized,
-        searchableTitleAuthor: `${normalizedTitle} ${authorNamesNormalized.join(" ")}`.trim(),
-        search: {
-          tokens: searchTokens,
-        },
-        hasEbook,
-        downloadable,
-        isEbookAvailable: hasEbook,
-        providerExternalIds: FieldValue.arrayUnion(`${source}:${externalId}`),
-        sourcePriority: "canonical",
-        coverState: nextCoverState,
-        cover: {
-          state: nextCoverState,
-          original: asNonEmptyString(existingCover?.original) || "",
-          large: asNonEmptyString(existingCover?.large) || "",
-          medium: asNonEmptyString(existingCover?.medium) || "",
-          small: asNonEmptyString(existingCover?.small) || "",
-        },
-        coverUrl: "",
-        popularityScore: Number(existingBook?.popularityScore || 0),
-        engagementScore: Number(existingBook?.engagementScore || 0),
-        recentActivityAt:
-          existingBook?.recentActivityAt ||
-          FieldValue.serverTimestamp(),
-        createdAt: existingBook?.createdAt || now,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-
-    const editionDocId = `${source}:${externalId}`;
-    tx.set(
-      db.collection("editions").doc(editionDocId),
-      {
-        id: editionDocId,
-        editionId: editionDocId,
-        bookId,
-        authorId: canonicalAuthor.authorId,
-        canonicalKey,
-        source,
-        externalId,
-        title,
-        titleEn: asNonEmptyString(rawBook.titleEn) || title,
-        titleAr: asNonEmptyString(rawBook.titleAr) || "",
-        authors,
-        authorEn: asNonEmptyString(rawBook.authorEn) || primaryAuthor,
-        authorAr: asNonEmptyString(rawBook.authorAr) || "",
-        language,
-        description,
-        descriptionEn: asNonEmptyString(rawBook.descriptionEn) || description,
-        descriptionAr: asNonEmptyString(rawBook.descriptionAr) || "",
-        publicationYear,
-        isbn13: isbn13 || null,
-        isbn10: isbn10 || null,
-        hasEbook,
-        downloadable,
-        isEbookAvailable: hasEbook,
-        searchTitleNormalized: normalizedTitle,
-        searchAuthorNormalized: authorNamesNormalized.join(" "),
-        searchTokens,
-        createdAt: now,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-
-    for (const candidate of identityCandidates) {
-      const ref = db.collection("book_identity").doc(candidate.key);
-      const existing = asRecord(identitySnapshotsByKey.get(candidate.key)?.data() || null);
-
-      const identityRecord: IdentityRecord = {
-        identityKey: candidate.key,
-        identityType: candidate.type,
-        value: candidate.value,
-        precedence: candidate.precedence,
-        bookId,
-        updatedAt: now,
-      };
-
-      if (!existing) {
-        identityRecord.createdAt = now;
-      }
-
-      tx.set(ref, identityRecord, { merge: true });
-    }
-
-    tx.set(
-      ingestionRef,
-      {
-        ingestionKey,
-        source,
-        externalId,
-        externalBookId: providerExternalId,
-        canonicalKey,
-        identityKeys: identityCandidates.map((entry) => entry.key),
-        bookId,
-        editionId: `${source}:${externalId}`,
-        state: "COMPLETE",
-        coverState: nextCoverState,
-        createdAt: existingIngestion?.createdAt || now,
-        updatedAt: now,
-      },
-      { merge: true }
-    );
-
-    const mergedCandidates = Array.from(
-      new Set<string>([...existingCandidateUrls, ...coverCandidates])
-    ).slice(0, 30);
-
-    if (nextCoverState !== "READY") {
-      const existingStatus = asNonEmptyString(existingCoverJob?.status) as CoverJobStatus | null;
-      const status: CoverJobStatus =
-        existingStatus === "PROCESSING" ? "PROCESSING" : "PENDING";
-
-      tx.set(
-        coverJobRef,
-        {
-          bookId,
-          source,
-          externalId,
-          status,
-          attempts: Number(existingCoverJob?.attempts || 0),
-          candidateUrls: mergedCandidates,
-          lastError: null,
-          createdAt: existingCoverJob?.createdAt || now,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-    }
-
-    return {
-      canonicalBookId: bookId,
-      bookId,
-      editionId: `${source}:${externalId}`,
-      status: resolvedBookId ? "MERGED" : "CREATED",
-    };
+  const transactionResult = await materializeBookAuthority({
+    source,
+    authorityStatus: requestedAuthorityStatus,
+    providerExternalId: externalId,
+    rawBook,
+    coverCandidates,
+    createEdition: true,
+    ingestionKey: `${source}:${externalId}`,
+    literaryAuthorityClass: asNonEmptyString(rawBook.literaryAuthorityClass),
   });
 
   logger.info("BOOK_INGEST_V2_TRACE", {
     phase: "complete",
-    ingestionKey,
+    ingestionKey: `${source}:${externalId}`,
     outcome: transactionResult.status,
     bookId: transactionResult.bookId,
     editionId: transactionResult.editionId,
@@ -859,7 +537,7 @@ export async function ingestBookServerSide(params: {
   // Best-effort reader manifest preprocessing.
   // Ingestion must remain successful even if manifest generation cannot run.
   try {
-    const bookSnap = await db.collection("books").doc(transactionResult.bookId).get();
+    const bookSnap = await admin.firestore().collection("books").doc(transactionResult.bookId).get();
     const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
     const hasAttachment =
       typeof bookData.ebookAttachmentId === "string" &&
@@ -876,18 +554,23 @@ export async function ingestBookServerSide(params: {
 
       logger.info("[INGEST_V2][READER_MANIFEST_READY]", {
         bookId: transactionResult.bookId,
-        ingestionKey,
+        ingestionKey: `${source}:${externalId}`,
       });
     }
   } catch (error) {
     logger.warn("[INGEST_V2][READER_MANIFEST_SKIPPED]", {
       bookId: transactionResult.bookId,
-      ingestionKey,
+      ingestionKey: `${source}:${externalId}`,
       error: String(error),
     });
   }
 
-  return transactionResult;
+  return {
+    canonicalBookId: transactionResult.canonicalBookId,
+    bookId: transactionResult.bookId,
+    editionId: transactionResult.editionId,
+    status: transactionResult.status,
+  };
 }
 
 export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (request) => {
@@ -902,20 +585,52 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
       ? (request.data as { data: IngestionRequest }).data
       : request.data;
 
-  const providerExternalId =
-    asNonEmptyString(payload?.providerExternalId || "") ||
-    asNonEmptyString(payload?.bookId || "");
+  const providerExternalId = asNonEmptyString(payload?.providerExternalId || "");
+  const incomingBookId = asNonEmptyString(payload?.bookId || "");
   const source = normalizeSource(payload?.source);
   const rawBook = asRecord(payload?.rawBook);
 
-  if (!providerExternalId || !source) {
+  if (providerExternalId && source) {
+    return ingestBookServerSide({
+      uid: request.auth.uid,
+      providerExternalId,
+      source,
+      rawBook: rawBook || undefined,
+    });
+  }
+
+  if (!incomingBookId) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
 
-  return ingestBookServerSide({
-    uid: request.auth.uid,
-    providerExternalId,
-    source,
-    rawBook: rawBook || undefined,
-  });
+  const bookSnap = await admin.firestore().collection("books").doc(incomingBookId).get();
+  if (!bookSnap.exists) {
+    throw new HttpsError("not-found", "Book not found.");
+  }
+
+  const existingBook = (bookSnap.data() || {}) as Record<string, unknown>;
+  const providerEntry = asStringArray(existingBook.providerExternalIds).find((entry) =>
+    /^(googleBooks|openLibrary):/i.test(entry)
+  );
+
+  if (providerEntry) {
+    const separatorIndex = providerEntry.indexOf(":");
+    const providerSource = normalizeSource(providerEntry.slice(0, separatorIndex));
+    const providerId = providerEntry.slice(separatorIndex + 1).trim();
+    if (providerSource && providerId) {
+      return ingestBookServerSide({
+        uid: request.auth.uid,
+        providerExternalId: providerId,
+        source: providerSource,
+        rawBook: existingBook,
+      });
+    }
+  }
+
+  return {
+    canonicalBookId: incomingBookId,
+    bookId: incomingBookId,
+    editionId: asNonEmptyString(existingBook.editionId) || undefined,
+    status: "ALREADY_CANONICAL",
+  };
 });

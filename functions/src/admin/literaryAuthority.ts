@@ -3,6 +3,12 @@ import { Query, DocumentData } from "firebase-admin/firestore";
 
 import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
+import { materializeBookAuthority } from "../library/materializeBookAuthority";
+import { ingestBookServerSide } from "../library/ingestBook";
+import {
+  unifiedSearch,
+  type UnifiedSearchResult,
+} from "../library/search/searchEngine";
 import { assertRoleFromClaims } from "../shared/auth";
 import {
   type AdminAuthorUpsertInput,
@@ -52,6 +58,45 @@ type AdminAuthorShape = {
   updatedBy?: string;
 };
 
+type AdminCanonicalBookShape = {
+  bookId: string;
+  canonicalBookId: string;
+  title: string;
+  author: string;
+  language?: string;
+  canonicalKey: string;
+  authorId?: string;
+  authorCanonicalKey?: string;
+  authorityStatus: string;
+  canonicalLocked: boolean;
+  coverState?: string;
+  editionId?: string;
+};
+
+type AdminSeedCanonicalBatchInput = {
+  rows: string;
+};
+
+type AdminSeedCanonicalBatchRow = {
+  row: number;
+  input: string;
+  title: string;
+  author: string;
+  status: "created" | "existing" | "failed";
+  canonicalBookId?: string;
+  bookId?: string;
+  editionId?: string;
+  source?: "googleBooks" | "openLibrary";
+  providerExternalId?: string;
+  message?: string;
+};
+
+type AdminSeedCanonicalBatchSummary = {
+  successCount: number;
+  existingCount: number;
+  failedCount: number;
+};
+
 function readRequiredString(value: unknown, field: string, max = 300): string {
   if (typeof value !== "string") {
     throw new HttpsError("invalid-argument", `${field} must be a string.`);
@@ -87,6 +132,260 @@ function readOptionalString(value: unknown, field: string, max = 300): string | 
     );
   }
   return normalized;
+}
+
+function readOptionalUrl(value: unknown, field: string, max = 500): string | undefined {
+  const normalized = readOptionalString(value, field, max);
+  if (!normalized) {
+    return undefined;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(normalized);
+  } catch {
+    throw new HttpsError("invalid-argument", `${field} must be a valid URL.`);
+  }
+
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new HttpsError("invalid-argument", `${field} must use http or https.`);
+  }
+
+  return parsed.toString();
+}
+
+function normalizeLanguage(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  return value.toLowerCase();
+}
+
+function parseBulkSeedLine(rawLine: string, row: number): { title: string; author: string; input: string } {
+  const input = rawLine.trim();
+  if (!input) {
+    throw new HttpsError("invalid-argument", `Row ${row} is empty.`);
+  }
+
+  const parts = input.split("|");
+  if (parts.length !== 2) {
+    throw new HttpsError(
+      "invalid-argument",
+      `Row ${row} must use the format "Title | Author".`
+    );
+  }
+
+  const title = readRequiredString(parts[0], `rows[${row}].title`, 300);
+  const author = readRequiredString(parts[1], `rows[${row}].author`, 240);
+  return { title, author, input };
+}
+
+function parseBulkSeedRows(value: unknown): Array<{ row: number; title: string; author: string; input: string }> {
+  const raw = readRequiredString(value, "rows", 30_000);
+  const lines = raw
+    .split(/\r?\n/u)
+    .map((line, index) => ({ line, row: index + 1 }))
+    .filter(({ line }) => line.trim().length > 0);
+
+  if (lines.length === 0) {
+    throw new HttpsError("invalid-argument", "rows must contain at least one book.");
+  }
+
+  if (lines.length > 100) {
+    throw new HttpsError("invalid-argument", "rows exceeds 100 books.");
+  }
+
+  return lines.map(({ line, row }) => ({ row, ...parseBulkSeedLine(line, row) }));
+}
+
+function mapBatchRowStatus(status: string): "created" | "existing" {
+  return status === "CREATED" ? "created" : "existing";
+}
+
+function buildBatchSummary(rows: AdminSeedCanonicalBatchRow[]): AdminSeedCanonicalBatchSummary {
+  return rows.reduce<AdminSeedCanonicalBatchSummary>(
+    (acc, row) => {
+      if (row.status === "failed") {
+        acc.failedCount += 1;
+      } else if (row.status === "existing") {
+        acc.successCount += 1;
+        acc.existingCount += 1;
+      } else {
+        acc.successCount += 1;
+      }
+      return acc;
+    },
+    {
+      successCount: 0,
+      existingCount: 0,
+      failedCount: 0,
+    }
+  );
+}
+
+function mapBatchError(error: unknown): string {
+  if (error instanceof HttpsError) {
+    return error.message;
+  }
+  if (error instanceof Error) {
+    return error.message;
+  }
+  return String(error);
+}
+
+function normalizeCandidateAuthor(result: UnifiedSearchResult): string {
+  const author =
+    (Array.isArray(result.authors) ? result.authors[0] : "") ||
+    result.authorEn ||
+    "";
+  return normalizeSearchText(author);
+}
+
+function hasPublisherArtifactAuthor(authorNorm: string): boolean {
+  if (!authorNorm) return true;
+  return [
+    "publisher",
+    "publishing",
+    "press",
+    "books",
+    "bookread",
+    "read",
+    "channel",
+    "official",
+    "media",
+    "audiobook",
+    "audio books",
+    "tv",
+    "studio",
+  ].some((token) => authorNorm.includes(token));
+}
+
+function isWeakBulkCandidate(params: {
+  result: UnifiedSearchResult;
+  requestedTitleNorm: string;
+  requestedAuthorNorm: string;
+}): boolean {
+  const titleNorm = normalizeSearchText(params.result.title);
+  const authorNorm = normalizeCandidateAuthor(params.result);
+
+  if (!titleNorm || !authorNorm) {
+    return true;
+  }
+
+  if (titleNorm.includes(` by ${params.requestedAuthorNorm}`)) {
+    return true;
+  }
+
+  if (hasPublisherArtifactAuthor(authorNorm)) {
+    return true;
+  }
+
+  if (titleNorm.includes(params.requestedAuthorNorm)) {
+    return true;
+  }
+
+  if (params.requestedAuthorNorm && titleNorm.includes(authorNorm)) {
+    return true;
+  }
+
+  return false;
+}
+
+function computeBulkCandidateScore(params: {
+  result: UnifiedSearchResult;
+  requestedTitleNorm: string;
+  requestedAuthorNorm: string;
+}): number {
+  const titleNorm = normalizeSearchText(params.result.title);
+  const authorNorm = normalizeCandidateAuthor(params.result);
+  let score = 0;
+
+  if (titleNorm === params.requestedTitleNorm) {
+    score += 100;
+  } else if (
+    params.requestedTitleNorm &&
+    (titleNorm.startsWith(`${params.requestedTitleNorm} `) ||
+      titleNorm.endsWith(` ${params.requestedTitleNorm}`))
+  ) {
+    score += 20;
+  }
+
+  if (authorNorm === params.requestedAuthorNorm) {
+    score += 80;
+  } else if (
+    params.requestedAuthorNorm &&
+    (authorNorm.startsWith(params.requestedAuthorNorm) ||
+      params.requestedAuthorNorm.startsWith(authorNorm))
+  ) {
+    score += 15;
+  }
+
+  score += Number.isFinite(params.result.confidence) ? params.result.confidence : 0;
+  score -= typeof params.result.rank === "number" ? params.result.rank : 0;
+
+  return score;
+}
+
+function selectStrongestBulkProviderCandidate(params: {
+  results: UnifiedSearchResult[];
+  requestedTitle: string;
+  requestedAuthor: string;
+}): UnifiedSearchResult | null {
+  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
+  const requestedAuthorNorm = normalizeSearchText(params.requestedAuthor);
+
+  const providerCandidates = params.results.filter(
+    (result) =>
+      result.resultType === "external" &&
+      (result.source === "googleBooks" || result.source === "openLibrary") &&
+      typeof result.externalId === "string" &&
+      result.externalId.trim().length > 0
+  );
+
+  const strongCandidates = providerCandidates.filter(
+    (result) =>
+      !isWeakBulkCandidate({
+        result,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+      })
+  );
+
+  const candidates = strongCandidates.length > 0 ? strongCandidates : providerCandidates;
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return [...candidates].sort((left, right) => {
+    const scoreDelta =
+      computeBulkCandidateScore({
+        result: right,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+      }) -
+      computeBulkCandidateScore({
+        result: left,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+      });
+    if (scoreDelta !== 0) return scoreDelta;
+    return left.rank - right.rank;
+  })[0] || null;
+}
+
+function parseOptionalIsbn(value: unknown): { isbn10?: string; isbn13?: string } {
+  const normalized = readOptionalString(value, "isbn", 32);
+  if (!normalized) {
+    return {};
+  }
+
+  const candidate = normalized.replace(/[^0-9Xx]/g, "").toUpperCase();
+  if (/^\d{13}$/.test(candidate)) {
+    return { isbn13: candidate };
+  }
+  if (/^\d{9}[\dX]$/.test(candidate)) {
+    return { isbn10: candidate };
+  }
+
+  throw new HttpsError("invalid-argument", "isbn must be a valid ISBN-10 or ISBN-13.");
 }
 
 function readStringArray(value: unknown, max = 24): string[] {
@@ -261,6 +560,54 @@ function mapAdminAuthor(raw: DocumentData, authorId: string): AdminAuthorShape {
   };
 }
 
+function mapAdminCanonicalBook(raw: DocumentData, bookId: string): AdminCanonicalBookShape {
+  return {
+    bookId,
+    canonicalBookId: bookId,
+    title:
+      typeof raw.title === "string" && raw.title.trim()
+        ? raw.title.trim()
+        : typeof raw.titleEn === "string" && raw.titleEn.trim()
+          ? raw.titleEn.trim()
+          : "",
+    author:
+      typeof raw.author === "string" && raw.author.trim()
+        ? raw.author.trim()
+        : typeof raw.authorEn === "string" && raw.authorEn.trim()
+          ? raw.authorEn.trim()
+          : "",
+    language:
+      typeof raw.language === "string" && raw.language.trim()
+        ? raw.language.trim()
+        : undefined,
+    canonicalKey:
+      typeof raw.canonicalKey === "string" && raw.canonicalKey.trim()
+        ? raw.canonicalKey.trim()
+        : "",
+    authorId:
+      typeof raw.authorId === "string" && raw.authorId.trim()
+        ? raw.authorId.trim()
+        : undefined,
+    authorCanonicalKey:
+      typeof raw.authorCanonicalKey === "string" && raw.authorCanonicalKey.trim()
+        ? raw.authorCanonicalKey.trim()
+        : undefined,
+    authorityStatus:
+      typeof raw.authorityStatus === "string" && raw.authorityStatus.trim()
+        ? raw.authorityStatus.trim()
+        : "",
+    canonicalLocked: raw.canonicalLocked === true,
+    coverState:
+      typeof raw.coverState === "string" && raw.coverState.trim()
+        ? raw.coverState.trim()
+        : undefined,
+    editionId:
+      typeof raw.editionId === "string" && raw.editionId.trim()
+        ? raw.editionId.trim()
+        : undefined,
+  };
+}
+
 function buildAuthorInput(data: Record<string, unknown>): AdminAuthorUpsertInput {
   return {
     authorId: readOptionalString(data.authorId, "authorId", 180),
@@ -298,6 +645,33 @@ function buildAuthorInput(data: Record<string, unknown>): AdminAuthorUpsertInput
       data.provenance && typeof data.provenance === "object" && !Array.isArray(data.provenance)
         ? (data.provenance as Record<string, unknown>)
         : undefined,
+  };
+}
+
+function buildCanonicalBookInput(data: Record<string, unknown>): {
+  title: string;
+  author: string;
+  language?: string;
+  description?: string;
+  coverUrl?: string;
+  isbn10?: string;
+  isbn13?: string;
+} {
+  const title = readRequiredString(data.title, "title", 300);
+  const author = readRequiredString(data.author, "author", 240);
+  const language = normalizeLanguage(readOptionalString(data.language, "language", 16));
+  const description = readOptionalString(data.description, "description", 5000);
+  const coverUrl = readOptionalUrl(data.coverUrl, "coverUrl", 500);
+  const { isbn10, isbn13 } = parseOptionalIsbn(data.isbn);
+
+  return {
+    title,
+    author,
+    ...(language ? { language } : {}),
+    ...(description ? { description } : {}),
+    ...(coverUrl ? { coverUrl } : {}),
+    ...(isbn10 ? { isbn10 } : {}),
+    ...(isbn13 ? { isbn13 } : {}),
   };
 }
 
@@ -438,5 +812,140 @@ export const adminAuthorArchive = onCall({ cors: true }, async (request) => {
   return {
     author: mapAdminAuthor(archivedSnap.data() as DocumentData, archivedSnap.id),
     archived: true,
+  };
+});
+
+export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const input = buildCanonicalBookInput(data);
+  const language = input.language || "en";
+  const isArabic = language.startsWith("ar");
+  const ingestionKey = `admin_canonical:${normalizeSearchText(input.author)}::${normalizeSearchText(input.title)}`;
+
+  const result = await materializeBookAuthority({
+    source: "booktown_canonical",
+    authorityStatus: "canonical",
+    rawBook: {
+      title: input.title,
+      titleEn: input.title,
+      titleAr: isArabic ? input.title : "",
+      author: input.author,
+      authorEn: input.author,
+      authorAr: isArabic ? input.author : "",
+      authors: [input.author],
+      description: input.description || "",
+      descriptionEn: input.description || "",
+      descriptionAr: isArabic ? input.description || "" : "",
+      language,
+      canonicalLocked: true,
+      rightsMode: "public_free",
+      visibility: "public",
+      publicationState: "published",
+      hasEbook: false,
+      downloadable: false,
+      isEbookAvailable: false,
+      ...(input.isbn10 ? { isbn10: input.isbn10 } : {}),
+      ...(input.isbn13 ? { isbn13: input.isbn13 } : {}),
+      ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
+    },
+    createEdition: Boolean(input.isbn10 || input.isbn13),
+    coverCandidates: input.coverUrl ? [input.coverUrl] : [],
+    ingestionKey,
+  });
+
+  const bookSnap = await db.collection("books").doc(result.bookId).get();
+  if (!bookSnap.exists) {
+    throw new HttpsError("internal", "Canonical book materialization completed without a book row.");
+  }
+
+  return {
+    book: mapAdminCanonicalBook(bookSnap.data() as DocumentData, bookSnap.id),
+    status: result.status,
+  };
+});
+
+export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as AdminSeedCanonicalBatchInput;
+  const rows = parseBulkSeedRows(data.rows);
+
+  const results: AdminSeedCanonicalBatchRow[] = [];
+
+  for (const entry of rows) {
+    const query = `${entry.title} ${entry.author}`.trim();
+
+    try {
+      const search = await unifiedSearch(query, {
+        limit: 10,
+      });
+      const providerCandidate = selectStrongestBulkProviderCandidate({
+        results: search.results,
+        requestedTitle: entry.title,
+        requestedAuthor: entry.author,
+      });
+
+      if (!providerCandidate) {
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "failed",
+          message: "No provider candidate matched this row.",
+        });
+        continue;
+      }
+
+      const providerSource: "googleBooks" | "openLibrary" | null =
+        providerCandidate.source === "googleBooks" || providerCandidate.source === "openLibrary"
+          ? providerCandidate.source
+          : null;
+      if (!providerSource) {
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "failed",
+          message: "Provider candidate source is unsupported.",
+        });
+        continue;
+      }
+
+      const ingestion = await ingestBookServerSide({
+        uid: request.auth?.uid || "admin",
+        source: providerSource,
+        providerExternalId: providerCandidate.externalId,
+        rawBook: providerCandidate.rawBook,
+      });
+
+      results.push({
+        row: entry.row,
+        input: entry.input,
+        title: entry.title,
+        author: entry.author,
+        status: mapBatchRowStatus(ingestion.status),
+        canonicalBookId: ingestion.canonicalBookId,
+        bookId: ingestion.bookId,
+        editionId: ingestion.editionId || undefined,
+        source: providerSource,
+        providerExternalId: providerCandidate.externalId,
+      });
+    } catch (error) {
+      results.push({
+        row: entry.row,
+        input: entry.input,
+        title: entry.title,
+        author: entry.author,
+        status: "failed",
+        message: mapBatchError(error),
+      });
+    }
+  }
+
+  return {
+    rows: results,
+    summary: buildBatchSummary(results),
   };
 });

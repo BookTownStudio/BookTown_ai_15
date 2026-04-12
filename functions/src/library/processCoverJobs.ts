@@ -94,6 +94,7 @@ export const processCoverJobs = onDocumentWritten("cover_jobs/{bookId}", async (
   const afterData = asRecord(after.data() || null);
   const status = asNonEmptyString(afterData?.status) as JobStatus | null;
   if (status !== "PENDING") return;
+  if (asNonEmptyString(afterData?.source) === "user_upload") return;
 
   const locked = await db.runTransaction(async (tx) => {
     const jobSnap = await tx.get(after.ref);

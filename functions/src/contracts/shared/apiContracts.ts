@@ -360,6 +360,39 @@ const adminAuthorSchema = z
   })
   .strict();
 
+const adminCanonicalBookSchema = z
+  .object({
+    bookId: z.string().min(1),
+    canonicalBookId: z.string().min(1),
+    title: z.string().min(1),
+    author: z.string().min(1),
+    language: z.string().min(1).optional(),
+    canonicalKey: z.string().min(1),
+    authorId: z.string().min(1).optional(),
+    authorCanonicalKey: z.string().min(1).optional(),
+    authorityStatus: z.string().min(1),
+    canonicalLocked: z.boolean(),
+    coverState: z.string().min(1).optional(),
+    editionId: z.string().min(1).optional(),
+  })
+  .strict();
+
+const adminCanonicalBatchRowSchema = z
+  .object({
+    row: z.number().int().positive(),
+    input: z.string().min(1),
+    title: z.string().min(1),
+    author: z.string().min(1),
+    status: z.enum(["created", "existing", "failed"]),
+    canonicalBookId: z.string().min(1).optional(),
+    bookId: z.string().min(1).optional(),
+    editionId: z.string().min(1).optional(),
+    source: z.enum(["googleBooks", "openLibrary"]).optional(),
+    providerExternalId: z.string().min(1).optional(),
+    message: z.string().min(1).optional(),
+  })
+  .strict();
+
 const adminQuoteSchema = z
   .object({
     quoteId: z.string().min(1),
@@ -1929,6 +1962,53 @@ export const apiContracts = {
       }
     ),
 
+    adminCreateCanonicalBook: defineContract(
+      z
+        .object({
+          title: z.string().min(1).max(300),
+          author: z.string().min(1).max(240),
+          language: z.string().min(1).max(16).optional(),
+          isbn: z.string().min(1).max(32).optional(),
+          description: z.string().min(1).max(5000).optional(),
+          coverUrl: z.string().min(1).max(500).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          book: adminCanonicalBookSchema,
+          status: z.enum(["CREATED", "MERGED", "ALREADY_COMPLETE"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
+    adminSeedCanonicalBatch: defineContract(
+      z
+        .object({
+          rows: z.string().min(1).max(30000),
+        })
+        .strict(),
+      z
+        .object({
+          rows: z.array(adminCanonicalBatchRowSchema),
+          summary: z
+            .object({
+              successCount: z.number().int().nonnegative(),
+              existingCount: z.number().int().nonnegative(),
+              failedCount: z.number().int().nonnegative(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
     backfillAuthorMetadata: defineContract(
       z
         .object({
@@ -1999,7 +2079,7 @@ export const apiContracts = {
         .object({
           providerExternalId: z.string().min(1).optional(),
           bookId: z.string().min(1).optional(),
-          source: z.enum(["googleBooks", "openLibrary"]),
+          source: z.enum(["googleBooks", "openLibrary"]).optional(),
           rawBook: z.record(z.string(), z.unknown()).optional(),
         })
         .strict()
@@ -2007,11 +2087,21 @@ export const apiContracts = {
           const providerExternalId =
             typeof value.providerExternalId === "string" && value.providerExternalId.trim().length > 0;
           const bookId = typeof value.bookId === "string" && value.bookId.trim().length > 0;
+          const source =
+            value.source === "googleBooks" || value.source === "openLibrary";
 
           if (!providerExternalId && !bookId) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
               message: "providerExternalId_or_bookId_required",
+            });
+          }
+
+          if (providerExternalId && !source) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              message: "source_required_when_provider_external_id_present",
+              path: ["source"],
             });
           }
         }),

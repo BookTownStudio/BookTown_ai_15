@@ -126,6 +126,41 @@ export type AdminAuthorRecord = {
   updatedBy?: string;
 };
 
+export type AdminCanonicalBookRecord = {
+  bookId: string;
+  canonicalBookId: string;
+  title: string;
+  author: string;
+  language?: string;
+  canonicalKey: string;
+  authorId?: string;
+  authorCanonicalKey?: string;
+  authorityStatus: string;
+  canonicalLocked: boolean;
+  coverState?: string;
+  editionId?: string;
+};
+
+export type AdminCanonicalBatchRow = {
+  row: number;
+  input: string;
+  title: string;
+  author: string;
+  status: 'created' | 'existing' | 'failed';
+  canonicalBookId?: string;
+  bookId?: string;
+  editionId?: string;
+  source?: 'googleBooks' | 'openLibrary';
+  providerExternalId?: string;
+  message?: string;
+};
+
+export type AdminCanonicalBatchSummary = {
+  successCount: number;
+  existingCount: number;
+  failedCount: number;
+};
+
 export type AdminQuoteRecord = {
   quoteId: string;
   canonicalQuoteId: string;
@@ -641,6 +676,66 @@ function mapAdminQuoteItem(item: unknown, index: number): AdminQuoteRecord {
     updatedAt: toIsoString(data.updatedAt, 'updatedAt', context, false) ?? undefined,
     createdBy: readNullableString(data.createdBy, 'createdBy', context) ?? undefined,
     updatedBy: readNullableString(data.updatedBy, 'updatedBy', context) ?? undefined,
+  };
+}
+
+function mapAdminCanonicalBookItem(item: unknown, index: number): AdminCanonicalBookRecord {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid admin canonical book at index ${index}.`);
+  }
+  const data = item as Record<string, unknown>;
+  const context = `admin canonical book #${index}`;
+  return {
+    bookId: readRequiredString(data.bookId, 'bookId', context),
+    canonicalBookId: readRequiredString(data.canonicalBookId, 'canonicalBookId', context),
+    title: readRequiredString(data.title, 'title', context),
+    author: readRequiredString(data.author, 'author', context),
+    language: readNullableString(data.language, 'language', context) ?? undefined,
+    canonicalKey: readRequiredString(data.canonicalKey, 'canonicalKey', context),
+    authorId: readNullableString(data.authorId, 'authorId', context) ?? undefined,
+    authorCanonicalKey:
+      readNullableString(data.authorCanonicalKey, 'authorCanonicalKey', context) ?? undefined,
+    authorityStatus: readRequiredString(data.authorityStatus, 'authorityStatus', context),
+    canonicalLocked: data.canonicalLocked === true,
+    coverState: readNullableString(data.coverState, 'coverState', context) ?? undefined,
+    editionId: readNullableString(data.editionId, 'editionId', context) ?? undefined,
+  };
+}
+
+function readRequiredNumber(value: unknown, field: string, context: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    throw new Error(`[adminService] ${context}.${field} must be a finite number.`);
+  }
+  return value;
+}
+
+function mapAdminCanonicalBatchRow(item: unknown, index: number): AdminCanonicalBatchRow {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid admin canonical batch row at index ${index}.`);
+  }
+  const data = item as Record<string, unknown>;
+  const context = `admin canonical batch row #${index}`;
+  const status = readRequiredString(data.status, 'status', context);
+  if (status !== 'created' && status !== 'existing' && status !== 'failed') {
+    throw new Error(`[adminService] ${context}.status is invalid.`);
+  }
+  const source = readNullableString(data.source, 'source', context);
+  if (source && source !== 'googleBooks' && source !== 'openLibrary') {
+    throw new Error(`[adminService] ${context}.source is invalid.`);
+  }
+  return {
+    row: readRequiredNumber(data.row, 'row', context),
+    input: readRequiredString(data.input, 'input', context),
+    title: readRequiredString(data.title, 'title', context),
+    author: readRequiredString(data.author, 'author', context),
+    status,
+    canonicalBookId: readNullableString(data.canonicalBookId, 'canonicalBookId', context) ?? undefined,
+    bookId: readNullableString(data.bookId, 'bookId', context) ?? undefined,
+    editionId: readNullableString(data.editionId, 'editionId', context) ?? undefined,
+    source: (source ?? undefined) as 'googleBooks' | 'openLibrary' | undefined,
+    providerExternalId:
+      readNullableString(data.providerExternalId, 'providerExternalId', context) ?? undefined,
+    message: readNullableString(data.message, 'message', context) ?? undefined,
   };
 }
 
@@ -1168,6 +1263,59 @@ export const adminService = {
     return {
       author: mapAdminAuthorItem(data.author, 0),
       status: data.status,
+    };
+  },
+
+  async createCanonicalBook(payload: {
+    title: string;
+    author: string;
+    language?: string;
+    isbn?: string;
+    description?: string;
+    coverUrl?: string;
+  }): Promise<{
+    book: AdminCanonicalBookRecord;
+    status: 'CREATED' | 'MERGED' | 'ALREADY_COMPLETE';
+  }> {
+    const data = await callCallableEndpoint<
+      typeof payload,
+      {
+        book: unknown;
+        status: 'CREATED' | 'MERGED' | 'ALREADY_COMPLETE';
+      }
+    >('adminCreateCanonicalBook', payload);
+
+    return {
+      book: mapAdminCanonicalBookItem(data.book, 0),
+      status: data.status,
+    };
+  },
+
+  async seedCanonicalBatch(payload: {
+    rows: string;
+  }): Promise<{
+    rows: AdminCanonicalBatchRow[];
+    summary: AdminCanonicalBatchSummary;
+  }> {
+    const data = await callCallableEndpoint<
+      typeof payload,
+      {
+        rows: unknown[];
+        summary: {
+          successCount: number;
+          existingCount: number;
+          failedCount: number;
+        };
+      }
+    >('adminSeedCanonicalBatch', payload);
+
+    return {
+      rows: Array.isArray(data.rows) ? data.rows.map((item, index) => mapAdminCanonicalBatchRow(item, index)) : [],
+      summary: {
+        successCount: readRequiredNumber(data.summary?.successCount, 'successCount', 'admin canonical batch summary'),
+        existingCount: readRequiredNumber(data.summary?.existingCount, 'existingCount', 'admin canonical batch summary'),
+        failedCount: readRequiredNumber(data.summary?.failedCount, 'failedCount', 'admin canonical batch summary'),
+      },
     };
   },
 

@@ -84,10 +84,16 @@ export async function ensureCanonicalBook(
   params: EnsureCanonicalBookParams
 ): Promise<EnsureCanonicalBookResult | null> {
   try {
-    let resolvedParams: EnsureCanonicalBookIngestionParams;
+    let requestPayload: Record<string, unknown>;
 
     if (isIngestionParams(params)) {
-      resolvedParams = params;
+      requestPayload = {
+        providerExternalId: params.providerExternalId,
+        source: params.source,
+      };
+      if (params.rawBook && typeof params.rawBook === 'object') {
+        requestPayload.rawBook = params.rawBook;
+      }
     } else {
       const navigationParams = params as EnsureCanonicalBookNavigationParams;
       const incomingBookId = String(navigationParams.bookId || '').trim();
@@ -97,28 +103,19 @@ export async function ensureCanonicalBook(
 
       const parsedSynthetic = parseSyntheticBookId(incomingBookId);
       if (!parsedSynthetic) {
-        return {
-          canonicalBookId: incomingBookId,
+        requestPayload = {
           bookId: incomingBookId,
-          status: 'ALREADY_CANONICAL',
+        };
+      } else {
+        requestPayload = {
+          providerExternalId: parsedSynthetic.providerExternalId,
+          source: parsedSynthetic.source,
         };
       }
-
-      resolvedParams = {
-        providerExternalId: parsedSynthetic.providerExternalId,
-        source: parsedSynthetic.source,
-      };
     }
 
     const functions = getFirebaseFunctions();
     const ingestFn = httpsCallable(functions, 'ingestBook');
-    const requestPayload: Record<string, unknown> = {
-      providerExternalId: resolvedParams.providerExternalId,
-      source: resolvedParams.source,
-    };
-    if (resolvedParams.rawBook && typeof resolvedParams.rawBook === 'object') {
-      requestPayload.rawBook = resolvedParams.rawBook;
-    }
 
     const result = await ingestFn(requestPayload);
 
@@ -149,10 +146,7 @@ export async function ensureCanonicalBook(
         console.assert(
           false,
           '[ensureCanonicalBook] Canonical resolution failed',
-          {
-            source: resolvedParams.source,
-            providerExternalId: resolvedParams.providerExternalId,
-          }
+          requestPayload
         );
         throw new Error('Canonical resolution failed');
       }

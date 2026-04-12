@@ -15,7 +15,7 @@ import {
 
 const db = admin.firestore();
 
-export type SupportedAuthorSource = "openLibrary" | "wikidata" | "googleBooks";
+export type SupportedAuthorSource = "booktown" | "openLibrary" | "wikidata" | "googleBooks";
 
 type AuthorIdentityType =
   | "canonical"
@@ -551,6 +551,7 @@ function resolvePrimarySource(
     "openLibrary",
     "wikidata",
     "googleBooks",
+    "booktown",
   ];
 
   for (const source of orderedSources) {

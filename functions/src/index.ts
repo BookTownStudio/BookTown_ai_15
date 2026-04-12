@@ -116,6 +116,8 @@ import {
   adminAuthorCreate as adminAuthorCreateRaw,
   adminAuthorUpdate as adminAuthorUpdateRaw,
   adminAuthorArchive as adminAuthorArchiveRaw,
+  adminCreateCanonicalBook as adminCreateCanonicalBookRaw,
+  adminSeedCanonicalBatch as adminSeedCanonicalBatchRaw,
 } from "./admin/literaryAuthority";
 import {
   adminRegisterQuoteImport as adminRegisterQuoteImportRaw,
@@ -434,6 +436,14 @@ export const adminAuthorUpdate = wrapCallableV2(
 export const adminAuthorArchive = wrapCallableV2(
   "adminAuthorArchive",
   adminAuthorArchiveRaw
+);
+export const adminCreateCanonicalBook = wrapCallableV2(
+  "adminCreateCanonicalBook",
+  adminCreateCanonicalBookRaw
+);
+export const adminSeedCanonicalBatch = wrapCallableV2(
+  "adminSeedCanonicalBatch",
+  adminSeedCanonicalBatchRaw
 );
 export const backfillAuthorMetadata = wrapCallableV2(
   "backfillAuthorMetadata",

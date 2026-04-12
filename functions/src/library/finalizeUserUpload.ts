@@ -29,7 +29,7 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
     }
 
     const bookRef = db.collection("books").doc(bookId);
-    const jobRef = db.collection("coverJobs").doc(bookId);
+    const jobRef = db.collection("cover_jobs").doc(bookId);
     const bookSnap = await bookRef.get();
 
     if (!bookSnap.exists) {

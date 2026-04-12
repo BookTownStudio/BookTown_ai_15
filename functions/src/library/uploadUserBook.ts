@@ -5,6 +5,7 @@ import { admin } from "../firebaseAdmin";
 import { CONTRACT_VERSION } from "../contracts/shared/version";
 import { generateCorrelationId, getHeaderValue } from "../contracts/correlation";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
+import { materializeBookAuthorityInTransaction } from "./materializeBookAuthority";
 
 type UploadUserBookRequest = {
   shelfId: string;
@@ -94,8 +95,6 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
     const shelfRef = db.doc(`shelves/${shelfId}`);
     const userShelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
     const shelfBookRef = db.doc(`users/${uid}/shelves/${shelfId}/books/${bookId}`);
-    const coverJobRef = db.collection("coverJobs").doc(bookId);
-
     logger.info("[UPLOAD_USER_BOOK][START]", {
       endpointKey: ENDPOINT_KEY,
       contractVersion: CONTRACT_VERSION,
@@ -155,47 +154,49 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
         const now = FieldValue.serverTimestamp();
         const addedAt = new Date().toISOString();
 
-        tx.set(bookRef, {
-          id: bookId,
-          ownerUid: uid,
+        await materializeBookAuthorityInTransaction({
+          tx,
           source: "user_upload",
-          titleEn: derivedTitle,
-          titleAr: derivedTitle,
-          authorEn: "Unknown",
-          authorAr: "",
-          descriptionEn: "",
-          descriptionAr: "",
-          coverUrl: "",
-          coverState: "PENDING" as CoverState,
-          coverFailureCode: null,
-          coverFailureMessage: null,
-          coverUpdatedAt: now,
-          isEbookAvailable: true,
-          fileName: sanitizedFileName,
-          fileType,
-          fileSize,
-          storagePath,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        tx.set(
-          coverJobRef,
-          {
+          authorityStatus: "provisional",
+          preferredBookId: bookId,
+          allowIdentityReuse: false,
+          rawBook: {
             id: bookId,
-            bookId,
             ownerUid: uid,
             source: "user_upload",
-            status: "AWAITING_UPLOAD",
-            attempts: 0,
-            maxAttempts: 3,
+            title: derivedTitle,
+            titleEn: derivedTitle,
+            titleAr: derivedTitle,
+            author: "Unknown",
+            authorEn: "Unknown",
+            authorAr: "",
+            authors: ["Unknown"],
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            coverState: "PENDING" as CoverState,
+            coverFailureCode: null,
+            coverFailureMessage: null,
+            coverUpdatedAt: now,
+            hasEbook: true,
+            downloadable: true,
+            isEbookAvailable: true,
+            fileName: sanitizedFileName,
             fileType,
+            fileSize,
             storagePath,
-            createdAt: now,
-            updatedAt: now,
+            rightsMode: "private",
+            visibility: "private",
+            publicationState: "uploaded",
           },
-          { merge: true }
-        );
+          createEdition: true,
+          explicitEditionId: `uploaded:${bookId}`,
+          ingestionKey: `user_upload:${uid}:${bookId}`,
+          extraIdentityKeys: [`source:user_upload:${uid}:${bookId}`],
+          coverJobStatus: "AWAITING_UPLOAD",
+          coverJobMaxAttempts: 3,
+        });
 
         tx.set(
           userShelfRef,

@@ -87,7 +87,8 @@ function resolveDownloadable(data: Record<string, unknown>): boolean {
   return Boolean(
     data.downloadable ||
       asNonEmptyString(data.ebookAttachmentId) ||
-      asNonEmptyString(data.ebookStoragePath)
+      asNonEmptyString(data.ebookStoragePath) ||
+      asNonEmptyString(data.storagePath)
   );
 }
 
