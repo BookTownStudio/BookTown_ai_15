@@ -13,6 +13,7 @@ import {
   type AdminAuthorRecord,
   type AdminCanonicalBatchRow,
   type AdminCanonicalBookRecord,
+  type AdminDeleteSeedListRow,
   type AdminQuoteImportJob,
   type AdminQuoteRecord,
 } from '../../lib/services/adminService.ts';
@@ -93,6 +94,12 @@ type BookDraft = {
 type BookBatchSummary = {
   successCount: number;
   existingCount: number;
+  failedCount: number;
+};
+
+type DeleteBatchSummary = {
+  successCount: number;
+  missingCount: number;
   failedCount: number;
 };
 
@@ -397,6 +404,10 @@ const BooksPanel: React.FC = () => {
   const [batchInput, setBatchInput] = useState('');
   const [batchRows, setBatchRows] = useState<AdminCanonicalBatchRow[]>([]);
   const [batchSummary, setBatchSummary] = useState<BookBatchSummary | null>(null);
+  const [deleteListInput, setDeleteListInput] = useState('');
+  const [deleteRows, setDeleteRows] = useState<AdminDeleteSeedListRow[]>([]);
+  const [deleteSummary, setDeleteSummary] = useState<DeleteBatchSummary | null>(null);
+  const [deleteAllConfirmation, setDeleteAllConfirmation] = useState('');
   const [createdBook, setCreatedBook] = useState<AdminCanonicalBookRecord | null>(null);
   const [submitMessage, setSubmitMessage] = useState('');
 
@@ -438,6 +449,45 @@ const BooksPanel: React.FC = () => {
     },
   });
   const isBatchSubmitting = batchMutation.status === 'pending';
+  const deleteBookMutation = useMutation({
+    mutationFn: async (bookId: string) => adminService.deleteCanonicalBook({ bookId }),
+    onSuccess: (result) => {
+      setSubmitMessage(`Deleted canonical book ${result.bookId}.`);
+      setCreatedBook((current) => (current?.bookId === result.bookId ? null : current));
+      setBatchRows((current) => current.filter((row) => row.canonicalBookId !== result.bookId));
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Canonical book deletion failed.');
+    },
+  });
+  const deleteListMutation = useMutation({
+    mutationFn: async (rows: string) => adminService.deleteCanonicalSeedList({ rows }),
+    onSuccess: (result) => {
+      setDeleteRows(result.rows);
+      setDeleteSummary(result.summary);
+      setSubmitMessage(
+        `Delete list completed: ${result.summary.successCount} success, ${result.summary.missingCount} missing, ${result.summary.failedCount} failed.`
+      );
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Seed list deletion failed.');
+    },
+  });
+  const deleteAllMutation = useMutation({
+    mutationFn: async (confirmation: string) => adminService.deleteAllBooks({ confirmation }),
+    onSuccess: (result) => {
+      setSubmitMessage(`Deleted ${result.deletedCount} books from catalog authority.`);
+      setCreatedBook(null);
+      setBatchRows([]);
+      setBatchSummary(null);
+      setDeleteRows([]);
+      setDeleteSummary(null);
+      setDeleteAllConfirmation('');
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Delete all books failed.');
+    },
+  });
 
   return (
     <div className="space-y-6">
@@ -517,6 +567,93 @@ const BooksPanel: React.FC = () => {
                   <div className="text-slate-400">{row.author}</div>
                   {row.canonicalBookId ? (
                     <div className="mt-2 text-xs text-slate-400">Canonical ID: {row.canonicalBookId}</div>
+                  ) : null}
+                  {row.message ? (
+                    <div className="mt-2 text-xs text-rose-300">{row.message}</div>
+                  ) : null}
+                  {row.canonicalBookId ? (
+                    <div className="mt-3">
+                      <Button
+                        variant="secondary"
+                        onClick={() => deleteBookMutation.mutate(row.canonicalBookId!)}
+                        disabled={deleteBookMutation.status === 'pending'}
+                      >
+                        Delete Book
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+
+        <div className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-4">
+          <div>
+            <BilingualText role="H2" className="!text-lg">
+              Delete Seed List
+            </BilingualText>
+            <p className="mt-2 text-sm text-slate-400">
+              Paste one canonical book per line using <span className="font-mono">Title | Author</span>.
+            </p>
+          </div>
+          <TextAreaField
+            id="book-delete-list"
+            label="Delete Rows"
+            value={deleteListInput}
+            onChange={setDeleteListInput}
+            rows={6}
+          />
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => deleteListMutation.mutate(deleteListInput)}
+              disabled={deleteListMutation.status === 'pending' || deleteListInput.trim().length === 0}
+            >
+              Delete Seed List
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => {
+                setDeleteListInput('');
+                setDeleteRows([]);
+                setDeleteSummary(null);
+              }}
+            >
+              Clear Delete List
+            </Button>
+          </div>
+          {deleteSummary ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Success</div>
+                <div>{deleteSummary.successCount}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Missing</div>
+                <div>{deleteSummary.missingCount}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Failed</div>
+                <div>{deleteSummary.failedCount}</div>
+              </div>
+            </div>
+          ) : null}
+          {deleteRows.length > 0 ? (
+            <div className="space-y-3">
+              {deleteRows.map((row) => (
+                <div
+                  key={`${row.row}-${row.input}-delete`}
+                  className="rounded-lg border border-white/10 bg-black/10 px-3 py-3 text-sm text-slate-300"
+                >
+                  <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wide text-slate-500">
+                    <span>Row {row.row}</span>
+                    <span>{row.status}</span>
+                  </div>
+                  <div className="mt-2 font-medium text-white">{row.title}</div>
+                  <div className="text-slate-400">{row.author}</div>
+                  {row.bookId ? (
+                    <div className="mt-2 text-xs text-slate-400">Deleted Book ID: {row.bookId}</div>
                   ) : null}
                   {row.message ? (
                     <div className="mt-2 text-xs text-rose-300">{row.message}</div>
@@ -637,8 +774,44 @@ const BooksPanel: React.FC = () => {
               <div>{createdBook.editionId || 'No edition'}</div>
             </div>
           </div>
+          <div className="pt-2">
+            <Button
+              variant="secondary"
+              onClick={() => deleteBookMutation.mutate(createdBook.bookId)}
+              disabled={deleteBookMutation.status === 'pending'}
+            >
+              Delete Book
+            </Button>
+          </div>
         </GlassCard>
       ) : null}
+
+      <GlassCard className="!p-5 space-y-4">
+        <div>
+          <BilingualText role="H2" className="!text-lg">
+            Delete All Books (Development Only)
+          </BilingualText>
+          <p className="mt-2 text-sm text-slate-400">
+            Type <span className="font-mono">DELETE ALL BOOKS</span> to clear catalog-linked book authority.
+          </p>
+        </div>
+        <InputField
+          id="delete-all-books-confirmation"
+          label="Confirmation"
+          value={deleteAllConfirmation}
+          onChange={(event) => setDeleteAllConfirmation(event.target.value)}
+        />
+        <Button
+          variant="secondary"
+          onClick={() => deleteAllMutation.mutate(deleteAllConfirmation)}
+          disabled={
+            deleteAllMutation.status === 'pending' ||
+            deleteAllConfirmation.trim() !== 'DELETE ALL BOOKS'
+          }
+        >
+          Delete All Books
+        </Button>
+      </GlassCard>
     </div>
   );
 };

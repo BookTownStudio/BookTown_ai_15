@@ -117,6 +117,9 @@ import {
   adminAuthorUpdate as adminAuthorUpdateRaw,
   adminAuthorArchive as adminAuthorArchiveRaw,
   adminCreateCanonicalBook as adminCreateCanonicalBookRaw,
+  adminDeleteCanonicalBook as adminDeleteCanonicalBookRaw,
+  adminDeleteCanonicalSeedList as adminDeleteCanonicalSeedListRaw,
+  adminDeleteAllBooks as adminDeleteAllBooksRaw,
   adminSeedCanonicalBatch as adminSeedCanonicalBatchRaw,
 } from "./admin/literaryAuthority";
 import {
@@ -440,6 +443,18 @@ export const adminAuthorArchive = wrapCallableV2(
 export const adminCreateCanonicalBook = wrapCallableV2(
   "adminCreateCanonicalBook",
   adminCreateCanonicalBookRaw
+);
+export const adminDeleteCanonicalBook = wrapCallableV2(
+  "adminDeleteCanonicalBook",
+  adminDeleteCanonicalBookRaw
+);
+export const adminDeleteCanonicalSeedList = wrapCallableV2(
+  "adminDeleteCanonicalSeedList",
+  adminDeleteCanonicalSeedListRaw
+);
+export const adminDeleteAllBooks = wrapCallableV2(
+  "adminDeleteAllBooks",
+  adminDeleteAllBooksRaw
 );
 export const adminSeedCanonicalBatch = wrapCallableV2(
   "adminSeedCanonicalBatch",

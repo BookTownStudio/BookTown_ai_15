@@ -1,5 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { Query, DocumentData } from "firebase-admin/firestore";
+import { Query, DocumentData, FieldValue } from "firebase-admin/firestore";
 
 import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
@@ -95,6 +95,50 @@ type AdminSeedCanonicalBatchSummary = {
   successCount: number;
   existingCount: number;
   failedCount: number;
+};
+
+type AdminDeleteBookCascadeCounts = {
+  books: number;
+  editions: number;
+  bookIdentity: number;
+  bookIngestions: number;
+  coverJobs: number;
+  readingProgress: number;
+  userLibraryBooks: number;
+  shelfRefs: number;
+  quoteLinks: number;
+  authorRefs: number;
+  coverStorageFiles: number;
+};
+
+type AdminDeleteCanonicalBookResponse = {
+  bookId: string;
+  deleted: boolean;
+  cascade: AdminDeleteBookCascadeCounts;
+};
+
+type AdminDeleteCanonicalSeedListRow = {
+  row: number;
+  input: string;
+  title: string;
+  author: string;
+  status: "success" | "missing" | "failed";
+  bookId?: string;
+  message?: string;
+};
+
+type AdminDeleteCanonicalSeedListSummary = {
+  successCount: number;
+  missingCount: number;
+  failedCount: number;
+};
+
+type AdminDeleteCanonicalSeedListInput = {
+  rows: string;
+};
+
+type AdminDeleteAllBooksInput = {
+  confirmation?: unknown;
 };
 
 function readRequiredString(value: unknown, field: string, max = 300): string {
@@ -221,6 +265,24 @@ function buildBatchSummary(rows: AdminSeedCanonicalBatchRow[]): AdminSeedCanonic
   );
 }
 
+function buildDeleteListSummary(
+  rows: AdminDeleteCanonicalSeedListRow[]
+): AdminDeleteCanonicalSeedListSummary {
+  return rows.reduce<AdminDeleteCanonicalSeedListSummary>(
+    (acc, row) => {
+      if (row.status === "success") acc.successCount += 1;
+      if (row.status === "missing") acc.missingCount += 1;
+      if (row.status === "failed") acc.failedCount += 1;
+      return acc;
+    },
+    {
+      successCount: 0,
+      missingCount: 0,
+      failedCount: 0,
+    }
+  );
+}
+
 function mapBatchError(error: unknown): string {
   if (error instanceof HttpsError) {
     return error.message;
@@ -231,12 +293,139 @@ function mapBatchError(error: unknown): string {
   return String(error);
 }
 
+function emptyDeleteCascadeCounts(): AdminDeleteBookCascadeCounts {
+  return {
+    books: 0,
+    editions: 0,
+    bookIdentity: 0,
+    bookIngestions: 0,
+    coverJobs: 0,
+    readingProgress: 0,
+    userLibraryBooks: 0,
+    shelfRefs: 0,
+    quoteLinks: 0,
+    authorRefs: 0,
+    coverStorageFiles: 0,
+  };
+}
+
+function isDevelopmentDeleteMode(): boolean {
+  return (
+    process.env.FUNCTIONS_EMULATOR === "true" ||
+    process.env.NODE_ENV === "development" ||
+    process.env.NODE_ENV === "test"
+  );
+}
+
+async function deleteStoragePrefix(prefix: string): Promise<number> {
+  const bucket = admin.storage().bucket();
+  const [files] = await bucket.getFiles({ prefix });
+  if (!Array.isArray(files) || files.length === 0) {
+    return 0;
+  }
+  await Promise.all(files.map((file) => file.delete({ ignoreNotFound: true })));
+  return files.length;
+}
+
 function normalizeCandidateAuthor(result: UnifiedSearchResult): string {
   const author =
     (Array.isArray(result.authors) ? result.authors[0] : "") ||
     result.authorEn ||
     "";
   return normalizeSearchText(author);
+}
+
+function candidateHasUsableCover(result: UnifiedSearchResult): boolean {
+  const rawBook =
+    result.rawBook && typeof result.rawBook === "object" && !Array.isArray(result.rawBook)
+      ? (result.rawBook as Record<string, unknown>)
+      : null;
+
+  const directCoverUrl =
+    typeof result.coverUrl === "string" && result.coverUrl.trim().length > 0;
+  const rawCoverUrl =
+    typeof rawBook?.coverUrl === "string" && rawBook.coverUrl.trim().length > 0;
+  const rawThumbnail =
+    typeof rawBook?.thumbnail === "string" && rawBook.thumbnail.trim().length > 0;
+  const rawCoverId =
+    typeof rawBook?.coverId === "string" && rawBook.coverId.trim().length > 0;
+  const rawCoverI =
+    typeof rawBook?.cover_i === "string" && rawBook.cover_i.trim().length > 0;
+
+  return directCoverUrl || rawCoverUrl || rawThumbnail || rawCoverId || rawCoverI;
+}
+
+function normalizeBulkCanonicalTitle(params: {
+  providerTitle: string;
+  requestedTitle: string;
+  requestedAuthor: string;
+}): string | null {
+  const providerTitle = params.providerTitle.trim();
+  const requestedTitle = params.requestedTitle.trim();
+  const requestedAuthorNorm = normalizeSearchText(params.requestedAuthor);
+  const providerTitleNorm = normalizeSearchText(providerTitle);
+  const requestedTitleNorm = normalizeSearchText(requestedTitle);
+
+  if (!providerTitle || !requestedTitle || !providerTitleNorm || !requestedTitleNorm) {
+    return null;
+  }
+
+  if (providerTitleNorm === requestedTitleNorm) {
+    return null;
+  }
+
+  if (!providerTitleNorm.startsWith(requestedTitleNorm)) {
+    return null;
+  }
+
+  const trailingNorm = providerTitleNorm.slice(requestedTitleNorm.length).trim();
+  if (!trailingNorm) {
+    return null;
+  }
+
+  const hasAuthorSuffix =
+    requestedAuthorNorm.length > 0 &&
+    (trailingNorm.includes(`by ${requestedAuthorNorm}`) ||
+      trailingNorm.includes(requestedAuthorNorm));
+  const hasEditionNoise =
+    /\bunabridged\b/u.test(trailingNorm) || /(?:^|\s)(1[0-9]{3}|20[0-9]{2})(?:\s|$)/u.test(trailingNorm);
+
+  return hasAuthorSuffix || hasEditionNoise ? requestedTitle : null;
+}
+
+function prepareBulkCandidateRawBook(params: {
+  result: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+}): Record<string, unknown> | undefined {
+  const rawBook =
+    params.result.rawBook && typeof params.result.rawBook === "object" && !Array.isArray(params.result.rawBook)
+      ? ({ ...(params.result.rawBook as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  const providerTitle =
+    typeof rawBook.title === "string" && rawBook.title.trim().length > 0
+      ? rawBook.title
+      : params.result.title;
+  const cleanedTitle = normalizeBulkCanonicalTitle({
+    providerTitle,
+    requestedTitle: params.requestedTitle,
+    requestedAuthor: params.requestedAuthor,
+  });
+
+  if (!cleanedTitle) {
+    return Object.keys(rawBook).length > 0 ? rawBook : params.result.rawBook;
+  }
+
+  rawBook.title = cleanedTitle;
+  rawBook.titleEn = cleanedTitle;
+  if (typeof rawBook.author !== "string" || rawBook.author.trim().length === 0) {
+    rawBook.author = params.requestedAuthor;
+  }
+  if (!Array.isArray(rawBook.authors) || rawBook.authors.length === 0) {
+    rawBook.authors = [params.requestedAuthor];
+  }
+  return rawBook;
 }
 
 function hasPublisherArtifactAuthor(authorNorm: string): boolean {
@@ -318,6 +507,10 @@ function computeBulkCandidateScore(params: {
     score += 15;
   }
 
+  if (candidateHasUsableCover(params.result)) {
+    score += 10;
+  }
+
   score += Number.isFinite(params.result.confidence) ? params.result.confidence : 0;
   score -= typeof params.result.rank === "number" ? params.result.rank : 0;
 
@@ -369,6 +562,207 @@ function selectStrongestBulkProviderCandidate(params: {
     if (scoreDelta !== 0) return scoreDelta;
     return left.rank - right.rank;
   })[0] || null;
+}
+
+function computeDeleteCanonicalScore(params: {
+  result: UnifiedSearchResult;
+  requestedTitleNorm: string;
+  requestedAuthorNorm: string;
+}): number {
+  if (params.result.resultType !== "canonical") {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  const titleNorm = normalizeSearchText(params.result.title);
+  const authorNorm = normalizeCandidateAuthor(params.result);
+  let score = 0;
+
+  if (titleNorm === params.requestedTitleNorm) {
+    score += 100;
+  } else if (
+    params.requestedTitleNorm &&
+    (titleNorm.startsWith(`${params.requestedTitleNorm} `) ||
+      params.requestedTitleNorm.startsWith(titleNorm))
+  ) {
+    score += 20;
+  }
+
+  if (authorNorm === params.requestedAuthorNorm) {
+    score += 80;
+  } else if (
+    params.requestedAuthorNorm &&
+    (authorNorm.startsWith(params.requestedAuthorNorm) ||
+      params.requestedAuthorNorm.startsWith(authorNorm))
+  ) {
+    score += 15;
+  }
+
+  score += Number.isFinite(params.result.confidence) ? params.result.confidence : 0;
+  score -= typeof params.result.rank === "number" ? params.result.rank : 0;
+  return score;
+}
+
+async function resolveCanonicalBookIdForDelete(params: {
+  title: string;
+  author: string;
+}): Promise<string | null> {
+  const search = await unifiedSearch(`${params.title} ${params.author}`.trim(), {
+    limit: 10,
+  });
+  const requestedTitleNorm = normalizeSearchText(params.title);
+  const requestedAuthorNorm = normalizeSearchText(params.author);
+  const candidates = search.results.filter((result) => result.resultType === "canonical");
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const selected = [...candidates].sort((left, right) => {
+    const scoreDelta =
+      computeDeleteCanonicalScore({
+        result: right,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+      }) -
+      computeDeleteCanonicalScore({
+        result: left,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+      });
+    if (scoreDelta !== 0) return scoreDelta;
+    return left.rank - right.rank;
+  })[0];
+
+  return selected?.bookId || null;
+}
+
+async function deleteCanonicalBookCascade(bookId: string): Promise<AdminDeleteCanonicalBookResponse> {
+  const counts = emptyDeleteCascadeCounts();
+  const bookRef = db.collection("books").doc(bookId);
+  const [bookSnap, editionsSnap, identitySnap, ingestionSnap, readingProgressSnap, librarySnap, quotesSnap] =
+    await Promise.all([
+      bookRef.get(),
+      db.collection("editions").where("bookId", "==", bookId).get(),
+      db.collection("book_identity").where("bookId", "==", bookId).get(),
+      db.collection("book_ingestions").where("bookId", "==", bookId).get(),
+      db.collection("reading_progress").where("bookId", "==", bookId).get(),
+      db.collection("user_library_books").where("bookId", "==", bookId).get(),
+      db.collection("quotes").where("bookId", "==", bookId).get(),
+    ]);
+
+  if (!bookSnap.exists) {
+    return {
+      bookId,
+      deleted: false,
+      cascade: counts,
+    };
+  }
+
+  const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
+  const authorId = readOptionalString(bookData.authorId, "authorId", 180);
+
+  const shelfRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+  for (const doc of librarySnap.docs) {
+    const data = (doc.data() || {}) as Record<string, unknown>;
+    const shelfIds = Array.isArray(data.shelfIds) ? data.shelfIds : [];
+    for (const shelfId of shelfIds) {
+      const normalizedShelfId =
+        typeof shelfId === "string" && shelfId.trim().length > 0 ? shelfId.trim() : "";
+      if (normalizedShelfId && !shelfRefs.has(normalizedShelfId)) {
+        shelfRefs.set(normalizedShelfId, db.collection("shelves").doc(normalizedShelfId));
+      }
+    }
+  }
+
+  for (const shelfRef of shelfRefs.values()) {
+    const shelfSnap = await shelfRef.get();
+    if (!shelfSnap.exists) continue;
+    const shelfData = (shelfSnap.data() || {}) as Record<string, unknown>;
+    const orderedBookIds = Array.isArray(shelfData.orderedBookIds)
+      ? shelfData.orderedBookIds.filter((entry) => entry !== bookId)
+      : undefined;
+    await shelfRef.set(
+      {
+        [`entries.${bookId}`]: FieldValue.delete(),
+        ...(orderedBookIds ? { orderedBookIds } : {}),
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    counts.shelfRefs += 1;
+  }
+
+  for (const quoteDoc of quotesSnap.docs) {
+    await quoteDoc.ref.set(
+      {
+        bookId: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    counts.quoteLinks += 1;
+  }
+
+  if (authorId) {
+    const authorRef = db.collection("authors").doc(authorId);
+    const authorSnap = await authorRef.get();
+    if (authorSnap.exists) {
+      const authorData = (authorSnap.data() || {}) as Record<string, unknown>;
+      const nextBookIds = Array.isArray(authorData.bookIds)
+        ? authorData.bookIds.filter((entry) => entry !== bookId)
+        : [];
+      await authorRef.set(
+        {
+          bookIds: nextBookIds,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      counts.authorRefs += 1;
+    }
+  }
+
+  const coverJobRefs = [
+    db.collection("cover_jobs").doc(bookId),
+    db.collection("coverJobs").doc(bookId),
+  ];
+  for (const ref of coverJobRefs) {
+    const snap = await ref.get();
+    if (snap.exists) {
+      await ref.delete();
+      counts.coverJobs += 1;
+    }
+  }
+
+  for (const doc of editionsSnap.docs) {
+    await doc.ref.delete();
+    counts.editions += 1;
+  }
+  for (const doc of identitySnap.docs) {
+    await doc.ref.delete();
+    counts.bookIdentity += 1;
+  }
+  for (const doc of ingestionSnap.docs) {
+    await doc.ref.delete();
+    counts.bookIngestions += 1;
+  }
+  for (const doc of readingProgressSnap.docs) {
+    await doc.ref.delete();
+    counts.readingProgress += 1;
+  }
+  for (const doc of librarySnap.docs) {
+    await doc.ref.delete();
+    counts.userLibraryBooks += 1;
+  }
+
+  await bookRef.delete();
+  counts.books += 1;
+  counts.coverStorageFiles += await deleteStoragePrefix(`books/${bookId}/covers/`);
+
+  return {
+    bookId,
+    deleted: true,
+    cascade: counts,
+  };
 }
 
 function parseOptionalIsbn(value: unknown): { isbn10?: string; isbn13?: string } {
@@ -865,6 +1259,107 @@ export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) =
   };
 });
 
+export const adminDeleteCanonicalBook = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const bookId = readRequiredString(request.data?.bookId, "bookId", 180);
+  return deleteCanonicalBookCascade(bookId);
+});
+
+export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  const data = (request.data ?? {}) as AdminDeleteCanonicalSeedListInput;
+  const rows = parseBulkSeedRows(data.rows);
+  const results: AdminDeleteCanonicalSeedListRow[] = [];
+
+  for (const entry of rows) {
+    try {
+      const bookId = await resolveCanonicalBookIdForDelete({
+        title: entry.title,
+        author: entry.author,
+      });
+
+      if (!bookId) {
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "missing",
+          message: "No canonical book matched this row.",
+        });
+        continue;
+      }
+
+      const deleted = await deleteCanonicalBookCascade(bookId);
+      results.push({
+        row: entry.row,
+        input: entry.input,
+        title: entry.title,
+        author: entry.author,
+        status: deleted.deleted ? "success" : "missing",
+        bookId,
+        ...(deleted.deleted ? {} : { message: "Canonical book not found." }),
+      });
+    } catch (error) {
+      results.push({
+        row: entry.row,
+        input: entry.input,
+        title: entry.title,
+        author: entry.author,
+        status: "failed",
+        message: mapBatchError(error),
+      });
+    }
+  }
+
+  return {
+    rows: results,
+    summary: buildDeleteListSummary(results),
+  };
+});
+
+export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
+  assertRoleFromClaims(request.auth, "superadmin");
+  if (!isDevelopmentDeleteMode()) {
+    throw new HttpsError("failed-precondition", "Delete all books is development-only.");
+  }
+
+  const confirmation = readRequiredString(
+    (request.data as AdminDeleteAllBooksInput | null | undefined)?.confirmation,
+    "confirmation",
+    64
+  );
+  if (confirmation !== "DELETE ALL BOOKS") {
+    throw new HttpsError("invalid-argument", 'confirmation must equal "DELETE ALL BOOKS".');
+  }
+
+  const booksSnap = await db.collection("books").get();
+  let deletedCount = 0;
+  const cascade = emptyDeleteCascadeCounts();
+
+  for (const doc of booksSnap.docs) {
+    const result = await deleteCanonicalBookCascade(doc.id);
+    if (!result.deleted) continue;
+    deletedCount += 1;
+    cascade.books += result.cascade.books;
+    cascade.editions += result.cascade.editions;
+    cascade.bookIdentity += result.cascade.bookIdentity;
+    cascade.bookIngestions += result.cascade.bookIngestions;
+    cascade.coverJobs += result.cascade.coverJobs;
+    cascade.readingProgress += result.cascade.readingProgress;
+    cascade.userLibraryBooks += result.cascade.userLibraryBooks;
+    cascade.shelfRefs += result.cascade.shelfRefs;
+    cascade.quoteLinks += result.cascade.quoteLinks;
+    cascade.authorRefs += result.cascade.authorRefs;
+    cascade.coverStorageFiles += result.cascade.coverStorageFiles;
+  }
+
+  return {
+    deletedCount,
+    cascade,
+  };
+});
+
 export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) => {
   assertRoleFromClaims(request.auth, "superadmin");
   const data = (request.data ?? {}) as AdminSeedCanonicalBatchInput;
@@ -917,7 +1412,11 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         uid: request.auth?.uid || "admin",
         source: providerSource,
         providerExternalId: providerCandidate.externalId,
-        rawBook: providerCandidate.rawBook,
+        rawBook: prepareBulkCandidateRawBook({
+          result: providerCandidate,
+          requestedTitle: entry.title,
+          requestedAuthor: entry.author,
+        }),
       });
 
       results.push({

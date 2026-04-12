@@ -523,4 +523,257 @@ describe("adminCreateCanonicalBook", () => {
       })
     );
   });
+
+  it("prefers a cover-bearing candidate when authority signals are otherwise equal", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "gb_plain",
+          editionId: "gb_plain",
+          bookId: "gb_plain",
+          workId: null,
+          externalId: "GBPLAIN",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Trial",
+          titleEn: "The Trial",
+          titleAr: "",
+          authors: ["Franz Kafka"],
+          authorEn: "Franz Kafka",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            title: "The Trial",
+            author: "Franz Kafka",
+          },
+        },
+        {
+          id: "ol_cover",
+          editionId: "ol_cover",
+          bookId: "ol_cover",
+          workId: null,
+          externalId: "OLCOVER",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Trial",
+          titleEn: "The Trial",
+          titleAr: "",
+          authors: ["Franz Kafka"],
+          authorEn: "Franz Kafka",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 2,
+          rawBook: {
+            title: "The Trial",
+            author: "Franz Kafka",
+            cover_i: "987654",
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "trial-1",
+      bookId: "trial-1",
+      editionId: "openLibrary:OLCOVER",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Trial | Franz Kafka",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OLCOVER",
+      })
+    );
+  });
+
+  it("cleans provider-polluted canonical titles before batch ingestion while preserving cover fields", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "crime_polluted",
+            editionId: "crime_polluted",
+            bookId: "crime_polluted",
+            workId: null,
+            externalId: "CRIME1",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Crime and Punishment by Fyodor Mikhailovich Dostoyevsky Unabridged 1866",
+            titleEn: "Crime and Punishment by Fyodor Mikhailovich Dostoyevsky Unabridged 1866",
+            titleAr: "",
+            authors: ["Fyodor Dostoevsky"],
+            authorEn: "Fyodor Dostoevsky",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 90,
+            rank: 1,
+            rawBook: {
+              title: "Crime and Punishment by Fyodor Mikhailovich Dostoyevsky Unabridged 1866",
+              titleEn: "Crime and Punishment by Fyodor Mikhailovich Dostoyevsky Unabridged 1866",
+              author: "Fyodor Dostoevsky",
+              authors: ["Fyodor Dostoevsky"],
+              cover_i: "111111",
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "bovary_polluted",
+            editionId: "bovary_polluted",
+            bookId: "bovary_polluted",
+            workId: null,
+            externalId: "BOVARY1",
+            source: "googleBooks",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Madame Bovary By Gustave Flaubert",
+            titleEn: "Madame Bovary By Gustave Flaubert",
+            titleAr: "",
+            authors: ["Gustave Flaubert"],
+            authorEn: "Gustave Flaubert",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 90,
+            rank: 1,
+            rawBook: {
+              title: "Madame Bovary By Gustave Flaubert",
+              titleEn: "Madame Bovary By Gustave Flaubert",
+              author: "Gustave Flaubert",
+              authors: ["Gustave Flaubert"],
+              thumbnail: "https://example.com/madame-bovary.jpg",
+            },
+          },
+        ],
+      });
+
+    ingestBookServerSideMock
+      .mockResolvedValueOnce({
+        canonicalBookId: "crime-clean",
+        bookId: "crime-clean",
+        editionId: "openLibrary:CRIME1",
+        status: "CREATED",
+      })
+      .mockResolvedValueOnce({
+        canonicalBookId: "bovary-clean",
+        bookId: "bovary-clean",
+        editionId: "googleBooks:BOVARY1",
+        status: "CREATED",
+      });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: [
+          "Crime and Punishment | Fyodor Dostoevsky",
+          "Madame Bovary | Gustave Flaubert",
+        ].join("\n"),
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "CRIME1",
+        rawBook: expect.objectContaining({
+          title: "Crime and Punishment",
+          titleEn: "Crime and Punishment",
+          cover_i: "111111",
+        }),
+      })
+    );
+
+    expect(ingestBookServerSideMock).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        source: "googleBooks",
+        providerExternalId: "BOVARY1",
+        rawBook: expect.objectContaining({
+          title: "Madame Bovary",
+          titleEn: "Madame Bovary",
+          thumbnail: "https://example.com/madame-bovary.jpg",
+        }),
+      })
+    );
+  });
 });

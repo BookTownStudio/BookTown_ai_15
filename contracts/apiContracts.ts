@@ -393,6 +393,34 @@ const adminCanonicalBatchRowSchema = z
   })
   .strict();
 
+const adminDeleteCascadeSchema = z
+  .object({
+    books: z.number().int().nonnegative(),
+    editions: z.number().int().nonnegative(),
+    bookIdentity: z.number().int().nonnegative(),
+    bookIngestions: z.number().int().nonnegative(),
+    coverJobs: z.number().int().nonnegative(),
+    readingProgress: z.number().int().nonnegative(),
+    userLibraryBooks: z.number().int().nonnegative(),
+    shelfRefs: z.number().int().nonnegative(),
+    quoteLinks: z.number().int().nonnegative(),
+    authorRefs: z.number().int().nonnegative(),
+    coverStorageFiles: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const adminDeleteSeedListRowSchema = z
+  .object({
+    row: z.number().int().positive(),
+    input: z.string().min(1),
+    title: z.string().min(1),
+    author: z.string().min(1),
+    status: z.enum(["success", "missing", "failed"]),
+    bookId: z.string().min(1).optional(),
+    message: z.string().min(1).optional(),
+  })
+  .strict();
+
 const adminQuoteSchema = z
   .object({
     quoteId: z.string().min(1),
@@ -2001,6 +2029,67 @@ export const apiContracts = {
               failedCount: z.number().int().nonnegative(),
             })
             .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
+    adminDeleteCanonicalBook: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1).max(180),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          deleted: z.boolean(),
+          cascade: adminDeleteCascadeSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
+    adminDeleteCanonicalSeedList: defineContract(
+      z
+        .object({
+          rows: z.string().min(1).max(30000),
+        })
+        .strict(),
+      z
+        .object({
+          rows: z.array(adminDeleteSeedListRowSchema),
+          summary: z
+            .object({
+              successCount: z.number().int().nonnegative(),
+              missingCount: z.number().int().nonnegative(),
+              failedCount: z.number().int().nonnegative(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
+    adminDeleteAllBooks: defineContract(
+      z
+        .object({
+          confirmation: z.string().min(1).max(64),
+        })
+        .strict(),
+      z
+        .object({
+          deletedCount: z.number().int().nonnegative(),
+          cascade: adminDeleteCascadeSchema,
         })
         .strict(),
       "httpsCallable",

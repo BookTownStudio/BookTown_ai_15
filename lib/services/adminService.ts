@@ -161,6 +161,30 @@ export type AdminCanonicalBatchSummary = {
   failedCount: number;
 };
 
+export type AdminDeleteCascade = {
+  books: number;
+  editions: number;
+  bookIdentity: number;
+  bookIngestions: number;
+  coverJobs: number;
+  readingProgress: number;
+  userLibraryBooks: number;
+  shelfRefs: number;
+  quoteLinks: number;
+  authorRefs: number;
+  coverStorageFiles: number;
+};
+
+export type AdminDeleteSeedListRow = {
+  row: number;
+  input: string;
+  title: string;
+  author: string;
+  status: 'success' | 'missing' | 'failed';
+  bookId?: string;
+  message?: string;
+};
+
 export type AdminQuoteRecord = {
   quoteId: string;
   canonicalQuoteId: string;
@@ -735,6 +759,48 @@ function mapAdminCanonicalBatchRow(item: unknown, index: number): AdminCanonical
     source: (source ?? undefined) as 'googleBooks' | 'openLibrary' | undefined,
     providerExternalId:
       readNullableString(data.providerExternalId, 'providerExternalId', context) ?? undefined,
+    message: readNullableString(data.message, 'message', context) ?? undefined,
+  };
+}
+
+function mapAdminDeleteCascade(item: unknown): AdminDeleteCascade {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error('[adminService] Invalid admin delete cascade payload.');
+  }
+  const data = item as Record<string, unknown>;
+  const context = 'admin delete cascade';
+  return {
+    books: readRequiredNumber(data.books, 'books', context),
+    editions: readRequiredNumber(data.editions, 'editions', context),
+    bookIdentity: readRequiredNumber(data.bookIdentity, 'bookIdentity', context),
+    bookIngestions: readRequiredNumber(data.bookIngestions, 'bookIngestions', context),
+    coverJobs: readRequiredNumber(data.coverJobs, 'coverJobs', context),
+    readingProgress: readRequiredNumber(data.readingProgress, 'readingProgress', context),
+    userLibraryBooks: readRequiredNumber(data.userLibraryBooks, 'userLibraryBooks', context),
+    shelfRefs: readRequiredNumber(data.shelfRefs, 'shelfRefs', context),
+    quoteLinks: readRequiredNumber(data.quoteLinks, 'quoteLinks', context),
+    authorRefs: readRequiredNumber(data.authorRefs, 'authorRefs', context),
+    coverStorageFiles: readRequiredNumber(data.coverStorageFiles, 'coverStorageFiles', context),
+  };
+}
+
+function mapAdminDeleteSeedListRow(item: unknown, index: number): AdminDeleteSeedListRow {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid admin delete seed list row at index ${index}.`);
+  }
+  const data = item as Record<string, unknown>;
+  const context = `admin delete seed list row #${index}`;
+  const status = readRequiredString(data.status, 'status', context);
+  if (status !== 'success' && status !== 'missing' && status !== 'failed') {
+    throw new Error(`[adminService] ${context}.status is invalid.`);
+  }
+  return {
+    row: readRequiredNumber(data.row, 'row', context),
+    input: readRequiredString(data.input, 'input', context),
+    title: readRequiredString(data.title, 'title', context),
+    author: readRequiredString(data.author, 'author', context),
+    status,
+    bookId: readNullableString(data.bookId, 'bookId', context) ?? undefined,
     message: readNullableString(data.message, 'message', context) ?? undefined,
   };
 }
@@ -1316,6 +1382,95 @@ export const adminService = {
         existingCount: readRequiredNumber(data.summary?.existingCount, 'existingCount', 'admin canonical batch summary'),
         failedCount: readRequiredNumber(data.summary?.failedCount, 'failedCount', 'admin canonical batch summary'),
       },
+    };
+  },
+
+  async deleteCanonicalBook(payload: {
+    bookId: string;
+  }): Promise<{
+    bookId: string;
+    deleted: boolean;
+    cascade: AdminDeleteCascade;
+  }> {
+    const data = await callCallableEndpoint<
+      typeof payload,
+      {
+        bookId: string;
+        deleted: boolean;
+        cascade: unknown;
+      }
+    >('adminDeleteCanonicalBook', payload);
+
+    return {
+      bookId: readRequiredString(data.bookId, 'bookId', 'adminDeleteCanonicalBook'),
+      deleted: data.deleted === true,
+      cascade: mapAdminDeleteCascade(data.cascade),
+    };
+  },
+
+  async deleteCanonicalSeedList(payload: {
+    rows: string;
+  }): Promise<{
+    rows: AdminDeleteSeedListRow[];
+    summary: {
+      successCount: number;
+      missingCount: number;
+      failedCount: number;
+    };
+  }> {
+    const data = await callCallableEndpoint<
+      typeof payload,
+      {
+        rows: unknown[];
+        summary: {
+          successCount: number;
+          missingCount: number;
+          failedCount: number;
+        };
+      }
+    >('adminDeleteCanonicalSeedList', payload);
+
+    return {
+      rows: Array.isArray(data.rows)
+        ? data.rows.map((item, index) => mapAdminDeleteSeedListRow(item, index))
+        : [],
+      summary: {
+        successCount: readRequiredNumber(
+          data.summary?.successCount,
+          'successCount',
+          'admin delete seed list summary'
+        ),
+        missingCount: readRequiredNumber(
+          data.summary?.missingCount,
+          'missingCount',
+          'admin delete seed list summary'
+        ),
+        failedCount: readRequiredNumber(
+          data.summary?.failedCount,
+          'failedCount',
+          'admin delete seed list summary'
+        ),
+      },
+    };
+  },
+
+  async deleteAllBooks(payload: {
+    confirmation: string;
+  }): Promise<{
+    deletedCount: number;
+    cascade: AdminDeleteCascade;
+  }> {
+    const data = await callCallableEndpoint<
+      typeof payload,
+      {
+        deletedCount: number;
+        cascade: unknown;
+      }
+    >('adminDeleteAllBooks', payload);
+
+    return {
+      deletedCount: readRequiredNumber(data.deletedCount, 'deletedCount', 'adminDeleteAllBooks'),
+      cascade: mapAdminDeleteCascade(data.cascade),
     };
   },
 
