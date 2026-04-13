@@ -10,7 +10,8 @@ const unifiedSearchMock = vi.fn();
 
 type SpecialValue =
   | { __op: "serverTimestamp" }
-  | { __op: "arrayUnion"; values: unknown[] };
+  | { __op: "arrayUnion"; values: unknown[] }
+  | { __op: "delete" };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -25,7 +26,24 @@ function asSpecial(value: unknown): SpecialValue | null {
   const op = value.__op;
   if (op === "serverTimestamp") return value as SpecialValue;
   if (op === "arrayUnion") return value as SpecialValue;
+  if (op === "delete") return value as SpecialValue;
   return null;
+}
+
+function deleteAtPath(target: Record<string, unknown>, path: string): void {
+  const parts = path.split(".");
+  let cursor: Record<string, unknown> = target;
+
+  for (let index = 0; index < parts.length - 1; index += 1) {
+    const part = parts[index];
+    const next = cursor[part];
+    if (!isRecord(next)) {
+      return;
+    }
+    cursor = next;
+  }
+
+  delete cursor[parts[parts.length - 1]];
 }
 
 function materialize(
@@ -45,6 +63,11 @@ function materialize(
     if (special?.__op === "arrayUnion") {
       const current = Array.isArray(existing[key]) ? (existing[key] as unknown[]) : [];
       next[key] = Array.from(new Set([...current, ...special.values]));
+      continue;
+    }
+
+    if (special?.__op === "delete") {
+      deleteAtPath(next, key);
       continue;
     }
 
@@ -80,6 +103,10 @@ class MockDocSnapshot {
   get id(): string {
     return this.path.split("/").pop() || "";
   }
+  get ref(): MockDocRef {
+    const [collectionName, id] = this.path.split("/");
+    return new MockDocRef(collectionName, id);
+  }
   get exists(): boolean {
     return store.has(this.path);
   }
@@ -100,6 +127,39 @@ class MockDocRef {
   async get(): Promise<MockDocSnapshot> {
     return new MockDocSnapshot(this.path);
   }
+  async set(data: Record<string, unknown>, options?: { merge?: boolean }): Promise<void> {
+    setDoc(this.path, data, Boolean(options?.merge));
+  }
+  async delete(): Promise<void> {
+    store.delete(this.path);
+  }
+}
+
+class MockQuery {
+  constructor(
+    private readonly collectionName: string,
+    private readonly field: string | null,
+    private readonly value: unknown,
+    private readonly limitCount?: number
+  ) {}
+
+  async get(): Promise<{ docs: MockDocSnapshot[] }> {
+    const docs = Array.from(store.entries())
+      .filter(([path, data]) => {
+        const [collectionName] = path.split("/");
+        if (collectionName !== this.collectionName) return false;
+        if (this.field == null) return true;
+        return isRecord(data) && data[this.field] === this.value;
+      })
+      .map(([path]) => new MockDocSnapshot(path))
+      .slice(0, this.limitCount ?? Number.MAX_SAFE_INTEGER);
+
+    return { docs };
+  }
+
+  limit(count: number): MockQuery {
+    return new MockQuery(this.collectionName, this.field, this.value, count);
+  }
 }
 
 class MockCollectionRef {
@@ -107,10 +167,22 @@ class MockCollectionRef {
   doc(id?: string): MockDocRef {
     return new MockDocRef(this.name, id || `doc-${++uuidCounter}`);
   }
+  where(field: string, op: string, value: unknown): MockQuery {
+    if (op !== "==") {
+      throw new Error(`Unsupported operator ${op}`);
+    }
+    return new MockQuery(this.name, field, value);
+  }
+  get(): Promise<{ docs: MockDocSnapshot[] }> {
+    return new MockQuery(this.name, null, null).get();
+  }
 }
 
 class MockTransaction {
-  async get(ref: MockDocRef): Promise<MockDocSnapshot> {
+  async get(ref: MockDocRef | MockQuery): Promise<MockDocSnapshot | { docs: MockDocSnapshot[] }> {
+    if (ref instanceof MockQuery) {
+      return ref.get();
+    }
     return new MockDocSnapshot(ref.path);
   }
   async getAll(...refs: MockDocRef[]): Promise<MockDocSnapshot[]> {
@@ -145,6 +217,7 @@ vi.mock("firebase-admin/firestore", () => ({
   FieldValue: {
     serverTimestamp: () => ({ __op: "serverTimestamp" }),
     arrayUnion: (...values: unknown[]) => ({ __op: "arrayUnion", values }),
+    delete: () => ({ __op: "delete" }),
   },
 }));
 
@@ -178,6 +251,7 @@ vi.mock("../firebaseAdmin", () => ({
     storage: () => ({
       bucket: () => ({
         name: "booktown-test.appspot.com",
+        getFiles: async () => [[]],
       }),
     }),
   },
@@ -208,6 +282,11 @@ async function getAdminCreateCanonicalBookCallable() {
 async function getAdminSeedCanonicalBatchCallable() {
   const mod = await import("./literaryAuthority");
   return mod.adminSeedCanonicalBatch as any;
+}
+
+async function getAdminDeleteAllBooksCallable() {
+  const mod = await import("./literaryAuthority");
+  return mod.adminDeleteAllBooks as any;
 }
 
 describe("adminCreateCanonicalBook", () => {
@@ -775,5 +854,56 @@ describe("adminCreateCanonicalBook", () => {
         }),
       })
     );
+  });
+
+  it("allows superadmin delete-all execution with explicit confirmation and runs the cascade", async () => {
+    const callable = await getAdminDeleteAllBooksCallable();
+
+    setDoc("books/book-1", { title: "The Trial", authorId: "author-1" }, false);
+    setDoc("books/book-2", { title: "The Plague" }, false);
+    setDoc("editions/edition-1", { bookId: "book-1" }, false);
+    setDoc("book_identity/identity-1", { bookId: "book-1" }, false);
+    setDoc("book_ingestions/ingestion-1", { bookId: "book-1" }, false);
+    setDoc("reading_progress/user-1_book-1", { bookId: "book-1" }, false);
+    setDoc("user_library_books/user-1_book-1", { bookId: "book-1", shelfIds: ["shelf-1"] }, false);
+    setDoc("shelves/shelf-1", { entries: { "book-1": { addedAt: "ts" } }, orderedBookIds: ["book-1"] }, false);
+    setDoc("quotes/quote-1", { bookId: "book-1" }, false);
+    setDoc("authors/author-1", { bookIds: ["book-1", "book-9"] }, false);
+    setDoc("cover_jobs/book-1", { status: "PENDING" }, false);
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        confirmation: "DELETE ALL BOOKS",
+      },
+    });
+
+    expect(result).toEqual({
+      deletedCount: 2,
+      cascade: expect.objectContaining({
+        books: 2,
+        editions: 1,
+        bookIdentity: 1,
+        bookIngestions: 1,
+        coverJobs: 1,
+        readingProgress: 1,
+        userLibraryBooks: 1,
+        shelfRefs: 1,
+        quoteLinks: 1,
+        authorRefs: 1,
+      }),
+    });
+    expect(getDoc("books/book-1")).toBeNull();
+    expect(getDoc("books/book-2")).toBeNull();
+    expect(getDoc("editions/edition-1")).toBeNull();
+    expect(getDoc("book_identity/identity-1")).toBeNull();
+    expect(getDoc("book_ingestions/ingestion-1")).toBeNull();
+    expect(getDoc("reading_progress/user-1_book-1")).toBeNull();
+    expect(getDoc("user_library_books/user-1_book-1")).toBeNull();
+    expect(getDoc("cover_jobs/book-1")).toBeNull();
+    expect(getDoc("quotes/quote-1")?.bookId).toBeNull();
+    expect(getDoc("authors/author-1")?.bookIds).toEqual(["book-9"]);
+    expect(getDoc("shelves/shelf-1")?.orderedBookIds).toEqual([]);
+    expect(getDoc("shelves/shelf-1")?.entries).toEqual({});
   });
 });

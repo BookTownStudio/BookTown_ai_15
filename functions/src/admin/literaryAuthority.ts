@@ -309,14 +309,6 @@ function emptyDeleteCascadeCounts(): AdminDeleteBookCascadeCounts {
   };
 }
 
-function isDevelopmentDeleteMode(): boolean {
-  return (
-    process.env.FUNCTIONS_EMULATOR === "true" ||
-    process.env.NODE_ENV === "development" ||
-    process.env.NODE_ENV === "test"
-  );
-}
-
 async function deleteStoragePrefix(prefix: string): Promise<number> {
   const bucket = admin.storage().bucket();
   const [files] = await bucket.getFiles({ prefix });
@@ -1320,9 +1312,6 @@ export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (reques
 
 export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
   assertRoleFromClaims(request.auth, "superadmin");
-  if (!isDevelopmentDeleteMode()) {
-    throw new HttpsError("failed-precondition", "Delete all books is development-only.");
-  }
 
   const confirmation = readRequiredString(
     (request.data as AdminDeleteAllBooksInput | null | undefined)?.confirmation,
