@@ -770,6 +770,26 @@ const BooksPanel: React.FC = () => {
               <div>{createdBook.coverState || 'No cover job'}</div>
             </div>
             <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Cover Source</div>
+              <div>{createdBook.coverSource || 'Not set'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Cover Authority</div>
+              <div>{typeof createdBook.coverAuthority === 'number' ? createdBook.coverAuthority : 'Not set'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Description Source</div>
+              <div>{createdBook.descriptionSource || 'Not set'}</div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+              <div className="text-xs uppercase tracking-wide text-slate-500">Description Authority</div>
+              <div>
+                {typeof createdBook.descriptionAuthority === 'number'
+                  ? createdBook.descriptionAuthority
+                  : 'Not set'}
+              </div>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
               <div className="text-xs uppercase tracking-wide text-slate-500">Edition ID</div>
               <div>{createdBook.editionId || 'No edition'}</div>
             </div>

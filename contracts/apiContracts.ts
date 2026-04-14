@@ -373,6 +373,10 @@ const adminCanonicalBookSchema = z
     authorityStatus: z.string().min(1),
     canonicalLocked: z.boolean(),
     coverState: z.string().min(1).optional(),
+    coverSource: z.string().min(1).optional(),
+    coverAuthority: z.number().int().nonnegative().optional(),
+    descriptionSource: z.string().min(1).optional(),
+    descriptionAuthority: z.number().int().nonnegative().optional(),
     editionId: z.string().min(1).optional(),
   })
   .strict();

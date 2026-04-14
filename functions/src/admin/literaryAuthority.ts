@@ -70,6 +70,10 @@ type AdminCanonicalBookShape = {
   authorityStatus: string;
   canonicalLocked: boolean;
   coverState?: string;
+  coverSource?: string;
+  coverAuthority?: number;
+  descriptionSource?: string;
+  descriptionAuthority?: number;
   editionId?: string;
 };
 
@@ -986,6 +990,22 @@ function mapAdminCanonicalBook(raw: DocumentData, bookId: string): AdminCanonica
     coverState:
       typeof raw.coverState === "string" && raw.coverState.trim()
         ? raw.coverState.trim()
+        : undefined,
+    coverSource:
+      typeof raw.coverSource === "string" && raw.coverSource.trim()
+        ? raw.coverSource.trim()
+        : undefined,
+    coverAuthority:
+      typeof raw.coverAuthority === "number" && Number.isFinite(raw.coverAuthority)
+        ? raw.coverAuthority
+        : undefined,
+    descriptionSource:
+      typeof raw.descriptionSource === "string" && raw.descriptionSource.trim()
+        ? raw.descriptionSource.trim()
+        : undefined,
+    descriptionAuthority:
+      typeof raw.descriptionAuthority === "number" && Number.isFinite(raw.descriptionAuthority)
+        ? raw.descriptionAuthority
         : undefined,
     editionId:
       typeof raw.editionId === "string" && raw.editionId.trim()

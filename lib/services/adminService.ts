@@ -138,6 +138,10 @@ export type AdminCanonicalBookRecord = {
   authorityStatus: string;
   canonicalLocked: boolean;
   coverState?: string;
+  coverSource?: string;
+  coverAuthority?: number;
+  descriptionSource?: string;
+  descriptionAuthority?: number;
   editionId?: string;
 };
 
@@ -722,6 +726,17 @@ function mapAdminCanonicalBookItem(item: unknown, index: number): AdminCanonical
     authorityStatus: readRequiredString(data.authorityStatus, 'authorityStatus', context),
     canonicalLocked: data.canonicalLocked === true,
     coverState: readNullableString(data.coverState, 'coverState', context) ?? undefined,
+    coverSource: readNullableString(data.coverSource, 'coverSource', context) ?? undefined,
+    coverAuthority:
+      typeof data.coverAuthority === 'number' && Number.isFinite(data.coverAuthority)
+        ? data.coverAuthority
+        : undefined,
+    descriptionSource:
+      readNullableString(data.descriptionSource, 'descriptionSource', context) ?? undefined,
+    descriptionAuthority:
+      typeof data.descriptionAuthority === 'number' && Number.isFinite(data.descriptionAuthority)
+        ? data.descriptionAuthority
+        : undefined,
     editionId: readNullableString(data.editionId, 'editionId', context) ?? undefined,
   };
 }

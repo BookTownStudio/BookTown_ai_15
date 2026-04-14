@@ -23,6 +23,9 @@ export type LiteraryAuthoritySource =
   | "openLibrary"
   | "user_upload";
 
+type MetadataAuthorityField = "cover" | "description";
+type MetadataAuthoritySource = "manualAdmin" | "googleBooks" | "openLibrary";
+
 type IdentityType =
   | "isbn13"
   | "isbn10"
@@ -249,6 +252,166 @@ function resolveDescription(rawBook: Record<string, unknown>): string {
     asNonEmptyString(rawBook.summary) ||
     ""
   );
+}
+
+function normalizeMetadataAuthoritySource(
+  source: LiteraryAuthoritySource
+): MetadataAuthoritySource | null {
+  if (source === "booktown_canonical" || source === "canonical_seed") {
+    return "manualAdmin";
+  }
+  if (source === "googleBooks" || source === "openLibrary") {
+    return source;
+  }
+  return null;
+}
+
+function getMetadataAuthorityScore(
+  field: MetadataAuthorityField,
+  source: MetadataAuthoritySource | null
+): number {
+  if (!source) return 0;
+  if (field === "cover") {
+    if (source === "manualAdmin") return 100;
+    if (source === "googleBooks") return 90;
+    if (source === "openLibrary") return 70;
+    return 0;
+  }
+
+  if (source === "manualAdmin") return 100;
+  if (source === "googleBooks") return 80;
+  if (source === "openLibrary") return 70;
+  return 0;
+}
+
+function isValidHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function normalizeDescriptionText(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function isValidDescriptionText(value: string): boolean {
+  const normalized = normalizeDescriptionText(value);
+  if (normalized.length < 80) {
+    return false;
+  }
+  if (normalized.includes("\uFFFD")) {
+    return false;
+  }
+  if (
+    /\b(unabridged|abridged|illustrated edition|collector(?:'s)? edition|special edition|paperback edition|hardcover edition|movie tie-?in|box set|omnibus)\b/iu.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  if (/[^\p{L}\p{N}\s]{6,}/u.test(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function resolveExistingMetadataAuthority(params: {
+  field: MetadataAuthorityField;
+  existingBook: Record<string, unknown> | null;
+}): {
+  source: MetadataAuthoritySource | null;
+  authority: number;
+} {
+  const sourceField = params.field === "cover" ? "coverSource" : "descriptionSource";
+  const authorityField =
+    params.field === "cover" ? "coverAuthority" : "descriptionAuthority";
+  const storedSourceRaw = asNonEmptyString(params.existingBook?.[sourceField]);
+  const storedSource: MetadataAuthoritySource | null =
+    storedSourceRaw === "manualAdmin" ||
+    storedSourceRaw === "googleBooks" ||
+    storedSourceRaw === "openLibrary"
+      ? storedSourceRaw
+      : normalizeMetadataAuthoritySource(asNonEmptyString(params.existingBook?.source) as LiteraryAuthoritySource);
+
+  const storedAuthorityValue = params.existingBook?.[authorityField];
+  if (typeof storedAuthorityValue === "number" && Number.isFinite(storedAuthorityValue)) {
+    return {
+      source: storedSource,
+      authority: storedAuthorityValue,
+    };
+  }
+
+  return {
+    source: storedSource,
+    authority: getMetadataAuthorityScore(params.field, storedSource),
+  };
+}
+
+function resolveMetadataField(params: {
+  field: MetadataAuthorityField;
+  existingBook: Record<string, unknown> | null;
+  existingValue: string;
+  incomingValue: string;
+  incomingSource: MetadataAuthoritySource | null;
+}): {
+  value: string;
+  source: MetadataAuthoritySource | null;
+  authority: number | null;
+  acceptedIncoming: boolean;
+} {
+  const existingValue = params.existingValue.trim();
+  const incomingValue =
+    params.field === "description"
+      ? normalizeDescriptionText(params.incomingValue)
+      : params.incomingValue.trim();
+
+  const incomingIsValid =
+    params.field === "cover"
+      ? incomingValue.length > 0 && isValidHttpUrl(incomingValue)
+      : incomingValue.length > 0 && isValidDescriptionText(incomingValue);
+
+  const existingAuthority = resolveExistingMetadataAuthority({
+    field: params.field,
+    existingBook: params.existingBook,
+  });
+  const incomingAuthority = getMetadataAuthorityScore(params.field, params.incomingSource);
+
+  if (!incomingIsValid) {
+    return {
+      value: existingValue,
+      source: existingValue ? existingAuthority.source : null,
+      authority: existingValue ? existingAuthority.authority : null,
+      acceptedIncoming: false,
+    };
+  }
+
+  if (!existingValue) {
+    return {
+      value: incomingValue,
+      source: params.incomingSource,
+      authority: incomingAuthority,
+      acceptedIncoming: true,
+    };
+  }
+
+  if (incomingAuthority > existingAuthority.authority) {
+    return {
+      value: incomingValue,
+      source: params.incomingSource,
+      authority: incomingAuthority,
+      acceptedIncoming: true,
+    };
+  }
+
+  return {
+    value: existingValue,
+    source: existingAuthority.source,
+    authority: existingAuthority.authority,
+    acceptedIncoming: false,
+  };
 }
 
 function resolveTitleAuthorities(rawBook: Record<string, unknown>): string[] {
@@ -505,10 +668,15 @@ function resolveCoverState(params: {
   existingBook: Record<string, unknown> | null;
   coverCandidates: string[];
   coverJobStatus: CoverJobStatus | undefined;
+  acceptedIncomingCover: boolean;
 }): string {
   const existingState =
     asNonEmptyString(params.existingBook?.coverState) ||
     asNonEmptyString(asRecord(params.existingBook?.cover)?.state);
+
+  if (params.acceptedIncomingCover && params.coverCandidates.length > 0) {
+    return "PENDING";
+  }
 
   if (existingState === "READY") {
     return "READY";
@@ -610,15 +778,22 @@ export async function materializeBookAuthorityInTransaction(
   params: MaterializeBookAuthorityParams
 ): Promise<MaterializeBookAuthorityResult> {
   const rawBook = params.rawBook || {};
-  const title = extractPrimaryTitle(rawBook);
-  const authors = extractAuthors(rawBook);
-  const primaryAuthor = authors[0] || "Unknown";
-  const canonicalKeys = buildCanonicalKeys(rawBook, primaryAuthor);
-  const canonicalKey = canonicalKeys[0] || buildCanonicalKey({ title, author: primaryAuthor });
+  const incomingTitle = extractPrimaryTitle(rawBook);
+  const incomingAuthors = extractAuthors(rawBook);
+  const incomingPrimaryAuthor = incomingAuthors[0] || "Unknown";
+  const canonicalKeys = buildCanonicalKeys(rawBook, incomingPrimaryAuthor);
+  const incomingCanonicalKey =
+    canonicalKeys[0] || buildCanonicalKey({ title: incomingTitle, author: incomingPrimaryAuthor });
   const { isbn13, isbn10 } = extractIsbns(rawBook);
   const providerExternalId = asNonEmptyString(params.providerExternalId);
   const allowIdentityReuse = params.allowIdentityReuse !== false;
-  const coverCandidates = uniqueStrings(params.coverCandidates || [], 30);
+  const incomingCoverCandidates = uniqueStrings(
+    [
+      ...(params.coverCandidates || []),
+      asNonEmptyString(rawBook.coverUrl),
+    ].filter((entry): entry is string => typeof entry === "string" && isValidHttpUrl(entry)),
+    30
+  );
   const identityCandidates = buildIdentityCandidates({
     allowIdentityReuse,
     source: params.source,
@@ -666,12 +841,55 @@ export async function materializeBookAuthorityInTransaction(
   const coverJobRef = db.collection("cover_jobs").doc(bookId);
   const coverJobSnap = await params.tx.get(coverJobRef);
   const existingCoverJob = (coverJobSnap.data() || {}) as Record<string, unknown>;
-  const author = await materializeCanonicalAuthor({
-    tx: params.tx,
-    source: params.source,
-    rawBook,
-    primaryAuthor,
+  const title = asNonEmptyString(existingBook?.title) || incomingTitle;
+  const authors =
+    asStringArray(existingBook?.authors).length > 0
+      ? asStringArray(existingBook?.authors)
+      : incomingAuthors;
+  const primaryAuthor = asNonEmptyString(existingBook?.author) || incomingPrimaryAuthor;
+  const canonicalKey = asNonEmptyString(existingBook?.canonicalKey) || incomingCanonicalKey;
+  const language = asNonEmptyString(existingBook?.language) || extractLanguage(rawBook);
+  const titleEn = asNonEmptyString(existingBook?.titleEn) || asNonEmptyString(rawBook.titleEn) || title;
+  const titleAr = asNonEmptyString(existingBook?.titleAr) || asNonEmptyString(rawBook.titleAr);
+  const authorEn =
+    asNonEmptyString(existingBook?.authorEn) || asNonEmptyString(rawBook.authorEn) || primaryAuthor;
+  const authorAr = asNonEmptyString(existingBook?.authorAr) || asNonEmptyString(rawBook.authorAr);
+  const metadataSource = normalizeMetadataAuthoritySource(params.source);
+  const descriptionDecision = resolveMetadataField({
+    field: "description",
+    existingBook,
+    existingValue: asNonEmptyString(existingBook?.description),
+    incomingValue: resolveDescription(rawBook),
+    incomingSource: metadataSource,
   });
+  const coverDecision = resolveMetadataField({
+    field: "cover",
+    existingBook,
+    existingValue: asNonEmptyString(existingBook?.coverUrl),
+    incomingValue: incomingCoverCandidates[0] || "",
+    incomingSource: metadataSource,
+  });
+  const effectiveCoverCandidates = coverDecision.acceptedIncoming ? incomingCoverCandidates : [];
+  const description = descriptionDecision.value;
+  const descriptionEn = descriptionDecision.acceptedIncoming
+    ? asNonEmptyString(rawBook.descriptionEn) || description
+    : asNonEmptyString(existingBook?.descriptionEn) || description;
+  const descriptionAr = descriptionDecision.acceptedIncoming
+    ? asNonEmptyString(rawBook.descriptionAr)
+    : asNonEmptyString(existingBook?.descriptionAr);
+  const author =
+    asNonEmptyString(existingBook?.authorId) &&
+    asNonEmptyString(existingBook?.authorCanonicalKey)
+      ? {
+          authorId: asNonEmptyString(existingBook?.authorId),
+          canonicalKey: asNonEmptyString(existingBook?.authorCanonicalKey),
+        }
+      : await materializeCanonicalAuthor({
+          tx: params.tx,
+          source: params.source,
+          rawBook,
+          primaryAuthor,
+        });
 
   const authorityFields = toAuthorityFields({
     requestedAuthorityStatus: params.authorityStatus,
@@ -680,14 +898,6 @@ export async function materializeBookAuthorityInTransaction(
   });
 
   const now = FieldValue.serverTimestamp();
-  const titleEn = asNonEmptyString(rawBook.titleEn) || title;
-  const titleAr = asNonEmptyString(rawBook.titleAr);
-  const authorEn = asNonEmptyString(rawBook.authorEn) || primaryAuthor;
-  const authorAr = asNonEmptyString(rawBook.authorAr);
-  const description = resolveDescription(rawBook);
-  const descriptionEn = asNonEmptyString(rawBook.descriptionEn) || description;
-  const descriptionAr = asNonEmptyString(rawBook.descriptionAr);
-  const language = extractLanguage(rawBook);
   const publicationYear = resolvePublicationYear(rawBook);
   const rightsMode =
     asNonEmptyString(rawBook.rightsMode) ||
@@ -703,8 +913,9 @@ export async function materializeBookAuthorityInTransaction(
     (params.source === "user_upload" ? "uploaded" : "published");
   const coverState = resolveCoverState({
     existingBook,
-    coverCandidates,
+    coverCandidates: effectiveCoverCandidates,
     coverJobStatus: params.coverJobStatus,
+    acceptedIncomingCover: coverDecision.acceptedIncoming,
   });
   const providerExternalIds = uniqueStrings([
     ...asStringArray(existingBook?.providerExternalIds),
@@ -740,6 +951,8 @@ export async function materializeBookAuthorityInTransaction(
     description,
     descriptionEn,
     descriptionAr,
+    descriptionSource: descriptionDecision.source,
+    descriptionAuthority: descriptionDecision.authority,
     language,
     publicationYear,
     isbn13: isbn13 || null,
@@ -782,6 +995,8 @@ export async function materializeBookAuthorityInTransaction(
     engagementScore: Number(existingBook?.engagementScore || 0),
     recentActivityAt: existingBook?.recentActivityAt || now,
     coverState,
+    coverSource: coverDecision.source,
+    coverAuthority: coverDecision.authority,
     cover: {
       state: coverState,
       original: asNonEmptyString(asRecord(existingBook?.cover)?.original),
@@ -789,7 +1004,7 @@ export async function materializeBookAuthorityInTransaction(
       medium: asNonEmptyString(asRecord(existingBook?.cover)?.medium),
       small: asNonEmptyString(asRecord(existingBook?.cover)?.small),
     },
-    coverUrl: asNonEmptyString(existingBook?.coverUrl) || "",
+    coverUrl: coverDecision.value,
     createdAt: existingBook?.createdAt || now,
     updatedAt: now,
   };
@@ -940,7 +1155,7 @@ export async function materializeBookAuthorityInTransaction(
     );
   }
 
-  if (params.coverJobStatus || coverCandidates.length > 0) {
+  if (params.coverJobStatus || effectiveCoverCandidates.length > 0) {
     const existingCandidateUrls = asStringArray(existingCoverJob.candidateUrls);
     const coverJobStatus =
       params.coverJobStatus ||
@@ -972,7 +1187,7 @@ export async function materializeBookAuthorityInTransaction(
           typeof params.coverJobMaxAttempts === "number"
             ? params.coverJobMaxAttempts
             : Number(existingCoverJob.maxAttempts || 3),
-        candidateUrls: uniqueStrings([...existingCandidateUrls, ...coverCandidates], 30),
+        candidateUrls: uniqueStrings([...existingCandidateUrls, ...effectiveCoverCandidates], 30),
         lastError: null,
         lastErrorCode: null,
         lastErrorMessage: null,

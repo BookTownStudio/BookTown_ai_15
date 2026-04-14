@@ -289,6 +289,11 @@ async function getAdminDeleteAllBooksCallable() {
   return mod.adminDeleteAllBooks as any;
 }
 
+async function getMaterializeBookAuthorityFn() {
+  const mod = await import("../library/materializeBookAuthority");
+  return mod.materializeBookAuthority as any;
+}
+
 describe("adminCreateCanonicalBook", () => {
   beforeEach(() => {
     store.clear();
@@ -345,12 +350,21 @@ describe("adminCreateCanonicalBook", () => {
       data: {
         title: "The Trial",
         author: "Franz Kafka",
+        description:
+          "Franz Kafka's trial novel follows Josef K. through an opaque legal machine that strips certainty, dignity, and control while forcing every ordinary detail into existential dread.",
         coverUrl: "https://example.com/trial-cover.jpg",
       },
     });
 
     const response = result as {
-      book: { bookId: string; coverState?: string };
+      book: {
+        bookId: string;
+        coverState?: string;
+        coverSource?: string;
+        coverAuthority?: number;
+        descriptionSource?: string;
+        descriptionAuthority?: number;
+      };
     };
 
     const book = getDoc(`books/${response.book.bookId}`);
@@ -358,6 +372,14 @@ describe("adminCreateCanonicalBook", () => {
 
     expect(book?.coverState).toBe("PENDING");
     expect(response.book.coverState).toBe("PENDING");
+    expect(book?.coverSource).toBe("manualAdmin");
+    expect(book?.coverAuthority).toBe(100);
+    expect(book?.descriptionSource).toBe("manualAdmin");
+    expect(book?.descriptionAuthority).toBe(100);
+    expect(response.book.coverSource).toBe("manualAdmin");
+    expect(response.book.coverAuthority).toBe(100);
+    expect(response.book.descriptionSource).toBe("manualAdmin");
+    expect(response.book.descriptionAuthority).toBe(100);
     expect(coverJob?.source).toBe("booktown_canonical");
     expect(coverJob?.candidateUrls).toEqual(["https://example.com/trial-cover.jpg"]);
   });
@@ -905,5 +927,116 @@ describe("adminCreateCanonicalBook", () => {
     expect(getDoc("authors/author-1")?.bookIds).toEqual(["book-9"]);
     expect(getDoc("shelves/shelf-1")?.orderedBookIds).toEqual([]);
     expect(getDoc("shelves/shelf-1")?.entries).toEqual({});
+  });
+
+  it("keeps stronger existing provider metadata and freezes title, author, canonical key, and language on later weaker enrichment", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const first = await materializeBookAuthority({
+      source: "googleBooks",
+      authorityStatus: "canonical",
+      providerExternalId: "gb_trial_1",
+      rawBook: {
+        title: "The Trial",
+        titleEn: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        language: "en",
+        isbn13: "9780141182902",
+        description:
+          "Josef K. wakes on his thirtieth birthday to find himself arrested without explanation, then spends the novel trapped inside a bureaucracy whose rituals turn everyday life into punishment, doubt, and metaphysical terror.",
+      },
+      coverCandidates: ["https://example.com/google-trial.jpg"],
+      createEdition: true,
+      ingestionKey: "googleBooks:gb_trial_1",
+    });
+
+    await materializeBookAuthority({
+      source: "openLibrary",
+      authorityStatus: "canonical",
+      providerExternalId: "OLTRIAL1M",
+      rawBook: {
+        title: "Der Process",
+        titleEn: "Der Process",
+        author: "F. Kafka",
+        authorEn: "F. Kafka",
+        authors: ["F. Kafka"],
+        language: "de",
+        isbn13: "9780141182902",
+        description:
+          "This open library summary is long enough to pass validation, but it should still lose because the existing Google Books description already carries stronger accepted authority for this canonical row.",
+      },
+      coverCandidates: ["https://example.com/openlibrary-trial.jpg"],
+      createEdition: true,
+      ingestionKey: "openLibrary:OLTRIAL1M",
+    });
+
+    const book = getDoc(`books/${first.bookId}`);
+    const coverJob = getDoc(`cover_jobs/${first.bookId}`);
+
+    expect(book?.title).toBe("The Trial");
+    expect(book?.author).toBe("Franz Kafka");
+    expect(book?.canonicalKey).toBe("franz kafka::the trial");
+    expect(book?.language).toBe("en");
+    expect(book?.descriptionSource).toBe("googleBooks");
+    expect(book?.descriptionAuthority).toBe(80);
+    expect(book?.coverSource).toBe("googleBooks");
+    expect(book?.coverAuthority).toBe(90);
+    expect(book?.coverUrl).toBe("https://example.com/google-trial.jpg");
+    expect(coverJob?.candidateUrls).toEqual(["https://example.com/google-trial.jpg"]);
+  });
+
+  it("allows stronger manual admin metadata to replace weaker provider metadata without changing frozen identity fields", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+    const adminCallable = await getAdminCreateCanonicalBookCallable();
+
+    const first = await materializeBookAuthority({
+      source: "googleBooks",
+      authorityStatus: "canonical",
+      providerExternalId: "gb_plague_1",
+      rawBook: {
+        title: "The Plague",
+        titleEn: "The Plague",
+        author: "Albert Camus",
+        authorEn: "Albert Camus",
+        authors: ["Albert Camus"],
+        language: "en",
+        isbn13: "9780679720218",
+        description:
+          "Oran is sealed by epidemic and Camus follows doctors, clerks, priests, and exiles as they discover that solidarity, routine, and moral clarity are all tested by the same relentless contagion.",
+      },
+      coverCandidates: ["https://example.com/google-plague.jpg"],
+      createEdition: true,
+      ingestionKey: "googleBooks:gb_plague_1",
+    });
+
+    await adminCallable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        title: "La Peste",
+        author: "A. Camus",
+        language: "fr",
+        isbn: "9780679720218",
+        description:
+          "A stronger manual canonical note now replaces the provider description with stable editorial copy that exceeds the minimum threshold and should become the accepted authority for this canonical book.",
+        coverUrl: "https://example.com/manual-plague.jpg",
+      },
+    });
+
+    const book = getDoc(`books/${first.bookId}`);
+    const coverJob = getDoc(`cover_jobs/${first.bookId}`);
+
+    expect(book?.title).toBe("The Plague");
+    expect(book?.author).toBe("Albert Camus");
+    expect(book?.canonicalKey).toBe("albert camus::the plague");
+    expect(book?.language).toBe("en");
+    expect(book?.descriptionSource).toBe("manualAdmin");
+    expect(book?.descriptionAuthority).toBe(100);
+    expect(book?.coverSource).toBe("manualAdmin");
+    expect(book?.coverAuthority).toBe(100);
+    expect(book?.coverUrl).toBe("https://example.com/manual-plague.jpg");
+    expect(book?.coverState).toBe("PENDING");
+    expect(coverJob?.candidateUrls).toContain("https://example.com/manual-plague.jpg");
   });
 });
