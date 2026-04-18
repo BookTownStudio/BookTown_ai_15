@@ -5,6 +5,7 @@ import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
 import { ingestBookServerSide } from "../library/ingestBook";
+import { buildCanonicalKey } from "../library/persistence/canonicalKey";
 import {
   unifiedSearch,
   type UnifiedSearchResult,
@@ -226,6 +227,14 @@ function parseBulkSeedLine(rawLine: string, row: number): { title: string; autho
   return { title, author, input };
 }
 
+function normalizeSeedTitle(value: string): string {
+  return value.trim().replace(/\s+/gu, " ");
+}
+
+function normalizeSeedAuthor(value: string): string {
+  return value.trim().replace(/\s+/gu, " ");
+}
+
 function parseBulkSeedRows(value: unknown): Array<{ row: number; title: string; author: string; input: string }> {
   const raw = readRequiredString(value, "rows", 30_000);
   const lines = raw
@@ -241,7 +250,15 @@ function parseBulkSeedRows(value: unknown): Array<{ row: number; title: string; 
     throw new HttpsError("invalid-argument", "rows exceeds 100 books.");
   }
 
-  return lines.map(({ line, row }) => ({ row, ...parseBulkSeedLine(line, row) }));
+  return lines.map(({ line, row }) => {
+    const parsed = parseBulkSeedLine(line, row);
+    return {
+      row,
+      input: parsed.input,
+      title: normalizeSeedTitle(parsed.title),
+      author: normalizeSeedAuthor(parsed.author),
+    };
+  });
 }
 
 function mapBatchRowStatus(status: string): "created" | "existing" {
@@ -295,6 +312,580 @@ function mapBatchError(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+function asNonEmptyString(value: unknown): string {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : "";
+}
+
+function asStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    .map((entry) => entry.trim());
+}
+
+function uniqueStrings(values: readonly string[]): string[] {
+  const seen = new Set<string>();
+  for (const value of values) {
+    const normalized = value.trim();
+    if (!normalized) continue;
+    seen.add(normalized);
+  }
+  return Array.from(seen);
+}
+
+function sourceAuthorityRank(source: unknown): number {
+  if (source === "openLibrary") return 2;
+  if (source === "googleBooks") return 1;
+  return 0;
+}
+
+function canonicalSeedKey(title: string, author: string): string {
+  return buildCanonicalKey({
+    title: normalizeSeedTitle(title),
+    author: normalizeSeedAuthor(author),
+  });
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  return value as Record<string, unknown>;
+}
+
+function normalizeStableExternalWorkIdentifier(source: string, value: string): string {
+  const normalized = value.trim();
+  if (!normalized) {
+    return "";
+  }
+
+  if (source === "openLibrary") {
+    return `openLibrary:${normalized
+      .replace(/^openLibrary:/i, "")
+      .replace(/^\/works\//i, "")
+      .replace(/^OL_/i, "")
+      .trim()}`;
+  }
+
+  if (source === "wikidata") {
+    return `wikidata:${normalized
+      .replace(/^wikidata:/i, "")
+      .replace(/^https?:\/\/www\.wikidata\.org\/wiki\//i, "")
+      .toUpperCase()}`;
+  }
+
+  if (normalized.includes(":")) {
+    return normalized;
+  }
+
+  return normalized;
+}
+
+function extractCandidateStableWorkIdentifiers(result: UnifiedSearchResult): string[] {
+  const rawBook = asRecord(result.rawBook) || {};
+  const workIdentity = asRecord(rawBook.workIdentity);
+
+  return uniqueStrings([
+    normalizeStableExternalWorkIdentifier(
+      "openLibrary",
+      asNonEmptyString(rawBook.openLibraryWorkId)
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "openLibrary",
+      asNonEmptyString(rawBook.workId)
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "openLibrary",
+      asNonEmptyString(rawBook.key)
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "openLibrary",
+      result.source === "openLibrary" ? asNonEmptyString(result.externalId) : ""
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "wikidata",
+      asNonEmptyString(rawBook.wikidataId) ||
+        asNonEmptyString(rawBook.wikidataQid) ||
+        asNonEmptyString(rawBook.wikidata)
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "openLibrary",
+      asNonEmptyString(rawBook.providerWorkId) ||
+        asNonEmptyString(workIdentity?.providerWorkId)
+    ),
+    normalizeStableExternalWorkIdentifier(
+      "wikidata",
+      asNonEmptyString(rawBook.providerWorkId) ||
+        asNonEmptyString(workIdentity?.providerWorkId)
+    ),
+  ]).slice(0, 6);
+}
+
+function extractCandidateAliasCanonicalKeys(params: {
+  result: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+}): string[] {
+  const rawBook = asRecord(params.result.rawBook) || {};
+  const requestedCanonicalKey = canonicalSeedKey(params.requestedTitle, params.requestedAuthor);
+  const titles = uniqueStrings([
+    asNonEmptyString(params.result.title),
+    asNonEmptyString(rawBook.title),
+    asNonEmptyString(rawBook.titleEn),
+    asNonEmptyString(rawBook.titleAr),
+    ...asStringArray(rawBook.titleAliases),
+    ...asStringArray(rawBook.aliases),
+    ...asStringArray(rawBook.alternateTitles),
+    ...asStringArray(rawBook.otherTitles),
+  ]).slice(0, 8);
+
+  return titles
+    .map((title) => canonicalSeedKey(title, params.requestedAuthor))
+    .filter((canonicalKey) => canonicalKey && canonicalKey !== requestedCanonicalKey);
+}
+
+function normalizeBookAuthorForSeedMatch(data: Record<string, unknown>): string {
+  const authorNamesNormalized = Array.isArray(data.authorNamesNormalized)
+    ? data.authorNamesNormalized
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+    : [];
+  if (authorNamesNormalized.length > 0) {
+    return authorNamesNormalized[0];
+  }
+  return normalizeSearchText(
+    asNonEmptyString(data.authorEn) || asNonEmptyString(data.author) || asNonEmptyString(data.authorAr)
+  );
+}
+
+function acceptedAuthorityRankForSurvivor(value: string): number {
+  if (value === "manualAuthority") return 400;
+  if (value === "openLibrary") return 300;
+  if (value === "wikidata") return 200;
+  if (value === "googleBooks") return 100;
+  return 0;
+}
+
+function inferBookAcceptedAuthority(data: Record<string, unknown>): string {
+  const trust = asRecord(data.canonicalFieldTrust);
+  const workIdentityTrust = asRecord(trust?.workIdentity);
+  const titleTrust = asRecord(trust?.canonicalTitle);
+  const acceptedAuthority =
+    asNonEmptyString(workIdentityTrust?.acceptedAuthority) ||
+    asNonEmptyString(titleTrust?.acceptedAuthority);
+  if (acceptedAuthority) {
+    return acceptedAuthority;
+  }
+
+  const source = asNonEmptyString(data.source);
+  if (source === "booktown_canonical" || source === "canonical_seed" || source === "manualAuthority") {
+    return "manualAuthority";
+  }
+  if (source === "openLibrary") {
+    return "openLibrary";
+  }
+  if (source === "wikidata") {
+    return "wikidata";
+  }
+  if (source === "googleBooks") {
+    return "googleBooks";
+  }
+  return "";
+}
+
+function toSortableTimestampKey(value: unknown): string {
+  if (typeof value === "string" && value.trim().length > 0) {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value).padStart(20, "0");
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  return "";
+}
+
+function normalizeBookProviderWorkId(value: unknown): string {
+  const raw = asNonEmptyString(value);
+  if (!raw) {
+    return "";
+  }
+  if (
+    raw.startsWith("openLibrary:") ||
+    raw.startsWith("/works/") ||
+    /^OL\d+W$/iu.test(raw) ||
+    /^OL_?/iu.test(raw)
+  ) {
+    return normalizeStableExternalWorkIdentifier("openLibrary", raw);
+  }
+  if (
+    raw.startsWith("wikidata:") ||
+    /^Q\d+$/iu.test(raw) ||
+    /^https?:\/\/www\.wikidata\.org\/wiki\//iu.test(raw)
+  ) {
+    return normalizeStableExternalWorkIdentifier("wikidata", raw);
+  }
+  return raw;
+}
+
+function extractBookProviderWorkId(data: Record<string, unknown>): string {
+  return normalizeBookProviderWorkId(asRecord(data.workIdentity)?.providerWorkId);
+}
+
+function extractBookWorkMergeKeys(data: Record<string, unknown>): string[] {
+  const workIdentity = asRecord(data.workIdentity);
+  return uniqueStrings([
+    asNonEmptyString(data.canonicalKey),
+    ...asStringArray(workIdentity?.mergeKeys),
+  ]);
+}
+
+function collectDuplicateTitleAliases(data: Record<string, unknown>): string[] {
+  return uniqueStrings([
+    ...asStringArray(data.titleAliases),
+    asNonEmptyString(data.canonicalTitle),
+    asNonEmptyString(data.originalTitle),
+    asNonEmptyString(data.title),
+    asNonEmptyString(data.titleEn),
+  ]);
+}
+
+function compareCanonicalSurvivors(
+  left: { bookId: string; data: Record<string, unknown> },
+  right: { bookId: string; data: Record<string, unknown> }
+): number {
+  const rankDelta =
+    acceptedAuthorityRankForSurvivor(inferBookAcceptedAuthority(right.data)) -
+    acceptedAuthorityRankForSurvivor(inferBookAcceptedAuthority(left.data));
+  if (rankDelta !== 0) {
+    return rankDelta;
+  }
+
+  const leftCreatedAt =
+    toSortableTimestampKey(left.data.createdAt) || toSortableTimestampKey(left.data.updatedAt) || left.bookId;
+  const rightCreatedAt =
+    toSortableTimestampKey(right.data.createdAt) || toSortableTimestampKey(right.data.updatedAt) || right.bookId;
+  const ageDelta = leftCreatedAt.localeCompare(rightCreatedAt);
+  if (ageDelta !== 0) {
+    return ageDelta;
+  }
+
+  return left.bookId.localeCompare(right.bookId);
+}
+
+async function mergeCanonicalDuplicateGroup(params: {
+  providerWorkId: string;
+  candidates: Array<{ bookId: string; data: Record<string, unknown> }>;
+}): Promise<{ survivorId: string; survivorData: Record<string, unknown> } | null> {
+  const activeCandidates = params.candidates.filter((candidate) => {
+    if (asNonEmptyString(candidate.data.mergedInto)) {
+      return false;
+    }
+    if (extractBookProviderWorkId(candidate.data) !== params.providerWorkId) {
+      return false;
+    }
+    return (
+      asNonEmptyString(candidate.data.authorityStatus) === "canonical" ||
+      asNonEmptyString(candidate.data.workType) === "canonical" ||
+      candidate.data.canonicalLocked === true
+    );
+  });
+
+  if (activeCandidates.length === 0) {
+    return null;
+  }
+
+  const ordered = [...activeCandidates].sort(compareCanonicalSurvivors);
+  const survivor = ordered[0];
+  const duplicates = ordered.slice(1);
+  if (duplicates.length === 0) {
+    return { survivorId: survivor.bookId, survivorData: survivor.data };
+  }
+
+  return db.runTransaction(async (tx) => {
+    const refs = ordered.map((candidate) => db.collection("books").doc(candidate.bookId));
+    const snapshots = await tx.getAll(...refs);
+    const freshCandidates = snapshots
+      .filter((snap) => snap.exists)
+      .map((snap) => ({
+        bookId: snap.id,
+        data: (snap.data() || {}) as Record<string, unknown>,
+      }))
+      .filter((candidate) => !asNonEmptyString(candidate.data.mergedInto))
+      .filter((candidate) => extractBookProviderWorkId(candidate.data) === params.providerWorkId);
+
+    if (freshCandidates.length === 0) {
+      return null;
+    }
+
+    const freshOrdered = [...freshCandidates].sort(compareCanonicalSurvivors);
+    const freshSurvivor = freshOrdered[0];
+    const freshDuplicates = freshOrdered.slice(1);
+    if (freshDuplicates.length === 0) {
+      return {
+        survivorId: freshSurvivor.bookId,
+        survivorData: freshSurvivor.data,
+      };
+    }
+
+    const survivorRef = db.collection("books").doc(freshSurvivor.bookId);
+    const survivorAliases = uniqueStrings([
+      ...asStringArray(freshSurvivor.data.titleAliases),
+      ...freshDuplicates.flatMap((candidate) => collectDuplicateTitleAliases(candidate.data)),
+    ]).filter((entry) => entry !== asNonEmptyString(freshSurvivor.data.canonicalTitle));
+    const survivorCanonicalAuthorIds = uniqueStrings([
+      ...asStringArray(freshSurvivor.data.canonicalAuthorIds),
+      ...freshDuplicates.flatMap((candidate) => asStringArray(candidate.data.canonicalAuthorIds)),
+    ]);
+    const survivorWorkIdentity = {
+      ...(asRecord(freshSurvivor.data.workIdentity) || {}),
+      canonicalKey:
+        asNonEmptyString(asRecord(freshSurvivor.data.workIdentity)?.canonicalKey) ||
+        asNonEmptyString(freshSurvivor.data.canonicalKey),
+      mergeKeys: uniqueStrings([
+        ...extractBookWorkMergeKeys(freshSurvivor.data),
+        ...freshDuplicates.flatMap((candidate) => extractBookWorkMergeKeys(candidate.data)),
+      ]),
+      providerWorkId: params.providerWorkId,
+    };
+
+    const survivorData = {
+      ...freshSurvivor.data,
+      titleAliases: survivorAliases,
+      canonicalAuthorIds: survivorCanonicalAuthorIds,
+      workIdentity: survivorWorkIdentity,
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+
+    tx.set(
+      survivorRef,
+      {
+        titleAliases: survivorAliases,
+        canonicalAuthorIds: survivorCanonicalAuthorIds,
+        workIdentity: survivorWorkIdentity,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+
+    for (const duplicate of freshDuplicates) {
+      tx.set(
+        db.collection("books").doc(duplicate.bookId),
+        {
+          mergedInto: freshSurvivor.bookId,
+          mergeState: "merged_duplicate",
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+
+    return {
+      survivorId: freshSurvivor.bookId,
+      survivorData,
+    };
+  });
+}
+
+function scoreExistingSeedWork(params: {
+  data: Record<string, unknown>;
+  requestedCanonicalKey: string;
+  requestedTitleNorm: string;
+  requestedAuthorNorm: string;
+  matchedProviderWorkIds?: ReadonlySet<string>;
+  matchedAliasCanonicalKeys?: ReadonlySet<string>;
+}): number {
+  const dataCanonicalKey = asNonEmptyString(params.data.canonicalKey);
+  const normalizedTitle =
+    asNonEmptyString(params.data.normalizedTitle) ||
+    asNonEmptyString(params.data.titleEnNormalized) ||
+    normalizeSearchText(
+      asNonEmptyString(params.data.canonicalTitle) ||
+        asNonEmptyString(params.data.titleEn) ||
+        asNonEmptyString(params.data.title)
+    );
+  const normalizedAuthor = normalizeBookAuthorForSeedMatch(params.data);
+  const providerWorkId = extractBookProviderWorkId(params.data);
+  const mergeKeys = extractBookWorkMergeKeys(params.data);
+  const isCanonical =
+    asNonEmptyString(params.data.authorityStatus) === "canonical" ||
+    asNonEmptyString(params.data.workType) === "canonical" ||
+    params.data.canonicalLocked === true;
+
+  let score = 0;
+  if (asNonEmptyString(params.data.mergedInto)) return Number.NEGATIVE_INFINITY;
+  if (params.matchedProviderWorkIds?.has(providerWorkId)) score += 220;
+  if (dataCanonicalKey === params.requestedCanonicalKey) score += 100;
+  if (mergeKeys.includes(params.requestedCanonicalKey)) score += 140;
+  if (params.matchedAliasCanonicalKeys?.has(dataCanonicalKey)) score += 120;
+  if (normalizedTitle === params.requestedTitleNorm) score += 60;
+  if (normalizedAuthor === params.requestedAuthorNorm) score += 40;
+  if (
+    normalizedAuthor &&
+    params.requestedAuthorNorm &&
+    (normalizedAuthor.startsWith(params.requestedAuthorNorm) ||
+      params.requestedAuthorNorm.startsWith(normalizedAuthor))
+  ) {
+    score += 10;
+  }
+  if (isCanonical) score += 20;
+  return score;
+}
+
+async function resolveExistingCanonicalWorkForSeed(params: {
+  title: string;
+  author: string;
+  candidate?: UnifiedSearchResult;
+}): Promise<{ bookId: string; data: Record<string, unknown> } | null> {
+  const requestedCanonicalKey = canonicalSeedKey(params.title, params.author);
+  const requestedTitleNorm = normalizeSearchText(params.title);
+  const requestedAuthorNorm = normalizeSearchText(params.author);
+  const matchedProviderWorkIds = new Set(
+    params.candidate ? extractCandidateStableWorkIdentifiers(params.candidate) : []
+  );
+  const matchedAliasCanonicalKeys = new Set(
+    params.candidate
+      ? extractCandidateAliasCanonicalKeys({
+          result: params.candidate,
+          requestedTitle: params.title,
+          requestedAuthor: params.author,
+        })
+      : []
+  );
+
+  const queryJobs: Array<Promise<{ docs: Array<{ id: string; data: () => unknown }> }>> = [
+    db.collection("books").where("canonicalKey", "==", requestedCanonicalKey).limit(5).get(),
+    db.collection("books").where("normalizedTitle", "==", requestedTitleNorm).limit(10).get(),
+    db.collection("books").where("titleEnNormalized", "==", requestedTitleNorm).limit(10).get(),
+  ];
+
+  for (const providerWorkId of matchedProviderWorkIds) {
+    queryJobs.push(
+      db.collection("books").where("workIdentity.providerWorkId", "==", providerWorkId).limit(5).get()
+    );
+  }
+
+  for (const aliasCanonicalKey of matchedAliasCanonicalKeys) {
+    queryJobs.push(
+      db.collection("books").where("canonicalKey", "==", aliasCanonicalKey).limit(5).get()
+    );
+  }
+
+  const snapshots = await Promise.all(queryJobs);
+
+  const candidates = new Map<string, Record<string, unknown>>();
+  for (const snap of snapshots) {
+    for (const doc of snap.docs) {
+      candidates.set(doc.id, (doc.data() || {}) as Record<string, unknown>);
+    }
+  }
+
+  const discoveredProviderWorkIds = uniqueStrings([
+    ...matchedProviderWorkIds,
+    ...Array.from(candidates.values())
+      .map((data) => extractBookProviderWorkId(data))
+      .filter(Boolean),
+  ]);
+
+  if (discoveredProviderWorkIds.length > 0) {
+    const additionalProviderSnapshots = await Promise.all(
+      discoveredProviderWorkIds.map((providerWorkId) =>
+        db.collection("books").where("workIdentity.providerWorkId", "==", providerWorkId).limit(10).get()
+      )
+    );
+
+    for (const snap of additionalProviderSnapshots) {
+      for (const doc of snap.docs) {
+        candidates.set(doc.id, (doc.data() || {}) as Record<string, unknown>);
+      }
+    }
+  }
+
+  const mergedIntoIds = uniqueStrings(
+    Array.from(candidates.values())
+      .map((data) => asNonEmptyString(data.mergedInto))
+      .filter(Boolean)
+  );
+  if (mergedIntoIds.length > 0) {
+    const mergedSurvivorSnapshots = await Promise.all(
+      mergedIntoIds.map((bookId) => db.collection("books").doc(bookId).get())
+    );
+    for (const snap of mergedSurvivorSnapshots) {
+      if (!snap.exists) continue;
+      candidates.set(snap.id, (snap.data() || {}) as Record<string, unknown>);
+    }
+  }
+
+  for (const providerWorkId of discoveredProviderWorkIds) {
+    const mergeResult = await mergeCanonicalDuplicateGroup({
+      providerWorkId,
+      candidates: Array.from(candidates.entries()).map(([bookId, data]) => ({
+        bookId,
+        data,
+      })),
+    });
+    if (!mergeResult) {
+      continue;
+    }
+
+    candidates.set(mergeResult.survivorId, mergeResult.survivorData);
+    for (const [bookId, data] of candidates.entries()) {
+      if (bookId === mergeResult.survivorId) continue;
+      if (extractBookProviderWorkId(data) !== providerWorkId) continue;
+      candidates.set(bookId, {
+        ...data,
+        mergedInto: mergeResult.survivorId,
+      });
+    }
+  }
+
+  let best: { bookId: string; data: Record<string, unknown>; score: number } | null = null;
+
+  for (const [bookId, data] of candidates.entries()) {
+    const score = scoreExistingSeedWork({
+      data,
+      requestedCanonicalKey,
+      requestedTitleNorm,
+      requestedAuthorNorm,
+      matchedProviderWorkIds,
+      matchedAliasCanonicalKeys,
+    });
+    if (score < 100) {
+      continue;
+    }
+    if (!best || score > best.score) {
+      best = { bookId, data, score };
+    }
+  }
+
+  if (!best) {
+    return null;
+  }
+
+  const mergedInto = asNonEmptyString(best.data.mergedInto);
+  if (!mergedInto || mergedInto === best.bookId) {
+    return { bookId: best.bookId, data: best.data };
+  }
+
+  const survivorSnap = await db.collection("books").doc(mergedInto).get();
+  if (!survivorSnap.exists) {
+    return { bookId: best.bookId, data: best.data };
+  }
+
+  return {
+    bookId: survivorSnap.id,
+    data: (survivorSnap.data() || {}) as Record<string, unknown>,
+  };
 }
 
 function emptyDeleteCascadeCounts(): AdminDeleteBookCascadeCounts {
@@ -409,18 +1000,36 @@ function prepareBulkCandidateRawBook(params: {
     requestedAuthor: params.requestedAuthor,
   });
 
-  if (!cleanedTitle) {
-    return Object.keys(rawBook).length > 0 ? rawBook : params.result.rawBook;
+  const canonicalTitle = cleanedTitle || params.requestedTitle;
+  const requestedAuthor = params.requestedAuthor.trim();
+  const providerTitleNorm = normalizeSearchText(providerTitle);
+  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
+  const providerAuthor =
+    typeof rawBook.author === "string" && rawBook.author.trim().length > 0
+      ? rawBook.author
+      : params.result.authorEn || "";
+  const providerAuthorNorm = normalizeSearchText(providerAuthor);
+  const requestedAuthorNorm = normalizeSearchText(requestedAuthor);
+
+  if (providerTitleNorm && providerTitleNorm !== requestedTitleNorm) {
+    rawBook.titleAliases = uniqueStrings([
+      ...asStringArray(rawBook.titleAliases),
+      providerTitle,
+    ]);
   }
 
-  rawBook.title = cleanedTitle;
-  rawBook.titleEn = cleanedTitle;
-  if (typeof rawBook.author !== "string" || rawBook.author.trim().length === 0) {
-    rawBook.author = params.requestedAuthor;
+  if (providerAuthorNorm && providerAuthorNorm !== requestedAuthorNorm) {
+    rawBook.authorAliases = uniqueStrings([
+      ...asStringArray(rawBook.authorAliases),
+      providerAuthor,
+    ]);
   }
-  if (!Array.isArray(rawBook.authors) || rawBook.authors.length === 0) {
-    rawBook.authors = [params.requestedAuthor];
-  }
+
+  rawBook.title = canonicalTitle;
+  rawBook.titleEn = canonicalTitle;
+  rawBook.author = requestedAuthor;
+  rawBook.authorEn = requestedAuthor;
+  rawBook.authors = [requestedAuthor];
   return rawBook;
 }
 
@@ -556,6 +1165,8 @@ function selectStrongestBulkProviderCandidate(params: {
         requestedAuthorNorm,
       });
     if (scoreDelta !== 0) return scoreDelta;
+    const sourceDelta = sourceAuthorityRank(right.source) - sourceAuthorityRank(left.source);
+    if (sourceDelta !== 0) return sourceDelta;
     return left.rank - right.rank;
   })[0] || null;
 }
@@ -1377,9 +1988,31 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
   const results: AdminSeedCanonicalBatchRow[] = [];
 
   for (const entry of rows) {
-    const query = `${entry.title} ${entry.author}`.trim();
-
     try {
+      const existing = await resolveExistingCanonicalWorkForSeed({
+        title: entry.title,
+        author: entry.author,
+      });
+      if (existing) {
+        const existingSource = asNonEmptyString(existing.data.source);
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "existing",
+          canonicalBookId: existing.bookId,
+          bookId: existing.bookId,
+          editionId: asNonEmptyString(existing.data.editionId) || undefined,
+          ...(existingSource === "googleBooks" || existingSource === "openLibrary"
+            ? { source: existingSource }
+            : {}),
+          message: `Reused canonical work ${existing.bookId}; duplicate prevented by deterministic seed lookup.`,
+        });
+        continue;
+      }
+
+      const query = `${entry.title} ${entry.author}`.trim();
       const search = await unifiedSearch(query, {
         limit: 10,
       });
@@ -1417,6 +2050,31 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         continue;
       }
 
+      const candidateMatchedExisting = await resolveExistingCanonicalWorkForSeed({
+        title: entry.title,
+        author: entry.author,
+        candidate: providerCandidate,
+      });
+      if (candidateMatchedExisting) {
+        const existingSource = asNonEmptyString(candidateMatchedExisting.data.source);
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "existing",
+          canonicalBookId: candidateMatchedExisting.bookId,
+          bookId: candidateMatchedExisting.bookId,
+          editionId: asNonEmptyString(candidateMatchedExisting.data.editionId) || undefined,
+          ...(existingSource === "googleBooks" || existingSource === "openLibrary"
+            ? { source: existingSource }
+            : { source: providerSource }),
+          providerExternalId: providerCandidate.externalId,
+          message: `Reused canonical work ${candidateMatchedExisting.bookId}; duplicate prevented by multilingual authority convergence.`,
+        });
+        continue;
+      }
+
       const ingestion = await ingestBookServerSide({
         uid: request.auth?.uid || "admin",
         source: providerSource,
@@ -1439,6 +2097,10 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         editionId: ingestion.editionId || undefined,
         source: providerSource,
         providerExternalId: providerCandidate.externalId,
+        message:
+          ingestion.status === "CREATED"
+            ? "Created canonical work through deterministic seed authority resolution."
+            : "Reused canonical work through authority ingestion; duplicate prevented.",
       });
     } catch (error) {
       results.push({

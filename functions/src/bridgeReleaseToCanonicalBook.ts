@@ -287,7 +287,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         titleAr,
         authorName,
       ]);
-      const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedTitle || normalizeSearchText(title)}`;
       const coverUrl = release.coverUrl;
       const resolvedCover = resolveCanonicalCoverState({
         coverUrl,
@@ -338,7 +337,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           editionId,
           bookId,
           authorId: canonicalAuthor.authorId,
-          canonicalKey,
           source: "write_release",
           externalId: release.projectId,
           currentReleaseId: releaseId,
@@ -419,7 +417,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             search: {
               tokens: searchFields.tokens,
             },
-            canonicalKey,
             hasEbook: true,
             downloadable: true,
             isEbookAvailable: true,
@@ -484,7 +481,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
             search: {
               tokens: searchFields.tokens,
             },
-            canonicalKey,
             publicationVersion,
             datePublished,
             dateModified: now,

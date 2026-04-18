@@ -105,10 +105,16 @@ class MockCollectionRef {
 }
 
 class MockTransaction {
+  private hasWritten = false;
+
   async get(ref: MockDocRef): Promise<MockDocSnapshot> {
+    if (this.hasWritten) {
+      throw new Error("Firestore transactions require all reads to be executed before all writes.");
+    }
     return new MockDocSnapshot(ref.path);
   }
   set(ref: MockDocRef, data: Record<string, unknown>, options?: { merge?: boolean }): void {
+    this.hasWritten = true;
     setDoc(ref.path, data, Boolean(options?.merge));
   }
 }
@@ -232,11 +238,25 @@ describe("ingestBook v2 smoke", () => {
     const providerIdentity = getDoc("book_identity/provider:googleBooks:abc123");
     const isbnIdentity = getDoc("book_identity/isbn13:9780747532743");
     const ingestion = getDoc("book_ingestions/googleBooks:abc123");
+    const book = getDoc(`books/${first.bookId}`);
 
     expect(providerIdentity?.bookId).toBe(first.bookId);
-    expect(isbnIdentity?.bookId).toBe(first.bookId);
+    expect(isbnIdentity).toBeNull();
     expect(ingestion?.bookId).toBe(first.bookId);
     expect(ingestion?.state).toBe("COMPLETE");
+    expect(book?.canonicalTitle).toBe("The Deterministic Book");
+    expect(book?.originalTitle).toBe("The Deterministic Book");
+    expect(book?.originalLanguage).toBe("en");
+    expect(book?.titleAuthority).toMatchObject({
+      source: "googleBooks",
+      confidence: "medium",
+    });
+    expect(book?.canonicalRelations).toMatchObject({
+      primaryEditionId: first.editionId,
+    });
+    expect(book?.workIdentity).toMatchObject({
+      canonicalKey: "author one::the deterministic book",
+    });
   });
 
   it("ingestion writes coverState PENDING when cover candidates exist", async () => {

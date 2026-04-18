@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { resolveOpenLibraryReadableCandidate } from "./openLibrary";
+import {
+  fetchOpenLibraryCanonicalMetadata,
+  resolveOpenLibraryReadableCandidate,
+} from "./openLibrary";
 
 describe("resolveOpenLibraryReadableCandidate", () => {
   afterEach(() => {
@@ -74,5 +77,66 @@ describe("resolveOpenLibraryReadableCandidate", () => {
       trust: "trusted",
     });
     expect(candidate?.candidates[0]?.url).toContain("pride-and-prejudice-ia");
+  });
+
+  it("returns work metadata with a distinct primary edition identifier", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.endsWith("/works/OL66554W.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              title: "Pride and Prejudice",
+              authors: [{ author: { key: "/authors/OL1394247A" } }],
+              description: { value: "A classic novel." },
+              covers: [12345],
+              first_publish_date: "1813",
+            }),
+          } as any;
+        }
+
+        if (url.includes("/works/OL66554W/editions.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              entries: [
+                {
+                  key: "/books/OL50444320M",
+                  title: "Pride and Prejudice",
+                  isbn_13: ["9780141439518"],
+                  languages: [{ key: "/languages/eng" }],
+                },
+              ],
+            }),
+          } as any;
+        }
+
+        if (url.endsWith("/authors/OL1394247A.json")) {
+          return {
+            ok: true,
+            json: async () => ({
+              name: "Jane Austen",
+            }),
+          } as any;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({}),
+        } as any;
+      }) as any
+    );
+
+    const metadata = await fetchOpenLibraryCanonicalMetadata("OL66554W");
+
+    expect(metadata).toMatchObject({
+      externalId: "OL66554W",
+      editionExternalId: "OL50444320M",
+      openLibraryEditionId: "OL50444320M",
+      isbn13: "9780141439518",
+      language: "eng",
+    });
   });
 });

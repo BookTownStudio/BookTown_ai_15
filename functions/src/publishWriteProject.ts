@@ -466,7 +466,6 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       ]);
       const normalizedCanonicalTitle = normalizeSearchText(searchableTitle);
       const normalizedAuthor = normalizeSearchText(authorName);
-      const canonicalKey = `${normalizedAuthor || "unknown"}::${normalizedCanonicalTitle || normalizeSearchText(normalizedTitle)}`;
       const canonicalDescription = synopsis || normalizedDescription;
       const canonicalCoverState = canonicalCoverPath ? "READY" : "FAILED";
 
@@ -495,7 +494,6 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           publishedAt: nowIso,
           publishedWorkId,
           publishedEditionId: publishedEditionRef.id,
-          canonicalKey,
           normalizedTitle: normalizedCanonicalTitle,
           authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
           searchableTitleAuthor: `${normalizedCanonicalTitle} ${normalizedAuthor}`.trim(),

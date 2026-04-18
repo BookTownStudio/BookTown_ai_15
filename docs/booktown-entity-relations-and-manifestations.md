@@ -1,3 +1,4 @@
+Status: Reference Only — Superseded by BOOKTOWN_CANONICAL_ONTOLOGY_V2.md
 BookTown Entity Relations and Manifestations
 
 Purpose

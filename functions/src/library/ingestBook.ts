@@ -242,6 +242,18 @@ function extractIsbns(rawBook: Record<string, unknown>): {
     return { isbn13, isbn10 };
   }
 
+  const isbn13Array = asStringArray(rawBook.isbn_13);
+  const isbn10Array = asStringArray(rawBook.isbn_10);
+  for (const candidate of [...isbn13Array, ...isbn10Array]) {
+    if (!isbn13) isbn13 = normalizeIsbn(candidate, 13);
+    if (!isbn10) isbn10 = normalizeIsbn(candidate, 10);
+    if (isbn13 && isbn10) break;
+  }
+
+  if (isbn13 || isbn10) {
+    return { isbn13, isbn10 };
+  }
+
   const isbnCandidates = asStringArray(rawBook.isbn);
   for (const candidate of isbnCandidates) {
     if (!isbn13) isbn13 = normalizeIsbn(candidate, 13);

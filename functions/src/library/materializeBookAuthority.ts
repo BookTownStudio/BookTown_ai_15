@@ -25,6 +25,21 @@ export type LiteraryAuthoritySource =
 
 type MetadataAuthorityField = "cover" | "description";
 type MetadataAuthoritySource = "manualAdmin" | "googleBooks" | "openLibrary";
+type AuthorityConfidence = "high" | "medium" | "low";
+type AcceptedAuthority = "manualAuthority" | "openLibrary" | "wikidata" | "googleBooks";
+type CanonicalFieldName =
+  | "canonicalTitle"
+  | "canonicalAuthorIds"
+  | "canonicalKey"
+  | "originalLanguage"
+  | "workIdentity";
+type CanonicalFieldTrustRecord = {
+  value: unknown;
+  source: string;
+  confidence: AuthorityConfidence;
+  acceptedAuthority: AcceptedAuthority;
+  locked: boolean;
+};
 
 type IdentityType =
   | "isbn13"
@@ -204,6 +219,18 @@ function extractIsbns(rawBook: Record<string, unknown>): {
     if (!isbn10 && type.includes("ISBN_10")) {
       isbn10 = normalizeIsbn(identifier, 10);
     }
+    if (isbn13 && isbn10) break;
+  }
+
+  if (isbn13 || isbn10) {
+    return { isbn13, isbn10 };
+  }
+
+  const isbn13Array = asStringArray(rawBook.isbn_13);
+  const isbn10Array = asStringArray(rawBook.isbn_10);
+  for (const candidate of [...isbn13Array, ...isbn10Array]) {
+    if (!isbn13) isbn13 = normalizeIsbn(candidate, 13);
+    if (!isbn10) isbn10 = normalizeIsbn(candidate, 10);
     if (isbn13 && isbn10) break;
   }
 
@@ -435,6 +462,435 @@ function buildCanonicalKeys(rawBook: Record<string, unknown>, primaryAuthor: str
   ], 12);
 }
 
+function resolveWorkProviderIdentity(params: {
+  source: LiteraryAuthoritySource;
+  providerExternalId: string;
+}): string {
+  if (!params.providerExternalId) return "";
+  if (params.source === "openLibrary") {
+    return normalizeSourceIdentityValue(params.source, params.providerExternalId);
+  }
+  if (params.source === "booktown_canonical" || params.source === "canonical_seed") {
+    return params.providerExternalId.trim();
+  }
+  return "";
+}
+
+function resolveEditionProviderIdentity(params: {
+  source: LiteraryAuthoritySource;
+  providerExternalId: string;
+  rawBook: Record<string, unknown>;
+}): string {
+  const explicitEditionId = uniqueStrings([
+    asNonEmptyString(params.rawBook.editionExternalId),
+    asNonEmptyString(params.rawBook.openLibraryEditionId),
+    asNonEmptyString(params.rawBook.volumeId),
+    asNonEmptyString(params.rawBook.volume_id),
+    asNonEmptyString(params.rawBook.editionId),
+  ])[0];
+
+  if (explicitEditionId) {
+    return normalizeSourceIdentityValue(params.source, explicitEditionId);
+  }
+
+  if (params.providerExternalId) {
+    return normalizeSourceIdentityValue(params.source, params.providerExternalId);
+  }
+
+  return "";
+}
+
+function resolvePublisher(rawBook: Record<string, unknown>): string | null {
+  const direct = asNonEmptyString(rawBook.publisher);
+  if (direct) return direct;
+  const publishers = uniqueStrings([
+    ...asStringArray(rawBook.publishers),
+    ...asStringArray(rawBook.publisher_name),
+  ]);
+  return publishers[0] || null;
+}
+
+function resolveEditionFormat(rawBook: Record<string, unknown>): string | null {
+  return (
+    asNonEmptyString(rawBook.format) ||
+    asNonEmptyString(rawBook.binding) ||
+    asNonEmptyString(rawBook.printType) ||
+    asNonEmptyString(rawBook.fileType) ||
+    null
+  );
+}
+
+function toAuthorityEvidence(source: LiteraryAuthoritySource): {
+  source: string;
+  confidence: AuthorityConfidence;
+  lastAcceptedAt: FirebaseFirestore.FieldValue;
+} {
+  let confidence: AuthorityConfidence = "medium";
+
+  if (source === "booktown_canonical" || source === "canonical_seed") {
+    confidence = "high";
+  } else if (source === "user_upload" || source === "goodreads_import") {
+    confidence = "low";
+  }
+
+  return {
+    source,
+    confidence,
+    lastAcceptedAt: FieldValue.serverTimestamp(),
+  };
+}
+
+function normalizeAuthorityConfidence(value: unknown): AuthorityConfidence | null {
+  if (value === "high" || value === "medium" || value === "low") {
+    return value;
+  }
+  return null;
+}
+
+function resolveAcceptedAuthority(source: string): AcceptedAuthority {
+  if (source === "booktown_canonical" || source === "canonical_seed" || source === "manualAuthority") {
+    return "manualAuthority";
+  }
+  if (source === "openLibrary") {
+    return "openLibrary";
+  }
+  if (source === "wikidata") {
+    return "wikidata";
+  }
+  return "googleBooks";
+}
+
+function acceptedAuthorityRank(value: AcceptedAuthority): number {
+  if (value === "manualAuthority") return 400;
+  if (value === "openLibrary") return 300;
+  if (value === "wikidata") return 200;
+  return 100;
+}
+
+function isExplicitCanonicalAuthoritySource(source: LiteraryAuthoritySource): boolean {
+  return (
+    source === "booktown_canonical" ||
+    source === "canonical_seed" ||
+    source === "openLibrary" ||
+    source === "googleBooks"
+  );
+}
+
+function hasCanonicalFieldValue(value: unknown): boolean {
+  if (typeof value === "string") return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (value && typeof value === "object") return Object.keys(value as Record<string, unknown>).length > 0;
+  return value !== null && value !== undefined;
+}
+
+function deepSortCanonicalFieldValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => deepSortCanonicalFieldValue(entry));
+  }
+  const record = asRecord(value);
+  if (!record) {
+    return value;
+  }
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort()
+      .map((key) => [key, deepSortCanonicalFieldValue(record[key])])
+  );
+}
+
+function canonicalFieldValuesEqual(left: unknown, right: unknown): boolean {
+  return JSON.stringify(deepSortCanonicalFieldValue(left)) === JSON.stringify(deepSortCanonicalFieldValue(right));
+}
+
+function isCanonicalPlaceholderValue(value: string): boolean {
+  const normalized = value.trim().toLowerCase();
+  return (
+    normalized.length === 0 ||
+    normalized === "unknown" ||
+    normalized === "untitled" ||
+    normalized === "und" ||
+    normalized === "unknown language"
+  );
+}
+
+function isMateriallyBetterCanonicalValue(params: {
+  field: CanonicalFieldName;
+  existingValue: unknown;
+  incomingValue: unknown;
+}): boolean {
+  if (params.field === "canonicalKey") {
+    return false;
+  }
+
+  if (params.field === "canonicalAuthorIds") {
+    const existing = new Set(asStringArray(params.existingValue));
+    return asStringArray(params.incomingValue).some((entry) => !existing.has(entry));
+  }
+
+  if (params.field === "workIdentity") {
+    const existing = normalizeWorkIdentityValue(params.existingValue, "");
+    const incoming = normalizeWorkIdentityValue(
+      params.incomingValue,
+      asNonEmptyString(existing.canonicalKey)
+    );
+    const existingMergeKeys = new Set(asStringArray(existing.mergeKeys));
+    return (
+      asStringArray(incoming.mergeKeys).some((entry) => !existingMergeKeys.has(entry)) ||
+      (!asNonEmptyString(existing.providerWorkId) && Boolean(asNonEmptyString(incoming.providerWorkId)))
+    );
+  }
+
+  const existing = asNonEmptyString(params.existingValue);
+  const incoming = asNonEmptyString(params.incomingValue);
+  if (!incoming) {
+    return false;
+  }
+  if (!existing) {
+    return true;
+  }
+
+  if (params.field === "originalLanguage") {
+    return isCanonicalPlaceholderValue(existing) && !isCanonicalPlaceholderValue(incoming);
+  }
+
+  return (
+    (isCanonicalPlaceholderValue(existing) && !isCanonicalPlaceholderValue(incoming)) ||
+    incoming.length > existing.length + 3
+  );
+}
+
+function toCanonicalFieldTrust(params: {
+  source: LiteraryAuthoritySource;
+  value: unknown;
+  locked: boolean;
+}): CanonicalFieldTrustRecord {
+  const evidence = toAuthorityEvidence(params.source);
+  return {
+    value: params.value,
+    source: evidence.source,
+    confidence: evidence.confidence,
+    acceptedAuthority: resolveAcceptedAuthority(params.source),
+    locked: params.locked,
+  };
+}
+
+function readExistingCanonicalFieldTrust(params: {
+  existingBook: Record<string, unknown> | null;
+  field: CanonicalFieldName;
+  fallbackValue: unknown;
+  fallbackLocked: boolean;
+}): CanonicalFieldTrustRecord | null {
+  const trustRoot = asRecord(params.existingBook?.canonicalFieldTrust);
+  const rawTrust = asRecord(trustRoot?.[params.field]);
+  const value = rawTrust && "value" in rawTrust ? rawTrust.value : params.fallbackValue;
+
+  if (!hasCanonicalFieldValue(value)) {
+    return null;
+  }
+
+  const source = asNonEmptyString(rawTrust?.source) || asNonEmptyString(params.existingBook?.source) || "booktown_canonical";
+  const confidence =
+    normalizeAuthorityConfidence(rawTrust?.confidence) ||
+    toAuthorityEvidence(source as LiteraryAuthoritySource).confidence;
+  const acceptedAuthority =
+    (rawTrust?.acceptedAuthority === "manualAuthority" ||
+    rawTrust?.acceptedAuthority === "openLibrary" ||
+    rawTrust?.acceptedAuthority === "wikidata" ||
+    rawTrust?.acceptedAuthority === "googleBooks"
+      ? rawTrust.acceptedAuthority
+      : resolveAcceptedAuthority(source)) as AcceptedAuthority;
+  const locked =
+    typeof rawTrust?.locked === "boolean" ? rawTrust.locked : params.fallbackLocked;
+
+  return {
+    value,
+    source,
+    confidence,
+    acceptedAuthority,
+    locked,
+  };
+}
+
+function resolveCanonicalFieldTrust(params: {
+  existingBook: Record<string, unknown> | null;
+  field: CanonicalFieldName;
+  existingValue: unknown;
+  incomingValue: unknown;
+  source: LiteraryAuthoritySource;
+  requestedLock: boolean;
+}): CanonicalFieldTrustRecord {
+  const existingTrust = readExistingCanonicalFieldTrust({
+    existingBook: params.existingBook,
+    field: params.field,
+    fallbackValue: params.existingValue,
+    fallbackLocked: params.existingBook?.canonicalLocked === true,
+  });
+  const incomingTrust = toCanonicalFieldTrust({
+    source: params.source,
+    value: params.incomingValue,
+    locked: params.requestedLock,
+  });
+
+  if (!existingTrust) {
+    return incomingTrust;
+  }
+
+  if (!hasCanonicalFieldValue(existingTrust.value) && hasCanonicalFieldValue(params.incomingValue)) {
+    return incomingTrust;
+  }
+
+  const incomingExplicit = isExplicitCanonicalAuthoritySource(params.source);
+  const incomingRank = acceptedAuthorityRank(incomingTrust.acceptedAuthority);
+  const existingRank = acceptedAuthorityRank(existingTrust.acceptedAuthority);
+  const incomingStronger =
+    incomingRank > existingRank;
+  const incomingEqual = incomingRank === existingRank;
+  const sameValue = canonicalFieldValuesEqual(existingTrust.value, params.incomingValue);
+  const materiallyBetter = isMateriallyBetterCanonicalValue({
+    field: params.field,
+    existingValue: existingTrust.value,
+    incomingValue: params.incomingValue,
+  });
+
+  if (params.field === "canonicalKey") {
+    if (incomingExplicit && params.requestedLock && sameValue) {
+      return {
+        ...incomingTrust,
+        value: existingTrust.value,
+      };
+    }
+    return {
+      ...existingTrust,
+      locked: existingTrust.locked || (incomingExplicit && params.requestedLock && sameValue),
+    };
+  }
+
+  if (params.field === "canonicalAuthorIds" || params.field === "workIdentity") {
+    if (incomingExplicit && incomingStronger && (sameValue || materiallyBetter)) {
+      return {
+        ...incomingTrust,
+        locked: existingTrust.locked || params.requestedLock,
+      };
+    }
+    if (incomingExplicit && incomingEqual && sameValue) {
+      return {
+        ...existingTrust,
+        locked: existingTrust.locked || params.requestedLock,
+      };
+    }
+    return existingTrust;
+  }
+
+  if (existingTrust.locked) {
+    if (
+      incomingExplicit &&
+      incomingStronger &&
+      hasCanonicalFieldValue(params.incomingValue) &&
+      (sameValue || materiallyBetter)
+    ) {
+      return {
+        ...incomingTrust,
+        locked: true,
+      };
+    }
+    if (incomingExplicit && incomingEqual && sameValue) {
+      return {
+        ...existingTrust,
+        locked: true,
+      };
+    }
+    return existingTrust;
+  }
+
+  if (
+    incomingExplicit &&
+    hasCanonicalFieldValue(params.incomingValue) &&
+    (sameValue || (incomingStronger && materiallyBetter))
+  ) {
+    if (sameValue || incomingStronger) {
+      return incomingTrust;
+    }
+  }
+
+  return {
+    ...existingTrust,
+    locked: existingTrust.locked || (incomingExplicit && params.requestedLock && sameValue),
+  };
+}
+
+function mergeCanonicalAuthorIds(existingValue: unknown, incomingValue: unknown): string[] {
+  return uniqueStrings([
+    ...asStringArray(existingValue),
+    ...asStringArray(incomingValue),
+  ], 8);
+}
+
+function normalizeWorkIdentityValue(
+  value: unknown,
+  fallbackCanonicalKey: string
+): Record<string, unknown> {
+  const record = asRecord(value) || {};
+  const canonicalKey = asNonEmptyString(record.canonicalKey) || fallbackCanonicalKey;
+  const mergeKeys = uniqueStrings([
+    canonicalKey,
+    ...asStringArray(record.mergeKeys),
+  ], 12);
+  const providerWorkId = asNonEmptyString(record.providerWorkId);
+
+  return {
+    canonicalKey,
+    mergeKeys,
+    ...(providerWorkId ? { providerWorkId } : {}),
+  };
+}
+
+function mergeWorkIdentityValues(params: {
+  existingValue: unknown;
+  incomingValue: unknown;
+  canonicalKey: string;
+}): Record<string, unknown> {
+  const existing = normalizeWorkIdentityValue(params.existingValue, params.canonicalKey);
+  const incoming = normalizeWorkIdentityValue(params.incomingValue, params.canonicalKey);
+  const providerWorkId =
+    asNonEmptyString(existing.providerWorkId) || asNonEmptyString(incoming.providerWorkId);
+
+  return {
+    canonicalKey: params.canonicalKey,
+    mergeKeys: uniqueStrings([
+      params.canonicalKey,
+      ...asStringArray(existing.mergeKeys),
+      ...asStringArray(incoming.mergeKeys),
+    ], 12),
+    ...(providerWorkId ? { providerWorkId } : {}),
+  };
+}
+
+function toCompatibilityAuthorityEvidence(params: {
+  trust: CanonicalFieldTrustRecord;
+  existing: Record<string, unknown> | null;
+}): {
+  source: string;
+  confidence: AuthorityConfidence;
+  lastAcceptedAt: FirebaseFirestore.FieldValue | unknown;
+} {
+  const existingSource = asNonEmptyString(params.existing?.source);
+  const existingConfidence = normalizeAuthorityConfidence(params.existing?.confidence);
+
+  if (existingSource === params.trust.source && existingConfidence === params.trust.confidence) {
+    return {
+      source: existingSource || params.trust.source,
+      confidence: existingConfidence || params.trust.confidence,
+      lastAcceptedAt: params.existing?.lastAcceptedAt || FieldValue.serverTimestamp(),
+    };
+  }
+
+  return {
+    source: params.trust.source,
+    confidence: params.trust.confidence,
+    lastAcceptedAt: FieldValue.serverTimestamp(),
+  };
+}
+
 function toAuthorityFields(params: {
   requestedAuthorityStatus: BookAuthorityState;
   existingBook: Record<string, unknown> | null;
@@ -488,8 +944,6 @@ function buildIdentityCandidates(params: {
   source: LiteraryAuthoritySource;
   providerExternalId: string;
   canonicalKeys: string[];
-  isbn13: string;
-  isbn10: string;
   extraIdentityKeys: string[];
 }): Array<{
   key: string;
@@ -516,12 +970,6 @@ function buildIdentityCandidates(params: {
   };
 
   if (params.allowIdentityReuse) {
-    if (params.isbn13) {
-      add(`isbn13:${params.isbn13}`, "isbn13", params.isbn13, 1);
-    }
-    if (params.isbn10) {
-      add(`isbn10:${params.isbn10}`, "isbn10", params.isbn10, 2);
-    }
     params.canonicalKeys.forEach((canonicalKey, index) => {
       add(`canonical:${canonicalKey}`, "canonical", canonicalKey, 10 + index);
     });
@@ -590,15 +1038,20 @@ async function resolveExistingBookByFields(params: {
   canonicalKeys: string[];
   isbn13: string;
   isbn10: string;
+  allowIsbnFallback: boolean;
 }): Promise<string> {
   const candidates = new Map<string, Record<string, unknown>>();
   const queries = [
-    ...(params.isbn13 ? [{ field: "isbn13", value: params.isbn13 }] : []),
-    ...(params.isbn10 ? [{ field: "isbn10", value: params.isbn10 }] : []),
     ...params.canonicalKeys.slice(0, 6).map((canonicalKey) => ({
       field: "canonicalKey",
       value: canonicalKey,
     })),
+    ...(params.allowIsbnFallback && params.isbn13
+      ? [{ field: "isbn13", value: params.isbn13 }]
+      : []),
+    ...(params.allowIsbnFallback && params.isbn10
+      ? [{ field: "isbn10", value: params.isbn10 }]
+      : []),
   ];
 
   for (const query of queries) {
@@ -697,6 +1150,7 @@ function resolveEditionId(params: {
   explicitEditionId?: string | null;
   source: LiteraryAuthoritySource;
   providerExternalId: string;
+  rawBook: Record<string, unknown>;
   bookId: string;
   shouldCreateEdition: boolean;
 }): string | null {
@@ -712,7 +1166,12 @@ function resolveEditionId(params: {
     (params.source === "googleBooks" || params.source === "openLibrary") &&
     params.providerExternalId
   ) {
-    const externalId = normalizeSourceIdentityValue(params.source, params.providerExternalId);
+    const externalId =
+      resolveEditionProviderIdentity({
+        source: params.source,
+        providerExternalId: params.providerExternalId,
+        rawBook: params.rawBook,
+      }) || normalizeSourceIdentityValue(params.source, params.providerExternalId);
     return `${params.source}:${externalId}`;
   }
 
@@ -799,8 +1258,6 @@ export async function materializeBookAuthorityInTransaction(
     source: params.source,
     providerExternalId,
     canonicalKeys,
-    isbn13,
-    isbn10,
     extraIdentityKeys: uniqueStrings(params.extraIdentityKeys || [], 20),
   });
 
@@ -830,6 +1287,8 @@ export async function materializeBookAuthorityInTransaction(
         canonicalKeys,
         isbn13,
         isbn10,
+        allowIsbnFallback:
+          params.source === "booktown_canonical" || params.source === "canonical_seed",
       });
     }
   }
@@ -847,7 +1306,6 @@ export async function materializeBookAuthorityInTransaction(
       ? asStringArray(existingBook?.authors)
       : incomingAuthors;
   const primaryAuthor = asNonEmptyString(existingBook?.author) || incomingPrimaryAuthor;
-  const canonicalKey = asNonEmptyString(existingBook?.canonicalKey) || incomingCanonicalKey;
   const language = asNonEmptyString(existingBook?.language) || extractLanguage(rawBook);
   const titleEn = asNonEmptyString(existingBook?.titleEn) || asNonEmptyString(rawBook.titleEn) || title;
   const titleAr = asNonEmptyString(existingBook?.titleAr) || asNonEmptyString(rawBook.titleAr);
@@ -855,6 +1313,27 @@ export async function materializeBookAuthorityInTransaction(
     asNonEmptyString(existingBook?.authorEn) || asNonEmptyString(rawBook.authorEn) || primaryAuthor;
   const authorAr = asNonEmptyString(existingBook?.authorAr) || asNonEmptyString(rawBook.authorAr);
   const metadataSource = normalizeMetadataAuthoritySource(params.source);
+  const now = FieldValue.serverTimestamp();
+  const shouldCreateEdition =
+    params.createEdition === true ||
+    params.source === "googleBooks" ||
+    params.source === "openLibrary" ||
+    params.source === "goodreads_import" ||
+    params.source === "user_upload" ||
+    Boolean(asNonEmptyString(rawBook.storagePath)) ||
+    Boolean(asNonEmptyString(rawBook.ebookAttachmentId)) ||
+    Boolean(asNonEmptyString(rawBook.ebookStoragePath));
+  const editionId = resolveEditionId({
+    explicitEditionId: params.explicitEditionId,
+    source: params.source,
+    providerExternalId,
+    rawBook,
+    bookId,
+    shouldCreateEdition,
+  });
+  const editionRef = editionId ? db.collection("editions").doc(editionId) : null;
+  const existingEditionSnap = editionRef ? await params.tx.get(editionRef) : null;
+  const existingEdition = (existingEditionSnap?.data() || {}) as Record<string, unknown>;
   const descriptionDecision = resolveMetadataField({
     field: "description",
     existingBook,
@@ -897,8 +1376,10 @@ export async function materializeBookAuthorityInTransaction(
     literaryAuthorityClass: asNonEmptyString(params.literaryAuthorityClass),
   });
 
-  const now = FieldValue.serverTimestamp();
-  const publicationYear = resolvePublicationYear(rawBook);
+  const publicationYear =
+    typeof existingBook?.publicationYear === "number" && Number.isFinite(existingBook.publicationYear)
+      ? Math.trunc(existingBook.publicationYear)
+      : resolvePublicationYear(rawBook);
   const rightsMode =
     asNonEmptyString(rawBook.rightsMode) ||
     asNonEmptyString(existingBook?.rightsMode) ||
@@ -920,7 +1401,15 @@ export async function materializeBookAuthorityInTransaction(
   const providerExternalIds = uniqueStrings([
     ...asStringArray(existingBook?.providerExternalIds),
     ...(providerExternalId && (params.source === "googleBooks" || params.source === "openLibrary")
-      ? [`${params.source}:${normalizeSourceIdentityValue(params.source, providerExternalId)}`]
+      ? [
+          `${
+            params.source
+          }:${resolveEditionProviderIdentity({
+            source: params.source,
+            providerExternalId,
+            rawBook,
+          })}`,
+        ]
       : []),
     ...asStringArray(rawBook.providerExternalIds),
   ], 20);
@@ -929,6 +1418,115 @@ export async function materializeBookAuthorityInTransaction(
     : Array.isArray(existingBook?.externalReadableSources)
       ? existingBook?.externalReadableSources
       : [];
+
+  const canonicalTitleTrust = resolveCanonicalFieldTrust({
+    existingBook,
+    field: "canonicalTitle",
+    existingValue: asNonEmptyString(existingBook?.canonicalTitle),
+    incomingValue: titleEn || title,
+    source: params.source,
+    requestedLock: authorityFields.canonicalLocked,
+  });
+  const canonicalAuthorIdsTrust = resolveCanonicalFieldTrust({
+    existingBook,
+    field: "canonicalAuthorIds",
+    existingValue: asStringArray(existingBook?.canonicalAuthorIds),
+    incomingValue: [author.authorId],
+    source: params.source,
+    requestedLock: authorityFields.canonicalLocked,
+  });
+  const canonicalKeyTrust = resolveCanonicalFieldTrust({
+    existingBook,
+    field: "canonicalKey",
+    existingValue: asNonEmptyString(existingBook?.canonicalKey),
+    incomingValue: incomingCanonicalKey,
+    source: params.source,
+    requestedLock: authorityFields.canonicalLocked,
+  });
+  const canonicalKey = asNonEmptyString(canonicalKeyTrust.value) || incomingCanonicalKey;
+  const canonicalAuthorIds = mergeCanonicalAuthorIds(
+    canonicalAuthorIdsTrust.value,
+    [author.authorId]
+  );
+  const originalLanguageTrust = resolveCanonicalFieldTrust({
+    existingBook,
+    field: "originalLanguage",
+    existingValue: asNonEmptyString(existingBook?.originalLanguage),
+    incomingValue: language,
+    source: params.source,
+    requestedLock: authorityFields.canonicalLocked,
+  });
+  const canonicalTitle = asNonEmptyString(canonicalTitleTrust.value) || titleEn || title;
+  const originalTitle =
+    asNonEmptyString(existingBook?.originalTitle) ||
+    asNonEmptyString(rawBook.title) ||
+    title;
+  const originalLanguage = asNonEmptyString(originalLanguageTrust.value) || language;
+  const workProviderIdentity = resolveWorkProviderIdentity({
+    source: params.source,
+    providerExternalId,
+  });
+  const incomingWorkIdentity = normalizeWorkIdentityValue(
+    {
+      canonicalKey,
+      mergeKeys: canonicalKeys,
+      ...(workProviderIdentity ? { providerWorkId: `${params.source}:${workProviderIdentity}` } : {}),
+    },
+    canonicalKey
+  );
+  const workIdentityTrustBase = resolveCanonicalFieldTrust({
+    existingBook,
+    field: "workIdentity",
+    existingValue: normalizeWorkIdentityValue(existingBook?.workIdentity, canonicalKey),
+    incomingValue: incomingWorkIdentity,
+    source: params.source,
+    requestedLock: authorityFields.canonicalLocked,
+  });
+  const workIdentity = mergeWorkIdentityValues({
+    existingValue: workIdentityTrustBase.value,
+    incomingValue: incomingWorkIdentity,
+    canonicalKey,
+  });
+  const canonicalFieldTrust = {
+    canonicalTitle: {
+      ...canonicalTitleTrust,
+      value: canonicalTitle,
+    },
+    canonicalAuthorIds: {
+      ...canonicalAuthorIdsTrust,
+      value: canonicalAuthorIds,
+    },
+    canonicalKey: {
+      ...canonicalKeyTrust,
+      value: canonicalKey,
+    },
+    originalLanguage: {
+      ...originalLanguageTrust,
+      value: originalLanguage,
+    },
+    workIdentity: {
+      ...workIdentityTrustBase,
+      value: workIdentity,
+    },
+  };
+  const titleAuthority = toCompatibilityAuthorityEvidence({
+    trust: canonicalFieldTrust.canonicalTitle,
+    existing: asRecord(existingBook?.titleAuthority),
+  });
+  const abstractDescriptionAuthority =
+    descriptionDecision.acceptedIncoming || !asNonEmptyString(existingBook?.abstractDescription)
+      ? toAuthorityEvidence(params.source)
+      : asRecord(existingBook?.abstractDescriptionAuthority);
+  const originalLanguageAuthority = toCompatibilityAuthorityEvidence({
+    trust: canonicalFieldTrust.originalLanguage,
+    existing: asRecord(existingBook?.originalLanguageAuthority),
+  });
+  const existingCanonicalRelations = asRecord(existingBook?.canonicalRelations);
+  const primaryEditionId =
+    asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
+    asNonEmptyString(existingBook?.editionId) ||
+    editionId ||
+    null;
 
   const bookBase: Record<string, unknown> = {
     id: bookId,
@@ -939,6 +1537,19 @@ export async function materializeBookAuthorityInTransaction(
     workType: authorityFields.workType,
     literaryAuthorityClass: authorityFields.literaryAuthorityClass,
     canonicalLocked: authorityFields.canonicalLocked,
+    canonicalTitle,
+    originalTitle,
+    canonicalAuthorIds,
+    originalLanguage,
+    workIdentity,
+    canonicalFieldTrust,
+    abstractDescription: description,
+    canonicalRelations: {
+      ...(primaryEditionId ? { primaryEditionId } : {}),
+    },
+    ...(titleAuthority ? { titleAuthority } : {}),
+    ...(abstractDescriptionAuthority ? { abstractDescriptionAuthority } : {}),
+    ...(originalLanguageAuthority ? { originalLanguageAuthority } : {}),
     title,
     titleEn,
     titleAr,
@@ -955,8 +1566,8 @@ export async function materializeBookAuthorityInTransaction(
     descriptionAuthority: descriptionDecision.authority,
     language,
     publicationYear,
-    isbn13: isbn13 || null,
-    isbn10: isbn10 || null,
+    isbn13: asNonEmptyString(existingBook?.isbn13) || isbn13 || null,
+    isbn10: asNonEmptyString(existingBook?.isbn10) || isbn10 || null,
     canonicalKey,
     rightsMode,
     visibility,
@@ -1025,25 +1636,9 @@ export async function materializeBookAuthorityInTransaction(
     isEbookAvailable: shouldHaveEbook || searchPatch.isEbookAvailable === true,
   };
 
-  const shouldCreateEdition =
-    params.createEdition === true ||
-    params.source === "googleBooks" ||
-    params.source === "openLibrary" ||
-    params.source === "goodreads_import" ||
-    params.source === "user_upload" ||
-    Boolean(asNonEmptyString(rawBook.storagePath)) ||
-    Boolean(asNonEmptyString(rawBook.ebookAttachmentId)) ||
-    Boolean(asNonEmptyString(rawBook.ebookStoragePath));
-  const editionId = resolveEditionId({
-    explicitEditionId: params.explicitEditionId,
-    source: params.source,
-    providerExternalId,
-    bookId,
-    shouldCreateEdition,
-  });
-
   if (editionId) {
-    finalBookPayload.editionId = editionId;
+    finalBookPayload.editionId =
+      asNonEmptyString(existingBook?.editionId) || editionId;
   }
 
   if (identityCandidates.length > 0) {
@@ -1055,16 +1650,30 @@ export async function materializeBookAuthorityInTransaction(
   params.tx.set(bookRef, finalBookPayload, { merge: true });
 
   if (editionId) {
+    const editionProviderIdentity = resolveEditionProviderIdentity({
+      source: params.source,
+      providerExternalId,
+      rawBook,
+    });
+    const publisher = resolvePublisher(rawBook);
+    const format = resolveEditionFormat(rawBook);
+    const coverSourceUrl =
+      coverDecision.acceptedIncoming ? incomingCoverCandidates[0] || "" : asNonEmptyString(existingEdition?.coverUrl);
     const editionBase: Record<string, unknown> = {
       id: editionId,
       editionId,
       bookId,
+      workId: bookId,
       source: params.source,
       externalId:
-        providerExternalId &&
+        editionProviderIdentity &&
         (params.source === "googleBooks" || params.source === "openLibrary")
-          ? normalizeSourceIdentityValue(params.source, providerExternalId)
+          ? editionProviderIdentity
           : null,
+      providerIds: {
+        ...(asRecord(existingEdition?.providerIds) || {}),
+        ...(editionProviderIdentity ? { [params.source]: editionProviderIdentity } : {}),
+      },
       authorId: author.authorId,
       canonicalKey,
       title,
@@ -1080,11 +1689,23 @@ export async function materializeBookAuthorityInTransaction(
       publicationYear,
       isbn13: isbn13 || null,
       isbn10: isbn10 || null,
+      publisher,
+      format,
       rightsMode,
       visibility,
       status: "active",
       providerExternalIds,
       externalReadableSources,
+      cover: {
+        ...(asRecord(existingEdition?.cover) || {}),
+        ...(coverSourceUrl ? { sourceUrl: coverSourceUrl } : {}),
+      },
+      ...(coverSourceUrl ? { coverUrl: coverSourceUrl } : {}),
+      readabilityFlags: {
+        hasEbook: finalBookPayload.hasEbook === true,
+        downloadable: finalBookPayload.downloadable === true,
+        isEbookAvailable: finalBookPayload.isEbookAvailable === true,
+      },
       ebookAttachmentId:
         asNonEmptyString(rawBook.ebookAttachmentId) ||
         asNonEmptyString(existingBook?.ebookAttachmentId) ||
@@ -1107,7 +1728,7 @@ export async function materializeBookAuthorityInTransaction(
     };
 
     params.tx.set(
-      db.collection("editions").doc(editionId),
+      editionRef!,
       {
         ...editionBase,
         ...buildEditionSearchPatch(editionBase),

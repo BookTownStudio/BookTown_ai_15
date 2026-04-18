@@ -275,6 +275,7 @@ export async function fetchOpenLibraryCanonicalMetadata(
         .filter((entry): entry is Record<string, unknown> => entry !== null)
     : [];
   const primaryEdition = editions[0] || {};
+  const primaryEditionKey = asNonEmptyString(primaryEdition.key).replace(/^\/books\//, "");
 
   const coverIds = Array.isArray(work.covers)
     ? work.covers
@@ -294,6 +295,8 @@ export async function fetchOpenLibraryCanonicalMetadata(
     externalId: normalizedWorkId,
     source: "openLibrary",
     key: `/works/${normalizedWorkId}`,
+    editionExternalId: primaryEditionKey,
+    openLibraryEditionId: primaryEditionKey,
     title: asNonEmptyString(work.title) || asNonEmptyString(primaryEdition.title),
     authors: authorNames,
     author_name: authorNames,
@@ -303,6 +306,8 @@ export async function fetchOpenLibraryCanonicalMetadata(
     cover_i: coverId,
     coverId,
     coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-L.jpg` : "",
+    isbn13: asStringArray(primaryEdition.isbn_13)[0] || "",
+    isbn10: asStringArray(primaryEdition.isbn_10)[0] || "",
     isbn_13: asStringArray(primaryEdition.isbn_13),
     isbn_10: asStringArray(primaryEdition.isbn_10),
     firstPublishYear:
