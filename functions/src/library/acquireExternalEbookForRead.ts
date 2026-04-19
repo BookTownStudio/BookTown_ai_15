@@ -13,6 +13,10 @@ import {
   type SupportedSource,
 } from "./ingestBook";
 import {
+  areAuthorityAuthorsEquivalent,
+  extractAuthorityAuthorReference,
+} from "./authorityAuthorLock";
+import {
   fetchOpenLibraryCanonicalMetadata,
   resolveOpenLibraryReadableCandidate,
 } from "./providers/openLibrary";
@@ -152,6 +156,30 @@ async function resolveAuthoritativeBookId(
   for (const candidate of candidates) {
     const identitySnap = await db.collection("book_identity").doc(candidate).get();
     const mappedBookId = asNonEmptyString(identitySnap.data()?.bookId);
+    if (mappedBookId === bookId) {
+      return mappedBookId;
+    }
+    if (!mappedBookId) {
+      continue;
+    }
+
+    const mappedBookSnap = await db.collection("books").doc(mappedBookId).get();
+    const mappedBookData = (mappedBookSnap.data() || null) as Record<string, unknown> | null;
+    if (!mappedBookData) {
+      continue;
+    }
+
+    if (!areAuthorityAuthorsEquivalent(bookData, mappedBookData)) {
+      logger.warn("[ACQUIRE][AUTHOR_LOCK_REJECTED_IDENTITY_REDIRECT]", {
+        identityKey: candidate,
+        requestedBookId: bookId,
+        mappedBookId,
+        requestedAuthor: extractAuthorityAuthorReference(bookData),
+        mappedAuthor: extractAuthorityAuthorReference(mappedBookData),
+      });
+      continue;
+    }
+
     if (mappedBookId) {
       return mappedBookId;
     }

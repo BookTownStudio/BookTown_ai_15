@@ -1,0 +1,61 @@
+import { describe, expect, it } from "vitest";
+
+import {
+  PROVIDER_ROLE_REGISTRY,
+  assertProviderCanEnterCanonicalBookWritePath,
+  canProviderEnrichExistingCanonicalBook,
+  canProviderEnterCanonicalBookWritePath,
+  canProviderServeTrustedReadableSource,
+  getProviderAllowedAuthorityFields,
+  getProviderRole,
+} from "./providerRoleRegistry";
+
+describe("providerRoleRegistry", () => {
+  it("classifies the current provider universe into explicit legal roles", () => {
+    expect(PROVIDER_ROLE_REGISTRY.openLibrary.role).toBe("direct_authority");
+    expect(PROVIDER_ROLE_REGISTRY.googleBooks.role).toBe("direct_authority");
+    expect(PROVIDER_ROLE_REGISTRY.loc.role).toBe("restricted_authority");
+    expect(PROVIDER_ROLE_REGISTRY.viaf.role).toBe("author_only_authority");
+    expect(PROVIDER_ROLE_REGISTRY.wikidata.role).toBe("weighted_evidence");
+    expect(PROVIDER_ROLE_REGISTRY.worldcat.role).toBe("weighted_evidence");
+    expect(PROVIDER_ROLE_REGISTRY.isbndb.role).toBe("weighted_evidence");
+    expect(PROVIDER_ROLE_REGISTRY.gutenberg.role).toBe("ebook_source_only");
+    expect(PROVIDER_ROLE_REGISTRY.gallica.role).toBe("ebook_source_only");
+    expect(PROVIDER_ROLE_REGISTRY.hindawi.role).toBe("ebook_source_only");
+    expect(PROVIDER_ROLE_REGISTRY.internetArchive.role).toBe("ebook_source_only");
+    expect(PROVIDER_ROLE_REGISTRY.bnf.role).toBe("enrichment_only");
+    expect(PROVIDER_ROLE_REGISTRY.britishLibrary.role).toBe("enrichment_only");
+    expect(PROVIDER_ROLE_REGISTRY.dnb.role).toBe("enrichment_only");
+    expect(PROVIDER_ROLE_REGISTRY.ndl.role).toBe("enrichment_only");
+  });
+
+  it("keeps current Open Library and Google Books write-path eligibility unchanged", () => {
+    expect(getProviderRole("openLibrary")).toBe("direct_authority");
+    expect(getProviderRole("googleBooks")).toBe("direct_authority");
+    expect(canProviderEnterCanonicalBookWritePath("openLibrary")).toBe(true);
+    expect(canProviderEnterCanonicalBookWritePath("googleBooks")).toBe(true);
+    expect(() => assertProviderCanEnterCanonicalBookWritePath("openLibrary")).not.toThrow();
+    expect(() => assertProviderCanEnterCanonicalBookWritePath("googleBooks")).not.toThrow();
+  });
+
+  it("allows readable-source providers without granting them canonical work authority", () => {
+    expect(canProviderServeTrustedReadableSource("openLibrary")).toBe(true);
+    expect(canProviderServeTrustedReadableSource("gutenberg")).toBe(true);
+    expect(canProviderEnterCanonicalBookWritePath("gutenberg")).toBe(false);
+    expect(canProviderEnterCanonicalBookWritePath("gallica")).toBe(false);
+    expect(canProviderEnterCanonicalBookWritePath("hindawi")).toBe(false);
+    expect(canProviderEnterCanonicalBookWritePath("internetArchive")).toBe(false);
+  });
+
+  it("enables LOC only for explicitly gated restricted enrichment fields", () => {
+    expect(canProviderEnterCanonicalBookWritePath("loc")).toBe(false);
+    expect(canProviderEnrichExistingCanonicalBook("loc")).toBe(true);
+    expect(getProviderAllowedAuthorityFields("loc")).toEqual([
+      "originalTitle",
+      "locControlNumber",
+      "publicationYear",
+      "publisher",
+      "languageEvidence",
+    ]);
+  });
+});

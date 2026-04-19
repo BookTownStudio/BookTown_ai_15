@@ -99,6 +99,14 @@ Not allowed:
 
 One Work may own many editions.
 
+Work identity may only be reused or merged after universal author lock passes.
+
+Hard identifiers such as provider work ids, provider edition/work ids, ISBN fallback, alias reuse, and originalTitle reuse are evidence only until author equivalence is confirmed.
+
+Every future provider must enter through the central provider role registry before it may affect any canonical work flow.
+
+Library of Congress is the first active restricted authority provider: it may enrich existing canonical records with field-gated bibliographic evidence, but it may not create or override canonical work identity.
+
 ---
 
 # 2. Edition

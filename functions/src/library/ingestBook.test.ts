@@ -319,4 +319,51 @@ describe("ingestBook v2 smoke", () => {
     expect(book?.authorEn).toBe("Direct Route Author");
     expect(book?.providerExternalIds).toContain("googleBooks:direct_google_id");
   });
+
+  it("ignores provider-supplied canonical author ids when provider identity matches but author text differs", async () => {
+    const ingestBookCallable = await getIngestBookCallable();
+
+    const first = await ingestBookCallable.run({
+      auth: { uid: "test-user" },
+      data: {
+        providerExternalId: "gb_author_lock_1",
+        source: "googleBooks",
+        rawBook: {
+          id: "author_lock_1",
+          externalId: "author_lock_1",
+          source: "googleBooks",
+          title: "Authority Lock",
+          authors: ["Author One"],
+          language: "en",
+        },
+      },
+    });
+
+    const firstBook = getDoc(`books/${first.bookId}`);
+    const firstAuthorId =
+      typeof firstBook?.authorId === "string" ? firstBook.authorId : "";
+
+    const second = await ingestBookCallable.run({
+      auth: { uid: "test-user" },
+      data: {
+        providerExternalId: "gb_author_lock_1",
+        source: "googleBooks",
+        rawBook: {
+          id: "author_lock_1",
+          externalId: "author_lock_1",
+          source: "googleBooks",
+          title: "Authority Lock",
+          authors: ["Author Two"],
+          authorId: firstAuthorId,
+          canonicalAuthorIds: [firstAuthorId],
+          authorNamesNormalized: ["author one"],
+          language: "en",
+        },
+      },
+    });
+
+    expect(second.bookId).not.toBe(first.bookId);
+    expect(getDoc(`books/${second.bookId}`)?.author).toBe("Author Two");
+    expect(getDoc("book_identity/provider:googleBooks:author_lock_1")?.bookId).toBe(first.bookId);
+  });
 });

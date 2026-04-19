@@ -5,6 +5,10 @@ import { Buffer } from "buffer";
 import { admin } from "../firebaseAdmin";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 import {
+  assertProviderCanEnterCanonicalBookWritePath,
+  isDirectAuthorityProvider,
+} from "./providerRoleRegistry";
+import {
   materializeBookAuthority,
   type BookAuthorityState,
 } from "./materializeBookAuthority";
@@ -149,6 +153,17 @@ function extractLanguage(rawBook: Record<string, unknown>): string {
   return "en";
 }
 
+function sanitizeProviderAuthorityPayload(
+  rawBook: Record<string, unknown>
+): Record<string, unknown> {
+  const sanitized = { ...rawBook };
+  delete sanitized.authorId;
+  delete sanitized.authorCanonicalKey;
+  delete sanitized.canonicalAuthorIds;
+  delete sanitized.authorNamesNormalized;
+  return sanitized;
+}
+
 async function fetchGoogleBooksCanonicalMetadata(
   providerExternalId: string
 ): Promise<Record<string, unknown> | null> {
@@ -290,6 +305,9 @@ function normalizeSource(input: unknown): SupportedSource | null {
   }
   if (["openLibrary", "open_library", "openlibrary"].includes(raw)) {
     return "openLibrary";
+  }
+  if (isDirectAuthorityProvider(raw)) {
+    return raw as SupportedSource;
   }
   return null;
 }
@@ -498,6 +516,7 @@ export async function ingestBookServerSide(params: {
 }> {
   const providerExternalId = asNonEmptyString(params.providerExternalId);
   const source = params.source;
+  assertProviderCanEnterCanonicalBookWritePath(source);
   const hydratedRawBook =
     asRecord(params.rawBook) ||
     (providerExternalId ? await hydrateRawBookFromProvider(source, providerExternalId) : null);
@@ -505,17 +524,18 @@ export async function ingestBookServerSide(params: {
   if (!providerExternalId || !source || !rawBook) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
+  const authorityRawBook = sanitizeProviderAuthorityPayload(rawBook);
 
-  const externalId = extractExternalId(providerExternalId, source, rawBook);
+  const externalId = extractExternalId(providerExternalId, source, authorityRawBook);
   if (!externalId) {
     throw new HttpsError("invalid-argument", "Unable to resolve provider external id.");
   }
 
-  const coverCandidates = toCoverCandidates(source, rawBook, externalId);
+  const coverCandidates = toCoverCandidates(source, authorityRawBook, externalId);
   const requestedAuthorityStatus: BookAuthorityState =
-    rawBook.canonicalLocked === true ||
-    asNonEmptyString(rawBook.authorityStatus) === "canonical" ||
-    asNonEmptyString(rawBook.workType) === "canonical"
+    authorityRawBook.canonicalLocked === true ||
+    asNonEmptyString(authorityRawBook.authorityStatus) === "canonical" ||
+    asNonEmptyString(authorityRawBook.workType) === "canonical"
       ? "canonical"
       : "provisional";
 
@@ -531,11 +551,11 @@ export async function ingestBookServerSide(params: {
     source,
     authorityStatus: requestedAuthorityStatus,
     providerExternalId: externalId,
-    rawBook,
+    rawBook: authorityRawBook,
     coverCandidates,
     createEdition: true,
     ingestionKey: `${source}:${externalId}`,
-    literaryAuthorityClass: asNonEmptyString(rawBook.literaryAuthorityClass),
+    literaryAuthorityClass: asNonEmptyString(authorityRawBook.literaryAuthorityClass),
   });
 
   logger.info("BOOK_INGEST_V2_TRACE", {

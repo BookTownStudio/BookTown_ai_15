@@ -493,6 +493,70 @@ describe("acquireExternalEbookForRead", () => {
     expect(uploadedFiles.size).toBe(0);
   });
 
+  it("does not redirect a bookId request across a shared identity when the mapped book has a different author", async () => {
+    setDoc(
+      "books/book_1",
+      {
+        id: "book_1",
+        titleEn: "Pride and Prejudice",
+        authorEn: "Jane Austen",
+        author: "Jane Austen",
+        authorNamesNormalized: ["jane austen"],
+        language: "en",
+        rightsMode: "public_free",
+        visibility: "public",
+        downloadable: false,
+        hasEbook: false,
+        isEbookAvailable: false,
+        providerExternalIds: ["googleBooks:ext_1"],
+      },
+      false
+    );
+    setDoc(
+      "books/book_2",
+      {
+        id: "book_2",
+        titleEn: "Pride and Prejudice",
+        authorEn: "Charlotte Bronte",
+        author: "Charlotte Bronte",
+        authorNamesNormalized: ["charlotte bronte"],
+        language: "en",
+        rightsMode: "public_free",
+        visibility: "public",
+        downloadable: false,
+        hasEbook: false,
+        isEbookAvailable: false,
+      },
+      false
+    );
+    setDoc(
+      "book_identity/provider:googleBooks:ext_1",
+      {
+        identityKey: "provider:googleBooks:ext_1",
+        bookId: "book_2",
+      },
+      false
+    );
+
+    resolveAttachmentMock.mockResolvedValue({
+      id: "attachment_1",
+      visibility: "public",
+      storagePath: "ebooks/book_1/canonical.epub",
+    } as any);
+
+    const { acquireExternalEbookForReadHandler } = await import("./acquireExternalEbookForRead");
+    const result = await acquireExternalEbookForReadHandler({
+      auth: { uid: "reader_1" },
+      data: {
+        bookId: "book_1",
+      },
+    });
+
+    expect(result.status).toBe("already_available");
+    expect(resolveAttachmentMock).toHaveBeenCalledWith("book_1");
+    expect(resolveAttachmentMock).not.toHaveBeenCalledWith("book_2");
+  });
+
   it("rejects concurrent acquisition for the same canonical book and provider", async () => {
     setDoc(
       "ebook_acquisitions/book_1__gutenberg",

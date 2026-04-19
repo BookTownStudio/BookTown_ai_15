@@ -5,6 +5,21 @@ import { v4 as uuidv4 } from "uuid";
 import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
 import {
+  areAuthorityAuthorsEquivalent,
+  extractAuthorityAuthorReference,
+} from "./authorityAuthorLock";
+import {
+  assertProviderCanEnterCanonicalBookWritePath,
+  canProviderEnrichExistingCanonicalBook,
+  canProviderEnterCanonicalBookWritePath,
+  getProviderAllowedAuthorityFields,
+  getAcceptedAuthorityForProvider,
+  getAcceptedAuthorityRank,
+  isDirectAuthorityProvider,
+  isRegisteredProvider,
+  isRestrictedAuthorityProvider,
+} from "./providerRoleRegistry";
+import {
   buildRawAuthorFromBookPayload,
   materializeCanonicalAuthorInTransaction,
 } from "./authors/authorCatalog";
@@ -21,6 +36,7 @@ export type LiteraryAuthoritySource =
   | "canonical_seed"
   | "googleBooks"
   | "goodreads_import"
+  | "loc"
   | "openLibrary"
   | "user_upload";
 
@@ -288,7 +304,10 @@ function normalizeMetadataAuthoritySource(
   if (source === "booktown_canonical" || source === "canonical_seed") {
     return "manualAdmin";
   }
-  if (source === "googleBooks" || source === "openLibrary") {
+  if (
+    isDirectAuthorityProvider(source) &&
+    (source === "googleBooks" || source === "openLibrary")
+  ) {
     return source;
   }
   return null;
@@ -538,6 +557,110 @@ function resolvePublisher(rawBook: Record<string, unknown>): string | null {
   return publishers[0] || null;
 }
 
+function isFinitePublicationYearValue(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function canAcceptRestrictedAuthorityString(params: {
+  existingValue: unknown;
+  incomingValue: string;
+  allowPlaceholderReplacement?: boolean;
+}): boolean {
+  const incomingValue = params.incomingValue.trim();
+  if (!incomingValue) {
+    return false;
+  }
+
+  const existingValue = asNonEmptyString(params.existingValue);
+  if (!existingValue) {
+    return true;
+  }
+
+  return Boolean(
+    params.allowPlaceholderReplacement &&
+      isCanonicalPlaceholderValue(existingValue) &&
+      !isCanonicalPlaceholderValue(incomingValue)
+  );
+}
+
+function resolveLocControlNumber(
+  rawBook: Record<string, unknown>,
+  providerExternalId: string
+): string {
+  return (
+    asNonEmptyString(rawBook.locControlNumber) ||
+    asNonEmptyString(rawBook.lccn) ||
+    providerExternalId
+  );
+}
+
+function isCanonicalAuthorityBook(data: Record<string, unknown> | null): boolean {
+  if (!data) {
+    return false;
+  }
+  return (
+    asNonEmptyString(data.authorityStatus) === "canonical" ||
+    asNonEmptyString(data.workType) === "canonical" ||
+    data.canonicalLocked === true
+  );
+}
+
+async function resolveRestrictedAuthorityExistingBook(params: {
+  tx: Transaction;
+  preferredBookId?: string;
+  incomingRawBook: Record<string, unknown>;
+  canonicalKeys: string[];
+}): Promise<{
+  bookId: string;
+  data: Record<string, unknown>;
+} | null> {
+  const loadBook = async (
+    bookId: string
+  ): Promise<{
+    bookId: string;
+    data: Record<string, unknown>;
+  } | null> => {
+    if (!bookId) {
+      return null;
+    }
+    const snap = await params.tx.get(db.collection("books").doc(bookId));
+    const data = (snap.data() || null) as Record<string, unknown> | null;
+    return data ? { bookId, data } : null;
+  };
+
+  let candidate =
+    (params.preferredBookId ? await loadBook(params.preferredBookId) : null) ||
+    null;
+
+  if (!candidate) {
+    const resolvedBookId = await resolveExistingBookByFields({
+      tx: params.tx,
+      incomingRawBook: params.incomingRawBook,
+      canonicalKeys: params.canonicalKeys,
+      isbn13: "",
+      isbn10: "",
+      allowIsbnFallback: false,
+    });
+    candidate = resolvedBookId ? await loadBook(resolvedBookId) : null;
+  }
+
+  const visited = new Set<string>();
+  while (candidate) {
+    const mergedInto = asNonEmptyString(candidate.data.mergedInto);
+    if (!mergedInto || visited.has(mergedInto)) {
+      break;
+    }
+    visited.add(candidate.bookId);
+    const redirected = await loadBook(mergedInto);
+    if (!redirected) {
+      break;
+    }
+    candidate = redirected;
+  }
+
+  return candidate;
+}
+
 function resolveEditionFormat(rawBook: Record<string, unknown>): string | null {
   return (
     asNonEmptyString(rawBook.format) ||
@@ -579,28 +702,26 @@ function resolveAcceptedAuthority(source: string): AcceptedAuthority {
   if (source === "booktown_canonical" || source === "canonical_seed" || source === "manualAuthority") {
     return "manualAuthority";
   }
-  if (source === "openLibrary") {
-    return "openLibrary";
-  }
-  if (source === "wikidata") {
-    return "wikidata";
+  const acceptedAuthority = getAcceptedAuthorityForProvider(source);
+  if (
+    acceptedAuthority === "openLibrary" ||
+    acceptedAuthority === "wikidata" ||
+    acceptedAuthority === "googleBooks"
+  ) {
+    return acceptedAuthority;
   }
   return "googleBooks";
 }
 
 function acceptedAuthorityRank(value: AcceptedAuthority): number {
-  if (value === "manualAuthority") return 400;
-  if (value === "openLibrary") return 300;
-  if (value === "wikidata") return 200;
-  return 100;
+  return getAcceptedAuthorityRank(value);
 }
 
 function isExplicitCanonicalAuthoritySource(source: LiteraryAuthoritySource): boolean {
   return (
     source === "booktown_canonical" ||
     source === "canonical_seed" ||
-    source === "openLibrary" ||
-    source === "googleBooks"
+    canProviderEnterCanonicalBookWritePath(source)
   );
 }
 
@@ -1063,12 +1184,19 @@ async function findExistingBooksByQuery(params: {
 
 async function resolveExistingBookByFields(params: {
   tx: Transaction;
+  incomingRawBook: Record<string, unknown>;
   canonicalKeys: string[];
   isbn13: string;
   isbn10: string;
   allowIsbnFallback: boolean;
 }): Promise<string> {
-  const candidates = new Map<string, Record<string, unknown>>();
+  const candidates = new Map<
+    string,
+    {
+      data: Record<string, unknown>;
+      matchedFields: Set<string>;
+    }
+  >();
   const queries = [
     ...params.canonicalKeys.slice(0, 6).map((canonicalKey) => ({
       field: "canonicalKey",
@@ -1089,14 +1217,34 @@ async function resolveExistingBookByFields(params: {
       value: query.value,
     });
     for (const doc of docs) {
-      candidates.set(doc.id, (doc.data() || {}) as Record<string, unknown>);
+      const existing = candidates.get(doc.id);
+      const data = (doc.data() || {}) as Record<string, unknown>;
+      if (existing) {
+        existing.matchedFields.add(query.field);
+        existing.data = data;
+        continue;
+      }
+      candidates.set(doc.id, {
+        data,
+        matchedFields: new Set([query.field]),
+      });
     }
   }
 
   let bestId = "";
   let bestScore = -1;
-  for (const [bookId, data] of candidates.entries()) {
-    const score = scoreExistingBook(data);
+  for (const [bookId, candidate] of candidates.entries()) {
+    if (!areAuthorityAuthorsEquivalent(params.incomingRawBook, candidate.data)) {
+      logger.warn("[BOOK_AUTHORITY][AUTHOR_LOCK_REJECTED_FIELD_REUSE]", {
+        bookId,
+        matchedFields: Array.from(candidate.matchedFields),
+        incomingAuthor: extractAuthorityAuthorReference(params.incomingRawBook),
+        existingAuthor: extractAuthorityAuthorReference(candidate.data),
+      });
+      continue;
+    }
+
+    const score = scoreExistingBook(candidate.data);
     if (score > bestScore) {
       bestScore = score;
       bestId = bookId;
@@ -1250,6 +1398,214 @@ async function materializeCanonicalAuthor(params: {
   };
 }
 
+async function materializeRestrictedAuthorityEnrichmentInTransaction(
+  params: MaterializeBookAuthorityParams
+): Promise<MaterializeBookAuthorityResult> {
+  if (
+    !isRestrictedAuthorityProvider(params.source) ||
+    !canProviderEnrichExistingCanonicalBook(params.source)
+  ) {
+    throw new Error(`[PROVIDER_ROLE] ${params.source} may not enrich canonical books.`);
+  }
+
+  const rawBook = params.rawBook || {};
+  const incomingTitle = extractPrimaryTitle(rawBook);
+  const incomingAuthors = extractAuthors(rawBook);
+  const incomingPrimaryAuthor = incomingAuthors[0] || "Unknown";
+  const canonicalKeys = buildCanonicalKeys(rawBook, incomingPrimaryAuthor);
+  const incomingCanonicalKey =
+    canonicalKeys[0] || buildCanonicalKey({ title: incomingTitle, author: incomingPrimaryAuthor });
+  const existingTarget = await resolveRestrictedAuthorityExistingBook({
+    tx: params.tx,
+    preferredBookId: params.preferredBookId,
+    incomingRawBook: rawBook,
+    canonicalKeys,
+  });
+
+  if (!existingTarget || !isCanonicalAuthorityBook(existingTarget.data)) {
+    throw new Error(`[PROVIDER_ROLE] ${params.source} may enrich only an existing canonical book.`);
+  }
+
+  if (!areAuthorityAuthorsEquivalent(rawBook, existingTarget.data)) {
+    logger.warn("[BOOK_AUTHORITY][AUTHOR_LOCK_REJECTED_RESTRICTED_ENRICHMENT]", {
+      source: params.source,
+      bookId: existingTarget.bookId,
+      incomingAuthor: extractAuthorityAuthorReference(rawBook),
+      existingAuthor: extractAuthorityAuthorReference(existingTarget.data),
+    });
+    throw new Error(`[PROVIDER_ROLE] ${params.source} author lock failed for restricted enrichment.`);
+  }
+
+  const allowedFields = new Set(getProviderAllowedAuthorityFields(params.source));
+  const providerExternalId = asNonEmptyString(params.providerExternalId);
+  const locControlNumber = allowedFields.has("locControlNumber")
+    ? resolveLocControlNumber(rawBook, providerExternalId)
+    : "";
+  const originalTitle = allowedFields.has("originalTitle")
+    ? asNonEmptyString(rawBook.originalTitle)
+    : "";
+  const language = allowedFields.has("languageEvidence") ? extractLanguage(rawBook) : "";
+  const publicationYear = allowedFields.has("publicationYear")
+    ? resolvePublicationYear(rawBook)
+    : null;
+  const publisher = allowedFields.has("publisher") ? resolvePublisher(rawBook) : null;
+  const now = FieldValue.serverTimestamp();
+  const bookRef = db.collection("books").doc(existingTarget.bookId);
+  const existingBook = existingTarget.data;
+  const existingCanonicalRelations = asRecord(existingBook.canonicalRelations);
+  const editionId =
+    asNonEmptyString(existingBook.editionId) ||
+    asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
+    null;
+  const editionRef = editionId ? db.collection("editions").doc(editionId) : null;
+  const editionSnap = editionRef ? await params.tx.get(editionRef) : null;
+  const existingEdition = (editionSnap?.data() || null) as Record<string, unknown> | null;
+
+  const bookPatch: Record<string, unknown> = {};
+  if (
+    canAcceptRestrictedAuthorityString({
+      existingValue: existingBook.originalTitle,
+      incomingValue: originalTitle,
+      allowPlaceholderReplacement: true,
+    })
+  ) {
+    bookPatch.originalTitle = originalTitle;
+  }
+  if (
+    canAcceptRestrictedAuthorityString({
+      existingValue: existingBook.locControlNumber,
+      incomingValue: locControlNumber,
+    })
+  ) {
+    bookPatch.locControlNumber = locControlNumber;
+  }
+  if (
+    !isFinitePublicationYearValue(existingBook.publicationYear) &&
+    isFinitePublicationYearValue(publicationYear)
+  ) {
+    bookPatch.publicationYear = publicationYear;
+  }
+  if (
+    canAcceptRestrictedAuthorityString({
+      existingValue: existingBook.language,
+      incomingValue: language,
+      allowPlaceholderReplacement: true,
+    })
+  ) {
+    bookPatch.language = language;
+  }
+
+  const mergedBook = { ...existingBook, ...bookPatch };
+  if (Object.keys(bookPatch).length > 0) {
+    params.tx.set(
+      bookRef,
+      {
+        ...bookPatch,
+        updatedAt: now,
+        ...buildBookSearchPatch(mergedBook),
+      },
+      { merge: true }
+    );
+  }
+
+  if (editionRef && existingEdition) {
+    const editionPatch: Record<string, unknown> = {};
+    if (
+      !isFinitePublicationYearValue(existingEdition.publicationYear) &&
+      isFinitePublicationYearValue(publicationYear)
+    ) {
+      editionPatch.publicationYear = publicationYear;
+    }
+    if (
+      canAcceptRestrictedAuthorityString({
+        existingValue: existingEdition.publisher,
+        incomingValue: publisher || "",
+      })
+    ) {
+      editionPatch.publisher = publisher;
+    }
+    if (
+      canAcceptRestrictedAuthorityString({
+        existingValue: existingEdition.language,
+        incomingValue: language,
+        allowPlaceholderReplacement: true,
+      })
+    ) {
+      editionPatch.language = language;
+    }
+
+    if (Object.keys(editionPatch).length > 0) {
+      params.tx.set(
+        editionRef,
+        {
+          ...editionPatch,
+          updatedAt: now,
+          ...buildEditionSearchPatch({ ...existingEdition, ...editionPatch }),
+        },
+        { merge: true }
+      );
+    }
+  }
+
+  if (params.ingestionKey) {
+    params.tx.set(
+      db.collection("book_ingestions").doc(params.ingestionKey),
+      {
+        ingestionKey: params.ingestionKey,
+        source: params.source,
+        externalId: locControlNumber || providerExternalId || incomingCanonicalKey,
+        canonicalKey: asNonEmptyString(existingBook.canonicalKey) || incomingCanonicalKey,
+        identityKeys: [],
+        bookId: existingTarget.bookId,
+        editionId,
+        state: "COMPLETE",
+        authorityStatus: "canonical",
+        createdAt: existingBook.createdAt || now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  }
+
+  logger.info("[BOOK_AUTHORITY][RESTRICTED_ENRICHMENT_APPLIED]", {
+    source: params.source,
+    bookId: existingTarget.bookId,
+    editionId,
+    appliedBookFields: Object.keys(bookPatch),
+    appliedEditionFields:
+      editionRef && existingEdition
+        ? Object.keys({
+            ...(!isFinitePublicationYearValue(existingEdition.publicationYear) &&
+            isFinitePublicationYearValue(publicationYear)
+              ? { publicationYear }
+              : {}),
+            ...(canAcceptRestrictedAuthorityString({
+              existingValue: existingEdition.publisher,
+              incomingValue: publisher || "",
+            })
+              ? { publisher }
+              : {}),
+            ...(canAcceptRestrictedAuthorityString({
+              existingValue: existingEdition.language,
+              incomingValue: language,
+              allowPlaceholderReplacement: true,
+            })
+              ? { language }
+              : {}),
+          })
+        : [],
+  });
+
+  return {
+    canonicalBookId: existingTarget.bookId,
+    bookId: existingTarget.bookId,
+    editionId,
+    status: "ALREADY_COMPLETE",
+    authorityStatus: "canonical",
+    canonicalKey: asNonEmptyString(existingBook.canonicalKey) || incomingCanonicalKey,
+  };
+}
+
 export async function materializeBookAuthority(
   params: Omit<MaterializeBookAuthorityParams, "tx">
 ): Promise<MaterializeBookAuthorityResult> {
@@ -1264,6 +1620,16 @@ export async function materializeBookAuthority(
 export async function materializeBookAuthorityInTransaction(
   params: MaterializeBookAuthorityParams
 ): Promise<MaterializeBookAuthorityResult> {
+  if (isRegisteredProvider(params.source)) {
+    if (canProviderEnterCanonicalBookWritePath(params.source)) {
+      assertProviderCanEnterCanonicalBookWritePath(params.source);
+    } else if (canProviderEnrichExistingCanonicalBook(params.source)) {
+      return materializeRestrictedAuthorityEnrichmentInTransaction(params);
+    } else {
+      assertProviderCanEnterCanonicalBookWritePath(params.source);
+    }
+  }
+
   const rawBook = params.rawBook || {};
   const incomingTitle = extractPrimaryTitle(rawBook);
   const incomingAuthors = extractAuthors(rawBook);
@@ -1295,6 +1661,11 @@ export async function materializeBookAuthorityInTransaction(
     string,
     FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>
   >();
+  const bookSnapshotsById = new Map<
+    string,
+    FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData>
+  >();
+  const rejectedIdentityKeys = new Set<string>();
 
   if (allowIdentityReuse) {
     for (const candidate of identityCandidates) {
@@ -1303,6 +1674,25 @@ export async function materializeBookAuthorityInTransaction(
       identitySnapshotsByKey.set(candidate.key, identitySnap);
       const mappedBookId = asNonEmptyString(identitySnap.data()?.bookId);
       if (!mappedBookId) continue;
+      let mappedBookSnap = bookSnapshotsById.get(mappedBookId);
+      if (!mappedBookSnap) {
+        mappedBookSnap = await params.tx.get(db.collection("books").doc(mappedBookId));
+        bookSnapshotsById.set(mappedBookId, mappedBookSnap);
+      }
+      const mappedBookData = (mappedBookSnap.data() || null) as Record<string, unknown> | null;
+      if (
+        !mappedBookData ||
+        !areAuthorityAuthorsEquivalent(rawBook, mappedBookData)
+      ) {
+        rejectedIdentityKeys.add(candidate.key);
+        logger.warn("[BOOK_AUTHORITY][AUTHOR_LOCK_REJECTED_IDENTITY_REUSE]", {
+          identityKey: candidate.key,
+          mappedBookId,
+          incomingAuthor: extractAuthorityAuthorReference(rawBook),
+          existingAuthor: extractAuthorityAuthorReference(mappedBookData),
+        });
+        continue;
+      }
       conflictingBookIds.add(mappedBookId);
       if (!resolvedBookId) {
         resolvedBookId = mappedBookId;
@@ -1312,6 +1702,7 @@ export async function materializeBookAuthorityInTransaction(
     if (!resolvedBookId) {
       resolvedBookId = await resolveExistingBookByFields({
         tx: params.tx,
+        incomingRawBook: rawBook,
         canonicalKeys,
         isbn13,
         isbn10,
@@ -1676,9 +2067,13 @@ export async function materializeBookAuthorityInTransaction(
       asNonEmptyString(existingBook?.editionId) || editionId;
   }
 
-  if (identityCandidates.length > 0) {
+  const writableIdentityCandidates = identityCandidates.filter(
+    (candidate) => !rejectedIdentityKeys.has(candidate.key)
+  );
+
+  if (writableIdentityCandidates.length > 0) {
     finalBookPayload.identityKeys = FieldValue.arrayUnion(
-      ...identityCandidates.map((entry) => entry.key)
+      ...writableIdentityCandidates.map((entry) => entry.key)
     );
   }
 
@@ -1772,7 +2167,7 @@ export async function materializeBookAuthorityInTransaction(
     );
   }
 
-  for (const candidate of identityCandidates) {
+  for (const candidate of writableIdentityCandidates) {
     const ref = db.collection("book_identity").doc(candidate.key);
     const existingIdentity =
       (identitySnapshotsByKey.get(candidate.key)?.data() || null) as Record<string, unknown> | null;
@@ -1798,7 +2193,7 @@ export async function materializeBookAuthorityInTransaction(
         source: params.source,
         externalId: providerExternalId || canonicalKey,
         canonicalKey,
-        identityKeys: identityCandidates.map((entry) => entry.key),
+        identityKeys: writableIdentityCandidates.map((entry) => entry.key),
         bookId,
         editionId,
         state: "COMPLETE",

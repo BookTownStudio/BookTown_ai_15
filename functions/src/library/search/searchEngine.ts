@@ -1784,6 +1784,9 @@ function mapCanonicalBook(
   if (!isBookVisibleToPublic(data)) {
     return null;
   }
+  if (asNonEmptyString(data.mergedInto)) {
+    return null;
+  }
 
   const title =
     asNonEmptyString(data.title) ||

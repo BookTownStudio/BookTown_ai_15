@@ -250,6 +250,28 @@ describe("Search Harness — Canonical Local Engine", () => {
     expect(topThreeAuthors.every((author) => normalize(author).includes("rowling"))).toBe(true);
   });
 
+  it("does not surface merged canonical tombstones as independent canonical results", async () => {
+    const duplicate = {
+      ...(LOCAL_EDITIONS.find((entry: any) => entry.id === "e24") as any),
+      id: "merged_trial_loser",
+      editionId: "merged_trial_loser",
+      bookId: "merged_trial_loser",
+      canonicalKey: "franz kafka::der process",
+      mergedInto: "e24",
+    } as any;
+
+    LOCAL_EDITIONS.push(duplicate);
+
+    try {
+      const response = await unifiedSearch("The Trial", {});
+      const ids = response.results.map((entry: any) => entry.id);
+      expect(ids).toContain("e24");
+      expect(ids).not.toContain("merged_trial_loser");
+    } finally {
+      LOCAL_EDITIONS.pop();
+    }
+  });
+
   it("keeps Kafka and Camus author retrieval canonical-first", async () => {
     const kafka = await unifiedSearch("Kafka", {});
     const camus = await unifiedSearch("Camus", {});

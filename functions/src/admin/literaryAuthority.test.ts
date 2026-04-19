@@ -2170,6 +2170,12 @@ describe("adminCreateCanonicalBook", () => {
         createdAt: "2026-01-02T00:00:00.000Z",
         canonicalAuthorIds: ["author-gabo-1"],
         titleAliases: ["One Hundred Years of Solitude"],
+        providerExternalIds: ["openLibrary:OL27448W"],
+        identityKeys: ["canonical:gabriel garcia marquez::cien anos de soledad"],
+        editionId: "openLibrary:OL27448W",
+        canonicalRelations: {
+          primaryEditionId: "openLibrary:OL27448W",
+        },
         workIdentity: {
           canonicalKey: "gabriel garcia marquez::cien anos de soledad",
           mergeKeys: ["gabriel garcia marquez::cien anos de soledad"],
@@ -2198,13 +2204,62 @@ describe("adminCreateCanonicalBook", () => {
         canonicalLocked: true,
         source: "googleBooks",
         createdAt: "2025-01-01T00:00:00.000Z",
-        canonicalAuthorIds: ["author-gabo-2"],
+        canonicalAuthorIds: ["author-gabo-1"],
         titleAliases: ["Cien años de soledad"],
+        providerExternalIds: ["googleBooks:gb-solitude-1"],
+        identityKeys: [
+          "canonical:gabriel garcia marquez::one hundred years of solitude",
+          "provider:googleBooks:gb-solitude-1",
+        ],
+        editionId: "googleBooks:gb-solitude-1",
         workIdentity: {
           canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
           mergeKeys: ["gabriel garcia marquez::one hundred years of solitude"],
           providerWorkId: "openLibrary:OL27448W",
         },
+      },
+      false
+    );
+
+    setDoc(
+      "editions/googleBooks:gb-solitude-1",
+      {
+        editionId: "googleBooks:gb-solitude-1",
+        bookId: "792f007c-d24f-4166-abf1-1dc9bf3653d1",
+        workId: "792f007c-d24f-4166-abf1-1dc9bf3653d1",
+        canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
+        title: "One Hundred Years of Solitude",
+        authors: ["Gabriel García Márquez"],
+      },
+      false
+    );
+
+    setDoc(
+      "book_identity/canonical:gabriel garcia marquez::one hundred years of solitude",
+      {
+        identityKey: "canonical:gabriel garcia marquez::one hundred years of solitude",
+        bookId: "792f007c-d24f-4166-abf1-1dc9bf3653d1",
+      },
+      false
+    );
+
+    setDoc(
+      "book_identity/provider:googleBooks:gb-solitude-1",
+      {
+        identityKey: "provider:googleBooks:gb-solitude-1",
+        bookId: "792f007c-d24f-4166-abf1-1dc9bf3653d1",
+      },
+      false
+    );
+
+    setDoc(
+      "book_ingestions/googleBooks:gb-solitude-1",
+      {
+        ingestionKey: "googleBooks:gb-solitude-1",
+        source: "googleBooks",
+        bookId: "792f007c-d24f-4166-abf1-1dc9bf3653d1",
+        editionId: "googleBooks:gb-solitude-1",
+        canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
       },
       false
     );
@@ -2248,7 +2303,16 @@ describe("adminCreateCanonicalBook", () => {
     });
     expect(getDoc("books/ac63bf05-f1a8-4a90-91e1-c31447848685")).toMatchObject({
       titleAliases: ["One Hundred Years of Solitude"],
-      canonicalAuthorIds: ["author-gabo-1", "author-gabo-2"],
+      canonicalAuthorIds: ["author-gabo-1"],
+      providerExternalIds: ["openLibrary:OL27448W", "googleBooks:gb-solitude-1"],
+      identityKeys: [
+        "canonical:gabriel garcia marquez::cien anos de soledad",
+        "canonical:gabriel garcia marquez::one hundred years of solitude",
+        "provider:googleBooks:gb-solitude-1",
+      ],
+      canonicalRelations: {
+        primaryEditionId: "openLibrary:OL27448W",
+      },
       workIdentity: {
         providerWorkId: "openLibrary:OL27448W",
         mergeKeys: [
@@ -2256,6 +2320,23 @@ describe("adminCreateCanonicalBook", () => {
           "gabriel garcia marquez::one hundred years of solitude",
         ],
       },
+    });
+    expect(getDoc("editions/googleBooks:gb-solitude-1")).toMatchObject({
+      bookId: "ac63bf05-f1a8-4a90-91e1-c31447848685",
+      workId: "ac63bf05-f1a8-4a90-91e1-c31447848685",
+      canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+    });
+    expect(
+      getDoc("book_identity/canonical:gabriel garcia marquez::one hundred years of solitude")
+    ).toMatchObject({
+      bookId: "ac63bf05-f1a8-4a90-91e1-c31447848685",
+    });
+    expect(getDoc("book_identity/provider:googleBooks:gb-solitude-1")).toMatchObject({
+      bookId: "ac63bf05-f1a8-4a90-91e1-c31447848685",
+    });
+    expect(getDoc("book_ingestions/googleBooks:gb-solitude-1")).toMatchObject({
+      bookId: "ac63bf05-f1a8-4a90-91e1-c31447848685",
+      canonicalKey: "gabriel garcia marquez::cien anos de soledad",
     });
     expect(
       Array.from(store.keys()).filter((path) => path.startsWith("books/"))
@@ -2620,7 +2701,7 @@ describe("adminCreateCanonicalBook", () => {
       auth: { uid: "superadmin-1" },
       data: {
         title: "La Peste",
-        author: "A. Camus",
+        author: "Albert Camus",
         language: "fr",
         isbn: "9780679720218",
         description:
@@ -2643,5 +2724,516 @@ describe("adminCreateCanonicalBook", () => {
     expect(book?.coverUrl).toBe("https://example.com/manual-plague.jpg");
     expect(book?.coverState).toBe("PENDING");
     expect(coverJob?.candidateUrls).toContain("https://example.com/manual-plague.jpg");
+  });
+
+  it("rejects provider work reuse when the provider work id matches but the author differs", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const first = await materializeBookAuthority({
+      source: "openLibrary",
+      authorityStatus: "canonical",
+      providerExternalId: "OLLOCK1W",
+      rawBook: {
+        title: "Pride and Prejudice",
+        author: "Jane Austen",
+        authorEn: "Jane Austen",
+        authors: ["Jane Austen"],
+        language: "en",
+        openLibraryEditionId: "OLLOCK1M",
+      },
+      ingestionKey: "openLibrary:OLLOCK1W:first",
+    });
+
+    const second = await materializeBookAuthority({
+      source: "openLibrary",
+      authorityStatus: "canonical",
+      providerExternalId: "OLLOCK1W",
+      rawBook: {
+        title: "Pride and Prejudice",
+        author: "Charlotte Bronte",
+        authorEn: "Charlotte Bronte",
+        authors: ["Charlotte Bronte"],
+        language: "en",
+        openLibraryEditionId: "OLLOCK2M",
+      },
+      ingestionKey: "openLibrary:OLLOCK1W:second",
+    });
+
+    expect(second.bookId).not.toBe(first.bookId);
+    expect(getDoc(`books/${second.bookId}`)?.author).toBe("Charlotte Bronte");
+    expect(getDoc("book_identity/provider:openLibrary:OLLOCK1W")?.bookId).toBe(first.bookId);
+  });
+
+  it("still reuses the existing book when provider work id and author both match", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const first = await materializeBookAuthority({
+      source: "openLibrary",
+      authorityStatus: "canonical",
+      providerExternalId: "OLLOCK2W",
+      rawBook: {
+        title: "Pride and Prejudice",
+        author: "Jane Austen",
+        authorEn: "Jane Austen",
+        authors: ["Jane Austen"],
+        language: "en",
+        openLibraryEditionId: "OLLOCK3M",
+      },
+      ingestionKey: "openLibrary:OLLOCK2W:first",
+    });
+
+    const second = await materializeBookAuthority({
+      source: "openLibrary",
+      authorityStatus: "canonical",
+      providerExternalId: "OLLOCK2W",
+      rawBook: {
+        title: "Pride & Prejudice",
+        author: "Jane Austen",
+        authorEn: "Jane Austen",
+        authors: ["Jane Austen"],
+        language: "en",
+        openLibraryEditionId: "OLLOCK4M",
+      },
+      ingestionKey: "openLibrary:OLLOCK2W:second",
+    });
+
+    expect(second.bookId).toBe(first.bookId);
+    expect(getDoc("book_identity/provider:openLibrary:OLLOCK2W")?.bookId).toBe(first.bookId);
+  });
+
+  it("rejects manual isbn fallback reuse when the isbn matches but the author differs", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const first = await materializeBookAuthority({
+      source: "booktown_canonical",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Collected Poems",
+        author: "Author One",
+        authorEn: "Author One",
+        authors: ["Author One"],
+        language: "en",
+        isbn13: "9780307474728",
+      },
+      createEdition: true,
+      ingestionKey: "canonical:isbn-lock:first",
+    });
+
+    const second = await materializeBookAuthority({
+      source: "booktown_canonical",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Collected Poems",
+        author: "Author Two",
+        authorEn: "Author Two",
+        authors: ["Author Two"],
+        language: "en",
+        isbn13: "9780307474728",
+      },
+      createEdition: true,
+      ingestionKey: "canonical:isbn-lock:second",
+    });
+
+    expect(second.bookId).not.toBe(first.bookId);
+    expect(getDoc(`books/${second.bookId}`)?.author).toBe("Author Two");
+  });
+
+  it("still attaches through manual isbn fallback when the isbn and author both match", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const first = await materializeBookAuthority({
+      source: "booktown_canonical",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Collected Poems",
+        author: "Author One",
+        authorEn: "Author One",
+        authors: ["Author One"],
+        language: "en",
+        isbn13: "9780307474728",
+      },
+      createEdition: true,
+      ingestionKey: "canonical:isbn-attach:first",
+    });
+
+    const second = await materializeBookAuthority({
+      source: "booktown_canonical",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Collected Poems Anniversary Edition",
+        author: "Author One",
+        authorEn: "Author One",
+        authors: ["Author One"],
+        language: "en",
+        isbn13: "9780307474728",
+      },
+      createEdition: true,
+      ingestionKey: "canonical:isbn-attach:second",
+    });
+
+    expect(second.bookId).toBe(first.bookId);
+  });
+
+  it("rejects originalTitle reuse when the translation candidate has a different author", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    setDoc(
+      "books/solitude-original-title-lock-1",
+      {
+        bookId: "solitude-original-title-lock-1",
+        canonicalBookId: "solitude-original-title-lock-1",
+        canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+        normalizedTitle: "cien anos de soledad",
+        titleEnNormalized: "cien anos de soledad",
+        canonicalTitle: "Cien años de soledad",
+        originalTitle: "Cien años de soledad",
+        title: "Cien años de soledad",
+        author: "Gabriel García Márquez",
+        authorEn: "Gabriel García Márquez",
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        source: "openLibrary",
+        workIdentity: {
+          canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+          mergeKeys: ["gabriel garcia marquez::cien anos de soledad"],
+          providerWorkId: "openLibrary:OL27448W",
+        },
+      },
+      false
+    );
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-solitude-original-title-mismatch",
+          editionId: "ol-solitude-original-title-mismatch",
+          bookId: "ol-solitude-original-title-mismatch",
+          workId: null,
+          externalId: "OL99998W",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "One Hundred Years of Solitude",
+          titleEn: "One Hundred Years of Solitude",
+          titleAr: "",
+          authors: ["Isabel Allende"],
+          authorEn: "Isabel Allende",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 95,
+          rank: 1,
+          rawBook: {
+            key: "/works/OL99998W",
+            openLibraryWorkId: "OL99998W",
+            title: "One Hundred Years of Solitude",
+            originalTitle: "Cien años de soledad",
+            author: "Isabel Allende",
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "solitude-original-title-lock-2",
+      bookId: "solitude-original-title-lock-2",
+      editionId: "openLibrary:OL99998W",
+      status: "CREATED",
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "One Hundred Years of Solitude | Isabel Allende",
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+      }>;
+    };
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledTimes(1);
+    expect(response.rows[0]).toEqual(
+      expect.objectContaining({
+        row: 1,
+        status: "created",
+        canonicalBookId: "solitude-original-title-lock-2",
+      })
+    );
+  });
+
+  it("LOC enriches missing restricted fields on an existing canonical record", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/loc-canonical-1",
+      {
+        bookId: "loc-canonical-1",
+        canonicalBookId: "loc-canonical-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "franz kafka::the trial",
+        canonicalTitle: "The Trial",
+        title: "The Trial",
+        titleEn: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        authorNamesNormalized: ["franz kafka"],
+        editionId: "loc-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "loc-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/loc-edition-1",
+      {
+        editionId: "loc-edition-1",
+        bookId: "loc-canonical-1",
+        workId: "loc-canonical-1",
+        title: "The Trial",
+        authors: ["Franz Kafka"],
+        authorEn: "Franz Kafka",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    const result = await materializeBookAuthority({
+      source: "loc" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "loc-canonical-1",
+      providerExternalId: "loc-control-1",
+      rawBook: {
+        title: "The Trial",
+        originalTitle: "Der Process",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        language: "de",
+        publicationYear: 1925,
+        publisher: "Schocken Books",
+      },
+      ingestionKey: "loc:loc-control-1",
+    });
+
+    const book = getDoc("books/loc-canonical-1");
+    const edition = getDoc("editions/loc-edition-1");
+    const ingestion = getDoc("book_ingestions/loc:loc-control-1");
+
+    expect(result.bookId).toBe("loc-canonical-1");
+    expect(book?.originalTitle).toBe("Der Process");
+    expect(book?.locControlNumber).toBe("loc-control-1");
+    expect(book?.publicationYear).toBe(1925);
+    expect(book?.language).toBe("de");
+    expect(edition?.publisher).toBe("Schocken Books");
+    expect(edition?.publicationYear).toBe(1925);
+    expect(ingestion?.bookId).toBe("loc-canonical-1");
+    expect(ingestion?.source).toBe("loc");
+  });
+
+  it("LOC does not create a canonical work when no survivor exists", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    await expect(
+      materializeBookAuthority({
+        source: "loc" as any,
+        authorityStatus: "canonical",
+        providerExternalId: "loc-missing-1",
+        rawBook: {
+          title: "Authority Test",
+          originalTitle: "Authority Test Original",
+          author: "BookTown",
+          authorEn: "BookTown",
+          authors: ["BookTown"],
+          language: "en",
+        },
+      })
+    ).rejects.toThrow("[PROVIDER_ROLE] loc may enrich only an existing canonical book.");
+  });
+
+  it("LOC cannot override stronger Open Library fields", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/loc-canonical-strong",
+      {
+        bookId: "loc-canonical-strong",
+        canonicalBookId: "loc-canonical-strong",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+        canonicalTitle: "One Hundred Years of Solitude",
+        originalTitle: "Cien años de soledad",
+        title: "One Hundred Years of Solitude",
+        titleEn: "One Hundred Years of Solitude",
+        author: "Gabriel Garcia Marquez",
+        authorEn: "Gabriel Garcia Marquez",
+        authors: ["Gabriel Garcia Marquez"],
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        language: "es",
+        publicationYear: 1967,
+        editionId: "loc-edition-strong",
+        canonicalRelations: {
+          primaryEditionId: "loc-edition-strong",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/loc-edition-strong",
+      {
+        editionId: "loc-edition-strong",
+        bookId: "loc-canonical-strong",
+        workId: "loc-canonical-strong",
+        title: "One Hundred Years of Solitude",
+        authors: ["Gabriel Garcia Marquez"],
+        authorEn: "Gabriel Garcia Marquez",
+        publisher: "Editorial Sudamericana",
+        publicationYear: 1967,
+        language: "es",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "loc" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "loc-canonical-strong",
+      providerExternalId: "loc-strong-1",
+      rawBook: {
+        title: "One Hundred Years of Solitude",
+        originalTitle: "One Hundred Years of Solitude",
+        author: "Gabriel Garcia Marquez",
+        authorEn: "Gabriel Garcia Marquez",
+        authors: ["Gabriel Garcia Marquez"],
+        language: "en",
+        publicationYear: 1970,
+        publisher: "Another Publisher",
+      },
+    });
+
+    const book = getDoc("books/loc-canonical-strong");
+    const edition = getDoc("editions/loc-edition-strong");
+
+    expect(book?.originalTitle).toBe("Cien años de soledad");
+    expect(book?.language).toBe("es");
+    expect(book?.publicationYear).toBe(1967);
+    expect(book?.locControlNumber).toBe("loc-strong-1");
+    expect(edition?.publisher).toBe("Editorial Sudamericana");
+    expect(edition?.publicationYear).toBe(1967);
+    expect(edition?.language).toBe("es");
+  });
+
+  it("LOC cannot bypass author lock", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/loc-canonical-author-lock",
+      {
+        bookId: "loc-canonical-author-lock",
+        canonicalBookId: "loc-canonical-author-lock",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "author one::authority test",
+        canonicalTitle: "Authority Test",
+        title: "Authority Test",
+        titleEn: "Authority Test",
+        author: "Author One",
+        authorEn: "Author One",
+        authors: ["Author One"],
+        authorNamesNormalized: ["author one"],
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await expect(
+      materializeBookAuthority({
+        source: "loc" as any,
+        authorityStatus: "canonical",
+        preferredBookId: "loc-canonical-author-lock",
+        providerExternalId: "loc-author-lock-1",
+        rawBook: {
+          title: "Authority Test",
+          originalTitle: "Authority Test Original",
+          author: "Author Two",
+          authorEn: "Author Two",
+          authors: ["Author Two"],
+          language: "en",
+        },
+      })
+    ).rejects.toThrow("[PROVIDER_ROLE] loc author lock failed for restricted enrichment.");
+  });
+
+  it("blocks VIAF from entering the canonical book write path", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    await expect(
+      materializeBookAuthority({
+        source: "viaf" as any,
+        authorityStatus: "canonical",
+        providerExternalId: "viaf-control-1",
+        rawBook: {
+          title: "Authority Test",
+          author: "BookTown",
+          authorEn: "BookTown",
+          authors: ["BookTown"],
+          language: "en",
+        },
+      })
+    ).rejects.toThrow("[PROVIDER_ROLE] viaf may not enter canonical book write path.");
+  });
+
+  it("blocks ebook-only providers from altering canonical work identity", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    await expect(
+      materializeBookAuthority({
+        source: "gutenberg" as any,
+        authorityStatus: "canonical",
+        providerExternalId: "gut-control-1",
+        rawBook: {
+          title: "Authority Test",
+          author: "BookTown",
+          authorEn: "BookTown",
+          authors: ["BookTown"],
+          language: "en",
+        },
+      })
+    ).rejects.toThrow("[PROVIDER_ROLE] gutenberg may not enter canonical book write path.");
   });
 });

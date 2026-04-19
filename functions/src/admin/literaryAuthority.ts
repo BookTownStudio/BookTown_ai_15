@@ -1,4 +1,5 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
+import * as logger from "firebase-functions/logger";
 import { Query, DocumentData, FieldValue } from "firebase-admin/firestore";
 
 import { admin } from "../firebaseAdmin";
@@ -6,6 +7,19 @@ import { normalizeSearchText } from "../search/normalization";
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
 import { ingestBookServerSide } from "../library/ingestBook";
 import { buildCanonicalKey } from "../library/persistence/canonicalKey";
+import {
+  buildBookSearchPatch,
+  buildEditionSearchPatch,
+} from "../library/search/searchIndexing";
+import {
+  areAuthorityAuthorsEquivalent,
+  extractAuthorityAuthorReference,
+} from "../library/authorityAuthorLock";
+import {
+  getAcceptedAuthorityForProvider,
+  getAcceptedAuthorityRank,
+  getProviderAuthorityRank,
+} from "../library/providerRoleRegistry";
 import {
   unifiedSearch,
   type UnifiedSearchResult,
@@ -378,9 +392,7 @@ function uniqueStrings(values: readonly string[]): string[] {
 }
 
 function sourceAuthorityRank(source: unknown): number {
-  if (source === "openLibrary") return 2;
-  if (source === "googleBooks") return 1;
-  return 0;
+  return typeof source === "string" ? getProviderAuthorityRank(source) : 0;
 }
 
 function canonicalSeedKey(title: string, author: string): string {
@@ -395,6 +407,44 @@ function asRecord(value: unknown): Record<string, unknown> | null {
     return null;
   }
   return value as Record<string, unknown>;
+}
+
+function asRecordArray(value: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .map((entry) => asRecord(entry))
+    .filter((entry): entry is Record<string, unknown> => entry !== null);
+}
+
+function uniqueReadableSourceRecords(
+  values: ReadonlyArray<Record<string, unknown>>
+): Record<string, unknown>[] {
+  const dedup = new Map<string, Record<string, unknown>>();
+  for (const value of values) {
+    const provider = asNonEmptyString(value.provider);
+    const providerExternalId = asNonEmptyString(value.providerExternalId);
+    const key =
+      provider && providerExternalId
+        ? `${provider}:${providerExternalId}`
+        : JSON.stringify(value);
+    if (!key) {
+      continue;
+    }
+    dedup.set(key, value);
+  }
+  return Array.from(dedup.values());
+}
+
+function pickFirstNonEmptyString(values: ReadonlyArray<unknown>): string {
+  for (const value of values) {
+    const normalized = asNonEmptyString(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+  return "";
 }
 
 function normalizeStableExternalWorkIdentifier(source: string, value: string): string {
@@ -504,11 +554,7 @@ function normalizeBookAuthorForSeedMatch(data: Record<string, unknown>): string 
 }
 
 function acceptedAuthorityRankForSurvivor(value: string): number {
-  if (value === "manualAuthority") return 400;
-  if (value === "openLibrary") return 300;
-  if (value === "wikidata") return 200;
-  if (value === "googleBooks") return 100;
-  return 0;
+  return getAcceptedAuthorityRank(value);
 }
 
 function inferBookAcceptedAuthority(data: Record<string, unknown>): string {
@@ -526,14 +572,13 @@ function inferBookAcceptedAuthority(data: Record<string, unknown>): string {
   if (source === "booktown_canonical" || source === "canonical_seed" || source === "manualAuthority") {
     return "manualAuthority";
   }
-  if (source === "openLibrary") {
-    return "openLibrary";
-  }
-  if (source === "wikidata") {
-    return "wikidata";
-  }
-  if (source === "googleBooks") {
-    return "googleBooks";
+  const acceptedAuthorityFromSource = getAcceptedAuthorityForProvider(source);
+  if (
+    acceptedAuthorityFromSource === "openLibrary" ||
+    acceptedAuthorityFromSource === "wikidata" ||
+    acceptedAuthorityFromSource === "googleBooks"
+  ) {
+    return acceptedAuthorityFromSource;
   }
   return "";
 }
@@ -673,7 +718,11 @@ function compareCanonicalSurvivors(
 async function mergeCanonicalDuplicateGroup(params: {
   providerWorkId: string;
   candidates: Array<{ bookId: string; data: Record<string, unknown> }>;
-}): Promise<{ survivorId: string; survivorData: Record<string, unknown> } | null> {
+}): Promise<{
+  survivorId: string;
+  survivorData: Record<string, unknown>;
+  mergedBookIds: string[];
+} | null> {
   const activeCandidates = params.candidates.filter((candidate) => {
     if (asNonEmptyString(candidate.data.mergedInto)) {
       return false;
@@ -696,7 +745,11 @@ async function mergeCanonicalDuplicateGroup(params: {
   const survivor = ordered[0];
   const duplicates = ordered.slice(1);
   if (duplicates.length === 0) {
-    return { survivorId: survivor.bookId, survivorData: survivor.data };
+    return {
+      survivorId: survivor.bookId,
+      survivorData: survivor.data,
+      mergedBookIds: [],
+    };
   }
 
   return db.runTransaction(async (tx) => {
@@ -717,15 +770,82 @@ async function mergeCanonicalDuplicateGroup(params: {
 
     const freshOrdered = [...freshCandidates].sort(compareCanonicalSurvivors);
     const freshSurvivor = freshOrdered[0];
-    const freshDuplicates = freshOrdered.slice(1);
+    const freshDuplicates = freshOrdered.slice(1).filter((candidate) => {
+      const equivalent = areAuthorityAuthorsEquivalent(freshSurvivor.data, candidate.data);
+      if (!equivalent) {
+        logger.warn("[ADMIN_AUTHORITY][AUTHOR_LOCK_REJECTED_DUPLICATE_MERGE]", {
+          providerWorkId: params.providerWorkId,
+          survivorId: freshSurvivor.bookId,
+          duplicateBookId: candidate.bookId,
+          survivorAuthor: extractAuthorityAuthorReference(freshSurvivor.data),
+          duplicateAuthor: extractAuthorityAuthorReference(candidate.data),
+        });
+      }
+      return equivalent;
+    });
     if (freshDuplicates.length === 0) {
       return {
         survivorId: freshSurvivor.bookId,
         survivorData: freshSurvivor.data,
+        mergedBookIds: [],
       };
     }
 
     const survivorRef = db.collection("books").doc(freshSurvivor.bookId);
+    const duplicateBookIds = freshDuplicates.map((candidate) => candidate.bookId);
+    const now = FieldValue.serverTimestamp();
+    const editionDocs = new Map<string, { ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }>();
+    const identityDocs = new Map<string, { ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }>();
+    const ingestionDocs = new Map<string, { ref: FirebaseFirestore.DocumentReference; data: Record<string, unknown> }>();
+    const coverJobCollections = ["cover_jobs", "coverJobs"] as const;
+    const coverJobRefs = [
+      ...coverJobCollections.map((collectionName) =>
+        db.collection(collectionName).doc(freshSurvivor.bookId)
+      ),
+      ...duplicateBookIds.flatMap((bookId) =>
+        coverJobCollections.map((collectionName) => db.collection(collectionName).doc(bookId))
+      ),
+    ];
+    const coverJobSnaps =
+      coverJobRefs.length > 0 ? await tx.getAll(...coverJobRefs) : [];
+    const coverJobDataByPath = new Map<string, Record<string, unknown>>();
+    for (const snap of coverJobSnaps) {
+      if (!snap.exists) {
+        continue;
+      }
+      coverJobDataByPath.set(snap.ref.path, (snap.data() || {}) as Record<string, unknown>);
+    }
+
+    for (const duplicateBookId of duplicateBookIds) {
+      const editionBookSnap = (await tx.get(
+        db.collection("editions").where("bookId", "==", duplicateBookId).limit(50)
+      )) as FirebaseFirestore.QuerySnapshot;
+      for (const doc of editionBookSnap.docs) {
+        editionDocs.set(doc.id, { ref: doc.ref, data: (doc.data() || {}) as Record<string, unknown> });
+      }
+
+      const editionWorkSnap = (await tx.get(
+        db.collection("editions").where("workId", "==", duplicateBookId).limit(50)
+      )) as FirebaseFirestore.QuerySnapshot;
+      for (const doc of editionWorkSnap.docs) {
+        editionDocs.set(doc.id, { ref: doc.ref, data: (doc.data() || {}) as Record<string, unknown> });
+      }
+
+      const identitySnap = (await tx.get(
+        db.collection("book_identity").where("bookId", "==", duplicateBookId).limit(50)
+      )) as FirebaseFirestore.QuerySnapshot;
+      for (const doc of identitySnap.docs) {
+        identityDocs.set(doc.id, { ref: doc.ref, data: (doc.data() || {}) as Record<string, unknown> });
+      }
+
+      const ingestionSnap = (await tx.get(
+        db.collection("book_ingestions").where("bookId", "==", duplicateBookId).limit(50)
+      )) as FirebaseFirestore.QuerySnapshot;
+      for (const doc of ingestionSnap.docs) {
+        ingestionDocs.set(doc.id, { ref: doc.ref, data: (doc.data() || {}) as Record<string, unknown> });
+      }
+    }
+
     const survivorAliases = uniqueStrings([
       ...asStringArray(freshSurvivor.data.titleAliases),
       ...freshDuplicates.flatMap((candidate) => collectDuplicateTitleAliases(candidate.data)),
@@ -743,15 +863,132 @@ async function mergeCanonicalDuplicateGroup(params: {
         ...extractBookWorkMergeKeys(freshSurvivor.data),
         ...freshDuplicates.flatMap((candidate) => extractBookWorkMergeKeys(candidate.data)),
       ]),
+      alternateProviderWorkIds: uniqueStrings([
+        ...asStringArray(asRecord(freshSurvivor.data.workIdentity)?.alternateProviderWorkIds),
+        ...freshDuplicates.flatMap((candidate) =>
+          asStringArray(asRecord(candidate.data.workIdentity)?.alternateProviderWorkIds)
+        ),
+      ]),
       providerWorkId: params.providerWorkId,
     };
-
-    const survivorData = {
+    const survivorProviderExternalIds = uniqueStrings([
+      ...asStringArray(freshSurvivor.data.providerExternalIds),
+      ...freshDuplicates.flatMap((candidate) => asStringArray(candidate.data.providerExternalIds)),
+    ]);
+    const survivorIdentityKeys = uniqueStrings([
+      ...asStringArray(freshSurvivor.data.identityKeys),
+      ...freshDuplicates.flatMap((candidate) => asStringArray(candidate.data.identityKeys)),
+      ...Array.from(identityDocs.keys()),
+    ]);
+    const survivorExternalReadableSources = uniqueReadableSourceRecords([
+      ...asRecordArray(freshSurvivor.data.externalReadableSources),
+      ...freshDuplicates.flatMap((candidate) => asRecordArray(candidate.data.externalReadableSources)),
+    ]);
+    const movedEditionIds = Array.from(editionDocs.keys()).sort();
+    const survivorCanonicalKey =
+      asNonEmptyString(freshSurvivor.data.canonicalKey) ||
+      asNonEmptyString(survivorWorkIdentity.canonicalKey);
+    const survivorEditionId =
+      asNonEmptyString(freshSurvivor.data.editionId) || movedEditionIds[0] || "";
+    const survivorPrimaryEditionId =
+      asNonEmptyString(asRecord(freshSurvivor.data.canonicalRelations)?.primaryEditionId) ||
+      survivorEditionId;
+    const survivorHasReadyCover =
+      asNonEmptyString(freshSurvivor.data.coverState) === "READY" ||
+      asNonEmptyString(asRecord(freshSurvivor.data.cover)?.state) === "READY";
+    const duplicateReadyCover =
+      !survivorHasReadyCover
+        ? freshDuplicates.find(
+            (candidate) =>
+              asNonEmptyString(candidate.data.coverState) === "READY" ||
+              asNonEmptyString(asRecord(candidate.data.cover)?.state) === "READY"
+          ) || null
+        : null;
+    const mergedCoverCandidateUrls = uniqueStrings([
+      ...coverJobCollections.flatMap((collectionName) =>
+        asStringArray(
+          coverJobDataByPath.get(
+            db.collection(collectionName).doc(freshSurvivor.bookId).path
+          )?.candidateUrls
+        )
+      ),
+      ...duplicateBookIds.flatMap((bookId) =>
+        coverJobCollections.flatMap((collectionName) =>
+          asStringArray(
+            coverJobDataByPath.get(db.collection(collectionName).doc(bookId).path)?.candidateUrls
+          )
+        )
+      ),
+    ]);
+    const survivorBookDraft: Record<string, unknown> = {
       ...freshSurvivor.data,
       titleAliases: survivorAliases,
       canonicalAuthorIds: survivorCanonicalAuthorIds,
       workIdentity: survivorWorkIdentity,
-      updatedAt: FieldValue.serverTimestamp(),
+      providerExternalIds: survivorProviderExternalIds,
+      identityKeys: survivorIdentityKeys,
+      externalReadableSources: survivorExternalReadableSources,
+      canonicalKey: survivorCanonicalKey,
+      editionId: survivorEditionId || asNonEmptyString(freshSurvivor.data.editionId) || undefined,
+      canonicalRelations: {
+        ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
+        ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
+      },
+      ebookAttachmentId: pickFirstNonEmptyString([
+        freshSurvivor.data.ebookAttachmentId,
+        ...freshDuplicates.map((candidate) => candidate.data.ebookAttachmentId),
+      ]) || null,
+      ebookStoragePath: pickFirstNonEmptyString([
+        freshSurvivor.data.ebookStoragePath,
+        ...freshDuplicates.map((candidate) => candidate.data.ebookStoragePath),
+      ]) || null,
+      epubStoragePath: pickFirstNonEmptyString([
+        freshSurvivor.data.epubStoragePath,
+        ...freshDuplicates.map((candidate) => candidate.data.epubStoragePath),
+      ]) || null,
+      storagePath: pickFirstNonEmptyString([
+        freshSurvivor.data.storagePath,
+        ...freshDuplicates.map((candidate) => candidate.data.storagePath),
+      ]) || null,
+      acquiredFromProvider: pickFirstNonEmptyString([
+        freshSurvivor.data.acquiredFromProvider,
+        ...freshDuplicates.map((candidate) => candidate.data.acquiredFromProvider),
+      ]) || null,
+      hasEbook:
+        freshSurvivor.data.hasEbook === true ||
+        freshDuplicates.some((candidate) => candidate.data.hasEbook === true),
+      downloadable:
+        freshSurvivor.data.downloadable === true ||
+        freshDuplicates.some((candidate) => candidate.data.downloadable === true),
+      isEbookAvailable:
+        freshSurvivor.data.isEbookAvailable === true ||
+        freshDuplicates.some((candidate) => candidate.data.isEbookAvailable === true),
+      updatedAt: now,
+    };
+
+    if (duplicateReadyCover) {
+      survivorBookDraft.coverState =
+        asNonEmptyString(duplicateReadyCover.data.coverState) || "READY";
+      survivorBookDraft.cover = asRecord(duplicateReadyCover.data.cover) || freshSurvivor.data.cover;
+      survivorBookDraft.coverUrl =
+        asNonEmptyString(duplicateReadyCover.data.coverUrl) ||
+        asNonEmptyString(freshSurvivor.data.coverUrl) ||
+        "";
+      survivorBookDraft.coverSource =
+        asNonEmptyString(duplicateReadyCover.data.coverSource) ||
+        asNonEmptyString(freshSurvivor.data.coverSource) ||
+        null;
+      survivorBookDraft.coverAuthority =
+        typeof duplicateReadyCover.data.coverAuthority === "number"
+          ? duplicateReadyCover.data.coverAuthority
+          : freshSurvivor.data.coverAuthority;
+    }
+
+    const survivorSearchPatch = buildBookSearchPatch(survivorBookDraft);
+
+    const survivorData = {
+      ...survivorBookDraft,
+      ...survivorSearchPatch,
     };
 
     tx.set(
@@ -760,10 +997,108 @@ async function mergeCanonicalDuplicateGroup(params: {
         titleAliases: survivorAliases,
         canonicalAuthorIds: survivorCanonicalAuthorIds,
         workIdentity: survivorWorkIdentity,
-        updatedAt: FieldValue.serverTimestamp(),
+        providerExternalIds: survivorProviderExternalIds,
+        identityKeys: survivorIdentityKeys,
+        externalReadableSources: survivorExternalReadableSources,
+        canonicalKey: survivorCanonicalKey,
+        ...(survivorEditionId ? { editionId: survivorEditionId } : {}),
+        canonicalRelations: {
+          ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
+          ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
+        },
+        ebookAttachmentId: survivorBookDraft.ebookAttachmentId,
+        ebookStoragePath: survivorBookDraft.ebookStoragePath,
+        epubStoragePath: survivorBookDraft.epubStoragePath,
+        storagePath: survivorBookDraft.storagePath,
+        acquiredFromProvider: survivorBookDraft.acquiredFromProvider,
+        hasEbook: survivorBookDraft.hasEbook === true,
+        downloadable: survivorBookDraft.downloadable === true,
+        isEbookAvailable: survivorBookDraft.isEbookAvailable === true,
+        ...(duplicateReadyCover
+          ? {
+              coverState: survivorBookDraft.coverState,
+              cover: survivorBookDraft.cover,
+              coverUrl: survivorBookDraft.coverUrl,
+              coverSource: survivorBookDraft.coverSource,
+              coverAuthority: survivorBookDraft.coverAuthority,
+            }
+          : {}),
+        ...survivorSearchPatch,
+        updatedAt: now,
       },
       { merge: true }
     );
+
+    for (const { ref, data } of editionDocs.values()) {
+      const nextEdition = {
+        ...data,
+        bookId: freshSurvivor.bookId,
+        workId: freshSurvivor.bookId,
+        canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
+      };
+      tx.set(
+        ref,
+        {
+          bookId: freshSurvivor.bookId,
+          workId: freshSurvivor.bookId,
+          canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
+          ...buildEditionSearchPatch(nextEdition),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    for (const { ref } of identityDocs.values()) {
+      tx.set(
+        ref,
+        {
+          bookId: freshSurvivor.bookId,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    for (const { ref, data } of ingestionDocs.values()) {
+      tx.set(
+        ref,
+        {
+          bookId: freshSurvivor.bookId,
+          canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
+
+    if (!survivorHasReadyCover && mergedCoverCandidateUrls.length > 0) {
+      tx.set(
+        db.collection("cover_jobs").doc(freshSurvivor.bookId),
+        {
+          id: freshSurvivor.bookId,
+          bookId: freshSurvivor.bookId,
+          source: pickFirstNonEmptyString([
+            coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.source,
+            ...duplicateBookIds.map(
+              (bookId) =>
+                coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.source
+            ),
+          ]) || asNonEmptyString(freshSurvivor.data.source) || null,
+          externalId: pickFirstNonEmptyString([
+            coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.externalId,
+            ...duplicateBookIds.map(
+              (bookId) =>
+                coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.externalId
+            ),
+          ]) || null,
+          candidateUrls: mergedCoverCandidateUrls,
+          status: "PENDING",
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+    }
 
     for (const duplicate of freshDuplicates) {
       tx.set(
@@ -771,15 +1106,38 @@ async function mergeCanonicalDuplicateGroup(params: {
         {
           mergedInto: freshSurvivor.bookId,
           mergeState: "merged_duplicate",
-          updatedAt: FieldValue.serverTimestamp(),
+          updatedAt: now,
         },
         { merge: true }
       );
+
+      for (const collectionName of coverJobCollections) {
+        const coverJobData = coverJobDataByPath.get(
+          db.collection(collectionName).doc(duplicate.bookId).path
+        );
+        if (!coverJobData) {
+          continue;
+        }
+        tx.set(
+          db.collection(collectionName).doc(duplicate.bookId),
+          {
+            bookId: duplicate.bookId,
+            redirectBookId: freshSurvivor.bookId,
+            mergedInto: freshSurvivor.bookId,
+            status: "FAILED",
+            lastError: "MERGED_REDIRECT",
+            updatedAt: now,
+            completedAt: now,
+          },
+          { merge: true }
+        );
+      }
     }
 
     return {
       survivorId: freshSurvivor.bookId,
       survivorData,
+      mergedBookIds: freshDuplicates.map((candidate) => candidate.bookId),
     };
   });
 }
@@ -810,16 +1168,20 @@ function scoreExistingSeedWork(params: {
     asNonEmptyString(params.data.workType) === "canonical" ||
     params.data.canonicalLocked === true;
   const normalizedTitleAuthorities = extractBookNormalizedTitleAuthorities(params.data);
+  const authorEquivalent = areAuthorityAuthorsEquivalent(
+    { authorNamesNormalized: [params.requestedAuthorNorm] },
+    params.data
+  );
 
   let score = 0;
   if (asNonEmptyString(params.data.mergedInto)) return Number.NEGATIVE_INFINITY;
-  if (params.matchedProviderWorkIds?.has(providerWorkId)) score += 220;
+  if (params.matchedProviderWorkIds?.has(providerWorkId) && authorEquivalent) score += 220;
   if (dataCanonicalKey === params.requestedCanonicalKey) score += 100;
   if (mergeKeys.includes(params.requestedCanonicalKey)) score += 140;
-  if (params.matchedAliasCanonicalKeys?.has(dataCanonicalKey)) score += 120;
+  if (params.matchedAliasCanonicalKeys?.has(dataCanonicalKey) && authorEquivalent) score += 120;
   if (
     params.allowOpenLibraryTranslationReuse &&
-    normalizedAuthor === params.requestedAuthorNorm &&
+    authorEquivalent &&
     normalizedTitleAuthorities.includes(params.requestedTitleNorm)
   ) {
     score += 180;
@@ -850,11 +1212,27 @@ async function resolveExistingCanonicalWorkForSeed(params: {
     params.candidate?.source === "openLibrary"
       ? extractOpenLibrarySeedWorkIdentifier(params.candidate)
       : "";
+  const candidateAuthorData =
+    (params.candidate && asRecord(params.candidate.rawBook)) ||
+    (params.candidate
+      ? {
+          authorEn: asNonEmptyString(params.candidate.authorEn),
+          authors: Array.isArray(params.candidate.authors) ? params.candidate.authors : [],
+        }
+      : null);
+  const candidateAuthorEquivalent =
+    Boolean(candidateAuthorData) &&
+    areAuthorityAuthorsEquivalent(
+      { authorNamesNormalized: [requestedAuthorNorm] },
+      candidateAuthorData
+    );
   const matchedProviderWorkIds = new Set(
-    params.candidate ? extractCandidateStableWorkIdentifiers(params.candidate) : []
+    params.candidate && candidateAuthorEquivalent
+      ? extractCandidateStableWorkIdentifiers(params.candidate)
+      : []
   );
   const matchedAliasCanonicalKeys = new Set(
-    params.candidate
+    params.candidate && candidateAuthorEquivalent
       ? extractCandidateAliasCanonicalKeys({
           result: params.candidate,
           requestedTitle: params.title,
@@ -899,6 +1277,9 @@ async function resolveExistingCanonicalWorkForSeed(params: {
   const discoveredProviderWorkIds = uniqueStrings([
     ...matchedProviderWorkIds,
     ...Array.from(candidates.values())
+      .filter((data) =>
+        areAuthorityAuthorsEquivalent({ authorNamesNormalized: [requestedAuthorNorm] }, data)
+      )
       .map((data) => extractBookProviderWorkId(data))
       .filter(Boolean),
   ]);
@@ -945,11 +1326,13 @@ async function resolveExistingCanonicalWorkForSeed(params: {
     }
 
     candidates.set(mergeResult.survivorId, mergeResult.survivorData);
-    for (const [bookId, data] of candidates.entries()) {
-      if (bookId === mergeResult.survivorId) continue;
-      if (extractBookProviderWorkId(data) !== providerWorkId) continue;
-      candidates.set(bookId, {
-        ...data,
+    for (const mergedBookId of mergeResult.mergedBookIds) {
+      const existing = candidates.get(mergedBookId);
+      if (!existing) {
+        continue;
+      }
+      candidates.set(mergedBookId, {
+        ...existing,
         mergedInto: mergeResult.survivorId,
       });
     }
