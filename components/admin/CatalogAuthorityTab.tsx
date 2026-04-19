@@ -13,6 +13,7 @@ import {
   type AdminAuthorRecord,
   type AdminCanonicalBatchRow,
   type AdminCanonicalBookRecord,
+  type AdminDeleteBookResult,
   type AdminDeleteSeedListRow,
   type AdminQuoteImportJob,
   type AdminQuoteRecord,
@@ -407,6 +408,8 @@ const BooksPanel: React.FC = () => {
   const [deleteListInput, setDeleteListInput] = useState('');
   const [deleteRows, setDeleteRows] = useState<AdminDeleteSeedListRow[]>([]);
   const [deleteSummary, setDeleteSummary] = useState<DeleteBatchSummary | null>(null);
+  const [hardDeleteBookId, setHardDeleteBookId] = useState('');
+  const [hardDeletePreview, setHardDeletePreview] = useState<AdminDeleteBookResult | null>(null);
   const [deleteAllConfirmation, setDeleteAllConfirmation] = useState('');
   const [createdBook, setCreatedBook] = useState<AdminCanonicalBookRecord | null>(null);
   const [submitMessage, setSubmitMessage] = useState('');
@@ -473,6 +476,42 @@ const BooksPanel: React.FC = () => {
       setSubmitMessage(error instanceof Error ? error.message : 'Seed list deletion failed.');
     },
   });
+  const resolveHardDeleteMutation = useMutation({
+    mutationFn: async (bookId: string) =>
+      adminService.deleteCanonicalBook({
+        bookId,
+        dryRun: true,
+      }),
+    onSuccess: (result) => {
+      setHardDeletePreview(result);
+      setSubmitMessage(
+        result.resolved
+          ? `Resolved ${result.inputType || 'book'} to canonical work ${result.bookId}.`
+          : `No canonical work matched ${result.bookId}.`
+      );
+    },
+    onError: (error) => {
+      setHardDeletePreview(null);
+      setSubmitMessage(error instanceof Error ? error.message : 'Hard delete resolution failed.');
+    },
+  });
+  const confirmHardDeleteMutation = useMutation({
+    mutationFn: async (preview: AdminDeleteBookResult) =>
+      adminService.deleteCanonicalBook({
+        bookId: preview.deleteGraph?.inputId || hardDeleteBookId.trim(),
+        confirmation: preview.bookId,
+      }),
+    onSuccess: (result) => {
+      setSubmitMessage(`Deleted canonical book ${result.bookId}.`);
+      setCreatedBook((current) => (current?.bookId === result.bookId ? null : current));
+      setBatchRows((current) => current.filter((row) => row.canonicalBookId !== result.bookId));
+      setHardDeleteBookId('');
+      setHardDeletePreview(null);
+    },
+    onError: (error) => {
+      setSubmitMessage(error instanceof Error ? error.message : 'Hard delete failed.');
+    },
+  });
   const deleteAllMutation = useMutation({
     mutationFn: async (confirmation: string) => adminService.deleteAllBooks({ confirmation }),
     onSuccess: (result) => {
@@ -488,6 +527,12 @@ const BooksPanel: React.FC = () => {
       setSubmitMessage(error instanceof Error ? error.message : 'Delete all books failed.');
     },
   });
+  const hardDeleteCountEntries = hardDeletePreview
+    ? [
+        ...Object.entries(hardDeletePreview.collectionCounts || {}),
+        ...Object.entries(hardDeletePreview.storageCounts || {}).map(([key, value]) => [`storage.${key}`, value] as const),
+      ].filter(([, value]) => value > 0)
+    : [];
 
   return (
     <div className="space-y-6">
@@ -805,6 +850,104 @@ const BooksPanel: React.FC = () => {
           </div>
         </GlassCard>
       ) : null}
+
+      <GlassCard className="!p-5 space-y-4">
+        <div>
+          <BilingualText role="H2" className="!text-lg">
+            Hard Delete by BookTown ID
+          </BilingualText>
+          <p className="mt-2 text-sm text-slate-400">
+            Paste one canonical work ID or edition ID. The backend resolves the target first, shows the full delete graph, and only then allows the hard delete.
+          </p>
+        </div>
+        <InputField
+          id="hard-delete-book-id"
+          label="BookTown Book ID"
+          value={hardDeleteBookId}
+          onChange={(event) => {
+            setHardDeleteBookId(event.target.value);
+            setHardDeletePreview(null);
+          }}
+        />
+        <div className="flex gap-3">
+          <Button
+            variant="secondary"
+            onClick={() => resolveHardDeleteMutation.mutate(hardDeleteBookId.trim())}
+            disabled={resolveHardDeleteMutation.status === 'pending' || hardDeleteBookId.trim().length === 0}
+          >
+            Resolve Delete Graph
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => {
+              setHardDeleteBookId('');
+              setHardDeletePreview(null);
+            }}
+          >
+            Clear
+          </Button>
+        </div>
+        {hardDeletePreview ? (
+          <div className="rounded-lg border border-white/10 bg-black/10 p-4 space-y-3 text-sm text-slate-300">
+            <div className="grid gap-3 md:grid-cols-2">
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Resolved Work ID</div>
+                <div>{hardDeletePreview.deleteGraph?.resolvedBookId || 'Not found'}</div>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2">
+                <div className="text-xs uppercase tracking-wide text-slate-500">Input Type</div>
+                <div>{hardDeletePreview.inputType || 'unresolved'}</div>
+              </div>
+            </div>
+            {hardDeletePreview.deleteGraph?.editionIds?.length ? (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Editions</div>
+                <div className="mt-1 break-all">{hardDeletePreview.deleteGraph.editionIds.join(', ')}</div>
+              </div>
+            ) : null}
+            {hardDeletePreview.deleteGraph?.attachmentIds?.length ? (
+              <div>
+                <div className="text-xs uppercase tracking-wide text-slate-500">Attachments</div>
+                <div className="mt-1 break-all">{hardDeletePreview.deleteGraph.attachmentIds.join(', ')}</div>
+              </div>
+            ) : null}
+            {hardDeleteCountEntries.length ? (
+              <div className="grid gap-3 md:grid-cols-3">
+                {hardDeleteCountEntries.map(([key, value]) => (
+                  <div
+                    key={key}
+                    className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300"
+                  >
+                    <div className="text-xs uppercase tracking-wide text-slate-500">{key}</div>
+                    <div>{value}</div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="rounded-lg border border-white/10 bg-black/10 px-3 py-2 text-sm text-slate-300">
+                No linked records were found for this ID.
+              </div>
+            )}
+            {hardDeletePreview.deleteGraph?.touchedCollections?.length ? (
+              <div className="text-xs text-slate-400">
+                Collections: {hardDeletePreview.deleteGraph.touchedCollections.join(', ')}
+              </div>
+            ) : null}
+            <div className="pt-2">
+              <Button
+                variant="secondary"
+                onClick={() => confirmHardDeleteMutation.mutate(hardDeletePreview)}
+                disabled={
+                  confirmHardDeleteMutation.status === 'pending' ||
+                  hardDeletePreview.resolved !== true
+                }
+              >
+                Hard Delete Everywhere
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </GlassCard>
 
       <GlassCard className="!p-5 space-y-4">
         <div>

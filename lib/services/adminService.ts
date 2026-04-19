@@ -168,15 +168,53 @@ export type AdminCanonicalBatchSummary = {
 export type AdminDeleteCascade = {
   books: number;
   editions: number;
+  attachments: number;
+  attachmentUploadIntents: number;
   bookIdentity: number;
   bookIngestions: number;
   coverJobs: number;
   readingProgress: number;
   userLibraryBooks: number;
+  userReviews: number;
+  bookStats: number;
   shelfRefs: number;
   quoteLinks: number;
+  quoteSourceLinks: number;
   authorRefs: number;
+  reviews: number;
+  ratings: number;
+  readerArtifacts: number;
+  searchProjectionDocs: number;
   coverStorageFiles: number;
+  originalStorageFiles: number;
+  ebookStorageFiles: number;
+  attachmentStorageFiles: number;
+  otherSubcollectionDocs: number;
+};
+
+export type AdminDeleteGraph = {
+  inputId: string;
+  inputType: 'book' | 'edition' | 'unresolved';
+  resolvedBookId: string | null;
+  resolvedEditionId: string | null;
+  editionIds: string[];
+  attachmentIds: string[];
+  touchedCollections: string[];
+  storagePrefixes: string[];
+  storagePaths: string[];
+  searchProjectionSources: string[];
+};
+
+export type AdminDeleteBookResult = {
+  bookId: string;
+  deleted: boolean;
+  dryRun?: boolean;
+  resolved?: boolean;
+  inputType?: 'book' | 'edition' | 'unresolved';
+  collectionCounts?: Record<string, number>;
+  storageCounts?: Record<string, number>;
+  deleteGraph?: AdminDeleteGraph;
+  cascade: AdminDeleteCascade;
 };
 
 export type AdminDeleteSeedListRow = {
@@ -787,15 +825,72 @@ function mapAdminDeleteCascade(item: unknown): AdminDeleteCascade {
   return {
     books: readRequiredNumber(data.books, 'books', context),
     editions: readRequiredNumber(data.editions, 'editions', context),
+    attachments: readRequiredNumber(data.attachments, 'attachments', context),
+    attachmentUploadIntents: readRequiredNumber(data.attachmentUploadIntents, 'attachmentUploadIntents', context),
     bookIdentity: readRequiredNumber(data.bookIdentity, 'bookIdentity', context),
     bookIngestions: readRequiredNumber(data.bookIngestions, 'bookIngestions', context),
     coverJobs: readRequiredNumber(data.coverJobs, 'coverJobs', context),
     readingProgress: readRequiredNumber(data.readingProgress, 'readingProgress', context),
     userLibraryBooks: readRequiredNumber(data.userLibraryBooks, 'userLibraryBooks', context),
+    userReviews: readRequiredNumber(data.userReviews, 'userReviews', context),
+    bookStats: readRequiredNumber(data.bookStats, 'bookStats', context),
     shelfRefs: readRequiredNumber(data.shelfRefs, 'shelfRefs', context),
     quoteLinks: readRequiredNumber(data.quoteLinks, 'quoteLinks', context),
+    quoteSourceLinks: readRequiredNumber(data.quoteSourceLinks, 'quoteSourceLinks', context),
     authorRefs: readRequiredNumber(data.authorRefs, 'authorRefs', context),
+    reviews: readRequiredNumber(data.reviews, 'reviews', context),
+    ratings: readRequiredNumber(data.ratings, 'ratings', context),
+    readerArtifacts: readRequiredNumber(data.readerArtifacts, 'readerArtifacts', context),
+    searchProjectionDocs: readRequiredNumber(data.searchProjectionDocs, 'searchProjectionDocs', context),
     coverStorageFiles: readRequiredNumber(data.coverStorageFiles, 'coverStorageFiles', context),
+    originalStorageFiles: readRequiredNumber(data.originalStorageFiles, 'originalStorageFiles', context),
+    ebookStorageFiles: readRequiredNumber(data.ebookStorageFiles, 'ebookStorageFiles', context),
+    attachmentStorageFiles: readRequiredNumber(data.attachmentStorageFiles, 'attachmentStorageFiles', context),
+    otherSubcollectionDocs: readRequiredNumber(data.otherSubcollectionDocs, 'otherSubcollectionDocs', context),
+  };
+}
+
+function mapNumberRecord(item: unknown, context: string): Record<string, number> {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error(`[adminService] Invalid ${context} payload.`);
+  }
+  const data = item as Record<string, unknown>;
+  return Object.fromEntries(
+    Object.entries(data).map(([key, value]) => [
+      key,
+      readRequiredNumber(value, key, context),
+    ])
+  );
+}
+
+function mapStringArray(item: unknown, field: string, context: string): string[] {
+  if (!Array.isArray(item)) {
+    throw new Error(`[adminService] ${context}.${field} must be an array.`);
+  }
+  return item.map((entry, index) => readRequiredString(entry, `${field}[${index}]`, context));
+}
+
+function mapAdminDeleteGraph(item: unknown): AdminDeleteGraph {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) {
+    throw new Error('[adminService] Invalid admin delete graph payload.');
+  }
+  const data = item as Record<string, unknown>;
+  const context = 'admin delete graph';
+  const inputType = readRequiredString(data.inputType, 'inputType', context);
+  if (inputType !== 'book' && inputType !== 'edition' && inputType !== 'unresolved') {
+    throw new Error('[adminService] admin delete graph inputType is invalid.');
+  }
+  return {
+    inputId: readRequiredString(data.inputId, 'inputId', context),
+    inputType,
+    resolvedBookId: readNullableString(data.resolvedBookId, 'resolvedBookId', context),
+    resolvedEditionId: readNullableString(data.resolvedEditionId, 'resolvedEditionId', context),
+    editionIds: mapStringArray(data.editionIds, 'editionIds', context),
+    attachmentIds: mapStringArray(data.attachmentIds, 'attachmentIds', context),
+    touchedCollections: mapStringArray(data.touchedCollections, 'touchedCollections', context),
+    storagePrefixes: mapStringArray(data.storagePrefixes, 'storagePrefixes', context),
+    storagePaths: mapStringArray(data.storagePaths, 'storagePaths', context),
+    searchProjectionSources: mapStringArray(data.searchProjectionSources, 'searchProjectionSources', context),
   };
 }
 
@@ -1402,16 +1497,20 @@ export const adminService = {
 
   async deleteCanonicalBook(payload: {
     bookId: string;
-  }): Promise<{
-    bookId: string;
-    deleted: boolean;
-    cascade: AdminDeleteCascade;
-  }> {
+    dryRun?: boolean;
+    confirmation?: string;
+  }): Promise<AdminDeleteBookResult> {
     const data = await callCallableEndpoint<
       typeof payload,
       {
         bookId: string;
         deleted: boolean;
+        dryRun?: boolean;
+        resolved?: boolean;
+        inputType?: 'book' | 'edition' | 'unresolved';
+        collectionCounts?: unknown;
+        storageCounts?: unknown;
+        deleteGraph?: unknown;
         cascade: unknown;
       }
     >('adminDeleteCanonicalBook', payload);
@@ -1419,6 +1518,15 @@ export const adminService = {
     return {
       bookId: readRequiredString(data.bookId, 'bookId', 'adminDeleteCanonicalBook'),
       deleted: data.deleted === true,
+      dryRun: data.dryRun === true ? true : undefined,
+      resolved: typeof data.resolved === 'boolean' ? data.resolved : undefined,
+      inputType:
+        data.inputType === 'book' || data.inputType === 'edition' || data.inputType === 'unresolved'
+          ? data.inputType
+          : undefined,
+      collectionCounts: data.collectionCounts ? mapNumberRecord(data.collectionCounts, 'admin delete collection counts') : undefined,
+      storageCounts: data.storageCounts ? mapNumberRecord(data.storageCounts, 'admin delete storage counts') : undefined,
+      deleteGraph: data.deleteGraph ? mapAdminDeleteGraph(data.deleteGraph) : undefined,
       cascade: mapAdminDeleteCascade(data.cascade),
     };
   },

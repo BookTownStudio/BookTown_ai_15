@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 type DocData = Record<string, unknown>;
 
 const store = new Map<string, DocData>();
+const storageFiles = new Set<string>();
 let uuidCounter = 0;
 let timestampCounter = 0;
 const ingestBookServerSideMock = vi.fn();
@@ -118,7 +119,9 @@ class MockDocSnapshot {
     return this.path.split("/").pop() || "";
   }
   get ref(): MockDocRef {
-    const [collectionName, id] = this.path.split("/");
+    const segments = this.path.split("/");
+    const id = segments[segments.length - 1];
+    const collectionName = segments.slice(0, -1).join("/");
     return new MockDocRef(collectionName, id);
   }
   get exists(): boolean {
@@ -153,6 +156,7 @@ class MockQuery {
   constructor(
     private readonly collectionName: string,
     private readonly field: string | null,
+    private readonly op: string,
     private readonly value: unknown,
     private readonly limitCount?: number
   ) {}
@@ -160,10 +164,18 @@ class MockQuery {
   async get(): Promise<{ docs: MockDocSnapshot[] }> {
     const docs = Array.from(store.entries())
       .filter(([path, data]) => {
-        const [collectionName] = path.split("/");
+        const collectionName = path.split("/").slice(0, -1).join("/");
         if (collectionName !== this.collectionName) return false;
         if (this.field == null) return true;
-        return isRecord(data) && getAtPath(data, this.field) === this.value;
+        if (!isRecord(data)) return false;
+        const fieldValue = getAtPath(data, this.field);
+        if (this.op === "==") {
+          return fieldValue === this.value;
+        }
+        if (this.op === "array-contains") {
+          return Array.isArray(fieldValue) && fieldValue.includes(this.value);
+        }
+        return false;
       })
       .map(([path]) => new MockDocSnapshot(path))
       .slice(0, this.limitCount ?? Number.MAX_SAFE_INTEGER);
@@ -172,7 +184,7 @@ class MockQuery {
   }
 
   limit(count: number): MockQuery {
-    return new MockQuery(this.collectionName, this.field, this.value, count);
+    return new MockQuery(this.collectionName, this.field, this.op, this.value, count);
   }
 }
 
@@ -182,13 +194,13 @@ class MockCollectionRef {
     return new MockDocRef(this.name, id || `doc-${++uuidCounter}`);
   }
   where(field: string, op: string, value: unknown): MockQuery {
-    if (op !== "==") {
+    if (op !== "==" && op !== "array-contains") {
       throw new Error(`Unsupported operator ${op}`);
     }
-    return new MockQuery(this.name, field, value);
+    return new MockQuery(this.name, field, op, value);
   }
   get(): Promise<{ docs: MockDocSnapshot[] }> {
-    return new MockQuery(this.name, null, null).get();
+    return new MockQuery(this.name, null, "==", null).get();
   }
 }
 
@@ -274,7 +286,20 @@ vi.mock("../firebaseAdmin", () => ({
     storage: () => ({
       bucket: () => ({
         name: "booktown-test.appspot.com",
-        getFiles: async () => [[]],
+        getFiles: async ({ prefix }: { prefix?: string } = {}) => [
+          Array.from(storageFiles)
+            .filter((path) => (prefix ? path.startsWith(prefix) : true))
+            .map((path) => ({
+              delete: async () => {
+                storageFiles.delete(path);
+              },
+            })),
+        ],
+        file: (path: string) => ({
+          delete: async () => {
+            storageFiles.delete(path);
+          },
+        }),
       }),
     }),
   },
@@ -312,6 +337,11 @@ async function getAdminDeleteAllBooksCallable() {
   return mod.adminDeleteAllBooks as any;
 }
 
+async function getAdminDeleteCanonicalBookCallable() {
+  const mod = await import("./literaryAuthority");
+  return mod.adminDeleteCanonicalBook as any;
+}
+
 async function getMaterializeBookAuthorityFn() {
   const mod = await import("../library/materializeBookAuthority");
   return mod.materializeBookAuthority as any;
@@ -320,6 +350,7 @@ async function getMaterializeBookAuthorityFn() {
 describe("adminCreateCanonicalBook", () => {
   beforeEach(() => {
     store.clear();
+    storageFiles.clear();
     uuidCounter = 0;
     timestampCounter = 0;
     vi.unstubAllGlobals();
@@ -452,6 +483,9 @@ describe("adminCreateCanonicalBook", () => {
             rawBook: { title: "Nausea", author: "Jean-Paul Sartre" },
           },
         ],
+      })
+      .mockResolvedValueOnce({
+        results: [],
       });
 
     ingestBookServerSideMock
@@ -495,7 +529,7 @@ describe("adminCreateCanonicalBook", () => {
       };
     };
 
-    expect(unifiedSearchMock).toHaveBeenCalledTimes(3);
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(5);
     expect(ingestBookServerSideMock).toHaveBeenCalledTimes(2);
     expect(response.rows).toEqual([
       expect.objectContaining({
@@ -755,6 +789,242 @@ describe("adminCreateCanonicalBook", () => {
     );
   });
 
+  it("prefers an Open Library work-id candidate over a higher-scoring Google Books title match", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "gb-solitude",
+          editionId: "gb-solitude",
+          bookId: "gb-solitude",
+          workId: null,
+          externalId: "gb-solitude-1",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "One Hundred Years of Solitude",
+          titleEn: "One Hundred Years of Solitude",
+          titleAr: "",
+          authors: ["Gabriel García Márquez"],
+          authorEn: "Gabriel García Márquez",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 99,
+          rank: 1,
+          rawBook: {
+            title: "One Hundred Years of Solitude",
+            author: "Gabriel García Márquez",
+          },
+        },
+        {
+          id: "ol-solitude-work",
+          editionId: "ol-solitude-work",
+          bookId: "ol-solitude-work",
+          workId: null,
+          externalId: "OL27448W",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "mismatch",
+          title: "Cien años de soledad",
+          titleEn: "Cien años de soledad",
+          titleAr: "",
+          authors: ["Gabriel García Márquez"],
+          authorEn: "Gabriel García Márquez",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "es",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 40,
+          rank: 5,
+          rawBook: {
+            key: "/works/OL27448W",
+            openLibraryWorkId: "OL27448W",
+            title: "Cien años de soledad",
+            author: "Gabriel García Márquez",
+            titleAliases: ["One Hundred Years of Solitude"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "solitude-openlibrary",
+      bookId: "solitude-openlibrary",
+      editionId: "openLibrary:OL27448W",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "One Hundred Years of Solitude | Gabriel García Márquez",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL27448W",
+        rawBook: expect.objectContaining({
+          title: "One Hundred Years of Solitude",
+          titleEn: "One Hundred Years of Solitude",
+          titleAliases: expect.arrayContaining([
+            "Cien años de soledad",
+            "One Hundred Years of Solitude",
+          ]),
+        }),
+      })
+    );
+  });
+
+  it("retries Open Library before accepting a Google Books seed winner", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "gb-lesmis",
+            editionId: "gb-lesmis",
+            bookId: "gb-lesmis",
+            workId: null,
+            externalId: "gb-lesmis-1",
+            source: "googleBooks",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Les Miserables",
+            titleEn: "Les Miserables",
+            titleAr: "",
+            authors: ["Victor Hugo"],
+            authorEn: "Victor Hugo",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 96,
+            rank: 1,
+            rawBook: {
+              title: "Les Miserables",
+              author: "Victor Hugo",
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "ol-lesmis-work",
+            editionId: "ol-lesmis-work",
+            bookId: "ol-lesmis-work",
+            workId: null,
+            externalId: "OL12345W",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Les Misérables",
+            titleEn: "Les Misérables",
+            titleAr: "",
+            authors: ["Victor Hugo"],
+            authorEn: "Victor Hugo",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "fr",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 55,
+            rank: 4,
+            rawBook: {
+              key: "/works/OL12345W",
+              openLibraryWorkId: "OL12345W",
+              title: "Les Misérables",
+              author: "Victor Hugo",
+              titleAliases: ["Les Miserables"],
+            },
+          },
+        ],
+      });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "lesmis-openlibrary",
+      bookId: "lesmis-openlibrary",
+      editionId: "openLibrary:OL12345W",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Les Misérables | Victor Hugo",
+      },
+    });
+
+    expect(unifiedSearchMock).toHaveBeenNthCalledWith(
+      2,
+      "les miserables victor hugo",
+      { limit: 10 }
+    );
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL12345W",
+      })
+    );
+  });
+
   it("cleans provider-polluted canonical titles before batch ingestion while preserving cover fields", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
 
@@ -848,7 +1118,11 @@ describe("adminCreateCanonicalBook", () => {
             },
           },
         ],
-      });
+      })
+      .mockResolvedValueOnce({
+        results: [],
+      })
+      ;
 
     ingestBookServerSideMock
       .mockResolvedValueOnce({
@@ -1212,6 +1486,666 @@ describe("adminCreateCanonicalBook", () => {
     ]);
   });
 
+  it("reuses an existing canonical for a translated Open Library title when alias confidence is exact", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "ol-solitude-es-1",
+            editionId: "ol-solitude-es-1",
+            bookId: "ol-solitude-es-1",
+            workId: null,
+            externalId: "OL27448W",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Cien años de soledad",
+            titleEn: "Cien años de soledad",
+            titleAr: "",
+            authors: ["Gabriel García Márquez"],
+            authorEn: "Gabriel García Márquez",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "es",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 94,
+            rank: 1,
+            rawBook: {
+              key: "/works/OL27448W",
+              openLibraryWorkId: "OL27448W",
+              title: "Cien años de soledad",
+              author: "Gabriel García Márquez",
+              titleAliases: ["One Hundred Years of Solitude"],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "ol-solitude-en-2",
+            editionId: "ol-solitude-en-2",
+            bookId: "ol-solitude-en-2",
+            workId: null,
+            externalId: "OL99999W",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "One Hundred Years of Solitude",
+            titleEn: "One Hundred Years of Solitude",
+            titleAr: "",
+            authors: ["Gabriel García Márquez"],
+            authorEn: "Gabriel García Márquez",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 93,
+            rank: 1,
+            rawBook: {
+              key: "/works/OL99999W",
+              openLibraryWorkId: "OL99999W",
+              title: "One Hundred Years of Solitude",
+              author: "Gabriel García Márquez",
+              titleAliases: ["Cien años de soledad"],
+            },
+          },
+        ],
+      });
+
+    ingestBookServerSideMock.mockImplementationOnce(async () => {
+      setDoc(
+        "books/solitude-translation-1",
+        {
+          bookId: "solitude-translation-1",
+          canonicalBookId: "solitude-translation-1",
+          canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+          normalizedTitle: "cien anos de soledad",
+          titleEnNormalized: "cien anos de soledad",
+          canonicalTitle: "Cien años de soledad",
+          title: "Cien años de soledad",
+          author: "Gabriel García Márquez",
+          authorEn: "Gabriel García Márquez",
+          authorNamesNormalized: ["gabriel garcia marquez"],
+          authorityStatus: "canonical",
+          workType: "canonical",
+          canonicalLocked: true,
+          source: "openLibrary",
+          editionId: "openLibrary:OL27448W",
+          titleAliases: ["One Hundred Years of Solitude"],
+          workIdentity: {
+            canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+            mergeKeys: [
+              "gabriel garcia marquez::cien anos de soledad",
+              "gabriel garcia marquez::one hundred years of solitude",
+            ],
+            providerWorkId: "openLibrary:OL27448W",
+          },
+        },
+        false
+      );
+
+      return {
+        canonicalBookId: "solitude-translation-1",
+        bookId: "solitude-translation-1",
+        editionId: "openLibrary:OL27448W",
+        status: "CREATED",
+      };
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: [
+          "Cien años de soledad | Gabriel García Márquez",
+          "One Hundred Years of Solitude | Gabriel García Márquez",
+        ].join("\n"),
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+      }>;
+    };
+
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(2);
+    expect(ingestBookServerSideMock).toHaveBeenCalledTimes(1);
+    expect(response.rows).toEqual([
+      expect.objectContaining({
+        row: 1,
+        status: "created",
+        canonicalBookId: "solitude-translation-1",
+      }),
+      expect.objectContaining({
+        row: 2,
+        status: "existing",
+        canonicalBookId: "solitude-translation-1",
+      }),
+    ]);
+    expect(getDoc("books/solitude-translation-1")?.workIdentity).toMatchObject({
+      providerWorkId: "openLibrary:OL27448W",
+      alternateProviderWorkIds: ["openLibrary:OL99999W"],
+    });
+  });
+
+  it("reuses an existing canonical when provider originalTitle proves translation equivalence", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    setDoc(
+      "books/solitude-original-title-1",
+      {
+        bookId: "solitude-original-title-1",
+        canonicalBookId: "solitude-original-title-1",
+        canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+        normalizedTitle: "cien anos de soledad",
+        titleEnNormalized: "cien anos de soledad",
+        canonicalTitle: "Cien años de soledad",
+        originalTitle: "Cien años de soledad",
+        title: "Cien años de soledad",
+        author: "Gabriel García Márquez",
+        authorEn: "Gabriel García Márquez",
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        source: "openLibrary",
+        workIdentity: {
+          canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+          mergeKeys: ["gabriel garcia marquez::cien anos de soledad"],
+          providerWorkId: "openLibrary:OL27448W",
+        },
+      },
+      false
+    );
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-solitude-original-title-en",
+          editionId: "ol-solitude-original-title-en",
+          bookId: "ol-solitude-original-title-en",
+          workId: null,
+          externalId: "OL99999W",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "One Hundred Years of Solitude",
+          titleEn: "One Hundred Years of Solitude",
+          titleAr: "",
+          authors: ["Gabriel García Márquez"],
+          authorEn: "Gabriel García Márquez",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 95,
+          rank: 1,
+          rawBook: {
+            key: "/works/OL99999W",
+            openLibraryWorkId: "OL99999W",
+            title: "One Hundred Years of Solitude",
+            originalTitle: "Cien años de soledad",
+            author: "Gabriel García Márquez",
+          },
+        },
+      ],
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "One Hundred Years of Solitude | Gabriel García Márquez",
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+        message?: string;
+      }>;
+    };
+
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(1);
+    expect(ingestBookServerSideMock).not.toHaveBeenCalled();
+    expect(response.rows[0]).toEqual(
+      expect.objectContaining({
+        row: 1,
+        status: "existing",
+        canonicalBookId: "solitude-original-title-1",
+        message: expect.stringContaining("multilingual authority convergence"),
+      })
+    );
+    expect(getDoc("books/solitude-original-title-1")?.workIdentity).toMatchObject({
+      providerWorkId: "openLibrary:OL27448W",
+      alternateProviderWorkIds: ["openLibrary:OL99999W"],
+    });
+  });
+
+  it("reuses an existing canonical before failing when provider returns no candidate", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    setDoc(
+      "books/solitude-provider-miss-1",
+      {
+        bookId: "solitude-provider-miss-1",
+        canonicalBookId: "solitude-provider-miss-1",
+        canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
+        normalizedTitle: "one hundred years of solitude",
+        titleEnNormalized: "one hundred years of solitude",
+        canonicalTitle: "One Hundred Years of Solitude",
+        title: "One Hundred Years of Solitude",
+        author: "Gabriel García Márquez",
+        authorEn: "Gabriel García Márquez",
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        source: "openLibrary",
+        titleAliases: ["Cien años de soledad"],
+        workIdentity: {
+          canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
+          mergeKeys: [
+            "gabriel garcia marquez::one hundred years of solitude",
+            "gabriel garcia marquez::cien anos de soledad",
+          ],
+          providerWorkId: "openLibrary:OL27448W",
+        },
+      },
+      false
+    );
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [],
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Cien años de soledad | Gabriel García Márquez",
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+        message?: string;
+      }>;
+    };
+
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(1);
+    expect(ingestBookServerSideMock).not.toHaveBeenCalled();
+    expect(response.rows[0]).toEqual(
+      expect.objectContaining({
+        row: 1,
+        status: "existing",
+        canonicalBookId: "solitude-provider-miss-1",
+        message: expect.stringContaining("provider miss fell back to strict canonical authority reuse"),
+      })
+    );
+  });
+
+  it("runs one final survivor gate before create and reuses an alias-matched canonical", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    setDoc(
+      "books/solitude-final-gate-1",
+      {
+        bookId: "solitude-final-gate-1",
+        canonicalBookId: "solitude-final-gate-1",
+        canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+        normalizedTitle: "cien anos de soledad",
+        titleEnNormalized: "cien anos de soledad",
+        canonicalTitle: "Cien años de soledad",
+        title: "Cien años de soledad",
+        author: "Gabriel García Márquez",
+        authorEn: "Gabriel García Márquez",
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        source: "openLibrary",
+        titleAliases: ["One Hundred Years of Solitude"],
+        workIdentity: {
+          canonicalKey: "gabriel garcia marquez::cien anos de soledad",
+          mergeKeys: [
+            "gabriel garcia marquez::cien anos de soledad",
+            "gabriel garcia marquez::one hundred years of solitude",
+          ],
+          providerWorkId: "openLibrary:OL27448W",
+        },
+      },
+      false
+    );
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "gb-solitude-final-gate",
+          editionId: "gb-solitude-final-gate",
+          bookId: "gb-solitude-final-gate",
+          workId: null,
+          externalId: "gb-solitude-final-gate-1",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "One Hundred Years of Solitude",
+          titleEn: "One Hundred Years of Solitude",
+          titleAr: "",
+          authors: ["Gabriel García Márquez"],
+          authorEn: "Gabriel García Márquez",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 96,
+          rank: 1,
+          rawBook: {
+            title: "One Hundred Years of Solitude",
+            author: "Gabriel García Márquez",
+          },
+        },
+      ],
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "One Hundred Years of Solitude | Gabriel García Márquez",
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+        message?: string;
+      }>;
+    };
+
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(3);
+    expect(ingestBookServerSideMock).not.toHaveBeenCalled();
+    expect(response.rows[0]).toEqual(
+      expect.objectContaining({
+        row: 1,
+        status: "existing",
+        canonicalBookId: "solitude-final-gate-1",
+        message: expect.stringContaining("final survivor gate prevented duplicate canonical create"),
+      })
+    );
+  });
+
+  it("enriches a google-first canonical with trusted open library aliases before first create", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    unifiedSearchMock
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "gb-solitude-create-es",
+            editionId: "gb-solitude-create-es",
+            bookId: "gb-solitude-create-es",
+            workId: null,
+            externalId: "gb-solitude-create-es-1",
+            source: "googleBooks",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Cien años de soledad",
+            titleEn: "Cien años de soledad",
+            titleAr: "",
+            authors: ["Gabriel García Márquez"],
+            authorEn: "Gabriel García Márquez",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "es",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 95,
+            rank: 1,
+            rawBook: {
+              title: "Cien años de soledad",
+              author: "Gabriel García Márquez",
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "ol-solitude-alias-es",
+            editionId: "ol-solitude-alias-es",
+            bookId: "ol-solitude-alias-es",
+            workId: null,
+            externalId: "ol-solitude-alias-es-1",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "Cien años de soledad",
+            titleEn: "Cien años de soledad",
+            titleAr: "",
+            authors: ["Gabriel García Márquez"],
+            authorEn: "Gabriel García Márquez",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "es",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 96,
+            rank: 1,
+            rawBook: {
+              title: "Cien años de soledad",
+              author: "Gabriel García Márquez",
+              titleAliases: ["One Hundred Years of Solitude"],
+              alternateTitles: ["One Hundred Years of Solitude"],
+            },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        results: [
+          {
+            id: "ol-solitude-create-en",
+            editionId: "ol-solitude-create-en",
+            bookId: "ol-solitude-create-en",
+            workId: null,
+            externalId: "OL27448W",
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: "One Hundred Years of Solitude",
+            titleEn: "One Hundred Years of Solitude",
+            titleAr: "",
+            authors: ["Gabriel García Márquez"],
+            authorEn: "Gabriel García Márquez",
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 97,
+            rank: 1,
+            rawBook: {
+              title: "One Hundred Years of Solitude",
+              author: "Gabriel García Márquez",
+            },
+          },
+        ],
+      });
+
+    ingestBookServerSideMock.mockImplementationOnce(async (params: {
+      source: "openLibrary" | "googleBooks";
+      providerExternalId: string;
+      rawBook: Record<string, unknown>;
+    }) => {
+      const result = await materializeBookAuthority({
+        source: params.source,
+        authorityStatus: "canonical",
+        providerExternalId: params.providerExternalId,
+        rawBook: params.rawBook,
+      });
+
+      return {
+        canonicalBookId: result.bookId,
+        bookId: result.bookId,
+        editionId: result.editionId,
+        status: "CREATED" as const,
+      };
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: [
+          "Cien años de soledad | Gabriel García Márquez",
+          "One Hundred Years of Solitude | Gabriel García Márquez",
+        ].join("\n"),
+      },
+    });
+
+    const response = result as {
+      rows: Array<{
+        row: number;
+        status: "created" | "existing" | "failed";
+        canonicalBookId?: string;
+        message?: string;
+      }>;
+      summary: {
+        successCount: number;
+        existingCount: number;
+        failedCount: number;
+      };
+    };
+
+    const createdCanonicalId = response.rows[0]?.canonicalBookId;
+    expect(createdCanonicalId).toBeTruthy();
+    expect(unifiedSearchMock).toHaveBeenCalledTimes(4);
+    expect(ingestBookServerSideMock).toHaveBeenCalledTimes(1);
+    expect(response.rows).toEqual([
+      expect.objectContaining({
+        row: 1,
+        status: "created",
+        canonicalBookId: createdCanonicalId,
+        source: "googleBooks",
+      }),
+      expect.objectContaining({
+        row: 2,
+        status: "existing",
+        canonicalBookId: createdCanonicalId,
+        source: "googleBooks",
+      }),
+    ]);
+    expect(response.summary).toEqual({
+      successCount: 2,
+      existingCount: 1,
+      failedCount: 0,
+    });
+    expect(getDoc(`books/${createdCanonicalId}`)?.source).toBe("googleBooks");
+    expect(getDoc(`books/${createdCanonicalId}`)?.titleAliases).toEqual(
+      expect.arrayContaining(["One Hundred Years of Solitude"])
+    );
+  });
+
   it("merges existing canonical duplicates into the stronger survivor before reuse", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
 
@@ -1464,6 +2398,140 @@ describe("adminCreateCanonicalBook", () => {
     expect(getDoc("authors/author-1")?.bookIds).toEqual(["book-9"]);
     expect(getDoc("shelves/shelf-1")?.orderedBookIds).toEqual([]);
     expect(getDoc("shelves/shelf-1")?.entries).toEqual({});
+  });
+
+  it("resolves an edition id into one hard-delete plan before deleting the canonical work graph", async () => {
+    const callable = await getAdminDeleteCanonicalBookCallable();
+
+    setDoc(
+      "books/book-1",
+      {
+        title: "The Trial",
+        authorId: "author-1",
+        canonicalAuthorIds: ["author-1"],
+        ebookAttachmentId: "att-1",
+        storagePath: "books/book-1/original/trial.epub",
+      },
+      false
+    );
+    setDoc("editions/edition-1", { bookId: "book-1", workId: "book-1", ebookAttachmentId: "att-1" }, false);
+    setDoc("editions/edition-2", { workId: "book-1" }, false);
+    setDoc("attachments/att-1", { bookId: "book-1", parentId: "edition-1", storagePath: "ebooks/book-1/canonical.epub" }, false);
+    setDoc("_attachment_upload_intents/att-1", { storagePath: "attachments/user/att-1.epub" }, false);
+    setDoc("books/book-1/reviews/user-1", { bookId: "book-1", text: "great" }, false);
+    setDoc("books/book-1/ratings/user-1", { bookId: "book-1", rating: 5 }, false);
+    setDoc("user_reviews/user-1_book-1", { bookId: "book-1" }, false);
+    setDoc(
+      "reader_manifests/book-1",
+      {
+        locationMap: { docPath: "reader_location_map/book-1" },
+        searchIndex: { docPath: "reader_search_index/book-1" },
+        highlightAnchors: { docPath: "reader_highlight_anchors/book-1" },
+      },
+      false
+    );
+    setDoc("reader_location_map/book-1", { bookId: "book-1" }, false);
+    setDoc("reader_search_index/book-1", { bookId: "book-1" }, false);
+    setDoc("reader_highlight_anchors/book-1", { bookId: "book-1" }, false);
+    setDoc("reader_highlights/user-1_book-1_h1", { bookId: "book-1" }, false);
+    setDoc("reader_bookmarks/user-1_book-1_b1", { bookId: "book-1" }, false);
+    setDoc("reader_events/event-1", { bookId: "book-1" }, false);
+    setDoc("reader_sync_idempotency/id-1", { bookId: "book-1" }, false);
+    setDoc("book_stats/book-1", { bookId: "book-1" }, false);
+
+    storageFiles.add("books/book-1/covers/medium.jpg");
+    storageFiles.add("books/book-1/original/trial.epub");
+    storageFiles.add("ebooks/book-1/canonical.epub");
+    storageFiles.add("attachments/user/att-1.epub");
+
+    const preview = (await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        bookId: "edition-1",
+        dryRun: true,
+      },
+    })) as {
+      bookId: string;
+      deleted: boolean;
+      dryRun: boolean;
+      resolved: boolean;
+      inputType: string;
+      collectionCounts: Record<string, number>;
+      storageCounts: Record<string, number>;
+      deleteGraph: {
+        editionIds: string[];
+        attachmentIds: string[];
+      };
+    };
+
+    expect(preview).toEqual(
+      expect.objectContaining({
+        bookId: "book-1",
+        deleted: false,
+        dryRun: true,
+        resolved: true,
+        inputType: "edition",
+      })
+    );
+    expect(preview.collectionCounts).toMatchObject({
+      books: 1,
+      editions: 2,
+      attachments: 1,
+      "_attachment_upload_intents": 1,
+      "books.reviews": 1,
+      "books.ratings": 1,
+      user_reviews: 1,
+      reader_manifests: 1,
+    });
+    expect(preview.storageCounts).toMatchObject({
+      coverStorageFiles: 1,
+      originalStorageFiles: 1,
+      ebookStorageFiles: 1,
+      attachmentStorageFiles: 1,
+    });
+    expect(preview.deleteGraph.editionIds).toEqual(expect.arrayContaining(["edition-1", "edition-2"]));
+    expect(preview.deleteGraph.attachmentIds).toEqual(["att-1"]);
+    expect(getDoc("books/book-1")).not.toBeNull();
+    expect(getDoc("editions/edition-1")).not.toBeNull();
+
+    const result = (await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        bookId: "edition-1",
+        confirmation: "book-1",
+      },
+    })) as {
+      bookId: string;
+      deleted: boolean;
+    };
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        bookId: "book-1",
+        deleted: true,
+      })
+    );
+    expect(getDoc("books/book-1")).toBeNull();
+    expect(getDoc("editions/edition-1")).toBeNull();
+    expect(getDoc("editions/edition-2")).toBeNull();
+    expect(getDoc("attachments/att-1")).toBeNull();
+    expect(getDoc("_attachment_upload_intents/att-1")).toBeNull();
+    expect(getDoc("books/book-1/reviews/user-1")).toBeNull();
+    expect(getDoc("books/book-1/ratings/user-1")).toBeNull();
+    expect(getDoc("user_reviews/user-1_book-1")).toBeNull();
+    expect(getDoc("reader_manifests/book-1")).toBeNull();
+    expect(getDoc("reader_location_map/book-1")).toBeNull();
+    expect(getDoc("reader_search_index/book-1")).toBeNull();
+    expect(getDoc("reader_highlight_anchors/book-1")).toBeNull();
+    expect(getDoc("reader_highlights/user-1_book-1_h1")).toBeNull();
+    expect(getDoc("reader_bookmarks/user-1_book-1_b1")).toBeNull();
+    expect(getDoc("reader_events/event-1")).toBeNull();
+    expect(getDoc("reader_sync_idempotency/id-1")).toBeNull();
+    expect(getDoc("book_stats/book-1")).toBeNull();
+    expect(storageFiles.has("books/book-1/covers/medium.jpg")).toBe(false);
+    expect(storageFiles.has("books/book-1/original/trial.epub")).toBe(false);
+    expect(storageFiles.has("ebooks/book-1/canonical.epub")).toBe(false);
+    expect(storageFiles.has("attachments/user/att-1.epub")).toBe(false);
   });
 
   it("keeps stronger existing provider metadata and freezes title, author, canonical key, and language on later weaker enrichment", async () => {

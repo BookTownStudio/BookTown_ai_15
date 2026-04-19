@@ -3,6 +3,7 @@ import * as logger from "firebase-functions/logger";
 import { v4 as uuidv4 } from "uuid";
 
 import { admin } from "../firebaseAdmin";
+import { normalizeSearchText } from "../search/normalization";
 import {
   buildRawAuthorFromBookPayload,
   materializeCanonicalAuthorInTransaction,
@@ -451,6 +452,33 @@ function resolveTitleAuthorities(rawBook: Record<string, unknown>): string[] {
     ...asStringArray(rawBook.alternateTitles),
     ...asStringArray(rawBook.otherTitles),
   ]);
+}
+
+function resolveTrustedTitleAliases(params: {
+  existingBook: Record<string, unknown> | null;
+  rawBook: Record<string, unknown>;
+  canonicalTitle: string;
+  originalTitle: string;
+}): string[] {
+  const excluded = new Set(
+    uniqueStrings([
+      params.canonicalTitle,
+      params.originalTitle,
+    ]).map((entry) => normalizeSearchText(entry))
+  );
+
+  return uniqueStrings([
+    ...asStringArray(params.existingBook?.titleAliases),
+    ...asStringArray(params.rawBook.titleAliases),
+    ...asStringArray(params.rawBook.alternateTitles),
+    ...asStringArray(params.rawBook.otherTitles),
+    asNonEmptyString(params.rawBook.title),
+    asNonEmptyString(params.rawBook.titleEn),
+    asNonEmptyString(params.rawBook.titleAr),
+  ]).filter((entry) => {
+    const normalized = normalizeSearchText(entry);
+    return Boolean(normalized) && !excluded.has(normalized);
+  });
 }
 
 function buildCanonicalKeys(rawBook: Record<string, unknown>, primaryAuthor: string): string[] {
@@ -1461,6 +1489,12 @@ export async function materializeBookAuthorityInTransaction(
     asNonEmptyString(existingBook?.originalTitle) ||
     asNonEmptyString(rawBook.title) ||
     title;
+  const titleAliases = resolveTrustedTitleAliases({
+    existingBook,
+    rawBook,
+    canonicalTitle,
+    originalTitle,
+  });
   const originalLanguage = asNonEmptyString(originalLanguageTrust.value) || language;
   const workProviderIdentity = resolveWorkProviderIdentity({
     source: params.source,
@@ -1544,6 +1578,7 @@ export async function materializeBookAuthorityInTransaction(
     workIdentity,
     canonicalFieldTrust,
     abstractDescription: description,
+    titleAliases,
     canonicalRelations: {
       ...(primaryEditionId ? { primaryEditionId } : {}),
     },

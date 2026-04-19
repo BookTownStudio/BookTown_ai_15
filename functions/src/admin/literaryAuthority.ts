@@ -105,20 +105,60 @@ type AdminSeedCanonicalBatchSummary = {
 type AdminDeleteBookCascadeCounts = {
   books: number;
   editions: number;
+  attachments: number;
+  attachmentUploadIntents: number;
   bookIdentity: number;
   bookIngestions: number;
   coverJobs: number;
   readingProgress: number;
   userLibraryBooks: number;
+  userReviews: number;
+  bookStats: number;
   shelfRefs: number;
   quoteLinks: number;
+  quoteSourceLinks: number;
   authorRefs: number;
+  reviews: number;
+  ratings: number;
+  readerArtifacts: number;
+  searchProjectionDocs: number;
   coverStorageFiles: number;
+  originalStorageFiles: number;
+  ebookStorageFiles: number;
+  attachmentStorageFiles: number;
+  otherSubcollectionDocs: number;
+};
+
+type AdminDeleteCanonicalBookInput = {
+  bookId: string;
+  dryRun?: boolean;
+  confirmation?: string;
+};
+
+type AdminDeleteTargetType = "book" | "edition" | "unresolved";
+
+type AdminDeleteGraph = {
+  inputId: string;
+  inputType: AdminDeleteTargetType;
+  resolvedBookId: string | null;
+  resolvedEditionId: string | null;
+  editionIds: string[];
+  attachmentIds: string[];
+  touchedCollections: string[];
+  storagePrefixes: string[];
+  storagePaths: string[];
+  searchProjectionSources: string[];
 };
 
 type AdminDeleteCanonicalBookResponse = {
   bookId: string;
   deleted: boolean;
+  dryRun?: boolean;
+  resolved?: boolean;
+  inputType?: AdminDeleteTargetType;
+  collectionCounts?: Record<string, number>;
+  storageCounts?: Record<string, number>;
+  deleteGraph?: AdminDeleteGraph;
   cascade: AdminDeleteBookCascadeCounts;
 };
 
@@ -435,6 +475,7 @@ function extractCandidateAliasCanonicalKeys(params: {
   const titles = uniqueStrings([
     asNonEmptyString(params.result.title),
     asNonEmptyString(rawBook.title),
+    asNonEmptyString(rawBook.originalTitle),
     asNonEmptyString(rawBook.titleEn),
     asNonEmptyString(rawBook.titleAr),
     ...asStringArray(rawBook.titleAliases),
@@ -558,6 +599,52 @@ function collectDuplicateTitleAliases(data: Record<string, unknown>): string[] {
     asNonEmptyString(data.title),
     asNonEmptyString(data.titleEn),
   ]);
+}
+
+function extractBookNormalizedTitleAuthorities(data: Record<string, unknown>): string[] {
+  return uniqueStrings([
+    normalizeSearchText(asNonEmptyString(data.canonicalTitle)),
+    normalizeSearchText(asNonEmptyString(data.originalTitle)),
+    normalizeSearchText(asNonEmptyString(data.title)),
+    normalizeSearchText(asNonEmptyString(data.titleEn)),
+    ...asStringArray(data.titleAliases).map((entry) => normalizeSearchText(entry)),
+    ...asStringArray(data.aliases).map((entry) => normalizeSearchText(entry)),
+  ].filter(Boolean));
+}
+
+async function persistAlternateProviderWorkIds(params: {
+  bookId: string;
+  data: Record<string, unknown>;
+  providerWorkIds: string[];
+}): Promise<Record<string, unknown>> {
+  const workIdentity = asRecord(params.data.workIdentity) || {};
+  const primaryProviderWorkId = extractBookProviderWorkId(params.data);
+  const alternateProviderWorkIds = uniqueStrings([
+    ...asStringArray(workIdentity.alternateProviderWorkIds),
+    ...params.providerWorkIds.map((value) => normalizeBookProviderWorkId(value)),
+  ]).filter((entry) => entry && entry !== primaryProviderWorkId);
+
+  if (alternateProviderWorkIds.length === asStringArray(workIdentity.alternateProviderWorkIds).length) {
+    return params.data;
+  }
+
+  await db.collection("books").doc(params.bookId).set(
+    {
+      workIdentity: {
+        alternateProviderWorkIds,
+      },
+      updatedAt: FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
+
+  return {
+    ...params.data,
+    workIdentity: {
+      ...workIdentity,
+      alternateProviderWorkIds,
+    },
+  };
 }
 
 function compareCanonicalSurvivors(
@@ -704,6 +791,7 @@ function scoreExistingSeedWork(params: {
   requestedAuthorNorm: string;
   matchedProviderWorkIds?: ReadonlySet<string>;
   matchedAliasCanonicalKeys?: ReadonlySet<string>;
+  allowOpenLibraryTranslationReuse?: boolean;
 }): number {
   const dataCanonicalKey = asNonEmptyString(params.data.canonicalKey);
   const normalizedTitle =
@@ -721,6 +809,7 @@ function scoreExistingSeedWork(params: {
     asNonEmptyString(params.data.authorityStatus) === "canonical" ||
     asNonEmptyString(params.data.workType) === "canonical" ||
     params.data.canonicalLocked === true;
+  const normalizedTitleAuthorities = extractBookNormalizedTitleAuthorities(params.data);
 
   let score = 0;
   if (asNonEmptyString(params.data.mergedInto)) return Number.NEGATIVE_INFINITY;
@@ -728,6 +817,13 @@ function scoreExistingSeedWork(params: {
   if (dataCanonicalKey === params.requestedCanonicalKey) score += 100;
   if (mergeKeys.includes(params.requestedCanonicalKey)) score += 140;
   if (params.matchedAliasCanonicalKeys?.has(dataCanonicalKey)) score += 120;
+  if (
+    params.allowOpenLibraryTranslationReuse &&
+    normalizedAuthor === params.requestedAuthorNorm &&
+    normalizedTitleAuthorities.includes(params.requestedTitleNorm)
+  ) {
+    score += 180;
+  }
   if (normalizedTitle === params.requestedTitleNorm) score += 60;
   if (normalizedAuthor === params.requestedAuthorNorm) score += 40;
   if (
@@ -750,6 +846,10 @@ async function resolveExistingCanonicalWorkForSeed(params: {
   const requestedCanonicalKey = canonicalSeedKey(params.title, params.author);
   const requestedTitleNorm = normalizeSearchText(params.title);
   const requestedAuthorNorm = normalizeSearchText(params.author);
+  const openLibraryCandidateWorkId =
+    params.candidate?.source === "openLibrary"
+      ? extractOpenLibrarySeedWorkIdentifier(params.candidate)
+      : "";
   const matchedProviderWorkIds = new Set(
     params.candidate ? extractCandidateStableWorkIdentifiers(params.candidate) : []
   );
@@ -768,6 +868,12 @@ async function resolveExistingCanonicalWorkForSeed(params: {
     db.collection("books").where("normalizedTitle", "==", requestedTitleNorm).limit(10).get(),
     db.collection("books").where("titleEnNormalized", "==", requestedTitleNorm).limit(10).get(),
   ];
+
+  if (openLibraryCandidateWorkId && requestedAuthorNorm) {
+    queryJobs.push(
+      db.collection("books").where("authorNamesNormalized", "array-contains", requestedAuthorNorm).limit(10).get()
+    );
+  }
 
   for (const providerWorkId of matchedProviderWorkIds) {
     queryJobs.push(
@@ -859,6 +965,7 @@ async function resolveExistingCanonicalWorkForSeed(params: {
       requestedAuthorNorm,
       matchedProviderWorkIds,
       matchedAliasCanonicalKeys,
+      allowOpenLibraryTranslationReuse: Boolean(openLibraryCandidateWorkId),
     });
     if (score < 100) {
       continue;
@@ -874,6 +981,14 @@ async function resolveExistingCanonicalWorkForSeed(params: {
 
   const mergedInto = asNonEmptyString(best.data.mergedInto);
   if (!mergedInto || mergedInto === best.bookId) {
+    if (discoveredProviderWorkIds.length > 0) {
+      const updatedData = await persistAlternateProviderWorkIds({
+        bookId: best.bookId,
+        data: best.data,
+        providerWorkIds: discoveredProviderWorkIds,
+      });
+      return { bookId: best.bookId, data: updatedData };
+    }
     return { bookId: best.bookId, data: best.data };
   }
 
@@ -882,25 +997,137 @@ async function resolveExistingCanonicalWorkForSeed(params: {
     return { bookId: best.bookId, data: best.data };
   }
 
+  const survivorData = (survivorSnap.data() || {}) as Record<string, unknown>;
+  if (discoveredProviderWorkIds.length > 0) {
+    const updatedSurvivorData = await persistAlternateProviderWorkIds({
+      bookId: survivorSnap.id,
+      data: survivorData,
+      providerWorkIds: discoveredProviderWorkIds,
+    });
+    return {
+      bookId: survivorSnap.id,
+      data: updatedSurvivorData,
+    };
+  }
+
   return {
     bookId: survivorSnap.id,
-    data: (survivorSnap.data() || {}) as Record<string, unknown>,
+    data: survivorData,
   };
+}
+
+async function resolveFinalCanonicalSurvivorBeforeCreate(params: {
+  title: string;
+  author: string;
+  candidate: UnifiedSearchResult;
+  rawBook: Record<string, unknown>;
+}): Promise<{ bookId: string; data: Record<string, unknown> } | null> {
+  let strictMatch = await resolveExistingCanonicalByAuthorAndTitle({
+    title: params.title,
+    author: params.author,
+  });
+
+  if (!strictMatch) {
+    strictMatch = await resolveExistingCanonicalWorkForSeed({
+      title: params.title,
+      author: params.author,
+      candidate: {
+        ...params.candidate,
+        title: asNonEmptyString(params.rawBook.title) || params.candidate.title,
+        titleEn: asNonEmptyString(params.rawBook.titleEn) || params.candidate.titleEn,
+        rawBook: params.rawBook,
+      },
+    });
+  }
+
+  if (!strictMatch) {
+    return null;
+  }
+
+  const workIdentity = asRecord(params.rawBook.workIdentity);
+  const candidateProviderWorkIds = uniqueStrings([
+    ...extractCandidateStableWorkIdentifiers(params.candidate),
+    normalizeBookProviderWorkId(asNonEmptyString(params.rawBook.providerWorkId)),
+    normalizeBookProviderWorkId(asNonEmptyString(workIdentity?.providerWorkId)),
+    normalizeBookProviderWorkId(asNonEmptyString(params.rawBook.openLibraryWorkId)),
+    normalizeBookProviderWorkId(asNonEmptyString(params.rawBook.workId)),
+    normalizeBookProviderWorkId(asNonEmptyString(params.rawBook.key)),
+  ]);
+
+  if (candidateProviderWorkIds.length === 0) {
+    return strictMatch;
+  }
+
+  const updatedData = await persistAlternateProviderWorkIds({
+    bookId: strictMatch.bookId,
+    data: strictMatch.data,
+    providerWorkIds: candidateProviderWorkIds,
+  });
+  return {
+    bookId: strictMatch.bookId,
+    data: updatedData,
+  };
+}
+
+async function resolveExistingCanonicalByAuthorAndTitle(params: {
+  title: string;
+  author: string;
+}): Promise<{ bookId: string; data: Record<string, unknown> } | null> {
+  const requestedTitleNorm = normalizeSearchText(params.title);
+  const requestedAuthorNorm = normalizeSearchText(params.author);
+  if (!requestedTitleNorm || !requestedAuthorNorm) {
+    return null;
+  }
+
+  const authorSnap = await db
+    .collection("books")
+    .where("authorNamesNormalized", "array-contains", requestedAuthorNorm)
+    .limit(10)
+    .get();
+
+  const candidates = authorSnap.docs
+    .map((doc) => ({
+      bookId: doc.id,
+      data: (doc.data() || {}) as Record<string, unknown>,
+    }))
+    .filter((candidate) => !asNonEmptyString(candidate.data.mergedInto))
+    .filter((candidate) => normalizeBookAuthorForSeedMatch(candidate.data) === requestedAuthorNorm)
+    .filter((candidate) => extractBookNormalizedTitleAuthorities(candidate.data).includes(requestedTitleNorm));
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const best = [...candidates].sort(compareCanonicalSurvivors)[0];
+  return best ? { bookId: best.bookId, data: best.data } : null;
 }
 
 function emptyDeleteCascadeCounts(): AdminDeleteBookCascadeCounts {
   return {
     books: 0,
     editions: 0,
+    attachments: 0,
+    attachmentUploadIntents: 0,
     bookIdentity: 0,
     bookIngestions: 0,
     coverJobs: 0,
     readingProgress: 0,
     userLibraryBooks: 0,
+    userReviews: 0,
+    bookStats: 0,
     shelfRefs: 0,
     quoteLinks: 0,
+    quoteSourceLinks: 0,
     authorRefs: 0,
+    reviews: 0,
+    ratings: 0,
+    readerArtifacts: 0,
+    searchProjectionDocs: 0,
     coverStorageFiles: 0,
+    originalStorageFiles: 0,
+    ebookStorageFiles: 0,
+    attachmentStorageFiles: 0,
+    otherSubcollectionDocs: 0,
   };
 }
 
@@ -913,6 +1140,262 @@ async function deleteStoragePrefix(prefix: string): Promise<number> {
   await Promise.all(files.map((file) => file.delete({ ignoreNotFound: true })));
   return files.length;
 }
+
+async function countStoragePrefix(prefix: string): Promise<number> {
+  const bucket = admin.storage().bucket();
+  const [files] = await bucket.getFiles({ prefix });
+  return Array.isArray(files) ? files.length : 0;
+}
+
+async function deleteStoragePaths(paths: Iterable<string>): Promise<number> {
+  const bucket = admin.storage().bucket();
+  const uniquePaths = Array.from(
+    new Set(
+      Array.from(paths)
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    )
+  );
+  if (uniquePaths.length === 0) {
+    return 0;
+  }
+  await Promise.all(uniquePaths.map((path) => bucket.file(path).delete({ ignoreNotFound: true })));
+  return uniquePaths.length;
+}
+
+function docRefFromPath(path: string): FirebaseFirestore.DocumentReference<DocumentData> {
+  const segments = path
+    .split("/")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  if (segments.length < 2 || segments.length % 2 !== 0) {
+    throw new HttpsError("failed-precondition", `Invalid Firestore document path: ${path}`);
+  }
+  const collectionPath = segments.slice(0, -1).join("/");
+  const docId = segments[segments.length - 1];
+  return db.collection(collectionPath).doc(docId);
+}
+
+function incrementCount(target: Record<string, number>, key: string, delta = 1): void {
+  target[key] = (target[key] || 0) + delta;
+}
+
+function addDocRef(
+  refs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>,
+  ref: FirebaseFirestore.DocumentReference<DocumentData>,
+  collectionCounts: Record<string, number>,
+  collectionName: string
+): void {
+  if (refs.has(ref.path)) {
+    return;
+  }
+  refs.set(ref.path, ref);
+  incrementCount(collectionCounts, collectionName);
+}
+
+function addStoragePath(target: Set<string>, value: unknown): void {
+  const normalized = readOptionalString(value, "storagePath", 2048);
+  if (normalized) {
+    target.add(normalized);
+  }
+}
+
+function addAttachmentId(target: Set<string>, value: unknown): void {
+  const normalized = readOptionalString(value, "attachmentId", 256);
+  if (normalized) {
+    target.add(normalized);
+  }
+}
+
+function collectAttachmentPointers(
+  source: Record<string, unknown> | null | undefined,
+  attachmentIds: Set<string>,
+  storagePaths: Set<string>
+): void {
+  if (!source) {
+    return;
+  }
+  addAttachmentId(attachmentIds, source.ebookAttachmentId);
+  addStoragePath(storagePaths, source.ebookStoragePath);
+  addStoragePath(storagePaths, source.epubStoragePath);
+  addStoragePath(storagePaths, source.storagePath);
+}
+
+function readCanonicalAuthorIds(source: Record<string, unknown>): string[] {
+  return Array.from(
+    new Set(
+      [
+        readOptionalString(source.authorId, "authorId", 180),
+        ...((Array.isArray(source.canonicalAuthorIds) ? source.canonicalAuthorIds : [])
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter((entry) => entry.length > 0)),
+      ].filter((entry): entry is string => Boolean(entry))
+    )
+  );
+}
+
+function readParentBookCandidates(source: Record<string, unknown>): string[] {
+  return Array.from(
+    new Set(
+      [
+        readOptionalString(source.bookId, "bookId", 256),
+        readOptionalString(source.workId, "workId", 256),
+        readOptionalString(source.canonicalBookId, "canonicalBookId", 256),
+      ].filter((entry): entry is string => Boolean(entry))
+    )
+  );
+}
+
+async function getDocsForCollectionPath(path: string): Promise<FirebaseFirestore.QueryDocumentSnapshot<DocumentData>[]> {
+  const snap = await db.collection(path).get();
+  return snap.docs;
+}
+
+async function getSubcollectionDocs(
+  ref: FirebaseFirestore.DocumentReference<DocumentData>,
+  knownCollectionIds: string[]
+): Promise<Array<{ collectionId: string; doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData> }>> {
+  const collectionIds = new Set(
+    knownCollectionIds.map((value) => value.trim()).filter((value) => value.length > 0)
+  );
+  const listCollectionsFn = (ref as FirebaseFirestore.DocumentReference<DocumentData> & {
+    listCollections?: () => Promise<Array<FirebaseFirestore.CollectionReference<DocumentData>>>;
+  }).listCollections;
+  if (typeof listCollectionsFn === "function") {
+    const collections = await listCollectionsFn.call(ref);
+    for (const collectionRef of collections) {
+      collectionIds.add(collectionRef.id);
+    }
+  }
+
+  const docs: Array<{ collectionId: string; doc: FirebaseFirestore.QueryDocumentSnapshot<DocumentData> }> = [];
+  for (const collectionId of collectionIds) {
+    const path = `${ref.path}/${collectionId}`;
+    const snapshots = await getDocsForCollectionPath(path);
+    for (const doc of snapshots) {
+      docs.push({ collectionId, doc });
+    }
+  }
+  return docs;
+}
+
+type DeleteTargetResolution =
+  | {
+      inputId: string;
+      inputType: "book";
+      resolvedBookId: string;
+      resolvedEditionId: null;
+      bookRef: FirebaseFirestore.DocumentReference<DocumentData>;
+      bookSnap: FirebaseFirestore.DocumentSnapshot<DocumentData>;
+      editionSnap: null;
+    }
+  | {
+      inputId: string;
+      inputType: "edition";
+      resolvedBookId: string;
+      resolvedEditionId: string;
+      bookRef: FirebaseFirestore.DocumentReference<DocumentData>;
+      bookSnap: FirebaseFirestore.DocumentSnapshot<DocumentData>;
+      editionSnap: FirebaseFirestore.DocumentSnapshot<DocumentData>;
+    }
+  | {
+      inputId: string;
+      inputType: "unresolved";
+      resolvedBookId: null;
+      resolvedEditionId: null;
+      bookRef: FirebaseFirestore.DocumentReference<DocumentData> | null;
+      bookSnap: FirebaseFirestore.DocumentSnapshot<DocumentData> | null;
+      editionSnap: FirebaseFirestore.DocumentSnapshot<DocumentData> | null;
+    };
+
+async function resolveDeleteTarget(inputId: string): Promise<DeleteTargetResolution> {
+  const normalizedId = readRequiredString(inputId, "bookId", 180);
+  const bookRef = db.collection("books").doc(normalizedId);
+  const editionRef = db.collection("editions").doc(normalizedId);
+  const [bookSnap, editionSnap] = await Promise.all([bookRef.get(), editionRef.get()]);
+
+  if (bookSnap.exists && editionSnap.exists) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Delete target ${normalizedId} is ambiguous because it matches both a work and an edition.`
+    );
+  }
+
+  if (bookSnap.exists) {
+    return {
+      inputId: normalizedId,
+      inputType: "book",
+      resolvedBookId: normalizedId,
+      resolvedEditionId: null,
+      bookRef,
+      bookSnap,
+      editionSnap: null,
+    };
+  }
+
+  if (!editionSnap.exists) {
+    return {
+      inputId: normalizedId,
+      inputType: "unresolved",
+      resolvedBookId: null,
+      resolvedEditionId: null,
+      bookRef: null,
+      bookSnap: null,
+      editionSnap: null,
+    };
+  }
+
+  const editionData = (editionSnap.data() || {}) as Record<string, unknown>;
+  const parentBookIds = readParentBookCandidates(editionData);
+  if (parentBookIds.length !== 1) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Edition ${normalizedId} does not resolve to exactly one canonical work.`
+    );
+  }
+
+  const resolvedBookId = parentBookIds[0];
+  return {
+    inputId: normalizedId,
+    inputType: "edition",
+    resolvedBookId,
+    resolvedEditionId: normalizedId,
+    bookRef: db.collection("books").doc(resolvedBookId),
+    bookSnap: await db.collection("books").doc(resolvedBookId).get(),
+    editionSnap,
+  };
+}
+
+type DeleteExecutionPlan = {
+  resolution: DeleteTargetResolution;
+  bookRef: FirebaseFirestore.DocumentReference<DocumentData> | null;
+  bookSnap: FirebaseFirestore.DocumentSnapshot<DocumentData> | null;
+  bookData: Record<string, unknown> | null;
+  cascade: AdminDeleteBookCascadeCounts;
+  collectionCounts: Record<string, number>;
+  storageCounts: Record<string, number>;
+  deleteGraph: AdminDeleteGraph;
+  editionRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  attachmentRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  attachmentIntentRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  identityRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  ingestionRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  readingProgressRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  libraryRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  userReviewRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  reviewRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  ratingRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  readerArtifactRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  otherSubcollectionRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  shelfRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  quoteBookRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  quoteSourceRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  authorRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  bookStatsRef: FirebaseFirestore.DocumentReference<DocumentData> | null;
+  coverJobRefs: Map<string, FirebaseFirestore.DocumentReference<DocumentData>>;
+  storagePrefixes: Set<string>;
+  exactStoragePaths: Set<string>;
+};
 
 function normalizeCandidateAuthor(result: UnifiedSearchResult): string {
   const author =
@@ -1033,6 +1516,153 @@ function prepareBulkCandidateRawBook(params: {
   return rawBook;
 }
 
+function resolveCandidateTitleAuthorities(result: UnifiedSearchResult): string[] {
+  const rawBook = asRecord(result.rawBook) || {};
+  return uniqueStrings([
+    asNonEmptyString(result.title),
+    asNonEmptyString(rawBook.title),
+    asNonEmptyString(rawBook.originalTitle),
+    asNonEmptyString(rawBook.titleEn),
+    asNonEmptyString(rawBook.titleAr),
+    ...asStringArray(rawBook.titleAliases),
+    ...asStringArray(rawBook.alternateTitles),
+    ...asStringArray(rawBook.otherTitles),
+  ]);
+}
+
+function titlesMatchRequestedAuthor(authorNorm: string, requestedAuthorNorm: string): boolean {
+  if (!authorNorm || !requestedAuthorNorm) {
+    return false;
+  }
+  return (
+    authorNorm === requestedAuthorNorm ||
+    authorNorm.startsWith(requestedAuthorNorm) ||
+    requestedAuthorNorm.startsWith(authorNorm)
+  );
+}
+
+function extractTrustedOpenLibraryAliasTitles(params: {
+  selectedCandidate: UnifiedSearchResult;
+  secondaryCandidates: UnifiedSearchResult[];
+  requestedTitle: string;
+  requestedAuthor: string;
+}): string[] {
+  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
+  const requestedAuthorNorm = normalizeSearchText(params.requestedAuthor);
+  const selectedTitleNorms = new Set(
+    resolveCandidateTitleAuthorities(params.selectedCandidate)
+      .map((entry) => normalizeSearchText(entry))
+      .filter(Boolean)
+  );
+
+  return uniqueStrings(
+    params.secondaryCandidates
+      .filter(
+        (candidate) =>
+          candidate.resultType === "external" &&
+          candidate.source === "openLibrary" &&
+          typeof candidate.externalId === "string" &&
+          candidate.externalId.trim().length > 0
+      )
+      .filter(
+        (candidate) =>
+          !isWeakBulkCandidate({
+            result: candidate,
+            requestedTitleNorm,
+            requestedAuthorNorm,
+          })
+      )
+      .filter((candidate) =>
+        titlesMatchRequestedAuthor(normalizeCandidateAuthor(candidate), requestedAuthorNorm)
+      )
+      .flatMap((candidate) => resolveCandidateTitleAuthorities(candidate))
+      .filter((title) => {
+        const normalized = normalizeSearchText(title);
+        if (!normalized) {
+          return false;
+        }
+        if (selectedTitleNorms.has(normalized)) {
+          return false;
+        }
+        if (requestedAuthorNorm && normalized.includes(requestedAuthorNorm)) {
+          return false;
+        }
+        return true;
+      })
+  ).slice(0, 12);
+}
+
+async function enrichGoogleWinnerWithOpenLibraryAliases(params: {
+  selectedCandidate: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+  initialResults: UnifiedSearchResult[];
+}): Promise<UnifiedSearchResult> {
+  if (params.selectedCandidate.source !== "googleBooks") {
+    return params.selectedCandidate;
+  }
+
+  let secondaryCandidates = params.initialResults.filter(
+    (candidate) => candidate.source === "openLibrary" && candidate.resultType === "external"
+  );
+
+  let trustedAliases = extractTrustedOpenLibraryAliasTitles({
+    selectedCandidate: params.selectedCandidate,
+    secondaryCandidates,
+    requestedTitle: params.requestedTitle,
+    requestedAuthor: params.requestedAuthor,
+  });
+
+  if (trustedAliases.length === 0) {
+    const normalizedQuery = [
+      normalizeSearchText(params.requestedTitle),
+      normalizeSearchText(params.requestedAuthor),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+
+    if (normalizedQuery) {
+      const secondarySearch = await unifiedSearch(normalizedQuery, {
+        limit: 10,
+      });
+      secondaryCandidates = Array.isArray(secondarySearch?.results)
+        ? secondarySearch.results.filter(
+            (candidate) => candidate.source === "openLibrary" && candidate.resultType === "external"
+          )
+        : [];
+      trustedAliases = extractTrustedOpenLibraryAliasTitles({
+        selectedCandidate: params.selectedCandidate,
+        secondaryCandidates,
+        requestedTitle: params.requestedTitle,
+        requestedAuthor: params.requestedAuthor,
+      });
+    }
+  }
+
+  if (trustedAliases.length === 0) {
+    return params.selectedCandidate;
+  }
+
+  const rawBook =
+    params.selectedCandidate.rawBook &&
+    typeof params.selectedCandidate.rawBook === "object" &&
+    !Array.isArray(params.selectedCandidate.rawBook)
+      ? ({ ...(params.selectedCandidate.rawBook as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  return {
+    ...params.selectedCandidate,
+    rawBook: {
+      ...rawBook,
+      titleAliases: uniqueStrings([
+        ...asStringArray(rawBook.titleAliases),
+        ...trustedAliases,
+      ]),
+    },
+  };
+}
+
 function hasPublisherArtifactAuthor(authorNorm: string): boolean {
   if (!authorNorm) return true;
   return [
@@ -1122,6 +1752,21 @@ function computeBulkCandidateScore(params: {
   return score;
 }
 
+function extractOpenLibrarySeedWorkIdentifier(result: UnifiedSearchResult): string {
+  if (result.source !== "openLibrary") {
+    return "";
+  }
+
+  const rawBook = asRecord(result.rawBook) || {};
+  return normalizeStableExternalWorkIdentifier(
+    "openLibrary",
+    asNonEmptyString(rawBook.openLibraryWorkId) ||
+      asNonEmptyString(rawBook.key) ||
+      asNonEmptyString(rawBook.workId) ||
+      asNonEmptyString(result.externalId)
+  );
+}
+
 function selectStrongestBulkProviderCandidate(params: {
   results: UnifiedSearchResult[];
   requestedTitle: string;
@@ -1138,7 +1783,13 @@ function selectStrongestBulkProviderCandidate(params: {
       result.externalId.trim().length > 0
   );
 
-  const strongCandidates = providerCandidates.filter(
+  const openLibraryWorkCandidates = providerCandidates.filter(
+    (result) => Boolean(extractOpenLibrarySeedWorkIdentifier(result))
+  );
+  const prioritizedCandidates =
+    openLibraryWorkCandidates.length > 0 ? openLibraryWorkCandidates : providerCandidates;
+
+  const strongCandidates = prioritizedCandidates.filter(
     (result) =>
       !isWeakBulkCandidate({
         result,
@@ -1147,7 +1798,7 @@ function selectStrongestBulkProviderCandidate(params: {
       })
   );
 
-  const candidates = strongCandidates.length > 0 ? strongCandidates : providerCandidates;
+  const candidates = strongCandidates.length > 0 ? strongCandidates : prioritizedCandidates;
   if (candidates.length === 0) {
     return null;
   }
@@ -1169,6 +1820,46 @@ function selectStrongestBulkProviderCandidate(params: {
     if (sourceDelta !== 0) return sourceDelta;
     return left.rank - right.rank;
   })[0] || null;
+}
+
+async function retryOpenLibraryBulkProviderCandidate(params: {
+  requestedTitle: string;
+  requestedAuthor: string;
+}): Promise<UnifiedSearchResult | null> {
+  const normalizedQuery = [
+    normalizeSearchText(params.requestedTitle),
+    normalizeSearchText(params.requestedAuthor),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  if (!normalizedQuery) {
+    return null;
+  }
+
+  const retrySearch = await unifiedSearch(normalizedQuery, {
+    limit: 10,
+  });
+  if (!retrySearch || !Array.isArray(retrySearch.results)) {
+    return null;
+  }
+  const openLibraryRetryCandidates = retrySearch.results.filter(
+    (result) =>
+      result.resultType === "external" &&
+      result.source === "openLibrary" &&
+      Boolean(extractOpenLibrarySeedWorkIdentifier(result))
+  );
+
+  if (openLibraryRetryCandidates.length === 0) {
+    return null;
+  }
+
+  return selectStrongestBulkProviderCandidate({
+    results: openLibraryRetryCandidates,
+    requestedTitle: params.requestedTitle,
+    requestedAuthor: params.requestedAuthor,
+  });
 }
 
 function computeDeleteCanonicalScore(params: {
@@ -1242,45 +1933,384 @@ async function resolveCanonicalBookIdForDelete(params: {
   return selected?.bookId || null;
 }
 
-async function deleteCanonicalBookCascade(bookId: string): Promise<AdminDeleteCanonicalBookResponse> {
-  const counts = emptyDeleteCascadeCounts();
-  const bookRef = db.collection("books").doc(bookId);
-  const [bookSnap, editionsSnap, identitySnap, ingestionSnap, readingProgressSnap, librarySnap, quotesSnap] =
-    await Promise.all([
-      bookRef.get(),
-      db.collection("editions").where("bookId", "==", bookId).get(),
-      db.collection("book_identity").where("bookId", "==", bookId).get(),
-      db.collection("book_ingestions").where("bookId", "==", bookId).get(),
-      db.collection("reading_progress").where("bookId", "==", bookId).get(),
-      db.collection("user_library_books").where("bookId", "==", bookId).get(),
-      db.collection("quotes").where("bookId", "==", bookId).get(),
-    ]);
+async function buildDeleteExecutionPlan(inputId: string): Promise<DeleteExecutionPlan> {
+  const resolution = await resolveDeleteTarget(inputId);
+  const cascade = emptyDeleteCascadeCounts();
+  const collectionCounts: Record<string, number> = {};
+  const storageCounts: Record<string, number> = {};
+  const editionRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const attachmentRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const attachmentIntentRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const identityRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const ingestionRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const readingProgressRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const libraryRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const userReviewRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const reviewRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const ratingRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const readerArtifactRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const otherSubcollectionRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const shelfRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const quoteBookRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const quoteSourceRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const authorRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const coverJobRefs = new Map<string, FirebaseFirestore.DocumentReference<DocumentData>>();
+  const storagePrefixes = new Set<string>();
+  const exactStoragePaths = new Set<string>();
 
-  if (!bookSnap.exists) {
-    return {
-      bookId,
-      deleted: false,
-      cascade: counts,
-    };
+  const plan: DeleteExecutionPlan = {
+    resolution,
+    bookRef: resolution.bookRef,
+    bookSnap: resolution.bookSnap,
+    bookData:
+      resolution.bookSnap && resolution.bookSnap.exists
+        ? ((resolution.bookSnap.data() || {}) as Record<string, unknown>)
+        : null,
+    cascade,
+    collectionCounts,
+    storageCounts,
+    deleteGraph: {
+      inputId: resolution.inputId,
+      inputType: resolution.inputType,
+      resolvedBookId: resolution.resolvedBookId,
+      resolvedEditionId: resolution.resolvedEditionId,
+      editionIds: [],
+      attachmentIds: [],
+      touchedCollections: [],
+      storagePrefixes: [],
+      storagePaths: [],
+      searchProjectionSources: [],
+    },
+    editionRefs,
+    attachmentRefs,
+    attachmentIntentRefs,
+    identityRefs,
+    ingestionRefs,
+    readingProgressRefs,
+    libraryRefs,
+    userReviewRefs,
+    reviewRefs,
+    ratingRefs,
+    readerArtifactRefs,
+    otherSubcollectionRefs,
+    shelfRefs,
+    quoteBookRefs,
+    quoteSourceRefs,
+    authorRefs,
+    bookStatsRef: null,
+    coverJobRefs,
+    storagePrefixes,
+    exactStoragePaths,
+  };
+
+  if (!resolution.resolvedBookId) {
+    return plan;
   }
 
-  const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
-  const authorId = readOptionalString(bookData.authorId, "authorId", 180);
+  const bookId = resolution.resolvedBookId;
+  const bookRef = resolution.bookRef;
+  const bookSnap = resolution.bookSnap;
+  const bookData = plan.bookData;
+  if (bookRef && bookSnap?.exists) {
+    incrementCount(collectionCounts, "books");
+    cascade.books = 1;
+    cascade.searchProjectionDocs += 1;
+    plan.deleteGraph.searchProjectionSources.push("books");
+  }
 
-  const shelfRefs = new Map<string, FirebaseFirestore.DocumentReference>();
+  const editionSnapshots = await Promise.all([
+    db.collection("editions").where("bookId", "==", bookId).get(),
+    db.collection("editions").where("workId", "==", bookId).get(),
+    db.collection("editions").where("canonicalBookId", "==", bookId).get(),
+  ]);
+
+  for (const snap of editionSnapshots) {
+    for (const doc of snap.docs) {
+      addDocRef(editionRefs, doc.ref, collectionCounts, "editions");
+    }
+  }
+  if (resolution.editionSnap?.exists) {
+    addDocRef(editionRefs, resolution.editionSnap.ref, collectionCounts, "editions");
+  }
+  cascade.editions = editionRefs.size;
+  cascade.searchProjectionDocs += editionRefs.size;
+  if (editionRefs.size > 0) {
+    plan.deleteGraph.searchProjectionSources.push("editions");
+  }
+
+  const editionIds = Array.from(editionRefs.values()).map((ref) => ref.id);
+  const attachmentIds = new Set<string>();
+  const parentAttachmentQueries = editionIds.map((editionId) =>
+    db.collection("attachments").where("parentId", "==", editionId).get()
+  );
+  const [
+    identitySnap,
+    ingestionSnap,
+    readingProgressSnap,
+    librarySnap,
+    quoteBookSnap,
+    quoteSourceSnap,
+    userReviewSnap,
+    readerHighlightSnap,
+    readerBookmarkSnap,
+    readerEventSnap,
+    readerAuditSnap,
+    readerSyncSnap,
+    attachmentByBookSnap,
+    ...attachmentByEditionSnaps
+  ] = await Promise.all([
+    db.collection("book_identity").where("bookId", "==", bookId).get(),
+    db.collection("book_ingestions").where("bookId", "==", bookId).get(),
+    db.collection("reading_progress").where("bookId", "==", bookId).get(),
+    db.collection("user_library_books").where("bookId", "==", bookId).get(),
+    db.collection("quotes").where("bookId", "==", bookId).get(),
+    db.collection("quotes").where("sourceBookId", "==", bookId).get(),
+    db.collection("user_reviews").where("bookId", "==", bookId).get(),
+    db.collection("reader_highlights").where("bookId", "==", bookId).get(),
+    db.collection("reader_bookmarks").where("bookId", "==", bookId).get(),
+    db.collection("reader_events").where("bookId", "==", bookId).get(),
+    db.collection("reader_audit").where("bookId", "==", bookId).get(),
+    db.collection("reader_sync_idempotency").where("bookId", "==", bookId).get(),
+    db.collection("attachments").where("bookId", "==", bookId).get(),
+    ...parentAttachmentQueries,
+  ]);
+
+  for (const doc of identitySnap.docs) {
+    addDocRef(identityRefs, doc.ref, collectionCounts, "book_identity");
+  }
+  cascade.bookIdentity = identityRefs.size;
+
+  for (const doc of ingestionSnap.docs) {
+    addDocRef(ingestionRefs, doc.ref, collectionCounts, "book_ingestions");
+  }
+  cascade.bookIngestions = ingestionRefs.size;
+
+  for (const doc of readingProgressSnap.docs) {
+    addDocRef(readingProgressRefs, doc.ref, collectionCounts, "reading_progress");
+  }
+  cascade.readingProgress = readingProgressRefs.size;
+
   for (const doc of librarySnap.docs) {
+    addDocRef(libraryRefs, doc.ref, collectionCounts, "user_library_books");
     const data = (doc.data() || {}) as Record<string, unknown>;
     const shelfIds = Array.isArray(data.shelfIds) ? data.shelfIds : [];
     for (const shelfId of shelfIds) {
-      const normalizedShelfId =
-        typeof shelfId === "string" && shelfId.trim().length > 0 ? shelfId.trim() : "";
-      if (normalizedShelfId && !shelfRefs.has(normalizedShelfId)) {
-        shelfRefs.set(normalizedShelfId, db.collection("shelves").doc(normalizedShelfId));
+      const normalizedShelfId = typeof shelfId === "string" ? shelfId.trim() : "";
+      if (!normalizedShelfId) continue;
+      const shelfRef = db.collection("shelves").doc(normalizedShelfId);
+      const shelfSnap = await shelfRef.get();
+      if (shelfSnap.exists) {
+        addDocRef(shelfRefs, shelfRef, collectionCounts, "shelves");
       }
     }
   }
+  cascade.userLibraryBooks = libraryRefs.size;
+  cascade.shelfRefs = shelfRefs.size;
 
-  for (const shelfRef of shelfRefs.values()) {
+  for (const doc of quoteBookSnap.docs) {
+    addDocRef(quoteBookRefs, doc.ref, collectionCounts, "quotes");
+  }
+  for (const doc of quoteSourceSnap.docs) {
+    addDocRef(quoteSourceRefs, doc.ref, collectionCounts, "quotes");
+  }
+  cascade.quoteLinks = quoteBookRefs.size;
+  cascade.quoteSourceLinks = quoteSourceRefs.size;
+
+  for (const doc of userReviewSnap.docs) {
+    addDocRef(userReviewRefs, doc.ref, collectionCounts, "user_reviews");
+  }
+  cascade.userReviews = userReviewRefs.size;
+
+  for (const doc of readerHighlightSnap.docs) {
+    addDocRef(readerArtifactRefs, doc.ref, collectionCounts, "reader_highlights");
+  }
+  for (const doc of readerBookmarkSnap.docs) {
+    addDocRef(readerArtifactRefs, doc.ref, collectionCounts, "reader_bookmarks");
+  }
+  for (const doc of readerEventSnap.docs) {
+    addDocRef(readerArtifactRefs, doc.ref, collectionCounts, "reader_events");
+  }
+  for (const doc of readerAuditSnap.docs) {
+    addDocRef(readerArtifactRefs, doc.ref, collectionCounts, "reader_audit");
+  }
+  for (const doc of readerSyncSnap.docs) {
+    addDocRef(readerArtifactRefs, doc.ref, collectionCounts, "reader_sync_idempotency");
+  }
+
+  collectAttachmentPointers(bookData, attachmentIds, exactStoragePaths);
+  for (const doc of attachmentByBookSnap.docs) {
+    addDocRef(attachmentRefs, doc.ref, collectionCounts, "attachments");
+    collectAttachmentPointers((doc.data() || {}) as Record<string, unknown>, attachmentIds, exactStoragePaths);
+    attachmentIds.add(doc.id);
+  }
+  for (const snap of attachmentByEditionSnaps) {
+    for (const doc of snap.docs) {
+      addDocRef(attachmentRefs, doc.ref, collectionCounts, "attachments");
+      collectAttachmentPointers((doc.data() || {}) as Record<string, unknown>, attachmentIds, exactStoragePaths);
+      attachmentIds.add(doc.id);
+    }
+  }
+
+  const editionSubcollections = await Promise.all(
+    Array.from(editionRefs.values()).map(async (editionRef) => {
+      const editionSnap = await editionRef.get();
+      if (!editionSnap.exists) {
+        return [];
+      }
+      const editionData = (editionSnap.data() || {}) as Record<string, unknown>;
+      collectAttachmentPointers(editionData, attachmentIds, exactStoragePaths);
+      return getSubcollectionDocs(editionRef, []);
+    })
+  );
+  for (const groups of editionSubcollections) {
+    for (const { collectionId, doc } of groups) {
+      addDocRef(otherSubcollectionRefs, doc.ref, collectionCounts, `editions.${collectionId}`);
+    }
+  }
+
+  if (bookRef) {
+    const bookSubcollections = await getSubcollectionDocs(bookRef, ["reviews", "ratings"]);
+    for (const { collectionId, doc } of bookSubcollections) {
+      if (collectionId === "reviews") {
+        addDocRef(reviewRefs, doc.ref, collectionCounts, "books.reviews");
+      } else if (collectionId === "ratings") {
+        addDocRef(ratingRefs, doc.ref, collectionCounts, "books.ratings");
+      } else {
+        addDocRef(otherSubcollectionRefs, doc.ref, collectionCounts, `books.${collectionId}`);
+      }
+    }
+  }
+  cascade.reviews = reviewRefs.size;
+  cascade.ratings = ratingRefs.size;
+  cascade.otherSubcollectionDocs = otherSubcollectionRefs.size;
+
+  for (const attachmentId of attachmentIds) {
+    const attachmentRef = db.collection("attachments").doc(attachmentId);
+    const attachmentSnap = await attachmentRef.get();
+    if (attachmentSnap.exists) {
+      addDocRef(attachmentRefs, attachmentRef, collectionCounts, "attachments");
+      collectAttachmentPointers(
+        (attachmentSnap.data() || {}) as Record<string, unknown>,
+        attachmentIds,
+        exactStoragePaths
+      );
+    }
+
+    const intentRef = db.collection("_attachment_upload_intents").doc(attachmentId);
+    const intentSnap = await intentRef.get();
+    if (intentSnap.exists) {
+      addDocRef(attachmentIntentRefs, intentRef, collectionCounts, "_attachment_upload_intents");
+      addStoragePath(exactStoragePaths, (intentSnap.data() || {}).storagePath);
+    }
+  }
+  cascade.attachments = attachmentRefs.size;
+  cascade.attachmentUploadIntents = attachmentIntentRefs.size;
+
+  const authorIds = bookData ? readCanonicalAuthorIds(bookData) : [];
+  for (const authorId of authorIds) {
+    const authorRef = db.collection("authors").doc(authorId);
+    const authorSnap = await authorRef.get();
+    if (authorSnap.exists) {
+      addDocRef(authorRefs, authorRef, collectionCounts, "authors");
+    }
+  }
+  cascade.authorRefs = authorRefs.size;
+
+  const bookStatsRef = db.collection("book_stats").doc(bookId);
+  const bookStatsSnap = await bookStatsRef.get();
+  if (bookStatsSnap.exists) {
+    plan.bookStatsRef = bookStatsRef;
+    incrementCount(collectionCounts, "book_stats");
+    cascade.bookStats = 1;
+  }
+
+  const directReaderRefs = [
+    db.collection("reader_manifests").doc(bookId),
+    db.collection("reader_location_map").doc(bookId),
+    db.collection("reader_search_index").doc(bookId),
+    db.collection("reader_highlight_anchors").doc(bookId),
+  ];
+  const directReaderSnaps = await Promise.all(directReaderRefs.map((ref) => ref.get()));
+  for (let index = 0; index < directReaderRefs.length; index += 1) {
+    if (!directReaderSnaps[index].exists) continue;
+    addDocRef(
+      readerArtifactRefs,
+      directReaderRefs[index],
+      collectionCounts,
+      directReaderRefs[index].path.split("/")[0]
+    );
+  }
+
+  const manifestRef = db.collection("reader_manifests").doc(bookId);
+  const manifestSnap = await manifestRef.get();
+  if (manifestSnap.exists) {
+    const manifestData = (manifestSnap.data() || {}) as Record<string, unknown>;
+    const nestedDocPaths = [
+      readOptionalString((manifestData.locationMap as Record<string, unknown> | undefined)?.docPath, "docPath", 512),
+      readOptionalString((manifestData.searchIndex as Record<string, unknown> | undefined)?.docPath, "docPath", 512),
+      readOptionalString(
+        (manifestData.highlightAnchors as Record<string, unknown> | undefined)?.docPath,
+        "docPath",
+        512
+      ),
+    ].filter((entry): entry is string => Boolean(entry));
+    for (const path of nestedDocPaths) {
+      const ref = docRefFromPath(path);
+      const snap = await ref.get();
+      if (snap.exists) {
+        addDocRef(readerArtifactRefs, ref, collectionCounts, ref.path.split("/")[0]);
+      }
+    }
+  }
+  cascade.readerArtifacts = readerArtifactRefs.size;
+
+  const coverRefs = [db.collection("cover_jobs").doc(bookId), db.collection("coverJobs").doc(bookId)];
+  const coverSnaps = await Promise.all(coverRefs.map((ref) => ref.get()));
+  for (let index = 0; index < coverRefs.length; index += 1) {
+    if (!coverSnaps[index].exists) continue;
+    addDocRef(coverJobRefs, coverRefs[index], collectionCounts, coverRefs[index].path.split("/")[0]);
+  }
+  cascade.coverJobs = coverJobRefs.size;
+
+  storagePrefixes.add(`books/${bookId}/covers/`);
+  storagePrefixes.add(`books/${bookId}/original/`);
+  storagePrefixes.add(`ebooks/${bookId}/`);
+  const exactAttachmentPaths = Array.from(exactStoragePaths).filter(
+    (path) =>
+      !path.startsWith(`books/${bookId}/covers/`) &&
+      !path.startsWith(`books/${bookId}/original/`) &&
+      !path.startsWith(`ebooks/${bookId}/`)
+  );
+  plan.deleteGraph.editionIds = editionIds.sort();
+  plan.deleteGraph.attachmentIds = Array.from(attachmentIds).sort();
+  plan.deleteGraph.storagePrefixes = Array.from(storagePrefixes).sort();
+  plan.deleteGraph.storagePaths = exactAttachmentPaths.sort();
+
+  const [coverStorageFiles, originalStorageFiles, ebookStorageFiles] = await Promise.all([
+    countStoragePrefix(`books/${bookId}/covers/`),
+    countStoragePrefix(`books/${bookId}/original/`),
+    countStoragePrefix(`ebooks/${bookId}/`),
+  ]);
+  storageCounts.coverStorageFiles = coverStorageFiles;
+  storageCounts.originalStorageFiles = originalStorageFiles;
+  storageCounts.ebookStorageFiles = ebookStorageFiles;
+  storageCounts.attachmentStorageFiles = exactAttachmentPaths.length;
+  cascade.coverStorageFiles = coverStorageFiles;
+  cascade.originalStorageFiles = originalStorageFiles;
+  cascade.ebookStorageFiles = ebookStorageFiles;
+  cascade.attachmentStorageFiles = exactAttachmentPaths.length;
+  plan.deleteGraph.touchedCollections = Object.keys(collectionCounts).sort();
+
+  return plan;
+}
+
+async function executeDeleteExecutionPlan(plan: DeleteExecutionPlan): Promise<void> {
+  const bookId = plan.resolution.resolvedBookId;
+  if (!bookId) {
+    return;
+  }
+
+  for (const shelfRef of plan.shelfRefs.values()) {
     const shelfSnap = await shelfRef.get();
     if (!shelfSnap.exists) continue;
     const shelfData = (shelfSnap.data() || {}) as Record<string, unknown>;
@@ -1295,80 +2325,96 @@ async function deleteCanonicalBookCascade(bookId: string): Promise<AdminDeleteCa
       },
       { merge: true }
     );
-    counts.shelfRefs += 1;
   }
 
-  for (const quoteDoc of quotesSnap.docs) {
-    await quoteDoc.ref.set(
+  for (const quoteRef of plan.quoteBookRefs.values()) {
+    await quoteRef.set(
       {
         bookId: null,
         updatedAt: FieldValue.serverTimestamp(),
       },
       { merge: true }
     );
-    counts.quoteLinks += 1;
   }
 
-  if (authorId) {
-    const authorRef = db.collection("authors").doc(authorId);
+  for (const quoteRef of plan.quoteSourceRefs.values()) {
+    await quoteRef.set(
+      {
+        sourceBookId: null,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+  }
+
+  for (const authorRef of plan.authorRefs.values()) {
     const authorSnap = await authorRef.get();
-    if (authorSnap.exists) {
-      const authorData = (authorSnap.data() || {}) as Record<string, unknown>;
-      const nextBookIds = Array.isArray(authorData.bookIds)
-        ? authorData.bookIds.filter((entry) => entry !== bookId)
-        : [];
-      await authorRef.set(
-        {
-          bookIds: nextBookIds,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-      counts.authorRefs += 1;
-    }
+    if (!authorSnap.exists) continue;
+    const authorData = (authorSnap.data() || {}) as Record<string, unknown>;
+    const nextBookIds = Array.isArray(authorData.bookIds)
+      ? authorData.bookIds.filter((entry) => entry !== bookId)
+      : [];
+    await authorRef.set(
+      {
+        bookIds: nextBookIds,
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
   }
 
-  const coverJobRefs = [
-    db.collection("cover_jobs").doc(bookId),
-    db.collection("coverJobs").doc(bookId),
+  const deleteRefs = [
+    ...plan.reviewRefs.values(),
+    ...plan.ratingRefs.values(),
+    ...plan.otherSubcollectionRefs.values(),
+    ...plan.readerArtifactRefs.values(),
+    ...plan.userReviewRefs.values(),
+    ...plan.readingProgressRefs.values(),
+    ...plan.libraryRefs.values(),
+    ...plan.attachmentIntentRefs.values(),
+    ...plan.attachmentRefs.values(),
+    ...plan.identityRefs.values(),
+    ...plan.ingestionRefs.values(),
+    ...(plan.bookStatsRef ? [plan.bookStatsRef] : []),
+    ...plan.coverJobRefs.values(),
+    ...plan.editionRefs.values(),
+    ...(plan.bookRef && plan.bookSnap?.exists ? [plan.bookRef] : []),
   ];
-  for (const ref of coverJobRefs) {
-    const snap = await ref.get();
-    if (snap.exists) {
-      await ref.delete();
-      counts.coverJobs += 1;
-    }
+
+  for (const ref of deleteRefs) {
+    await ref.delete();
   }
 
-  for (const doc of editionsSnap.docs) {
-    await doc.ref.delete();
-    counts.editions += 1;
-  }
-  for (const doc of identitySnap.docs) {
-    await doc.ref.delete();
-    counts.bookIdentity += 1;
-  }
-  for (const doc of ingestionSnap.docs) {
-    await doc.ref.delete();
-    counts.bookIngestions += 1;
-  }
-  for (const doc of readingProgressSnap.docs) {
-    await doc.ref.delete();
-    counts.readingProgress += 1;
-  }
-  for (const doc of librarySnap.docs) {
-    await doc.ref.delete();
-    counts.userLibraryBooks += 1;
-  }
+  await Promise.all([
+    deleteStoragePrefix(`books/${bookId}/covers/`),
+    deleteStoragePrefix(`books/${bookId}/original/`),
+    deleteStoragePrefix(`ebooks/${bookId}/`),
+    deleteStoragePaths(plan.deleteGraph.storagePaths),
+  ]);
+}
 
-  await bookRef.delete();
-  counts.books += 1;
-  counts.coverStorageFiles += await deleteStoragePrefix(`books/${bookId}/covers/`);
+async function deleteCanonicalBookCascade(
+  inputId: string,
+  options?: { dryRun?: boolean }
+): Promise<AdminDeleteCanonicalBookResponse> {
+  const plan = await buildDeleteExecutionPlan(inputId);
+  const resolvedBookId = plan.resolution.resolvedBookId || readRequiredString(inputId, "bookId", 180);
+  const shouldDelete = options?.dryRun !== true && Boolean(plan.resolution.resolvedBookId);
+
+  if (shouldDelete) {
+    await executeDeleteExecutionPlan(plan);
+  }
 
   return {
-    bookId,
-    deleted: true,
-    cascade: counts,
+    bookId: resolvedBookId,
+    deleted: shouldDelete,
+    dryRun: options?.dryRun === true,
+    resolved: Boolean(plan.resolution.resolvedBookId),
+    inputType: plan.resolution.inputType,
+    collectionCounts: plan.collectionCounts,
+    storageCounts: plan.storageCounts,
+    deleteGraph: plan.deleteGraph,
+    cascade: plan.cascade,
   };
 }
 
@@ -1884,8 +2930,32 @@ export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) =
 
 export const adminDeleteCanonicalBook = onCall({ cors: true }, async (request) => {
   assertRoleFromClaims(request.auth, "superadmin");
-  const bookId = readRequiredString(request.data?.bookId, "bookId", 180);
-  return deleteCanonicalBookCascade(bookId);
+  const data = (request.data ?? {}) as AdminDeleteCanonicalBookInput;
+  const bookId = readRequiredString(data.bookId, "bookId", 180);
+  const dryRun = data.dryRun === true;
+  if (!dryRun && typeof data.confirmation === "string" && data.confirmation.trim().length > 0) {
+    const preview = await buildDeleteExecutionPlan(bookId);
+    if (!preview.resolution.resolvedBookId) {
+      return {
+        bookId,
+        deleted: false,
+        dryRun: false,
+        resolved: false,
+        inputType: preview.resolution.inputType,
+        collectionCounts: preview.collectionCounts,
+        storageCounts: preview.storageCounts,
+        deleteGraph: preview.deleteGraph,
+        cascade: preview.cascade,
+      };
+    }
+    if (data.confirmation.trim() !== preview.resolution.resolvedBookId) {
+      throw new HttpsError(
+        "failed-precondition",
+        `confirmation must equal the resolved canonical work id ${preview.resolution.resolvedBookId}.`
+      );
+    }
+  }
+  return deleteCanonicalBookCascade(bookId, { dryRun });
 });
 
 export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (request) => {
@@ -1963,15 +3033,28 @@ export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
     deletedCount += 1;
     cascade.books += result.cascade.books;
     cascade.editions += result.cascade.editions;
+    cascade.attachments += result.cascade.attachments;
+    cascade.attachmentUploadIntents += result.cascade.attachmentUploadIntents;
     cascade.bookIdentity += result.cascade.bookIdentity;
     cascade.bookIngestions += result.cascade.bookIngestions;
     cascade.coverJobs += result.cascade.coverJobs;
     cascade.readingProgress += result.cascade.readingProgress;
     cascade.userLibraryBooks += result.cascade.userLibraryBooks;
+    cascade.userReviews += result.cascade.userReviews;
+    cascade.bookStats += result.cascade.bookStats;
     cascade.shelfRefs += result.cascade.shelfRefs;
     cascade.quoteLinks += result.cascade.quoteLinks;
+    cascade.quoteSourceLinks += result.cascade.quoteSourceLinks;
     cascade.authorRefs += result.cascade.authorRefs;
+    cascade.reviews += result.cascade.reviews;
+    cascade.ratings += result.cascade.ratings;
+    cascade.readerArtifacts += result.cascade.readerArtifacts;
+    cascade.searchProjectionDocs += result.cascade.searchProjectionDocs;
     cascade.coverStorageFiles += result.cascade.coverStorageFiles;
+    cascade.originalStorageFiles += result.cascade.originalStorageFiles;
+    cascade.ebookStorageFiles += result.cascade.ebookStorageFiles;
+    cascade.attachmentStorageFiles += result.cascade.attachmentStorageFiles;
+    cascade.otherSubcollectionDocs += result.cascade.otherSubcollectionDocs;
   }
 
   return {
@@ -2016,13 +3099,46 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
       const search = await unifiedSearch(query, {
         limit: 10,
       });
-      const providerCandidate = selectStrongestBulkProviderCandidate({
+      let providerCandidate = selectStrongestBulkProviderCandidate({
         results: search.results,
         requestedTitle: entry.title,
         requestedAuthor: entry.author,
       });
 
+      if (providerCandidate?.source === "googleBooks") {
+        const openLibraryRetryCandidate = await retryOpenLibraryBulkProviderCandidate({
+          requestedTitle: entry.title,
+          requestedAuthor: entry.author,
+        });
+        if (openLibraryRetryCandidate) {
+          providerCandidate = openLibraryRetryCandidate;
+        }
+      }
+
       if (!providerCandidate) {
+        const canonicalReuse = await resolveExistingCanonicalByAuthorAndTitle({
+          title: entry.title,
+          author: entry.author,
+        });
+        if (canonicalReuse) {
+          const existingSource = asNonEmptyString(canonicalReuse.data.source);
+          results.push({
+            row: entry.row,
+            input: entry.input,
+            title: entry.title,
+            author: entry.author,
+            status: "existing",
+            canonicalBookId: canonicalReuse.bookId,
+            bookId: canonicalReuse.bookId,
+            editionId: asNonEmptyString(canonicalReuse.data.editionId) || undefined,
+            ...(existingSource === "googleBooks" || existingSource === "openLibrary"
+              ? { source: existingSource }
+              : {}),
+            message: `Reused canonical work ${canonicalReuse.bookId}; provider miss fell back to strict canonical authority reuse.`,
+          });
+          continue;
+        }
+
         results.push({
           row: entry.row,
           input: entry.input,
@@ -2050,6 +3166,13 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         continue;
       }
 
+      providerCandidate = await enrichGoogleWinnerWithOpenLibraryAliases({
+        selectedCandidate: providerCandidate,
+        requestedTitle: entry.title,
+        requestedAuthor: entry.author,
+        initialResults: Array.isArray(search.results) ? search.results : [],
+      });
+
       const candidateMatchedExisting = await resolveExistingCanonicalWorkForSeed({
         title: entry.title,
         author: entry.author,
@@ -2075,15 +3198,54 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         continue;
       }
 
+      const preparedRawBook = prepareBulkCandidateRawBook({
+        result: providerCandidate,
+        requestedTitle: entry.title,
+        requestedAuthor: entry.author,
+      });
+      if (!preparedRawBook) {
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "failed",
+          message: "Provider candidate could not be normalized into canonical seed input.",
+        });
+        continue;
+      }
+
+      const finalSurvivor = await resolveFinalCanonicalSurvivorBeforeCreate({
+        title: entry.title,
+        author: entry.author,
+        candidate: providerCandidate,
+        rawBook: preparedRawBook,
+      });
+      if (finalSurvivor) {
+        const existingSource = asNonEmptyString(finalSurvivor.data.source);
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "existing",
+          canonicalBookId: finalSurvivor.bookId,
+          bookId: finalSurvivor.bookId,
+          editionId: asNonEmptyString(finalSurvivor.data.editionId) || undefined,
+          ...(existingSource === "googleBooks" || existingSource === "openLibrary"
+            ? { source: existingSource }
+            : { source: providerSource }),
+          providerExternalId: providerCandidate.externalId,
+          message: `Reused canonical work ${finalSurvivor.bookId}; final survivor gate prevented duplicate canonical create.`,
+        });
+        continue;
+      }
+
       const ingestion = await ingestBookServerSide({
         uid: request.auth?.uid || "admin",
         source: providerSource,
         providerExternalId: providerCandidate.externalId,
-        rawBook: prepareBulkCandidateRawBook({
-          result: providerCandidate,
-          requestedTitle: entry.title,
-          requestedAuthor: entry.author,
-        }),
+        rawBook: preparedRawBook,
       });
 
       results.push({

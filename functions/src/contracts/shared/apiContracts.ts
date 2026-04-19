@@ -401,15 +401,43 @@ const adminDeleteCascadeSchema = z
   .object({
     books: z.number().int().nonnegative(),
     editions: z.number().int().nonnegative(),
+    attachments: z.number().int().nonnegative(),
+    attachmentUploadIntents: z.number().int().nonnegative(),
     bookIdentity: z.number().int().nonnegative(),
     bookIngestions: z.number().int().nonnegative(),
     coverJobs: z.number().int().nonnegative(),
     readingProgress: z.number().int().nonnegative(),
     userLibraryBooks: z.number().int().nonnegative(),
+    userReviews: z.number().int().nonnegative(),
+    bookStats: z.number().int().nonnegative(),
     shelfRefs: z.number().int().nonnegative(),
     quoteLinks: z.number().int().nonnegative(),
+    quoteSourceLinks: z.number().int().nonnegative(),
     authorRefs: z.number().int().nonnegative(),
+    reviews: z.number().int().nonnegative(),
+    ratings: z.number().int().nonnegative(),
+    readerArtifacts: z.number().int().nonnegative(),
+    searchProjectionDocs: z.number().int().nonnegative(),
     coverStorageFiles: z.number().int().nonnegative(),
+    originalStorageFiles: z.number().int().nonnegative(),
+    ebookStorageFiles: z.number().int().nonnegative(),
+    attachmentStorageFiles: z.number().int().nonnegative(),
+    otherSubcollectionDocs: z.number().int().nonnegative(),
+  })
+  .strict();
+
+const adminDeleteGraphSchema = z
+  .object({
+    inputId: z.string().min(1),
+    inputType: z.enum(["book", "edition", "unresolved"]),
+    resolvedBookId: z.string().min(1).nullable(),
+    resolvedEditionId: z.string().min(1).nullable(),
+    editionIds: z.array(z.string().min(1)),
+    attachmentIds: z.array(z.string().min(1)),
+    touchedCollections: z.array(z.string().min(1)),
+    storagePrefixes: z.array(z.string().min(1)),
+    storagePaths: z.array(z.string().min(1)),
+    searchProjectionSources: z.array(z.string().min(1)),
   })
   .strict();
 
@@ -2045,12 +2073,20 @@ export const apiContracts = {
       z
         .object({
           bookId: z.string().min(1).max(180),
+          dryRun: z.boolean().optional(),
+          confirmation: z.string().min(1).max(180).optional(),
         })
         .strict(),
       z
         .object({
           bookId: z.string().min(1),
           deleted: z.boolean(),
+          dryRun: z.boolean().optional(),
+          resolved: z.boolean().optional(),
+          inputType: z.enum(["book", "edition", "unresolved"]).optional(),
+          collectionCounts: z.record(z.string().min(1), z.number().int().nonnegative()).optional(),
+          storageCounts: z.record(z.string().min(1), z.number().int().nonnegative()).optional(),
+          deleteGraph: adminDeleteGraphSchema.optional(),
           cascade: adminDeleteCascadeSchema,
         })
         .strict(),
