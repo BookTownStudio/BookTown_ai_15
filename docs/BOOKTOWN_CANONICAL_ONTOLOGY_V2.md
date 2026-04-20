@@ -113,6 +113,8 @@ Wikidata is active only as weighted author evidence: it may enrich an already-su
 
 WorldCat is the first active weighted book evidence provider: it may enrich an already-surviving canonical book with subordinate bibliographic evidence such as `oclcNumber`, missing publication year, edition-level publisher, language, and format support, but it may not create, merge, or override canonical work identity.
 
+Canonical book documents may carry an internal `provenance.fieldConfidence` ledger for selected non-identity fields. This is invisible authority memory that records why a surviving value currently holds and which weaker providers support the same value; it does not alter authority decisions or read behavior.
+
 ---
 
 # 2. Edition

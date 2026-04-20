@@ -75,8 +75,8 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
   const uid = user?.uid;
 
   const interactionKey = useMemo(
-    () => ['social', 'interactionSnapshot', uid || 'guest', postId || 'none'],
-    [postId, uid]
+  () => ['social', 'interactionSnapshot', uid || 'guest', postId || 'none'] as const,
+  [postId, uid]
   );
   const seedSnapshot = useMemo(
     () => (post ? buildSnapshotFromPost(post) : buildEmptySnapshot()),

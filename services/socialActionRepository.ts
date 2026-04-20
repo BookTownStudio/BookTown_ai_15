@@ -3,6 +3,8 @@ import {
     setDoc,
     deleteDoc,
     getDoc,
+    increment,
+    runTransaction,
     serverTimestamp,
     collection,
     Firestore,
@@ -83,6 +85,13 @@ function normalizeBookmarkType(type: string): BookmarkType {
     return 'post';
 }
 
+function readNonNegativeBookmarkCount(source: unknown): number {
+    if (typeof source !== 'number' || !Number.isFinite(source)) {
+        return 0;
+    }
+    return Math.max(0, Math.trunc(source));
+}
+
 class UnifiedSocialActionRepository implements SocialActionRepository {
     async like(postId: string, userId: string) {
         const db = requireDb();
@@ -135,18 +144,50 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
         const bookmarkCollection = bookmarkCollectionForType(entityType);
+        const bookmarkRef = doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId);
 
-        const ref = doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId);
-        await setDoc(
-            ref,
-            {
-                type: entityType,
-                entityId: normalizedEntityId,
-                timestamp: serverTimestamp(),
-                version: 1,
-            },
-            { merge: true }
-        );
+        await runTransaction(db, async (transaction) => {
+            const bookmarkSnap = await transaction.get(bookmarkRef);
+            if (bookmarkSnap.exists()) {
+                return;
+            }
+
+            transaction.set(
+                bookmarkRef,
+                {
+                    type: entityType,
+                    entityId: normalizedEntityId,
+                    timestamp: serverTimestamp(),
+                    version: 1,
+                },
+                { merge: true }
+            );
+
+            if (entityType !== 'post') {
+                return;
+            }
+
+            const postRef = doc(db, 'posts', normalizedEntityId);
+            const postSnap = await transaction.get(postRef);
+
+            if (!postSnap.exists()) {
+                throw new Error('POST_NOT_FOUND');
+            }
+
+            const postData = postSnap.data() as Record<string, unknown>;
+            const counters =
+                postData.counters && typeof postData.counters === 'object'
+                    ? (postData.counters as Record<string, unknown>)
+                    : {};
+            const currentBookmarks = readNonNegativeBookmarkCount(
+                postData.bookmarksCount ?? counters.bookmarks
+            );
+
+            transaction.update(postRef, {
+                'counters.bookmarks': increment(1),
+                bookmarksCount: currentBookmarks + 1,
+            });
+        });
     }
 
     async unbookmark(
@@ -158,8 +199,48 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
         const normalizedEntityId = requireId(entityId, 'entityId');
         const normalizedUserId = requireId(userId, 'userId');
         const bookmarkCollection = bookmarkCollectionForType(entityType);
+        const bookmarkRef = doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId);
 
-        await deleteDoc(doc(db, 'users', normalizedUserId, bookmarkCollection, normalizedEntityId));
+        await runTransaction(db, async (transaction) => {
+            const bookmarkSnap = await transaction.get(bookmarkRef);
+            if (!bookmarkSnap.exists()) {
+                return;
+            }
+
+            transaction.delete(bookmarkRef);
+
+            if (entityType !== 'post') {
+                return;
+            }
+
+            const postRef = doc(db, 'posts', normalizedEntityId);
+            const postSnap = await transaction.get(postRef);
+            if (!postSnap.exists()) {
+                return;
+            }
+
+            const postData = postSnap.data() as Record<string, unknown>;
+            const counters =
+                postData.counters && typeof postData.counters === 'object'
+                    ? (postData.counters as Record<string, unknown>)
+                    : {};
+            const currentBookmarks = readNonNegativeBookmarkCount(
+                postData.bookmarksCount ?? counters.bookmarks
+            );
+
+            if (currentBookmarks <= 0) {
+                transaction.update(postRef, {
+                    'counters.bookmarks': 0,
+                    bookmarksCount: 0,
+                });
+                return;
+            }
+
+            transaction.update(postRef, {
+                'counters.bookmarks': increment(-1),
+                bookmarksCount: currentBookmarks - 1,
+            });
+        });
     }
 
     async hasBookmarked(

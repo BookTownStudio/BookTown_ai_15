@@ -101,6 +101,12 @@ Every canonical field must preserve authority evidence including:
 
 No ingestion may overwrite locked canonical fields automatically.
 
+Book documents may also carry internal provenance memory under `provenance.fieldConfidence`.
+
+This ledger is invisible operational memory only: it records why the current surviving book-layer field value holds, which provider currently anchors it, and which weaker providers support the same value.
+
+The ledger does not change ranking, authority choice, merge behavior, or read paths.
+
 ---
 
 ## Universal Author Lock

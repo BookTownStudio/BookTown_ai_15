@@ -46,6 +46,13 @@ type MetadataAuthorityField = "cover" | "description";
 type MetadataAuthoritySource = "manualAdmin" | "googleBooks" | "openLibrary";
 type AuthorityConfidence = "high" | "medium" | "low";
 type AcceptedAuthority = "manualAuthority" | "openLibrary" | "wikidata" | "googleBooks";
+type FieldConfidenceLevel = "restricted" | "direct" | "weighted";
+type FieldConfidenceField = "publicationYear" | "publisher" | "language" | "oclcNumber";
+type FieldConfidenceRecord = {
+  source: string;
+  confidence: FieldConfidenceLevel;
+  supportingSources: string[];
+};
 type CanonicalFieldName =
   | "canonicalTitle"
   | "canonicalAuthorIds"
@@ -754,6 +761,152 @@ function normalizeAuthorityConfidence(value: unknown): AuthorityConfidence | nul
     return value;
   }
   return null;
+}
+
+function normalizeFieldConfidenceLevel(value: unknown): FieldConfidenceLevel | null {
+  if (value === "restricted" || value === "direct" || value === "weighted") {
+    return value;
+  }
+  return null;
+}
+
+function resolveFieldConfidenceLevel(
+  source: LiteraryAuthoritySource
+): FieldConfidenceLevel | null {
+  if (source === "loc") {
+    return "restricted";
+  }
+  if (source === "openLibrary" || source === "googleBooks") {
+    return "direct";
+  }
+  if (source === "worldcat") {
+    return "weighted";
+  }
+  return null;
+}
+
+function getFieldConfidenceRank(value: FieldConfidenceLevel): number {
+  if (value === "restricted") return 3;
+  if (value === "direct") return 2;
+  return 1;
+}
+
+function normalizeSupportingSources(value: unknown): string[] {
+  return uniqueStrings(asStringArray(value), 8);
+}
+
+function readExistingFieldConfidenceRecord(params: {
+  existingBook: Record<string, unknown> | null;
+  field: FieldConfidenceField;
+}): FieldConfidenceRecord | null {
+  const root = asRecord(asRecord(params.existingBook?.provenance)?.fieldConfidence);
+  const raw = asRecord(root?.[params.field]);
+  const source = asNonEmptyString(raw?.source);
+  const confidence = normalizeFieldConfidenceLevel(raw?.confidence);
+
+  if (!source || !confidence) {
+    return null;
+  }
+
+  return {
+    source,
+    confidence,
+    supportingSources: normalizeSupportingSources(raw?.supportingSources),
+  };
+}
+
+function resolveUpdatedFieldConfidenceRecord(params: {
+  existingBook: Record<string, unknown> | null;
+  field: FieldConfidenceField;
+  source: LiteraryAuthoritySource;
+  previousValue: unknown;
+  finalValue: unknown;
+  incomingValue: unknown;
+}): FieldConfidenceRecord | null {
+  const incomingConfidence = resolveFieldConfidenceLevel(params.source);
+  if (!incomingConfidence) {
+    return null;
+  }
+  if (!hasCanonicalFieldValue(params.finalValue) || !hasCanonicalFieldValue(params.incomingValue)) {
+    return null;
+  }
+  if (!canonicalFieldValuesEqual(params.finalValue, params.incomingValue)) {
+    return null;
+  }
+
+  const existingRecord = readExistingFieldConfidenceRecord({
+    existingBook: params.existingBook,
+    field: params.field,
+  });
+
+  if (!existingRecord) {
+    return {
+      source: params.source,
+      confidence: incomingConfidence,
+      supportingSources: [],
+    };
+  }
+
+  const incomingRank = getFieldConfidenceRank(incomingConfidence);
+  const existingRank = getFieldConfidenceRank(existingRecord.confidence);
+  const sameValueAsBefore = canonicalFieldValuesEqual(params.previousValue, params.finalValue);
+
+  if (incomingRank > existingRank) {
+    return {
+      source: params.source,
+      confidence: incomingConfidence,
+      supportingSources: sameValueAsBefore
+        ? normalizeSupportingSources([
+            ...existingRecord.supportingSources,
+            existingRecord.source,
+          ])
+        : [],
+    };
+  }
+
+  if (params.source === existingRecord.source) {
+    return existingRecord;
+  }
+
+  return {
+    ...existingRecord,
+    supportingSources: normalizeSupportingSources([
+      ...existingRecord.supportingSources,
+      params.source,
+    ]),
+  };
+}
+
+function buildFieldConfidencePatch(params: {
+  existingBook: Record<string, unknown> | null;
+  entries: Array<{
+    field: FieldConfidenceField;
+    source: LiteraryAuthoritySource;
+    previousValue: unknown;
+    finalValue: unknown;
+    incomingValue: unknown;
+  }>;
+}): Record<string, unknown> | null {
+  const patch: Record<string, unknown> = {};
+
+  for (const entry of params.entries) {
+    const record = resolveUpdatedFieldConfidenceRecord({
+      existingBook: params.existingBook,
+      field: entry.field,
+      source: entry.source,
+      previousValue: entry.previousValue,
+      finalValue: entry.finalValue,
+      incomingValue: entry.incomingValue,
+    });
+
+    if (!record) {
+      continue;
+    }
+
+    patch[entry.field] = record;
+  }
+
+  return Object.keys(patch).length > 0 ? patch : null;
 }
 
 function resolveAcceptedAuthority(source: string): AcceptedAuthority {
@@ -1588,8 +1741,8 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     );
   }
 
+  const editionPatch: Record<string, unknown> = {};
   if (editionRef && existingEdition) {
-    const editionPatch: Record<string, unknown> = {};
     if (
       !isFinitePublicationYearValue(existingEdition.publicationYear) &&
       isFinitePublicationYearValue(publicationYear)
@@ -1637,6 +1790,60 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     }
   }
 
+  const fieldConfidencePatch = buildFieldConfidencePatch({
+    existingBook,
+    entries: [
+      {
+        field: "publicationYear",
+        source: params.source,
+        previousValue: existingBook.publicationYear,
+        finalValue: mergedBook.publicationYear,
+        incomingValue: publicationYear,
+      },
+      {
+        field: "language",
+        source: params.source,
+        previousValue: existingBook.language,
+        finalValue: mergedBook.language,
+        incomingValue: language,
+      },
+      {
+        field: "oclcNumber",
+        source: params.source,
+        previousValue: existingBook.oclcNumber,
+        finalValue: mergedBook.oclcNumber,
+        incomingValue: oclcNumber,
+      },
+      {
+        field: "publisher",
+        source: params.source,
+        previousValue: existingEdition?.publisher,
+        finalValue:
+          (editionRef && existingEdition ? { ...existingEdition, ...editionPatch } : existingEdition)
+            ?.publisher,
+        incomingValue: publisher,
+      },
+    ],
+  });
+
+  if (fieldConfidencePatch) {
+    const existingProvenance = asRecord(existingBook.provenance);
+    params.tx.set(
+      bookRef,
+      {
+        provenance: {
+          ...(existingProvenance || {}),
+          fieldConfidence: {
+            ...(asRecord(existingProvenance?.fieldConfidence) || {}),
+            ...fieldConfidencePatch,
+          },
+        },
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  }
+
   if (isWeightedEvidenceProvider(params.source)) {
     const existingProvenance = asRecord(existingBook.provenance);
     const existingWeightedEvidence = asRecord(existingProvenance?.weightedBookEvidence);
@@ -1646,7 +1853,6 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
       bookRef,
       {
         provenance: {
-          ...(existingProvenance || {}),
           weightedBookEvidence: {
             ...(existingWeightedEvidence || {}),
             [params.source]: {
@@ -2087,12 +2293,47 @@ export async function materializeBookAuthorityInTransaction(
     trust: canonicalFieldTrust.originalLanguage,
     existing: asRecord(existingBook?.originalLanguageAuthority),
   });
+  const existingProvenance = asRecord(existingBook?.provenance);
   const existingCanonicalRelations = asRecord(existingBook?.canonicalRelations);
   const primaryEditionId =
     asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
     asNonEmptyString(existingBook?.editionId) ||
     editionId ||
     null;
+  const directPublisher = resolvePublisher(rawBook);
+  const fieldConfidencePatch = buildFieldConfidencePatch({
+    existingBook,
+    entries: [
+      {
+        field: "publicationYear",
+        source: params.source,
+        previousValue: existingBook?.publicationYear,
+        finalValue: publicationYear,
+        incomingValue: resolvePublicationYear(rawBook),
+      },
+      {
+        field: "language",
+        source: params.source,
+        previousValue: existingBook?.language,
+        finalValue: language,
+        incomingValue: extractLanguage(rawBook),
+      },
+      {
+        field: "oclcNumber",
+        source: params.source,
+        previousValue: existingBook?.oclcNumber,
+        finalValue: asNonEmptyString(existingBook?.oclcNumber),
+        incomingValue: asNonEmptyString(rawBook.oclcNumber),
+      },
+      {
+        field: "publisher",
+        source: params.source,
+        previousValue: existingEdition?.publisher,
+        finalValue: directPublisher,
+        incomingValue: directPublisher,
+      },
+    ],
+  });
 
   const bookBase: Record<string, unknown> = {
     id: bookId,
@@ -2183,6 +2424,17 @@ export async function materializeBookAuthorityInTransaction(
       small: asNonEmptyString(asRecord(existingBook?.cover)?.small),
     },
     coverUrl: coverDecision.value,
+    ...(fieldConfidencePatch
+      ? {
+          provenance: {
+            ...(existingProvenance || {}),
+            fieldConfidence: {
+              ...(asRecord(existingProvenance?.fieldConfidence) || {}),
+              ...fieldConfidencePatch,
+            },
+          },
+        }
+      : {}),
     createdAt: existingBook?.createdAt || now,
     updatedAt: now,
   };

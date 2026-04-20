@@ -3445,6 +3445,310 @@ describe("adminCreateCanonicalBook", () => {
     expect(edition?.format).toBe("hardcover");
   });
 
+  it("initializes fieldConfidence from restricted book evidence without changing authority behavior", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/ledger-loc-1",
+      {
+        bookId: "ledger-loc-1",
+        canonicalBookId: "ledger-loc-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "franz kafka::the trial",
+        canonicalTitle: "The Trial",
+        title: "The Trial",
+        titleEn: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        authorNamesNormalized: ["franz kafka"],
+        editionId: "ledger-loc-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "ledger-loc-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/ledger-loc-edition-1",
+      {
+        editionId: "ledger-loc-edition-1",
+        bookId: "ledger-loc-1",
+        workId: "ledger-loc-1",
+        title: "The Trial",
+        authors: ["Franz Kafka"],
+        authorEn: "Franz Kafka",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "loc" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "ledger-loc-1",
+      providerExternalId: "loc-ledger-1",
+      rawBook: {
+        title: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        language: "de",
+        publicationYear: 1925,
+      },
+    });
+
+    const book = getDoc("books/ledger-loc-1");
+
+    expect(book?.publicationYear).toBe(1925);
+    expect(book?.language).toBe("de");
+    expect(book?.provenance).toMatchObject({
+      fieldConfidence: {
+        publicationYear: {
+          source: "loc",
+          confidence: "restricted",
+          supportingSources: [],
+        },
+        language: {
+          source: "loc",
+          confidence: "restricted",
+          supportingSources: [],
+        },
+      },
+    });
+  });
+
+  it("keeps restricted ledger source while direct source adds support for the same value", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/ledger-direct-support-1",
+      {
+        bookId: "ledger-direct-support-1",
+        canonicalBookId: "ledger-direct-support-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "franz kafka::the trial",
+        canonicalTitle: "The Trial",
+        title: "The Trial",
+        titleEn: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        authorNamesNormalized: ["franz kafka"],
+        publicationYear: 1925,
+        provenance: {
+          fieldConfidence: {
+            publicationYear: {
+              source: "loc",
+              confidence: "restricted",
+              supportingSources: [],
+            },
+          },
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "googleBooks" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "ledger-direct-support-1",
+      providerExternalId: "gb-ledger-1",
+      rawBook: {
+        id: "gb-ledger-1",
+        externalId: "gb-ledger-1",
+        title: "The Trial",
+        author: "Franz Kafka",
+        authorEn: "Franz Kafka",
+        authors: ["Franz Kafka"],
+        publicationYear: 1925,
+        language: "de",
+      },
+    });
+
+    const book = getDoc("books/ledger-direct-support-1");
+
+    expect(book?.provenance).toMatchObject({
+      fieldConfidence: {
+        publicationYear: {
+          source: "loc",
+          confidence: "restricted",
+          supportingSources: ["googleBooks"],
+        },
+      },
+    });
+  });
+
+  it("adds weighted supportingSources only when the weighted value matches the surviving field", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/ledger-weighted-support-1",
+      {
+        bookId: "ledger-weighted-support-1",
+        canonicalBookId: "ledger-weighted-support-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "george orwell::nineteen eighty four",
+        canonicalTitle: "Nineteen Eighty-Four",
+        title: "Nineteen Eighty-Four",
+        titleEn: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        authorNamesNormalized: ["george orwell"],
+        publicationYear: 1949,
+        provenance: {
+          fieldConfidence: {
+            publicationYear: {
+              source: "openLibrary",
+              confidence: "direct",
+              supportingSources: [],
+            },
+          },
+        },
+        editionId: "ledger-weighted-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "ledger-weighted-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/ledger-weighted-edition-1",
+      {
+        editionId: "ledger-weighted-edition-1",
+        bookId: "ledger-weighted-support-1",
+        workId: "ledger-weighted-support-1",
+        title: "Nineteen Eighty-Four",
+        authors: ["George Orwell"],
+        authorEn: "George Orwell",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "worldcat" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "ledger-weighted-support-1",
+      providerExternalId: "wc-ledger-1",
+      rawBook: {
+        title: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        publicationYear: 1949,
+      },
+    });
+
+    const book = getDoc("books/ledger-weighted-support-1");
+
+    expect(book?.provenance).toMatchObject({
+      fieldConfidence: {
+        publicationYear: {
+          source: "openLibrary",
+          confidence: "direct",
+          supportingSources: ["worldcat"],
+        },
+      },
+    });
+  });
+
+  it("leaves stronger fieldConfidence untouched when weaker evidence conflicts", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/ledger-weighted-conflict-1",
+      {
+        bookId: "ledger-weighted-conflict-1",
+        canonicalBookId: "ledger-weighted-conflict-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "george orwell::nineteen eighty four",
+        canonicalTitle: "Nineteen Eighty-Four",
+        title: "Nineteen Eighty-Four",
+        titleEn: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        authorNamesNormalized: ["george orwell"],
+        publicationYear: 1949,
+        provenance: {
+          fieldConfidence: {
+            publicationYear: {
+              source: "openLibrary",
+              confidence: "direct",
+              supportingSources: [],
+            },
+          },
+        },
+        editionId: "ledger-weighted-conflict-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "ledger-weighted-conflict-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/ledger-weighted-conflict-edition-1",
+      {
+        editionId: "ledger-weighted-conflict-edition-1",
+        bookId: "ledger-weighted-conflict-1",
+        workId: "ledger-weighted-conflict-1",
+        title: "Nineteen Eighty-Four",
+        authors: ["George Orwell"],
+        authorEn: "George Orwell",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "worldcat" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "ledger-weighted-conflict-1",
+      providerExternalId: "wc-ledger-2",
+      rawBook: {
+        title: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        publicationYear: 1950,
+      },
+    });
+
+    const book = getDoc("books/ledger-weighted-conflict-1");
+
+    expect(book?.publicationYear).toBe(1949);
+    expect(book?.provenance).toMatchObject({
+      fieldConfidence: {
+        publicationYear: {
+          source: "openLibrary",
+          confidence: "direct",
+          supportingSources: [],
+        },
+      },
+    });
+  });
+
   it("blocks VIAF from entering the canonical book write path", async () => {
     const materializeBookAuthority = await getMaterializeBookAuthorityFn();
 
