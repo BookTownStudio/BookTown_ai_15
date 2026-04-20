@@ -5,6 +5,7 @@ import { useI18n } from '../../store/i18n.tsx';
 import { Post } from '../../types/entities.ts';
 import { useToast } from '../../store/toast.tsx';
 import { callCallableEndpoint } from '../callable.ts';
+import { queryKeys } from '../queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
 import { socialActionRepository } from '../../services/socialActionRepository.ts';
 
@@ -142,7 +143,7 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     onMutate: async () => {
       if (isGuest || !uid || isDeleted) return;
 
-      await queryClient.cancelQueries(interactionKey);
+      await queryClient.cancelQueries({ queryKey: interactionKey });
       const previousSnapshot = queryClient.getQueryData<PostInteractionSnapshot>(interactionKey);
 
       if (previousSnapshot) {
@@ -187,7 +188,7 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     onMutate: async () => {
       if (isGuest || !uid || isDeleted) return;
 
-      await queryClient.cancelQueries(interactionKey);
+      await queryClient.cancelQueries({ queryKey: interactionKey });
       const previousSnapshot = queryClient.getQueryData<PostInteractionSnapshot>(interactionKey);
 
       if (previousSnapshot) {
@@ -222,60 +223,77 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
   });
 
   const bookmarkMutation = useMutation({
-    mutationFn: async (id: string) => {
-      if (!uid || isGuest) throw new Error('AUTH_REQUIRED');
+  mutationFn: async (id: string) => {
+    if (!uid || isGuest) throw new Error('AUTH_REQUIRED');
 
-      const current = queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
-      if (current.status.bookmark) {
-        await socialActionRepository.unbookmark(id, uid, 'post');
-      } else {
-        await socialActionRepository.bookmark(id, uid, 'post');
-      }
-    },
-    onMutate: async () => {
-      if (!uid || isGuest || isDeleted) return;
+    const current =
+      queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
 
-      await queryClient.cancelQueries(interactionKey);
-      const previousSnapshot =
-        queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
-      const isNowBookmarked = !previousSnapshot.status.bookmark;
+    if (current.status.bookmark) {
+      await socialActionRepository.unbookmark(id, uid, 'post');
+    } else {
+      await socialActionRepository.bookmark(id, uid, 'post');
+    }
+  },
 
-      queryClient.setQueryData<PostInteractionSnapshot>(interactionKey, {
-        ...previousSnapshot,
-        status: {
-          ...previousSnapshot.status,
-          bookmark: isNowBookmarked,
-        },
-        counts: {
-          ...previousSnapshot.counts,
-          bookmarksCount: Math.max(
-            0,
-            previousSnapshot.counts.bookmarksCount + (isNowBookmarked ? 1 : -1)
-          ),
-        },
+  onMutate: async () => {
+    if (!uid || isGuest || isDeleted) return;
+
+    await queryClient.cancelQueries({ queryKey: interactionKey });
+
+    const previousSnapshot =
+      queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
+
+    const isNowBookmarked = !previousSnapshot.status.bookmark;
+
+    queryClient.setQueryData<PostInteractionSnapshot>(interactionKey, {
+      ...previousSnapshot,
+      status: {
+        ...previousSnapshot.status,
+        bookmark: isNowBookmarked,
+      },
+      counts: {
+        ...previousSnapshot.counts,
+        bookmarksCount: Math.max(
+          0,
+          previousSnapshot.counts.bookmarksCount + (isNowBookmarked ? 1 : -1)
+        ),
+      },
+    });
+
+    return { previousSnapshot };
+  },
+
+  onSuccess: async () => {
+    if (uid) {
+      await queryClient.invalidateQueries({
+        queryKey: queryKeys.user.bookmarks(uid) as unknown as any[],
       });
+    }
+  },
 
-      return { previousSnapshot };
-    },
-    onError: (_err, _id, context: any) => {
-      if (context?.previousSnapshot) {
-        queryClient.setQueryData(interactionKey, context.previousSnapshot);
-      }
-      showToast(lang === 'en' ? 'Failed to update bookmark.' : 'فشل تحديث الحفظ.');
-    },
-  });
+  onError: (_err, _id, context: any) => {
+    if (context?.previousSnapshot) {
+      queryClient.setQueryData(interactionKey, context.previousSnapshot);
+    }
+
+    showToast(lang === 'en' ? 'Failed to update bookmark.' : 'فشل تحديث الحفظ.');
+  },
+});
 
   const snapshot = interactionSnapshot.data || seedSnapshot;
 
-  return {
+    return {
     isLiked: snapshot.status.like,
     isBookmarked: snapshot.status.bookmark,
     isReposted: snapshot.status.repost,
     counts: snapshot.counts,
     isLoading: interactionSnapshot.isLoading,
-    isRepostTransitioning: repostMutation.isLoading,
+    isRepostTransitioning: repostMutation.isPending,
     isTransitioning:
-      likeMutation.isLoading || repostMutation.isLoading || bookmarkMutation.isLoading,
+      likeMutation.isPending ||
+      repostMutation.isPending ||
+      bookmarkMutation.isPending,
     actions: {
       toggleLike: () => {
         if (isGuest) return loginPrompt();
