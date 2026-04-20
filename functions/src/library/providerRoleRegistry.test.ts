@@ -3,9 +3,11 @@ import { describe, expect, it } from "vitest";
 import {
   PROVIDER_ROLE_REGISTRY,
   assertProviderCanEnterCanonicalBookWritePath,
+  canProviderAffectAuthorLayer,
   canProviderEnrichExistingCanonicalBook,
   canProviderEnterCanonicalBookWritePath,
   canProviderServeTrustedReadableSource,
+  getProviderAllowedAuthorFields,
   getProviderAllowedAuthorityFields,
   getProviderRole,
 } from "./providerRoleRegistry";
@@ -56,6 +58,46 @@ describe("providerRoleRegistry", () => {
       "publicationYear",
       "publisher",
       "languageEvidence",
+    ]);
+  });
+
+  it("enables WorldCat only for weighted subordinate book evidence fields", () => {
+    expect(canProviderEnterCanonicalBookWritePath("worldcat")).toBe(false);
+    expect(canProviderEnrichExistingCanonicalBook("worldcat")).toBe(true);
+    expect(getProviderAllowedAuthorityFields("worldcat")).toEqual([
+      "oclcNumber",
+      "editionCountSupport",
+      "publicationYear",
+      "publisher",
+      "languageEvidence",
+      "formatEvidence",
+    ]);
+  });
+
+  it("enables VIAF only for gated author-layer authority fields", () => {
+    expect(canProviderEnterCanonicalBookWritePath("viaf")).toBe(false);
+    expect(canProviderAffectAuthorLayer("viaf")).toBe(true);
+    expect(getProviderAllowedAuthorFields("viaf")).toEqual([
+      "viafId",
+      "canonicalAuthorAliases",
+      "normalizedMultilingualNames",
+      "birthYear",
+      "deathYear",
+      "authorityConfidenceSupport",
+    ]);
+  });
+
+  it("enables Wikidata only for weighted author enrichment fields", () => {
+    expect(canProviderEnterCanonicalBookWritePath("wikidata")).toBe(false);
+    expect(canProviderAffectAuthorLayer("wikidata")).toBe(true);
+    expect(getProviderAllowedAuthorFields("wikidata")).toEqual([
+      "wikidataQid",
+      "weightedAuthorAliases",
+      "normalizedMultilingualNames",
+      "birthYear",
+      "deathYear",
+      "externalAuthorityLinks",
+      "authorityConfidenceSupport",
     ]);
   });
 });

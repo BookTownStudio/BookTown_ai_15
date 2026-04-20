@@ -12,10 +12,20 @@ import {
   buildCanonicalAuthorKey,
   normalizeAuthorYear,
 } from "../persistence/canonicalAuthorKey";
+import {
+  assertProviderCanAffectAuthorLayer,
+  getProviderAllowedAuthorFields,
+  isRegisteredProvider,
+} from "../providerRoleRegistry";
 
 const db = admin.firestore();
 
-export type SupportedAuthorSource = "booktown" | "openLibrary" | "wikidata" | "googleBooks";
+export type SupportedAuthorSource =
+  | "booktown"
+  | "openLibrary"
+  | "wikidata"
+  | "googleBooks"
+  | "viaf";
 
 type AuthorIdentityType =
   | "canonical"
@@ -371,6 +381,92 @@ function buildLifespan(birthYear: string, deathYear: string): string {
   return "";
 }
 
+function extractViafAuthorityId(
+  rawAuthor: Record<string, unknown>,
+  providerExternalId: string
+): string {
+  return (
+    providerExternalId ||
+    asNonEmptyString(rawAuthor.viaf) ||
+    asNonEmptyString(asRecord(rawAuthor.authorityLinks)?.viaf) ||
+    asNonEmptyString(asRecord(rawAuthor.remoteIds)?.viaf) ||
+    asNonEmptyString(asRecord(rawAuthor.remote_ids)?.viaf) ||
+    ""
+  );
+}
+
+function extractIncomingNormalizedAuthorNames(params: {
+  rawAuthor: Record<string, unknown>;
+  nameEn: string;
+  nameAr: string;
+  aliases: string[];
+}): string[] {
+  return uniqueStrings([
+    normalizeSearchText(params.nameEn),
+    normalizeSearchText(params.nameAr),
+    normalizeSearchText(asNonEmptyString(params.rawAuthor.name)),
+    normalizeSearchText(asNonEmptyString(params.rawAuthor.personal_name)),
+    ...params.aliases.map((entry) => normalizeSearchText(entry)),
+  ]).filter(Boolean);
+}
+
+function extractExistingNormalizedAuthorNames(
+  author: Record<string, unknown> | null
+): string[] {
+  if (!author) {
+    return [];
+  }
+
+  return uniqueStrings([
+    asNonEmptyString(author.normalizedName),
+    asNonEmptyString(author.nameEnNormalized),
+    asNonEmptyString(author.nameArNormalized),
+    normalizeSearchText(asNonEmptyString(author.canonicalName)),
+    normalizeSearchText(asNonEmptyString(author.displayName)),
+    normalizeSearchText(asNonEmptyString(author.nameEn)),
+    normalizeSearchText(asNonEmptyString(author.nameAr)),
+    ...asStringArray(author.aliasesNormalized),
+    ...asStringArray(author.aliases).map((entry) => normalizeSearchText(entry)),
+  ]).filter(Boolean);
+}
+
+function haveExactAuthorNameOverlap(left: string[], right: string[]): boolean {
+  if (left.length === 0 || right.length === 0) {
+    return false;
+  }
+
+  const rightSet = new Set(right);
+  return left.some((value) => rightSet.has(value));
+}
+
+function areAuthorYearsCompatible(params: {
+  incomingBirthYear: string;
+  incomingDeathYear: string;
+  existingBirthYear: unknown;
+  existingDeathYear: unknown;
+}): boolean {
+  const existingBirthYear = asNonEmptyString(params.existingBirthYear);
+  const existingDeathYear = asNonEmptyString(params.existingDeathYear);
+
+  if (
+    params.incomingBirthYear &&
+    existingBirthYear &&
+    params.incomingBirthYear !== existingBirthYear
+  ) {
+    return false;
+  }
+
+  if (
+    params.incomingDeathYear &&
+    existingDeathYear &&
+    params.incomingDeathYear !== existingDeathYear
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
 function normalizeDateOnly(value: unknown): string {
   if (typeof value !== "string") {
     return "";
@@ -466,6 +562,7 @@ function buildAdminIdentityCandidates(params: {
       ...(params.openLibraryId ? { openLibrary: params.openLibraryId } : {}),
       ...(params.wikidataId ? { wikidata: params.wikidataId } : {}),
     },
+    viaf: "",
   });
 
   if (params.slug) {
@@ -499,6 +596,7 @@ function buildAdminIdentityCandidates(params: {
 function buildIdentityCandidates(params: {
   canonicalKey: string;
   sourceIds: Partial<Record<SupportedAuthorSource, string>>;
+  viaf: string;
 }): Array<{
   key: string;
   type: AuthorIdentityType;
@@ -536,6 +634,15 @@ function buildIdentityCandidates(params: {
       type: "provider",
       value: `${provider}:${externalId}`,
       precedence: 200 + index,
+    });
+  }
+
+  if (params.viaf) {
+    entries.push({
+      key: `authority:viaf:${params.viaf}`,
+      type: "authority",
+      value: `viaf:${params.viaf}`,
+      precedence: 300,
     });
   }
 
@@ -597,9 +704,21 @@ export async function materializeCanonicalAuthorInTransaction(params: {
   providerExternalId?: string | null;
   rawAuthor: Record<string, unknown>;
 }): Promise<MaterializeCanonicalAuthorResult> {
+  if (isRegisteredProvider(params.source)) {
+    assertProviderCanAffectAuthorLayer(params.source);
+  }
+
   const { nameEn, nameAr, aliases } = extractAuthorNames(params.rawAuthor);
   const { bioEn, bioAr } = extractAuthorBio(params.rawAuthor);
   const { birthYear, deathYear } = extractAuthorYears(params.rawAuthor);
+  const isViafSource = params.source === "viaf";
+  const isWikidataSource = params.source === "wikidata";
+  const allowedViafFields = new Set(
+    isViafSource ? getProviderAllowedAuthorFields(params.source) : []
+  );
+  const allowedWikidataFields = new Set(
+    isWikidataSource ? getProviderAllowedAuthorFields(params.source) : []
+  );
   const canonicalKey = buildCanonicalAuthorKey({
     name: nameEn || nameAr || "Unknown",
     birthYear,
@@ -609,13 +728,17 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     asNonEmptyString(params.providerExternalId),
     params.rawAuthor
   );
+  const viafId = isViafSource
+    ? extractViafAuthorityId(params.rawAuthor, externalId)
+    : extractViafAuthorityId(params.rawAuthor, "");
   const providerIds = {
     ...extractProviderIdMap(params.rawAuthor),
-    ...(externalId ? { [params.source]: externalId } : {}),
+    ...(!isViafSource && externalId ? { [params.source]: externalId } : {}),
   } as Partial<Record<SupportedAuthorSource, string>>;
   const identityCandidates = buildIdentityCandidates({
     canonicalKey,
     sourceIds: providerIds,
+    viaf: viafId,
   });
   const ingestionKey = `${params.source}:${externalId || `canonical:${canonicalKey}`}`;
   const ingestionRef = db.collection("author_ingestions").doc(ingestionKey);
@@ -631,7 +754,7 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     const authorRef = db.collection("authors").doc(ingestedAuthorId);
     completeAuthorSnap = await params.tx.get(authorRef);
 
-    if (completeAuthorSnap.exists) {
+    if (completeAuthorSnap.exists && !isViafSource && !isWikidataSource) {
       return {
         canonicalAuthorId: ingestedAuthorId,
         authorId: ingestedAuthorId,
@@ -674,6 +797,33 @@ export async function materializeCanonicalAuthorInTransaction(params: {
       ? completeAuthorSnap
       : await params.tx.get(authorRef);
   const existingAuthor = asRecord(authorSnap.data() || null);
+  const hasAuthorityIdentityChecks = isViafSource || isWikidataSource;
+
+  if (hasAuthorityIdentityChecks && conflictingAuthorIds.size > 1) {
+    logger.error("[AUTHOR_INGEST][AUTHOR_IDENTITY_CONFLICT]", {
+      ingestionKey,
+      candidates: Array.from(conflictingAuthorIds),
+      ...(isViafSource ? { viafId } : {}),
+      ...(isWikidataSource
+        ? { wikidataId: externalId || providerIds.wikidata || "" }
+        : {}),
+    });
+    throw new Error(
+      isViafSource
+        ? "AUTHOR_VIAF_IDENTITY_CONFLICT"
+        : "AUTHOR_WIKIDATA_IDENTITY_CONFLICT"
+    );
+  }
+
+  if (isWikidataSource && !existingAuthor) {
+    logger.warn("[AUTHOR_INGEST][WIKIDATA_REQUIRES_EXISTING_AUTHOR]", {
+      ingestionKey,
+      canonicalKey,
+      wikidataId: externalId || providerIds.wikidata || "",
+    });
+    throw new Error("AUTHOR_WIKIDATA_REQUIRES_EXISTING_AUTHOR");
+  }
+
   const existingSourceIds = asRecord(existingAuthor?.sourceIds);
   const avatarUrl = extractAuthorAvatarUrl(params.source, externalId, params.rawAuthor);
   const officialLinks = uniqueStrings([
@@ -685,30 +835,158 @@ export async function materializeCanonicalAuthorInTransaction(params: {
   const remoteIds = {
     ...(existingRemoteIds || {}),
     ...(asRecord(params.rawAuthor.remote_ids) || {}),
+    ...(viafId && (!isViafSource || allowedViafFields.has("viafId"))
+      ? { viaf: viafId }
+      : {}),
   };
+  const incomingAliases =
+    isViafSource
+      ? allowedViafFields.has("canonicalAuthorAliases")
+        ? aliases
+        : []
+      : isWikidataSource
+        ? allowedWikidataFields.has("weightedAuthorAliases")
+          ? aliases
+          : []
+        : aliases;
   const mergedAliases = uniqueStrings([
     ...asStringArray(existingAuthor?.aliases),
-    ...aliases,
-  ]);
-  const searchFields = buildSearchFieldsFromTextParts([
-    nameEn,
-    nameAr,
-    ...mergedAliases,
+    ...incomingAliases,
   ]);
   const sourceIds = {
     openLibrary: providerIds.openLibrary || asNonEmptyString(existingSourceIds?.openLibrary),
     wikidata: providerIds.wikidata || asNonEmptyString(existingSourceIds?.wikidata),
     googleBooks: providerIds.googleBooks || asNonEmptyString(existingSourceIds?.googleBooks),
   };
-  const hasProviderSourceId = Boolean(
-    sourceIds.openLibrary || sourceIds.wikidata || sourceIds.googleBooks
-  );
-  const primarySource = resolvePrimarySource(
-    asNonEmptyString(existingAuthor?.primarySource),
-    sourceIds,
-    params.source
-  );
+  const hasDirectProviderSourceId = Boolean(sourceIds.openLibrary || sourceIds.googleBooks);
+  const existingPrimarySource = asNonEmptyString(existingAuthor?.primarySource);
+  const primarySource = isViafSource
+    ? existingPrimarySource || params.source
+    : isWikidataSource
+      ? existingPrimarySource || asNonEmptyString(existingAuthor?.source) || "booktown"
+      : resolvePrimarySource(existingPrimarySource, sourceIds, params.source);
   const now = FieldValue.serverTimestamp();
+
+  const incomingNormalizedNames = extractIncomingNormalizedAuthorNames({
+    rawAuthor: params.rawAuthor,
+    nameEn,
+    nameAr,
+    aliases,
+  });
+  const existingNormalizedNames = extractExistingNormalizedAuthorNames(existingAuthor);
+
+  if (
+    hasAuthorityIdentityChecks &&
+    existingAuthor &&
+    (!haveExactAuthorNameOverlap(incomingNormalizedNames, existingNormalizedNames) ||
+      !areAuthorYearsCompatible({
+        incomingBirthYear: birthYear,
+        incomingDeathYear: deathYear,
+        existingBirthYear: existingAuthor.birthYear,
+        existingDeathYear: existingAuthor.deathYear,
+      }))
+  ) {
+    logger.warn(
+      isViafSource
+        ? "[AUTHOR_INGEST][VIAF_AUTHOR_MISMATCH]"
+        : "[AUTHOR_INGEST][WIKIDATA_AUTHOR_MISMATCH]",
+      {
+        ingestionKey,
+        authorId,
+        ...(isViafSource ? { viafId } : {}),
+        ...(isWikidataSource
+          ? { wikidataId: externalId || providerIds.wikidata || "" }
+          : {}),
+        incomingNames: incomingNormalizedNames,
+        existingNames: existingNormalizedNames,
+        incomingBirthYear: birthYear,
+        incomingDeathYear: deathYear,
+        existingBirthYear: asNonEmptyString(existingAuthor.birthYear),
+        existingDeathYear: asNonEmptyString(existingAuthor.deathYear),
+      }
+    );
+    throw new Error(
+      isViafSource ? "AUTHOR_VIAF_AUTHOR_MISMATCH" : "AUTHOR_WIKIDATA_AUTHOR_MISMATCH"
+    );
+  }
+
+  const resolvedCanonicalKey =
+    hasAuthorityIdentityChecks && existingAuthor
+      ? asNonEmptyString(existingAuthor.canonicalKey) || canonicalKey
+      : canonicalKey;
+  const resolvedNameEn = isViafSource
+    ? (allowedViafFields.has("normalizedMultilingualNames")
+        ? preferNonEmpty(asNonEmptyString(existingAuthor?.nameEn), nameEn)
+        : asNonEmptyString(existingAuthor?.nameEn)) || "Unknown"
+    : isWikidataSource
+      ? (allowedWikidataFields.has("normalizedMultilingualNames")
+          ? preferNonEmpty(asNonEmptyString(existingAuthor?.nameEn), nameEn)
+          : asNonEmptyString(existingAuthor?.nameEn)) || "Unknown"
+    : preferNonEmpty(nameEn, existingAuthor?.nameEn) || "Unknown";
+  const resolvedNameAr = isViafSource
+    ? (allowedViafFields.has("normalizedMultilingualNames")
+        ? preferNonEmpty(asNonEmptyString(existingAuthor?.nameAr), nameAr)
+        : asNonEmptyString(existingAuthor?.nameAr)) || resolvedNameEn
+    : isWikidataSource
+      ? (allowedWikidataFields.has("normalizedMultilingualNames")
+          ? preferNonEmpty(asNonEmptyString(existingAuthor?.nameAr), nameAr)
+          : asNonEmptyString(existingAuthor?.nameAr)) || resolvedNameEn
+    : preferNonEmpty(nameAr, existingAuthor?.nameAr) || nameEn || "Unknown";
+  const resolvedBirthYear =
+    isViafSource && allowedViafFields.has("birthYear")
+      ? asNonEmptyString(existingAuthor?.birthYear) || birthYear || ""
+      : isWikidataSource && allowedWikidataFields.has("birthYear")
+        ? asNonEmptyString(existingAuthor?.birthYear) || birthYear || ""
+      : birthYear || asNonEmptyString(existingAuthor?.birthYear) || "";
+  const resolvedDeathYear =
+    isViafSource && allowedViafFields.has("deathYear")
+      ? asNonEmptyString(existingAuthor?.deathYear) || deathYear || ""
+      : isWikidataSource && allowedWikidataFields.has("deathYear")
+        ? asNonEmptyString(existingAuthor?.deathYear) || deathYear || ""
+      : deathYear || asNonEmptyString(existingAuthor?.deathYear) || "";
+  const searchFields = buildSearchFieldsFromTextParts([
+    resolvedNameEn,
+    resolvedNameAr,
+    ...mergedAliases,
+  ]);
+  const existingAuthorityLinks = asRecord(existingAuthor?.authorityLinks);
+  const authorityLinks = {
+    openLibraryId:
+      asNonEmptyString(existingAuthorityLinks?.openLibraryId) || sourceIds.openLibrary,
+    wikidataId:
+      (
+        isWikidataSource && allowedWikidataFields.has("wikidataQid")
+          ? sourceIds.wikidata
+          : ""
+      ) ||
+      asNonEmptyString(existingAuthorityLinks?.wikidataId) ||
+      sourceIds.wikidata,
+    viaf:
+      (isViafSource && allowedViafFields.has("viafId") ? viafId : "") ||
+      asNonEmptyString(existingAuthorityLinks?.viaf),
+    goodreadsId: asNonEmptyString(existingAuthorityLinks?.goodreadsId),
+    isni: asNonEmptyString(existingAuthorityLinks?.isni),
+    wikipediaUrl: asNonEmptyString(existingAuthorityLinks?.wikipediaUrl),
+  };
+  const existingProvenance = asRecord(existingAuthor?.provenance);
+  const authorityConfidence = {
+    ...(asRecord(existingProvenance?.authorityConfidence) || {}),
+    ...(isViafSource && allowedViafFields.has("authorityConfidenceSupport")
+      ? { viaf: "high" }
+      : {}),
+    ...(isWikidataSource && allowedWikidataFields.has("authorityConfidenceSupport")
+      ? { wikidata: "weighted" }
+      : {}),
+  };
+  const provenance = {
+    ...(existingProvenance || {}),
+    ...(Object.keys(authorityConfidence).length > 0
+      ? { authorityConfidence }
+      : {}),
+  };
+  const writableIdentityCandidates = hasAuthorityIdentityChecks && existingAuthor
+    ? identityCandidates.filter((candidate) => candidate.type !== "canonical")
+    : identityCandidates;
 
   if (conflictingAuthorIds.size > 1) {
     logger.warn("[AUTHOR_INGEST][IDENTITY_CONFLICT_COLLAPSED]", {
@@ -722,11 +1000,11 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     authorRef,
     {
       id: authorId,
-      canonicalKey,
-      nameEn: preferNonEmpty(nameEn, existingAuthor?.nameEn) || "Unknown",
-      nameAr: preferNonEmpty(nameAr, existingAuthor?.nameAr) || nameEn || "Unknown",
-      nameEnNormalized: normalizeSearchText(preferNonEmpty(nameEn, existingAuthor?.nameEn)),
-      nameArNormalized: normalizeSearchText(preferNonEmpty(nameAr, existingAuthor?.nameAr)),
+      canonicalKey: resolvedCanonicalKey,
+      nameEn: resolvedNameEn,
+      nameAr: resolvedNameAr,
+      nameEnNormalized: normalizeSearchText(resolvedNameEn),
+      nameArNormalized: normalizeSearchText(resolvedNameAr),
       aliases: mergedAliases,
       aliasesNormalized: uniqueStrings(
         mergedAliases.map((entry) => normalizeSearchText(entry)).filter(Boolean),
@@ -734,35 +1012,71 @@ export async function materializeCanonicalAuthorInTransaction(params: {
       ),
       searchTokens: searchFields.tokens,
       searchPrefixes: searchFields.prefixes,
-      bioEn: preferNonEmpty(bioEn, existingAuthor?.bioEn),
-      bioAr: preferNonEmpty(bioAr, existingAuthor?.bioAr),
-      avatarUrl: preferNonEmpty(avatarUrl, existingAuthor?.avatarUrl),
+      bioEn:
+        isViafSource || isWikidataSource
+          ? asNonEmptyString(existingAuthor?.bioEn)
+          : preferNonEmpty(bioEn, existingAuthor?.bioEn),
+      bioAr:
+        isViafSource || isWikidataSource
+          ? asNonEmptyString(existingAuthor?.bioAr)
+          : preferNonEmpty(bioAr, existingAuthor?.bioAr),
+      avatarUrl: isViafSource || isWikidataSource
+        ? asNonEmptyString(existingAuthor?.avatarUrl)
+        : preferNonEmpty(avatarUrl, existingAuthor?.avatarUrl),
       lifespan:
-        buildLifespan(birthYear, deathYear) ||
+        buildLifespan(resolvedBirthYear, resolvedDeathYear) ||
         asNonEmptyString(existingAuthor?.lifespan),
-      birthYear: birthYear || asNonEmptyString(existingAuthor?.birthYear) || null,
-      deathYear: deathYear || asNonEmptyString(existingAuthor?.deathYear) || null,
-      countryEn: preferNonEmpty(asNonEmptyString(params.rawAuthor.countryEn), existingAuthor?.countryEn),
-      countryAr: preferNonEmpty(asNonEmptyString(params.rawAuthor.countryAr), existingAuthor?.countryAr),
-      languageEn: preferNonEmpty(asNonEmptyString(params.rawAuthor.languageEn), existingAuthor?.languageEn),
-      languageAr: preferNonEmpty(asNonEmptyString(params.rawAuthor.languageAr), existingAuthor?.languageAr),
+      birthYear: resolvedBirthYear || null,
+      deathYear: resolvedDeathYear || null,
+      countryEn: isViafSource || isWikidataSource
+        ? asNonEmptyString(existingAuthor?.countryEn)
+        : preferNonEmpty(asNonEmptyString(params.rawAuthor.countryEn), existingAuthor?.countryEn),
+      countryAr: isViafSource || isWikidataSource
+        ? asNonEmptyString(existingAuthor?.countryAr)
+        : preferNonEmpty(asNonEmptyString(params.rawAuthor.countryAr), existingAuthor?.countryAr),
+      languageEn: isViafSource || isWikidataSource
+        ? asNonEmptyString(existingAuthor?.languageEn)
+        : preferNonEmpty(asNonEmptyString(params.rawAuthor.languageEn), existingAuthor?.languageEn),
+      languageAr: isViafSource || isWikidataSource
+        ? asNonEmptyString(existingAuthor?.languageAr)
+        : preferNonEmpty(asNonEmptyString(params.rawAuthor.languageAr), existingAuthor?.languageAr),
+      authorityLinks,
       sourceIds,
-      sourceRecordType: hasProviderSourceId ? "provider" : asNonEmptyString(existingAuthor?.sourceRecordType),
+      sourceRecordType: hasDirectProviderSourceId
+        ? "provider"
+        : isViafSource
+          ? (asNonEmptyString(existingAuthor?.sourceRecordType) || "authority")
+          : isWikidataSource
+            ? asNonEmptyString(existingAuthor?.sourceRecordType)
+          : asNonEmptyString(existingAuthor?.sourceRecordType),
       enrichmentEligible:
-        hasProviderSourceId || existingAuthor?.enrichmentEligible === true,
+        hasDirectProviderSourceId ||
+        Boolean(viafId) ||
+        Boolean(sourceIds.wikidata) ||
+        existingAuthor?.enrichmentEligible === true,
       remoteIds,
       primarySource,
-      officialLinks,
+      officialLinks:
+        isViafSource || isWikidataSource
+          ? asStringArray(existingAuthor?.officialLinks)
+          : officialLinks,
+      provenance,
       workCount:
-        typeof params.rawAuthor.workCount === "number" && Number.isFinite(params.rawAuthor.workCount)
+        !isViafSource &&
+        !isWikidataSource &&
+        typeof params.rawAuthor.workCount === "number" &&
+        Number.isFinite(params.rawAuthor.workCount)
           ? Math.max(0, Math.trunc(params.rawAuthor.workCount))
           : Number(existingAuthor?.workCount || topWorks.length),
-      topWorks: topWorks.length > 0 ? topWorks : existingAuthor?.topWorks || [],
+      topWorks:
+        !isViafSource && !isWikidataSource && topWorks.length > 0
+          ? topWorks
+          : existingAuthor?.topWorks || [],
       metadataVersion: 1,
       popularityScore: Number(existingAuthor?.popularityScore || 0),
       createdAt: existingAuthor?.createdAt || now,
       updatedAt: now,
-      ...(externalId
+      ...(!isViafSource && !isWikidataSource && externalId
         ? {
             providerExternalIds: FieldValue.arrayUnion(`${params.source}:${externalId}`),
           }
@@ -771,7 +1085,7 @@ export async function materializeCanonicalAuthorInTransaction(params: {
     { merge: true }
   );
 
-  for (const candidate of identityCandidates) {
+  for (const candidate of writableIdentityCandidates) {
     const identityRef = db.collection("author_identity").doc(candidate.key);
     const existingIdentity = asRecord(identitySnapshotsByKey.get(candidate.key)?.data() || null);
     const identityRecord: AuthorIdentityRecord = {
@@ -796,8 +1110,8 @@ export async function materializeCanonicalAuthorInTransaction(params: {
       ingestionKey,
       source: params.source,
       externalId: externalId || null,
-      canonicalKey,
-      identityKeys: identityCandidates.map((entry) => entry.key),
+      canonicalKey: resolvedCanonicalKey,
+      identityKeys: writableIdentityCandidates.map((entry) => entry.key),
       authorId,
       state: "COMPLETE",
       createdAt: existingIngestion?.createdAt || now,
@@ -809,7 +1123,7 @@ export async function materializeCanonicalAuthorInTransaction(params: {
   return {
     canonicalAuthorId: authorId,
     authorId,
-    canonicalKey,
+    canonicalKey: resolvedCanonicalKey,
     status: resolvedAuthorId ? "MERGED" : "CREATED",
     source: params.source,
     ...(externalId ? { providerExternalId: externalId } : {}),

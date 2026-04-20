@@ -153,7 +153,7 @@ Operational law:
 - direct authority providers may enter canonical book write paths only after author lock
 - restricted authority providers may enrich only existing canonical records through explicit field gating
 - author-only authority providers may affect the author layer only
-- weighted evidence providers may score evidence but may not directly create canonical work truth
+- weighted evidence providers may enrich only existing canonical records through explicit field gating and may not directly create canonical work truth
 - ebook source only providers may provide readable sources but may not alter work identity
 - enrichment only providers may enrich later only
 
@@ -183,3 +183,82 @@ LOC may not:
 - escalate canonical lock authority
 
 Subject headings remain deferred until there is a dedicated safe landing field.
+
+### WorldCat Weighted Book Evidence Law
+
+`worldcat` is the first active weighted book evidence provider.
+
+WorldCat may enrich only an already-resolved canonical book after author lock passes.
+
+WorldCat may currently add only:
+
+- `oclcNumber`
+- edition count support when the current value is missing
+- `publicationYear` when the current value is missing
+- `publisher` when the linked edition value is missing or placeholder
+- `language` evidence when the current value is missing or placeholder
+- `format` evidence when the linked edition value is missing or placeholder
+
+WorldCat evidence must remain subordinate to direct authority and restricted authority.
+
+WorldCat may not:
+
+- create a canonical work
+- trigger duplicate merge
+- reuse or attach by provider work id
+- override ISBN-based identity
+- override author identity
+- escalate canonical lock authority
+- enter survivor logic as hard truth
+
+### VIAF Author Authority Law
+
+`viaf` is the first active author-only authority provider.
+
+VIAF may enter only through canonical author materialization.
+
+VIAF may currently add only:
+
+- `viafId`
+- canonical author aliases
+- normalized multilingual author names when existing values are missing
+- `birthYear` when the current value is missing
+- `deathYear` when the current value is missing
+- authority confidence support for the author record
+
+VIAF may not:
+
+- create or modify books
+- create or modify works
+- create editions
+- enter book survivor logic
+- trigger duplicate merge on books
+- override canonical work identity
+- override an existing stronger canonical author name
+
+VIAF attachment must fail when exact normalized author-name equivalence does not survive.
+
+### Wikidata Weighted Author Evidence Law
+
+`wikidata` is active on the author layer only as weighted evidence.
+
+Wikidata may currently add only:
+
+- `wikidataQid`
+- additional author aliases
+- multilingual author names when the canonical field is missing
+- `birthYear` when the current value is missing and non-conflicting
+- `deathYear` when the current value is missing and non-conflicting
+- weighted authority-confidence provenance
+- safe external authority links already supported by the author record
+
+Wikidata may not:
+
+- create a canonical author by itself
+- trigger cross-author merge
+- override VIAF-backed author truth
+- override an existing stronger canonical author name
+- enter book or work survivor logic
+- create or modify books, works, or editions
+
+Wikidata attachment must fail when exact normalized author-name equivalence does not survive.

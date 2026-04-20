@@ -6,11 +6,12 @@ import {
   SupportedAuthorSource,
 } from "./authors/authorCatalog";
 import { resolveAuthorProviderPayload } from "./authors/providerSources";
+import { assertProviderCanAffectAuthorLayer } from "./providerRoleRegistry";
 
 type IngestionRequest = {
   providerExternalId?: string;
   authorId?: string;
-  source: Exclude<SupportedAuthorSource, "googleBooks">;
+  source: Exclude<SupportedAuthorSource, "booktown" | "googleBooks">;
   rawAuthor: Record<string, unknown>;
 };
 
@@ -26,7 +27,9 @@ function asNonEmptyString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function normalizeSource(input: unknown): Exclude<SupportedAuthorSource, "googleBooks"> | null {
+function normalizeSource(
+  input: unknown
+): Exclude<SupportedAuthorSource, "booktown" | "googleBooks"> | null {
   const raw = String(input || "").trim();
 
   if (["openLibrary", "open_library", "openlibrary"].includes(raw)) {
@@ -35,6 +38,10 @@ function normalizeSource(input: unknown): Exclude<SupportedAuthorSource, "google
 
   if (["wikidata", "wikiData", "WIKIDATA"].includes(raw)) {
     return "wikidata";
+  }
+
+  if (["viaf", "VIAF"].includes(raw)) {
+    return "viaf";
   }
 
   return null;
@@ -55,6 +62,8 @@ export const ingestAuthor = onCall<IngestionRequest>({ cors: true }, async (requ
   if (!source || !rawAuthor || !providerExternalId) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
+
+  assertProviderCanAffectAuthorLayer(source);
 
   const resolvedRawAuthor = await resolveAuthorProviderPayload({
     source,

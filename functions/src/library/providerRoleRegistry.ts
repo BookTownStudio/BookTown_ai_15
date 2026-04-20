@@ -37,9 +37,23 @@ export type ProviderAuthorityField =
   | "workIdentity"
   | "originalTitle"
   | "locControlNumber"
+  | "oclcNumber"
+  | "editionCountSupport"
   | "publicationYear"
   | "publisher"
-  | "languageEvidence";
+  | "languageEvidence"
+  | "formatEvidence";
+
+export type ProviderAuthorField =
+  | "viafId"
+  | "wikidataQid"
+  | "canonicalAuthorAliases"
+  | "weightedAuthorAliases"
+  | "normalizedMultilingualNames"
+  | "birthYear"
+  | "deathYear"
+  | "externalAuthorityLinks"
+  | "authorityConfidenceSupport";
 
 type ProviderRoleRecord = {
   role: ProviderRole;
@@ -51,6 +65,7 @@ type ProviderRoleRecord = {
   canAffectAuthorLayer: boolean;
   canServeTrustedReadableSource: boolean;
   allowedAuthorityFields: ProviderAuthorityField[];
+  allowedAuthorFields: ProviderAuthorField[];
 };
 
 const ACCEPTED_AUTHORITY_RANKS: Record<AcceptedAuthorityLabel, number> = {
@@ -80,6 +95,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
       "originalLanguage",
       "workIdentity",
     ],
+    allowedAuthorFields: [],
   },
   googleBooks: {
     role: "direct_authority",
@@ -97,6 +113,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
       "originalLanguage",
       "workIdentity",
     ],
+    allowedAuthorFields: [],
   },
   loc: {
     role: "restricted_authority",
@@ -114,6 +131,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
       "publisher",
       "languageEvidence",
     ],
+    allowedAuthorFields: [],
   },
   viaf: {
     role: "author_only_authority",
@@ -125,6 +143,14 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: true,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [
+      "viafId",
+      "canonicalAuthorAliases",
+      "normalizedMultilingualNames",
+      "birthYear",
+      "deathYear",
+      "authorityConfidenceSupport",
+    ],
   },
   wikidata: {
     role: "weighted_evidence",
@@ -136,17 +162,34 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: true,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [
+      "wikidataQid",
+      "weightedAuthorAliases",
+      "normalizedMultilingualNames",
+      "birthYear",
+      "deathYear",
+      "externalAuthorityLinks",
+      "authorityConfidenceSupport",
+    ],
   },
   worldcat: {
     role: "weighted_evidence",
     acceptedAuthority: null,
     authorityRank: 0,
     canEnterCanonicalBookWritePath: false,
-    canEnrichExistingCanonicalBook: false,
+    canEnrichExistingCanonicalBook: true,
     canScoreCanonicalWork: true,
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
-    allowedAuthorityFields: [],
+    allowedAuthorityFields: [
+      "oclcNumber",
+      "editionCountSupport",
+      "publicationYear",
+      "publisher",
+      "languageEvidence",
+      "formatEvidence",
+    ],
+    allowedAuthorFields: [],
   },
   isbndb: {
     role: "weighted_evidence",
@@ -158,6 +201,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   gutenberg: {
     role: "ebook_source_only",
@@ -169,6 +213,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: true,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   gallica: {
     role: "ebook_source_only",
@@ -180,6 +225,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: true,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   hindawi: {
     role: "ebook_source_only",
@@ -191,6 +237,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: true,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   internetArchive: {
     role: "ebook_source_only",
@@ -202,6 +249,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: true,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   bnf: {
     role: "enrichment_only",
@@ -213,6 +261,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   britishLibrary: {
     role: "enrichment_only",
@@ -224,6 +273,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   dnb: {
     role: "enrichment_only",
@@ -235,6 +285,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
   ndl: {
     role: "enrichment_only",
@@ -246,6 +297,7 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
+    allowedAuthorFields: [],
   },
 };
 
@@ -272,6 +324,18 @@ export function canProviderEnrichExistingCanonicalBook(value: string): boolean {
 export function assertProviderCanEnterCanonicalBookWritePath(value: string): void {
   if (!canProviderEnterCanonicalBookWritePath(value)) {
     throw new Error(`[PROVIDER_ROLE] ${value} may not enter canonical book write path.`);
+  }
+}
+
+export function canProviderAffectAuthorLayer(value: string): boolean {
+  return isRegisteredProvider(value)
+    ? PROVIDER_ROLE_REGISTRY[value].canAffectAuthorLayer
+    : false;
+}
+
+export function assertProviderCanAffectAuthorLayer(value: string): void {
+  if (!canProviderAffectAuthorLayer(value)) {
+    throw new Error(`[PROVIDER_ROLE] ${value} may not enter canonical author write path.`);
   }
 }
 
@@ -318,5 +382,13 @@ export function getProviderAllowedAuthorityFields(
 ): ProviderAuthorityField[] {
   return isRegisteredProvider(value)
     ? [...PROVIDER_ROLE_REGISTRY[value].allowedAuthorityFields]
+    : [];
+}
+
+export function getProviderAllowedAuthorFields(
+  value: string
+): ProviderAuthorField[] {
+  return isRegisteredProvider(value)
+    ? [...PROVIDER_ROLE_REGISTRY[value].allowedAuthorFields]
     : [];
 }

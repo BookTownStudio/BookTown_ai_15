@@ -366,4 +366,73 @@ describe("ingestBook v2 smoke", () => {
     expect(getDoc(`books/${second.bookId}`)?.author).toBe("Author Two");
     expect(getDoc("book_identity/provider:googleBooks:author_lock_1")?.bookId).toBe(first.bookId);
   });
+
+  it("accepts WorldCat only as subordinate enrichment on an existing canonical book", async () => {
+    const ingestBookCallable = await getIngestBookCallable();
+
+    setDoc(
+      "books/worldcat-book-1",
+      {
+        bookId: "worldcat-book-1",
+        canonicalBookId: "worldcat-book-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "author one::the deterministic book",
+        canonicalTitle: "The Deterministic Book",
+        title: "The Deterministic Book",
+        titleEn: "The Deterministic Book",
+        author: "Author One",
+        authorEn: "Author One",
+        authors: ["Author One"],
+        authorNamesNormalized: ["author one"],
+        editionId: "worldcat-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "worldcat-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/worldcat-edition-1",
+      {
+        editionId: "worldcat-edition-1",
+        bookId: "worldcat-book-1",
+        workId: "worldcat-book-1",
+        title: "The Deterministic Book",
+        authors: ["Author One"],
+        authorEn: "Author One",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    const result = await ingestBookCallable.run({
+      auth: { uid: "test-user" },
+      data: {
+        providerExternalId: "7654321",
+        bookId: "worldcat-book-1",
+        source: "worldcat",
+        rawBook: {
+          worldcatId: "7654321",
+          title: "The Deterministic Book",
+          authors: ["Author One"],
+          publicationYear: 1925,
+          oclcNumber: "7654321",
+        },
+      },
+    });
+
+    const book = getDoc("books/worldcat-book-1");
+    const ingestion = getDoc("book_ingestions/worldcat:7654321");
+
+    expect(result.bookId).toBe("worldcat-book-1");
+    expect(book?.oclcNumber).toBe("7654321");
+    expect(book?.publicationYear).toBe(1925);
+    expect(ingestion?.source).toBe("worldcat");
+    expect(ingestion?.bookId).toBe("worldcat-book-1");
+  });
 });

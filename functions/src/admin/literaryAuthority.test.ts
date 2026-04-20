@@ -3199,6 +3199,252 @@ describe("adminCreateCanonicalBook", () => {
     ).rejects.toThrow("[PROVIDER_ROLE] loc author lock failed for restricted enrichment.");
   });
 
+  it("WorldCat adds an OCLC number to an existing canonical record", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/worldcat-canonical-1",
+      {
+        bookId: "worldcat-canonical-1",
+        canonicalBookId: "worldcat-canonical-1",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "virginia woolf::mrs dalloway",
+        canonicalTitle: "Mrs Dalloway",
+        title: "Mrs Dalloway",
+        titleEn: "Mrs Dalloway",
+        author: "Virginia Woolf",
+        authorEn: "Virginia Woolf",
+        authors: ["Virginia Woolf"],
+        authorNamesNormalized: ["virginia woolf"],
+        editionId: "worldcat-edition-1",
+        canonicalRelations: {
+          primaryEditionId: "worldcat-edition-1",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/worldcat-edition-1",
+      {
+        editionId: "worldcat-edition-1",
+        bookId: "worldcat-canonical-1",
+        workId: "worldcat-canonical-1",
+        title: "Mrs Dalloway",
+        authors: ["Virginia Woolf"],
+        authorEn: "Virginia Woolf",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    const result = await materializeBookAuthority({
+      source: "worldcat" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "worldcat-canonical-1",
+      providerExternalId: "1234567",
+      rawBook: {
+        title: "Mrs Dalloway",
+        author: "Virginia Woolf",
+        authorEn: "Virginia Woolf",
+        authors: ["Virginia Woolf"],
+        oclcNumber: "1234567",
+        editionCount: 14,
+        format: "paperback",
+      },
+      ingestionKey: "worldcat:1234567",
+    });
+
+    const book = getDoc("books/worldcat-canonical-1");
+    const edition = getDoc("editions/worldcat-edition-1");
+    const ingestion = getDoc("book_ingestions/worldcat:1234567");
+
+    expect(result.bookId).toBe("worldcat-canonical-1");
+    expect(book?.oclcNumber).toBe("1234567");
+    expect(book?.editionCount).toBe(14);
+    expect(book?.provenance).toMatchObject({
+      weightedBookEvidence: {
+        worldcat: {
+          source: "worldcat",
+          confidence: "medium",
+          oclcNumber: "1234567",
+          editionCount: 14,
+          format: "paperback",
+        },
+      },
+    });
+    expect(edition?.format).toBe("paperback");
+    expect(ingestion?.bookId).toBe("worldcat-canonical-1");
+    expect(ingestion?.source).toBe("worldcat");
+  });
+
+  it("WorldCat adds missing publicationYear safely", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/worldcat-canonical-2",
+      {
+        bookId: "worldcat-canonical-2",
+        canonicalBookId: "worldcat-canonical-2",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "george orwell::nineteen eighty four",
+        canonicalTitle: "Nineteen Eighty-Four",
+        title: "Nineteen Eighty-Four",
+        titleEn: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        authorNamesNormalized: ["george orwell"],
+        editionId: "worldcat-edition-2",
+        canonicalRelations: {
+          primaryEditionId: "worldcat-edition-2",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/worldcat-edition-2",
+      {
+        editionId: "worldcat-edition-2",
+        bookId: "worldcat-canonical-2",
+        workId: "worldcat-canonical-2",
+        title: "Nineteen Eighty-Four",
+        authors: ["George Orwell"],
+        authorEn: "George Orwell",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "worldcat" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "worldcat-canonical-2",
+      providerExternalId: "7654321",
+      rawBook: {
+        title: "Nineteen Eighty-Four",
+        author: "George Orwell",
+        authorEn: "George Orwell",
+        authors: ["George Orwell"],
+        publicationYear: 1949,
+      },
+    });
+
+    const book = getDoc("books/worldcat-canonical-2");
+    const edition = getDoc("editions/worldcat-edition-2");
+
+    expect(book?.publicationYear).toBe(1949);
+    expect(edition?.publicationYear).toBe(1949);
+  });
+
+  it("WorldCat does not create a canonical work when no survivor exists", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    await expect(
+      materializeBookAuthority({
+        source: "worldcat" as any,
+        authorityStatus: "canonical",
+        providerExternalId: "wc-missing-1",
+        rawBook: {
+          title: "Authority Test",
+          author: "BookTown",
+          authorEn: "BookTown",
+          authors: ["BookTown"],
+          oclcNumber: "5550001",
+        },
+      })
+    ).rejects.toThrow("[PROVIDER_ROLE] worldcat may enrich only an existing canonical book.");
+  });
+
+  it("WorldCat cannot override stronger existing fields", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    setDoc(
+      "books/worldcat-canonical-3",
+      {
+        bookId: "worldcat-canonical-3",
+        canonicalBookId: "worldcat-canonical-3",
+        authorityStatus: "canonical",
+        workType: "canonical",
+        canonicalLocked: true,
+        canonicalKey: "gabriel garcia marquez::one hundred years of solitude",
+        canonicalTitle: "One Hundred Years of Solitude",
+        title: "One Hundred Years of Solitude",
+        titleEn: "One Hundred Years of Solitude",
+        author: "Gabriel Garcia Marquez",
+        authorEn: "Gabriel Garcia Marquez",
+        authors: ["Gabriel Garcia Marquez"],
+        authorNamesNormalized: ["gabriel garcia marquez"],
+        oclcNumber: "1111111",
+        language: "es",
+        publicationYear: 1967,
+        editionId: "worldcat-edition-3",
+        canonicalRelations: {
+          primaryEditionId: "worldcat-edition-3",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "editions/worldcat-edition-3",
+      {
+        editionId: "worldcat-edition-3",
+        bookId: "worldcat-canonical-3",
+        workId: "worldcat-canonical-3",
+        title: "One Hundred Years of Solitude",
+        authors: ["Gabriel Garcia Marquez"],
+        authorEn: "Gabriel Garcia Marquez",
+        publisher: "Editorial Sudamericana",
+        publicationYear: 1967,
+        language: "es",
+        format: "hardcover",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+
+    await materializeBookAuthority({
+      source: "worldcat" as any,
+      authorityStatus: "canonical",
+      preferredBookId: "worldcat-canonical-3",
+      providerExternalId: "wc-strong-1",
+      rawBook: {
+        title: "One Hundred Years of Solitude",
+        author: "Gabriel Garcia Marquez",
+        authorEn: "Gabriel Garcia Marquez",
+        authors: ["Gabriel Garcia Marquez"],
+        oclcNumber: "2222222",
+        language: "en",
+        publicationYear: 1970,
+        publisher: "Another Publisher",
+        format: "paperback",
+      },
+    });
+
+    const book = getDoc("books/worldcat-canonical-3");
+    const edition = getDoc("editions/worldcat-edition-3");
+
+    expect(book?.oclcNumber).toBe("1111111");
+    expect(book?.language).toBe("es");
+    expect(book?.publicationYear).toBe(1967);
+    expect(edition?.publisher).toBe("Editorial Sudamericana");
+    expect(edition?.publicationYear).toBe(1967);
+    expect(edition?.language).toBe("es");
+    expect(edition?.format).toBe("hardcover");
+  });
+
   it("blocks VIAF from entering the canonical book write path", async () => {
     const materializeBookAuthority = await getMaterializeBookAuthorityFn();
 

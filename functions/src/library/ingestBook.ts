@@ -6,6 +6,7 @@ import { admin } from "../firebaseAdmin";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 import {
   assertProviderCanEnterCanonicalBookWritePath,
+  canProviderEnrichExistingCanonicalBook,
   isDirectAuthorityProvider,
 } from "./providerRoleRegistry";
 import {
@@ -15,13 +16,14 @@ import {
 import { fetchOpenLibraryCanonicalMetadata } from "./providers/openLibrary";
 
 export type SupportedSource = "googleBooks" | "openLibrary";
+type IngestSource = SupportedSource | "worldcat";
 
 type IdentityType = "isbn13" | "isbn10" | "canonical" | "provider";
 
 type IngestionRequest = {
   providerExternalId?: string;
   bookId?: string;
-  source?: SupportedSource;
+  source?: IngestSource;
   rawBook?: Record<string, unknown>;
 };
 
@@ -93,7 +95,7 @@ function normalizeIsbn(value: unknown, length: 10 | 13): string {
 
 function extractExternalId(
   providerExternalId: string,
-  source: SupportedSource,
+  source: IngestSource,
   rawBook: Record<string, unknown>
 ): string {
   const providerIdFromPayload =
@@ -106,6 +108,10 @@ function extractExternalId(
 
   if (source === "googleBooks") {
     return fallback.replace(/^gb_/i, "").trim();
+  }
+
+  if (source === "worldcat") {
+    return fallback.replace(/^(oclc|worldcat)[:\s-]*/i, "").trim();
   }
 
   return fallback
@@ -205,11 +211,15 @@ async function fetchGoogleBooksCanonicalMetadata(
 }
 
 async function hydrateRawBookFromProvider(
-  source: SupportedSource,
+  source: IngestSource,
   providerExternalId: string
 ): Promise<Record<string, unknown> | null> {
   if (source === "openLibrary") {
     return fetchOpenLibraryCanonicalMetadata(providerExternalId);
+  }
+
+  if (source === "worldcat") {
+    return null;
   }
 
   return fetchGoogleBooksCanonicalMetadata(providerExternalId);
@@ -298,7 +308,7 @@ export function hasMinimumCanonicalIdentity(
   return Boolean(title && (author || isbn13 || isbn10));
 }
 
-function normalizeSource(input: unknown): SupportedSource | null {
+function normalizeSource(input: unknown): IngestSource | null {
   const raw = String(input || "").trim();
   if (["googleBooks", "google_books", "googlebooks"].includes(raw)) {
     return "googleBooks";
@@ -306,19 +316,25 @@ function normalizeSource(input: unknown): SupportedSource | null {
   if (["openLibrary", "open_library", "openlibrary"].includes(raw)) {
     return "openLibrary";
   }
+  if (["worldcat", "WorldCat", "world_cat"].includes(raw)) {
+    return "worldcat";
+  }
   if (isDirectAuthorityProvider(raw)) {
-    return raw as SupportedSource;
+    return raw as IngestSource;
   }
   return null;
 }
 
 function toCoverCandidates(
-  source: SupportedSource,
+  source: IngestSource,
   rawBook: Record<string, unknown>,
   externalId: string
 ): string[] {
   if (source === "googleBooks") {
     return upgradeGoogleCoverCandidates(rawBook);
+  }
+  if (source === "worldcat") {
+    return [];
   }
   return upgradeOpenLibraryCandidates(rawBook, externalId);
 }
@@ -506,7 +522,8 @@ export async function fetchFirstValid(urls: string[]): Promise<Buffer | null> {
 export async function ingestBookServerSide(params: {
   uid: string;
   providerExternalId: string;
-  source: SupportedSource;
+  source: IngestSource;
+  preferredBookId?: string;
   rawBook?: Record<string, unknown>;
 }): Promise<{
   canonicalBookId: string;
@@ -516,7 +533,12 @@ export async function ingestBookServerSide(params: {
 }> {
   const providerExternalId = asNonEmptyString(params.providerExternalId);
   const source = params.source;
-  assertProviderCanEnterCanonicalBookWritePath(source);
+  if (
+    !isDirectAuthorityProvider(source) &&
+    !canProviderEnrichExistingCanonicalBook(source)
+  ) {
+    assertProviderCanEnterCanonicalBookWritePath(source);
+  }
   const hydratedRawBook =
     asRecord(params.rawBook) ||
     (providerExternalId ? await hydrateRawBookFromProvider(source, providerExternalId) : null);
@@ -550,6 +572,10 @@ export async function ingestBookServerSide(params: {
   const transactionResult = await materializeBookAuthority({
     source,
     authorityStatus: requestedAuthorityStatus,
+    preferredBookId:
+      !isDirectAuthorityProvider(source) && params.preferredBookId
+        ? params.preferredBookId
+        : undefined,
     providerExternalId: externalId,
     rawBook: authorityRawBook,
     coverCandidates,
@@ -627,6 +653,7 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
       uid: request.auth.uid,
       providerExternalId,
       source,
+      preferredBookId: incomingBookId || undefined,
       rawBook: rawBook || undefined,
     });
   }

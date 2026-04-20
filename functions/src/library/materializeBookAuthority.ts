@@ -18,6 +18,7 @@ import {
   isDirectAuthorityProvider,
   isRegisteredProvider,
   isRestrictedAuthorityProvider,
+  isWeightedEvidenceProvider,
 } from "./providerRoleRegistry";
 import {
   buildRawAuthorFromBookPayload,
@@ -38,6 +39,7 @@ export type LiteraryAuthoritySource =
   | "goodreads_import"
   | "loc"
   | "openLibrary"
+  | "worldcat"
   | "user_upload";
 
 type MetadataAuthorityField = "cover" | "description";
@@ -592,6 +594,62 @@ function resolveLocControlNumber(
     asNonEmptyString(rawBook.lccn) ||
     providerExternalId
   );
+}
+
+function resolveWorldcatOclcNumber(
+  rawBook: Record<string, unknown>,
+  providerExternalId: string
+): string {
+  const candidates = uniqueStrings([
+    asNonEmptyString(rawBook.oclcNumber),
+    asNonEmptyString(rawBook.oclc),
+    asNonEmptyString(rawBook.oclc_number),
+    asNonEmptyString(rawBook.worldcatId),
+    asNonEmptyString(rawBook.worldcat_id),
+    providerExternalId,
+  ]);
+
+  for (const candidate of candidates) {
+    const normalized = candidate.replace(/^(oclc|worldcat)[:\s-]*/i, "").trim();
+    if (/^\d+$/.test(normalized)) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
+function resolveEditionCountSupport(rawBook: Record<string, unknown>): number | null {
+  const numericCandidates = [
+    rawBook.editionCount,
+    rawBook.editionsCount,
+    rawBook.numberOfEditions,
+    rawBook.edition_count,
+  ];
+
+  for (const candidate of numericCandidates) {
+    if (typeof candidate === "number" && Number.isFinite(candidate) && candidate > 0) {
+      return Math.trunc(candidate);
+    }
+  }
+
+  const stringCandidates = uniqueStrings([
+    asNonEmptyString(rawBook.editionCount),
+    asNonEmptyString(rawBook.editionsCount),
+    asNonEmptyString(rawBook.numberOfEditions),
+    asNonEmptyString(rawBook.edition_count),
+  ]);
+
+  for (const candidate of stringCandidates) {
+    if (/^\d+$/.test(candidate)) {
+      const parsed = Number(candidate);
+      if (Number.isFinite(parsed) && parsed > 0) {
+        return Math.trunc(parsed);
+      }
+    }
+  }
+
+  return null;
 }
 
 function isCanonicalAuthorityBook(data: Record<string, unknown> | null): boolean {
@@ -1402,7 +1460,8 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
   params: MaterializeBookAuthorityParams
 ): Promise<MaterializeBookAuthorityResult> {
   if (
-    !isRestrictedAuthorityProvider(params.source) ||
+    (!isRestrictedAuthorityProvider(params.source) &&
+      !isWeightedEvidenceProvider(params.source)) ||
     !canProviderEnrichExistingCanonicalBook(params.source)
   ) {
     throw new Error(`[PROVIDER_ROLE] ${params.source} may not enrich canonical books.`);
@@ -1441,6 +1500,12 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
   const locControlNumber = allowedFields.has("locControlNumber")
     ? resolveLocControlNumber(rawBook, providerExternalId)
     : "";
+  const oclcNumber = allowedFields.has("oclcNumber")
+    ? resolveWorldcatOclcNumber(rawBook, providerExternalId)
+    : "";
+  const editionCountSupport = allowedFields.has("editionCountSupport")
+    ? resolveEditionCountSupport(rawBook)
+    : null;
   const originalTitle = allowedFields.has("originalTitle")
     ? asNonEmptyString(rawBook.originalTitle)
     : "";
@@ -1449,6 +1514,7 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     ? resolvePublicationYear(rawBook)
     : null;
   const publisher = allowedFields.has("publisher") ? resolvePublisher(rawBook) : null;
+  const format = allowedFields.has("formatEvidence") ? resolveEditionFormat(rawBook) : null;
   const now = FieldValue.serverTimestamp();
   const bookRef = db.collection("books").doc(existingTarget.bookId);
   const existingBook = existingTarget.data;
@@ -1478,6 +1544,20 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     })
   ) {
     bookPatch.locControlNumber = locControlNumber;
+  }
+  if (
+    canAcceptRestrictedAuthorityString({
+      existingValue: existingBook.oclcNumber,
+      incomingValue: oclcNumber,
+    })
+  ) {
+    bookPatch.oclcNumber = oclcNumber;
+  }
+  if (
+    !isFinitePublicationYearValue(existingBook.editionCount) &&
+    isFinitePublicationYearValue(editionCountSupport)
+  ) {
+    bookPatch.editionCount = editionCountSupport;
   }
   if (
     !isFinitePublicationYearValue(existingBook.publicationYear) &&
@@ -1520,6 +1600,7 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
       canAcceptRestrictedAuthorityString({
         existingValue: existingEdition.publisher,
         incomingValue: publisher || "",
+        allowPlaceholderReplacement: isWeightedEvidenceProvider(params.source),
       })
     ) {
       editionPatch.publisher = publisher;
@@ -1532,6 +1613,15 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
       })
     ) {
       editionPatch.language = language;
+    }
+    if (
+      canAcceptRestrictedAuthorityString({
+        existingValue: existingEdition.format,
+        incomingValue: format || "",
+        allowPlaceholderReplacement: true,
+      })
+    ) {
+      editionPatch.format = format;
     }
 
     if (Object.keys(editionPatch).length > 0) {
@@ -1547,13 +1637,56 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     }
   }
 
+  if (isWeightedEvidenceProvider(params.source)) {
+    const existingProvenance = asRecord(existingBook.provenance);
+    const existingWeightedEvidence = asRecord(existingProvenance?.weightedBookEvidence);
+    const existingSourceEvidence = asRecord(existingWeightedEvidence?.[params.source]);
+
+    params.tx.set(
+      bookRef,
+      {
+        provenance: {
+          ...(existingProvenance || {}),
+          weightedBookEvidence: {
+            ...(existingWeightedEvidence || {}),
+            [params.source]: {
+              ...(existingSourceEvidence || {}),
+              source: params.source,
+              confidence: "medium",
+              ...(oclcNumber
+                ? { oclcNumber }
+                : existingSourceEvidence?.oclcNumber
+                  ? { oclcNumber: existingSourceEvidence.oclcNumber }
+                  : {}),
+              ...(isFinitePublicationYearValue(editionCountSupport)
+                ? { editionCount: editionCountSupport }
+                : typeof existingSourceEvidence?.editionCount === "number"
+                  ? { editionCount: existingSourceEvidence.editionCount }
+                  : {}),
+              ...(isFinitePublicationYearValue(publicationYear)
+                ? { publicationYear }
+                : {}),
+              ...(language ? { language } : {}),
+              ...(publisher ? { publisher } : {}),
+              ...(format ? { format } : {}),
+              updatedAt: now,
+            },
+          },
+        },
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  }
+
   if (params.ingestionKey) {
     params.tx.set(
       db.collection("book_ingestions").doc(params.ingestionKey),
       {
         ingestionKey: params.ingestionKey,
         source: params.source,
-        externalId: locControlNumber || providerExternalId || incomingCanonicalKey,
+        externalId:
+          locControlNumber || oclcNumber || providerExternalId || incomingCanonicalKey,
         canonicalKey: asNonEmptyString(existingBook.canonicalKey) || incomingCanonicalKey,
         identityKeys: [],
         bookId: existingTarget.bookId,
@@ -1582,6 +1715,7 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
             ...(canAcceptRestrictedAuthorityString({
               existingValue: existingEdition.publisher,
               incomingValue: publisher || "",
+              allowPlaceholderReplacement: isWeightedEvidenceProvider(params.source),
             })
               ? { publisher }
               : {}),
@@ -1591,6 +1725,13 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
               allowPlaceholderReplacement: true,
             })
               ? { language }
+              : {}),
+            ...(canAcceptRestrictedAuthorityString({
+              existingValue: existingEdition.format,
+              incomingValue: format || "",
+              allowPlaceholderReplacement: true,
+            })
+              ? { format }
               : {}),
           })
         : [],

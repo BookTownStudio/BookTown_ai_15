@@ -287,7 +287,7 @@ export async function fetchWikidataAuthorAuthoritativeData(
 }
 
 export async function resolveAuthorProviderPayload(params: {
-  source: "booktown" | "openLibrary" | "wikidata" | "googleBooks";
+  source: "booktown" | "openLibrary" | "wikidata" | "googleBooks" | "viaf";
   providerExternalId?: string | null;
   rawAuthor: Record<string, unknown>;
 }): Promise<Record<string, unknown>> {

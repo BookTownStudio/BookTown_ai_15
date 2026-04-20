@@ -200,6 +200,78 @@ async function callIngest(overrides: Record<string, unknown> = {}) {
   };
 }
 
+async function callViafIngest(overrides: Record<string, unknown> = {}) {
+  const ingestAuthorCallable = await getIngestAuthorCallable();
+  const {
+    providerExternalId: rawProviderExternalId,
+    ...rawAuthorOverrides
+  } = overrides;
+  const providerExternalId =
+    typeof rawProviderExternalId === "string" && rawProviderExternalId.trim()
+      ? rawProviderExternalId.trim()
+      : "96994048";
+  const result = await ingestAuthorCallable.run({
+    data: {
+      providerExternalId,
+      source: "viaf",
+      rawAuthor: {
+        viaf: providerExternalId,
+        name: "Virginia Woolf",
+        nameEn: "Virginia Woolf",
+        aliases: ["Adeline Virginia Woolf"],
+        birthYear: "1882",
+        deathYear: "1941",
+        ...rawAuthorOverrides,
+      },
+    },
+  });
+
+  return result as {
+    canonicalAuthorId: string;
+    authorId: string;
+    canonicalKey: string;
+    status: string;
+    providerExternalId?: string;
+  };
+}
+
+async function callWikidataIngest(overrides: Record<string, unknown> = {}) {
+  const ingestAuthorCallable = await getIngestAuthorCallable();
+  const {
+    providerExternalId: rawProviderExternalId,
+    ...rawAuthorOverrides
+  } = overrides;
+  const providerExternalId =
+    typeof rawProviderExternalId === "string" && rawProviderExternalId.trim()
+      ? rawProviderExternalId.trim().toUpperCase()
+      : "Q123";
+  const result = await ingestAuthorCallable.run({
+    data: {
+      providerExternalId,
+      source: "wikidata",
+      rawAuthor: {
+        id: providerExternalId,
+        qid: providerExternalId,
+        name: "Virginia Woolf",
+        nameEn: "Virginia Woolf",
+        nameAr: "فيرجينيا وولف",
+        aliases: ["Adeline Virginia Woolf"],
+        birthYear: "1882",
+        deathYear: "1941",
+        ...rawAuthorOverrides,
+      },
+    },
+  });
+
+  return result as {
+    canonicalAuthorId: string;
+    authorId: string;
+    canonicalKey: string;
+    status: string;
+    providerExternalId?: string;
+  };
+}
+
 describe("ingestAuthor smoke", () => {
   beforeEach(() => {
     store.clear();
@@ -348,5 +420,266 @@ describe("ingestAuthor smoke", () => {
     expect(author?.topWorks?.[0]?.title).toBe("Harry Potter and the Philosopher's Stone");
     expect(wikidataIdentity?.authorId).toBe(result.authorId);
     expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
+  it("adds viafId and aliases safely to an existing canonical author", async () => {
+    setDoc(
+      "authors/author-existing-1",
+      {
+        id: "author-existing-1",
+        authorId: "author-existing-1",
+        canonicalKey: "virginia woolf::1882",
+        canonicalName: "Virginia Woolf",
+        nameEn: "Virginia Woolf",
+        nameAr: "Virginia Woolf",
+        nameEnNormalized: "virginia woolf",
+        nameArNormalized: "virginia woolf",
+        aliases: ["V. Woolf"],
+        aliasesNormalized: ["v woolf"],
+        birthYear: "1882",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "author_identity/canonical:virginia woolf::1882",
+      {
+        identityKey: "canonical:virginia woolf::1882",
+        authorId: "author-existing-1",
+      },
+      false
+    );
+
+    const result = await callViafIngest();
+    const author = getDoc("authors/author-existing-1") as Record<string, any> | null;
+    const viafIdentity = getDoc("author_identity/authority:viaf:96994048");
+
+    expect(result.authorId).toBe("author-existing-1");
+    expect(author?.authorityLinks?.viaf).toBe("96994048");
+    expect(author?.remoteIds?.viaf).toBe("96994048");
+    expect(author?.aliases).toEqual(["V. Woolf", "Adeline Virginia Woolf"]);
+    expect(author?.provenance?.authorityConfidence?.viaf).toBe("high");
+    expect(viafIdentity?.authorId).toBe("author-existing-1");
+  });
+
+  it("fills missing multilingual names and years from VIAF without overriding existing truth", async () => {
+    setDoc(
+      "authors/author-existing-2",
+      {
+        id: "author-existing-2",
+        authorId: "author-existing-2",
+        canonicalKey: "naguib mahfouz::1911",
+        canonicalName: "Naguib Mahfouz",
+        nameEn: "Naguib Mahfouz",
+        nameAr: "",
+        nameEnNormalized: "naguib mahfouz",
+        nameArNormalized: "",
+        aliases: [],
+        aliasesNormalized: [],
+        birthYear: "",
+        deathYear: "",
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "author_identity/canonical:naguib mahfouz::1911",
+      {
+        identityKey: "canonical:naguib mahfouz::1911",
+        authorId: "author-existing-2",
+      },
+      false
+    );
+
+    await callViafIngest({
+      providerExternalId: "61668623",
+      viaf: "61668623",
+      name: "Naguib Mahfouz",
+      nameEn: "Naguib Mahfouz",
+      nameAr: "نجيب محفوظ",
+      birthYear: "1911",
+      deathYear: "2006",
+      aliases: ["Najib Mahfuz"],
+    });
+
+    const author = getDoc("authors/author-existing-2") as Record<string, any> | null;
+
+    expect(author?.nameEn).toBe("Naguib Mahfouz");
+    expect(author?.nameAr).toBe("نجيب محفوظ");
+    expect(author?.birthYear).toBe("1911");
+    expect(author?.deathYear).toBe("2006");
+    expect(author?.aliases).toContain("Najib Mahfuz");
+  });
+
+  it("rejects VIAF cross-author attachment when the existing author name conflicts", async () => {
+    setDoc(
+      "authors/author-existing-3",
+      {
+        id: "author-existing-3",
+        authorId: "author-existing-3",
+        canonicalKey: "author one::1882",
+        canonicalName: "Author One",
+        nameEn: "Author One",
+        nameAr: "Author One",
+        nameEnNormalized: "author one",
+        nameArNormalized: "author one",
+        aliases: [],
+        aliasesNormalized: [],
+        birthYear: "1882",
+        authorityLinks: {
+          viaf: "96994048",
+        },
+        remoteIds: {
+          viaf: "96994048",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "author_identity/authority:viaf:96994048",
+      {
+        identityKey: "authority:viaf:96994048",
+        authorId: "author-existing-3",
+      },
+      false
+    );
+
+    await expect(
+      callViafIngest({
+        name: "Author Two",
+        nameEn: "Author Two",
+        aliases: ["A. Two"],
+        birthYear: "1882",
+      })
+    ).rejects.toThrow("AUTHOR_VIAF_AUTHOR_MISMATCH");
+
+    const author = getDoc("authors/author-existing-3") as Record<string, any> | null;
+    expect(author?.nameEn).toBe("Author One");
+    expect(author?.aliases).toEqual([]);
+  });
+
+  it("adds a Wikidata qid to an existing canonical author without creating a new one", async () => {
+    setDoc(
+      "authors/author-existing-4",
+      {
+        id: "author-existing-4",
+        authorId: "author-existing-4",
+        canonicalKey: "virginia woolf::1882",
+        canonicalName: "Virginia Woolf",
+        nameEn: "Virginia Woolf",
+        nameAr: "Virginia Woolf",
+        nameEnNormalized: "virginia woolf",
+        nameArNormalized: "virginia woolf",
+        aliases: ["V. Woolf"],
+        aliasesNormalized: ["v woolf"],
+        birthYear: "1882",
+        sourceIds: {
+          openLibrary: "OL23919A",
+        },
+        primarySource: "openLibrary",
+        sourceRecordType: "provider",
+        enrichmentEligible: true,
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "author_identity/canonical:virginia woolf::1882",
+      {
+        identityKey: "canonical:virginia woolf::1882",
+        authorId: "author-existing-4",
+      },
+      false
+    );
+
+    const result = await callWikidataIngest();
+    const author = getDoc("authors/author-existing-4") as Record<string, any> | null;
+    const wikidataIdentity = getDoc("author_identity/provider:wikidata:Q123");
+
+    expect(result.authorId).toBe("author-existing-4");
+    expect(result.status).toBe("MERGED");
+    expect(author?.sourceIds).toEqual({
+      openLibrary: "OL23919A",
+      wikidata: "Q123",
+      googleBooks: "",
+    });
+    expect(author?.authorityLinks).toMatchObject({
+      openLibraryId: "OL23919A",
+      wikidataId: "Q123",
+    });
+    expect(author?.provenance?.authorityConfidence?.wikidata).toBe("weighted");
+    expect(author?.primarySource).toBe("openLibrary");
+    expect(wikidataIdentity?.authorId).toBe("author-existing-4");
+  });
+
+  it("adds Wikidata aliases safely without overriding stronger canonical names", async () => {
+    setDoc(
+      "authors/author-existing-5",
+      {
+        id: "author-existing-5",
+        authorId: "author-existing-5",
+        canonicalKey: "virginia woolf::1882",
+        canonicalName: "Virginia Woolf",
+        nameEn: "Virginia Woolf",
+        nameAr: "فيرجينيا وولف",
+        nameEnNormalized: "virginia woolf",
+        nameArNormalized: "virginia woolf",
+        aliases: ["V. Woolf"],
+        aliasesNormalized: ["v woolf"],
+        birthYear: "1882",
+        deathYear: "1941",
+        sourceRecordType: "authority",
+        primarySource: "openLibrary",
+        authorityLinks: {
+          viaf: "96994048",
+        },
+        createdAt: "ts-seed",
+        updatedAt: "ts-seed",
+      },
+      false
+    );
+    setDoc(
+      "author_identity/canonical:virginia woolf::1882",
+      {
+        identityKey: "canonical:virginia woolf::1882",
+        authorId: "author-existing-5",
+      },
+      false
+    );
+
+    await callWikidataIngest({
+      nameEn: "Virginia Woolf",
+      nameAr: "اسم خاطئ",
+      aliases: ["Adeline Virginia Woolf", "V. Woolf"],
+    });
+
+    const author = getDoc("authors/author-existing-5") as Record<string, any> | null;
+
+    expect(author?.nameEn).toBe("Virginia Woolf");
+    expect(author?.nameAr).toBe("فيرجينيا وولف");
+    expect(author?.aliases).toEqual(["V. Woolf", "Adeline Virginia Woolf"]);
+    expect(author?.authorityLinks).toMatchObject({
+      viaf: "96994048",
+      wikidataId: "Q123",
+    });
+  });
+
+  it("rejects Wikidata-only author creation when no canonical author already exists", async () => {
+    await expect(
+      callWikidataIngest({
+        providerExternalId: "Q999",
+        name: "Unmapped Author",
+        nameEn: "Unmapped Author",
+        birthYear: "1900",
+      })
+    ).rejects.toThrow("AUTHOR_WIKIDATA_REQUIRES_EXISTING_AUTHOR");
+
+    expect(getDoc("authors/author-1")).toBeNull();
+    expect(getDoc("author_identity/provider:wikidata:Q999")).toBeNull();
   });
 });

@@ -107,6 +107,12 @@ Every future provider must enter through the central provider role registry befo
 
 Library of Congress is the first active restricted authority provider: it may enrich existing canonical records with field-gated bibliographic evidence, but it may not create or override canonical work identity.
 
+VIAF is the first active author-only authority provider: it may strengthen canonical author identity, aliases, and safe lifespan metadata, but it may never enter book or work identity resolution.
+
+Wikidata is active only as weighted author evidence: it may enrich an already-surviving canonical author with a `wikidataQid`, safe multilingual aliases, and missing non-conflicting lifespan metadata, but it may not create canonical author truth or enter any book/work authority path.
+
+WorldCat is the first active weighted book evidence provider: it may enrich an already-surviving canonical book with subordinate bibliographic evidence such as `oclcNumber`, missing publication year, edition-level publisher, language, and format support, but it may not create, merge, or override canonical work identity.
+
 ---
 
 # 2. Edition
