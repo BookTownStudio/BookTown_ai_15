@@ -1,24 +1,30 @@
-import { devLog, devInfo } from '../../lib/logging/devLog';
-import React, { useState, useRef, useEffect } from 'react';
-import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
-import { useI18n } from '../../store/i18n.tsx';
-import { useNavigation } from '../../store/navigation.tsx';
+import React, { useEffect, useRef, useState } from 'react';
+
+import { devInfo, devLog } from '../../lib/logging/devLog';
+import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
+import { useAuth } from '../../lib/auth.tsx';
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { useQuoteDetails } from '../../lib/hooks/useQuoteDetails.ts';
-import { useAuth } from '../../lib/auth.tsx';
+import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
+import { cn } from '../../lib/utils.ts';
+
+import { useI18n } from '../../store/i18n.tsx';
+import { useNavigation } from '../../store/navigation.tsx';
+import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
+
+import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
+
 import BilingualText from '../ui/BilingualText.tsx';
 import GlassCard from '../ui/GlassCard.tsx';
-import { PlayIcon } from '../icons/PlayIcon.tsx';
-import { MediaIcon } from '../icons/MediaIcon.tsx';
+
+import { BookIcon } from '../icons/BookIcon.tsx';
 import { DraftIcon as FileIcon } from '../icons/DraftIcon.tsx';
-import { GlobeIcon } from '../icons/GlobeIcon.tsx';
-import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
-import { TrashIcon } from '../icons/TrashIcon.tsx';
 import { EyeIcon } from '../icons/EyeIcon.tsx';
-import { cn } from '../../lib/utils.ts';
-import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
-import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
-import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
+import { GlobeIcon } from '../icons/GlobeIcon.tsx';
+import { MediaIcon } from '../icons/MediaIcon.tsx';
+import { PlayIcon } from '../icons/PlayIcon.tsx';
+import { TrashIcon } from '../icons/TrashIcon.tsx';
+import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
 import { VolumeXIcon } from '../icons/VolumeXIcon.tsx';
 
 export type RenderSurface = 'home' | 'feed' | 'drawer' | 'read' | 'write';
@@ -93,7 +99,7 @@ const ImageView: React.FC<{
     attachment: PostAttachment;
     url: string;
     payload?: any;
-    maxHeight: number | string;
+    maxHeight?: number | string;
     surface: RenderSurface;
 }> = ({ attachment, url, payload, maxHeight, surface }) => {
     devLog("IMAGE_VIEW_ACTIVE");
