@@ -1175,6 +1175,85 @@ describe("adminCreateCanonicalBook", () => {
     );
   });
 
+  it("strips edition contributor pollution before batch canonical ingest", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "macbeth-polluted",
+          editionId: "macbeth-polluted",
+          bookId: "macbeth-polluted",
+          workId: null,
+          externalId: "MACBETH1",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Macbeth, edited by Alasdair D. F. Macrae",
+          titleEn: "Macbeth, edited by Alasdair D. F. Macrae",
+          titleAr: "",
+          authors: ["William Shakespeare", "Alasdair D. F. Macrae"],
+          authorEn: "William Shakespeare",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            title: "Macbeth, edited by Alasdair D. F. Macrae",
+            titleEn: "Macbeth, edited by Alasdair D. F. Macrae",
+            authors: ["William Shakespeare", "Alasdair D. F. Macrae"],
+            subject: ["English drama", "Tragedies", "Plays"],
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "macbeth-clean",
+      bookId: "macbeth-clean",
+      editionId: "googleBooks:MACBETH1",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Macbeth | William Shakespeare",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "googleBooks",
+        providerExternalId: "MACBETH1",
+        rawBook: expect.objectContaining({
+          title: "Macbeth",
+          titleEn: "Macbeth",
+          authors: ["William Shakespeare"],
+          editionContributors: ["Alasdair D. F. Macrae"],
+          literaryForm: "play",
+          needsEnrichment: true,
+        }),
+      })
+    );
+  });
+
   it("reuses one canonical work for repeated accented seed lines", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
 

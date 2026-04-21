@@ -6,6 +6,7 @@ import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
 import { ingestBookServerSide } from "../library/ingestBook";
+import { normalizeBatchCanonicalSeedPayload } from "../library/normalization/canonicalIngest";
 import { buildCanonicalKey } from "../library/persistence/canonicalKey";
 import {
   buildBookSearchPatch,
@@ -1876,6 +1877,11 @@ function prepareBulkCandidateRawBook(params: {
       : params.result.authorEn || "";
   const providerAuthorNorm = normalizeSearchText(providerAuthor);
   const requestedAuthorNorm = normalizeSearchText(requestedAuthor);
+  const providerAuthors = uniqueStrings([
+    ...asStringArray(rawBook.authors),
+    ...asStringArray(rawBook.author_name),
+    providerAuthor,
+  ]);
 
   if (providerTitleNorm && providerTitleNorm !== requestedTitleNorm) {
     rawBook.titleAliases = uniqueStrings([
@@ -1893,10 +1899,15 @@ function prepareBulkCandidateRawBook(params: {
 
   rawBook.title = canonicalTitle;
   rawBook.titleEn = canonicalTitle;
+  rawBook.providerAuthors = providerAuthors;
   rawBook.author = requestedAuthor;
   rawBook.authorEn = requestedAuthor;
   rawBook.authors = [requestedAuthor];
-  return rawBook;
+  return normalizeBatchCanonicalSeedPayload({
+    rawBook,
+    requestedTitle: params.requestedTitle,
+    requestedAuthor: params.requestedAuthor,
+  });
 }
 
 function resolveCandidateTitleAuthorities(result: UnifiedSearchResult): string[] {

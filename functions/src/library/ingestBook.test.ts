@@ -288,6 +288,48 @@ describe("ingestBook v2 smoke", () => {
     expect(authorIdentity?.authorId).toBe(authorId);
   });
 
+  it("strips edition-level contributor pollution before canonical work creation", async () => {
+    const result = await callIngest({
+      id: "macbeth-1",
+      externalId: "macbeth-1",
+      title: "Macbeth, edited by Alasdair D. F. Macrae",
+      authors: ["William Shakespeare", "Alasdair D. F. Macrae"],
+      description: "",
+      subjects: ["English drama", "Tragedies", "Plays"],
+      language: "en",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const edition = getDoc(`editions/${result.editionId}`);
+
+    expect(book?.canonicalTitle).toBe("Macbeth");
+    expect(book?.authors).toEqual(["William Shakespeare"]);
+    expect(book?.authorCanonicalKey).toBe("william shakespeare::unknown");
+    expect(book?.literaryForm).toBe("play");
+    expect(book?.needsEnrichment).toBe(true);
+    expect(edition?.editionContributors).toEqual(["Alasdair D. F. Macrae"]);
+  });
+
+  it("adds alternate Open Library cover candidates when Google Books has no direct cover", async () => {
+    const result = await callIngest({
+      id: "cover-fallback-1",
+      externalId: "cover-fallback-1",
+      title: "Fallback Cover Book",
+      authors: ["Author One"],
+      imageLinks: undefined,
+      thumbnail: undefined,
+      coverUrl: undefined,
+      isbn13: "9780747532743",
+    });
+
+    const coverJob = getDoc(`cover_jobs/${result.bookId}`);
+    const candidateUrls = Array.isArray(coverJob?.candidateUrls) ? coverJob.candidateUrls : [];
+
+    expect(candidateUrls).toContain(
+      "https://covers.openlibrary.org/b/isbn/9780747532743-L.jpg"
+    );
+  });
+
   it("hydrates provider metadata on the server when rawBook is omitted", async () => {
     vi.stubGlobal(
       "fetch",

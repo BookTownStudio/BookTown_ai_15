@@ -137,6 +137,7 @@ describe("resolveOpenLibraryReadableCandidate", () => {
       openLibraryEditionId: "OL50444320M",
       isbn13: "9780141439518",
       language: "eng",
+      workLevelSource: true,
     });
   });
 });

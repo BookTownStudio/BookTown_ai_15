@@ -13,6 +13,10 @@ import {
   materializeBookAuthority,
   type BookAuthorityState,
 } from "./materializeBookAuthority";
+import {
+  buildAlternateProviderCoverCandidates,
+  normalizeCanonicalIngestPayload,
+} from "./normalization/canonicalIngest";
 import { fetchOpenLibraryCanonicalMetadata } from "./providers/openLibrary";
 
 export type SupportedSource = "googleBooks" | "openLibrary";
@@ -330,13 +334,22 @@ function toCoverCandidates(
   rawBook: Record<string, unknown>,
   externalId: string
 ): string[] {
+  const alternateCandidates = buildAlternateProviderCoverCandidates({
+    source,
+    rawBook,
+  });
+
   if (source === "googleBooks") {
-    return upgradeGoogleCoverCandidates(rawBook);
+    return Array.from(
+      new Set([...upgradeGoogleCoverCandidates(rawBook), ...alternateCandidates])
+    );
   }
   if (source === "worldcat") {
-    return [];
+    return alternateCandidates;
   }
-  return upgradeOpenLibraryCandidates(rawBook, externalId);
+  return Array.from(
+    new Set([...upgradeOpenLibraryCandidates(rawBook, externalId), ...alternateCandidates])
+  );
 }
 
 function buildIdentityCandidates(params: {
@@ -546,7 +559,10 @@ export async function ingestBookServerSide(params: {
   if (!providerExternalId || !source || !rawBook) {
     throw new HttpsError("invalid-argument", "Missing or invalid parameters.");
   }
-  const authorityRawBook = sanitizeProviderAuthorityPayload(rawBook);
+  const authorityRawBook = normalizeCanonicalIngestPayload({
+    source,
+    rawBook: sanitizeProviderAuthorityPayload(rawBook),
+  });
 
   const externalId = extractExternalId(providerExternalId, source, authorityRawBook);
   if (!externalId) {

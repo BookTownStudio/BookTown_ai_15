@@ -2301,6 +2301,9 @@ export async function materializeBookAuthorityInTransaction(
     editionId ||
     null;
   const directPublisher = resolvePublisher(rawBook);
+  const literaryForm = asNonEmptyString(rawBook.literaryForm) || asNonEmptyString(existingBook?.literaryForm);
+  const needsEnrichment =
+    rawBook.needsEnrichment === true || existingBook?.needsEnrichment === true;
   const fieldConfidencePatch = buildFieldConfidencePatch({
     existingBook,
     entries: [
@@ -2348,6 +2351,7 @@ export async function materializeBookAuthorityInTransaction(
     originalTitle,
     canonicalAuthorIds,
     originalLanguage,
+    ...(literaryForm ? { literaryForm } : {}),
     workIdentity,
     canonicalFieldTrust,
     abstractDescription: description,
@@ -2424,6 +2428,7 @@ export async function materializeBookAuthorityInTransaction(
       small: asNonEmptyString(asRecord(existingBook?.cover)?.small),
     },
     coverUrl: coverDecision.value,
+    needsEnrichment,
     ...(fieldConfidencePatch
       ? {
           provenance: {
@@ -2480,6 +2485,10 @@ export async function materializeBookAuthorityInTransaction(
     });
     const publisher = resolvePublisher(rawBook);
     const format = resolveEditionFormat(rawBook);
+    const editionContributors = uniqueStrings([
+      ...asStringArray(existingEdition?.editionContributors),
+      ...asStringArray(rawBook.editionContributors),
+    ]);
     const coverSourceUrl =
       coverDecision.acceptedIncoming ? incomingCoverCandidates[0] || "" : asNonEmptyString(existingEdition?.coverUrl);
     const editionBase: Record<string, unknown> = {
@@ -2503,6 +2512,7 @@ export async function materializeBookAuthorityInTransaction(
       titleEn,
       titleAr,
       authors,
+      ...(editionContributors.length > 0 ? { editionContributors } : {}),
       authorEn,
       authorAr,
       description,
