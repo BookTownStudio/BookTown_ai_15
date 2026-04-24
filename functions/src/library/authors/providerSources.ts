@@ -1,5 +1,7 @@
 import * as logger from "firebase-functions/logger";
 
+import { normalizeCanonicalAuthorDisplayName } from "./authorNameNormalization";
+
 const PROVIDER_TIMEOUT_MS = 4000;
 const OPEN_LIBRARY_BASE_URL = "https://openlibrary.org";
 const WIKIDATA_API_URL = "https://www.wikidata.org/w/api.php";
@@ -147,7 +149,7 @@ function buildOpenLibrarySearchBio(entry: Record<string, unknown>): string {
 
 function normalizeOpenLibraryAuthorSearchEntry(entry: Record<string, unknown>): Record<string, unknown> | null {
   const externalId = asString(entry.key).replace(/^\/authors\//, "").toUpperCase();
-  const name = asString(entry.name);
+  const name = normalizeCanonicalAuthorDisplayName(asString(entry.name));
 
   if (!externalId || !/^OL\d+A$/.test(externalId) || !name) {
     return null;
@@ -194,7 +196,10 @@ function normalizeOpenLibraryAuthorSearchEntry(entry: Record<string, unknown>): 
         }
       : {}),
     alternate_names: Array.isArray(entry.alternate_names)
-      ? entry.alternate_names.filter((value): value is string => typeof value === "string")
+      ? entry.alternate_names
+          .filter((value): value is string => typeof value === "string")
+          .map((value) => normalizeCanonicalAuthorDisplayName(value))
+          .filter(Boolean)
       : [],
   };
 }

@@ -27,3 +27,21 @@ export function buildCanonicalAuthorKey(params: {
 
   return `${namePart || "unknown"}::${birthYearPart}`;
 }
+
+export function extractCanonicalAuthorKeyRoot(value?: string | null): string {
+  if (typeof value !== "string") {
+    return "";
+  }
+
+  const [root] = value.split("::", 1);
+  return normalizeCanonicalPart(root || "");
+}
+
+export function canonicalAuthorKeysShareRoot(
+  left?: string | null,
+  right?: string | null
+): boolean {
+  const leftRoot = extractCanonicalAuthorKeyRoot(left);
+  const rightRoot = extractCanonicalAuthorKeyRoot(right);
+  return Boolean(leftRoot && rightRoot && leftRoot === rightRoot);
+}

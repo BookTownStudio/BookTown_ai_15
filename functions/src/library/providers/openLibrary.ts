@@ -300,6 +300,7 @@ export async function fetchOpenLibraryCanonicalMetadata(
     openLibraryEditionId: primaryEditionKey,
     title: asNonEmptyString(work.title) || asNonEmptyString(primaryEdition.title),
     authors: authorNames,
+    rawProviderAuthors: authorNames,
     author_name: authorNames,
     description,
     descriptionEn: description,

@@ -5,8 +5,19 @@ import { Query, DocumentData, FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
-import { ingestBookServerSide } from "../library/ingestBook";
-import { normalizeBatchCanonicalSeedPayload } from "../library/normalization/canonicalIngest";
+import {
+  ingestBookServerSide,
+  materializeSeedOnlyCanonicalFallback,
+} from "../library/ingestBook";
+import {
+  authorMatchesCanonicalSeedAuthority,
+  hasContributorRoleSignal,
+  hasRejectedCandidateTitleSignal,
+  hasRejectedContributorCandidateSignal,
+  inferKnownCanonicalLiteraryForm,
+  normalizeBatchCanonicalSeedPayload,
+  resolveCanonicalSeedAuthorityAuthor,
+} from "../library/normalization/canonicalIngest";
 import { buildCanonicalKey } from "../library/persistence/canonicalKey";
 import {
   buildBookSearchPatch,
@@ -102,7 +113,7 @@ type AdminSeedCanonicalBatchRow = {
   input: string;
   title: string;
   author: string;
-  status: "created" | "existing" | "failed";
+  status: "created" | "existing" | "failed" | "timeout_fallback";
   canonicalBookId?: string;
   bookId?: string;
   editionId?: string;
@@ -116,6 +127,17 @@ type AdminSeedCanonicalBatchSummary = {
   existingCount: number;
   failedCount: number;
 };
+
+const PROVIDER_PHASE_TIMEOUT_MS = 10_000;
+
+class ProviderPhaseTimeoutError extends Error {
+  readonly code = "PROVIDER_PHASE_TIMEOUT";
+
+  constructor(readonly timeoutMs: number) {
+    super(`Provider phase exceeded ${timeoutMs}ms.`);
+    this.name = "ProviderPhaseTimeoutError";
+  }
+}
 
 type AdminDeleteBookCascadeCounts = {
   books: number;
@@ -320,6 +342,30 @@ function mapBatchRowStatus(status: string): "created" | "existing" {
   return status === "CREATED" ? "created" : "existing";
 }
 
+function isProviderPhaseTimeoutError(error: unknown): error is ProviderPhaseTimeoutError {
+  return error instanceof ProviderPhaseTimeoutError;
+}
+
+async function withTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+
+  try {
+    return await Promise.race([
+      work,
+      new Promise<T>((_, reject) => {
+        timeoutHandle = setTimeout(() => {
+          reject(new ProviderPhaseTimeoutError(timeoutMs));
+        }, timeoutMs);
+        (timeoutHandle as { unref?: () => void }).unref?.();
+      }),
+    ]);
+  } finally {
+    if (timeoutHandle) {
+      clearTimeout(timeoutHandle);
+    }
+  }
+}
+
 function buildBatchSummary(rows: AdminSeedCanonicalBatchRow[]): AdminSeedCanonicalBatchSummary {
   return rows.reduce<AdminSeedCanonicalBatchSummary>(
     (acc, row) => {
@@ -339,6 +385,126 @@ function buildBatchSummary(rows: AdminSeedCanonicalBatchRow[]): AdminSeedCanonic
       failedCount: 0,
     }
   );
+}
+
+function buildSeedOnlyFallbackRawBook(params: {
+  title: string;
+  author: string;
+}): Record<string, unknown> {
+  const canonicalAuthor =
+    resolveCanonicalSeedAuthorityAuthor({
+      title: params.title,
+      fallbackAuthor: params.author,
+    }) || params.author;
+  const literaryForm = inferKnownCanonicalLiteraryForm({
+    title: params.title,
+    author: canonicalAuthor,
+  });
+
+  return applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
+    requestedTitle: params.title,
+    requestedAuthor: canonicalAuthor,
+    rawBook: {
+      title: params.title,
+      titleEn: params.title,
+      author: canonicalAuthor,
+      authorEn: canonicalAuthor,
+      authors: [canonicalAuthor],
+      language: "en",
+      canonicalLocked: true,
+      authorityStatus: "canonical",
+      workType: "canonical",
+      rightsMode: "public_free",
+      visibility: "public",
+      publicationState: "published",
+      ...(literaryForm ? { literaryForm } : {}),
+    },
+  });
+}
+
+async function resolveSeedBatchProviderPhase(params: {
+  title: string;
+  author: string;
+}): Promise<{
+  providerCandidate: UnifiedSearchResult | null;
+  providerSource: "googleBooks" | "openLibrary" | null;
+  preparedRawBook?: Record<string, unknown>;
+  searchResults: UnifiedSearchResult[];
+  message?: string;
+}> {
+  const query = `${params.title} ${params.author}`.trim();
+  const search = await unifiedSearch(query, {
+    limit: 10,
+  });
+
+  const searchResults = Array.isArray(search.results) ? search.results : [];
+  let providerCandidate = selectStrongestBulkProviderCandidate({
+    results: searchResults,
+    requestedTitle: params.title,
+    requestedAuthor: params.author,
+  });
+
+  if (providerCandidate?.source === "googleBooks") {
+    const openLibraryRetryCandidate = await retryOpenLibraryBulkProviderCandidate({
+      requestedTitle: params.title,
+      requestedAuthor: params.author,
+    });
+    if (openLibraryRetryCandidate) {
+      providerCandidate = openLibraryRetryCandidate;
+    }
+  }
+
+  if (!providerCandidate) {
+    return {
+      providerCandidate: null,
+      providerSource: null,
+      searchResults,
+      message: "No provider candidate matched this row.",
+    };
+  }
+
+  const providerSource: "googleBooks" | "openLibrary" | null =
+    providerCandidate.source === "googleBooks" || providerCandidate.source === "openLibrary"
+      ? providerCandidate.source
+      : null;
+
+  if (!providerSource) {
+    return {
+      providerCandidate: null,
+      providerSource: null,
+      searchResults,
+      message: "Provider candidate source is unsupported.",
+    };
+  }
+
+  providerCandidate = await enrichGoogleWinnerWithOpenLibraryAliases({
+    selectedCandidate: providerCandidate,
+    requestedTitle: params.title,
+    requestedAuthor: params.author,
+    initialResults: searchResults,
+  });
+
+  const preparedRawBook = prepareBulkCandidateRawBook({
+    result: providerCandidate,
+    requestedTitle: params.title,
+    requestedAuthor: params.author,
+  });
+
+  if (!preparedRawBook) {
+    return {
+      providerCandidate,
+      providerSource,
+      searchResults,
+      message: "Provider candidate could not be normalized into canonical seed input.",
+    };
+  }
+
+  return {
+    providerCandidate,
+    providerSource,
+    preparedRawBook,
+    searchResults,
+  };
 }
 
 function buildDeleteListSummary(
@@ -1781,12 +1947,81 @@ type DeleteExecutionPlan = {
   exactStoragePaths: Set<string>;
 };
 
-function normalizeCandidateAuthor(result: UnifiedSearchResult): string {
-  const author =
-    (Array.isArray(result.authors) ? result.authors[0] : "") ||
-    result.authorEn ||
-    "";
-  return normalizeSearchText(author);
+function extractCandidateAuthorNames(result: UnifiedSearchResult): string[] {
+  const rawBook = asRecord(result.rawBook) || {};
+  return uniqueStrings([
+    ...(Array.isArray(result.authors)
+      ? result.authors.filter((entry): entry is string => typeof entry === "string")
+      : []),
+    ...asStringArray(rawBook.providerAuthors),
+    ...asStringArray(rawBook.rawProviderAuthors),
+    ...asStringArray(rawBook.authors),
+    ...asStringArray(rawBook.author_name),
+    result.authorEn,
+    asNonEmptyString(rawBook.author),
+    asNonEmptyString(rawBook.authorEn),
+  ]);
+}
+
+function extractCandidateTitle(result: UnifiedSearchResult): string {
+  const rawBook = asRecord(result.rawBook) || {};
+  return (
+    asNonEmptyString(result.title) ||
+    asNonEmptyString(rawBook.title) ||
+    asNonEmptyString(rawBook.titleEn) ||
+    ""
+  );
+}
+
+function resolvePreferredCandidateAuthor(
+  result: UnifiedSearchResult,
+  requestedAuthorNorm = "",
+  requestedTitle = ""
+): string {
+  const authors = extractCandidateAuthorNames(result);
+  const overriddenAuthor = resolveCanonicalSeedAuthorityAuthor({
+    title: requestedTitle,
+  });
+
+  if (authors.length === 0) {
+    return overriddenAuthor || "";
+  }
+
+  if (
+    overriddenAuthor &&
+    !authors.some((author) =>
+      authorMatchesCanonicalSeedAuthority({
+        title: requestedTitle,
+        author,
+      })
+    )
+  ) {
+    return overriddenAuthor;
+  }
+
+  const exactRequestedMatch = authors.find(
+    (author) => normalizeSearchText(author) === requestedAuthorNorm
+  );
+  if (exactRequestedMatch) {
+    return exactRequestedMatch;
+  }
+
+  const cleanPrimary = authors.find(
+    (author) =>
+      !hasContributorRoleSignal(author) &&
+      !hasRejectedContributorCandidateSignal(author)
+  );
+  return cleanPrimary || authors[0] || "";
+}
+
+function normalizeCandidateAuthor(
+  result: UnifiedSearchResult,
+  requestedAuthorNorm = "",
+  requestedTitle = ""
+): string {
+  return normalizeSearchText(
+    resolvePreferredCandidateAuthor(result, requestedAuthorNorm, requestedTitle)
+  );
 }
 
 function candidateHasUsableCover(result: UnifiedSearchResult): boolean {
@@ -1847,6 +2082,58 @@ function normalizeBulkCanonicalTitle(params: {
   return hasAuthorSuffix || hasEditionNoise ? requestedTitle : null;
 }
 
+function applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite(params: {
+  rawBook: Record<string, unknown>;
+  requestedTitle: string;
+  requestedAuthor: string;
+}): Record<string, unknown> {
+  const seedAuthor =
+    resolveCanonicalSeedAuthorityAuthor({
+      title: params.requestedTitle,
+      fallbackAuthor: params.requestedAuthor,
+    }) || params.requestedAuthor.trim();
+
+  if (!seedAuthor) {
+    return params.rawBook;
+  }
+
+  const seedAuthorCanonicalKey = buildCanonicalKey({
+    author: seedAuthor,
+    title: "unknown",
+  });
+  const seedAuthorNorm = normalizeSearchText(seedAuthor);
+
+  const priorAuthorCandidates = uniqueStrings([
+    asNonEmptyString(params.rawBook.author),
+    asNonEmptyString(params.rawBook.authorEn),
+    ...asStringArray(params.rawBook.authors),
+    ...asStringArray(params.rawBook.authorAliases),
+  ]).filter((author) => normalizeSearchText(author) !== seedAuthorNorm);
+
+  return {
+    ...params.rawBook,
+    author: seedAuthor,
+    authorEn: seedAuthor,
+    authors: [seedAuthor],
+    authorCanonicalKey: seedAuthorCanonicalKey,
+    seedAuthorLock: {
+      author: seedAuthor,
+      authorEn: seedAuthor,
+      authors: [seedAuthor],
+      authorCanonicalKey: seedAuthorCanonicalKey,
+      source: "canonical_seed",
+    },
+    ...(priorAuthorCandidates.length > 0
+      ? {
+          authorAliases: uniqueStrings([
+            ...priorAuthorCandidates,
+            ...asStringArray(params.rawBook.authorAliases),
+          ]),
+        }
+      : {}),
+  };
+}
+
 function prepareBulkCandidateRawBook(params: {
   result: UnifiedSearchResult;
   requestedTitle: string;
@@ -1869,6 +2156,11 @@ function prepareBulkCandidateRawBook(params: {
 
   const canonicalTitle = cleanedTitle || params.requestedTitle;
   const requestedAuthor = params.requestedAuthor.trim();
+  const authoritativeSeedAuthor =
+    resolveCanonicalSeedAuthorityAuthor({
+      title: params.requestedTitle,
+      fallbackAuthor: requestedAuthor,
+    }) || requestedAuthor;
   const providerTitleNorm = normalizeSearchText(providerTitle);
   const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
   const providerAuthor =
@@ -1900,14 +2192,21 @@ function prepareBulkCandidateRawBook(params: {
   rawBook.title = canonicalTitle;
   rawBook.titleEn = canonicalTitle;
   rawBook.providerAuthors = providerAuthors;
-  rawBook.author = requestedAuthor;
-  rawBook.authorEn = requestedAuthor;
-  rawBook.authors = [requestedAuthor];
-  return normalizeBatchCanonicalSeedPayload({
+  rawBook.author = authoritativeSeedAuthor;
+  rawBook.authorEn = authoritativeSeedAuthor;
+  rawBook.authors = [authoritativeSeedAuthor];
+  const normalizedSeedPayload = normalizeBatchCanonicalSeedPayload({
     rawBook,
     requestedTitle: params.requestedTitle,
-    requestedAuthor: params.requestedAuthor,
+    requestedAuthor: authoritativeSeedAuthor,
   });
+  return normalizedSeedPayload
+    ? applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
+        rawBook: normalizedSeedPayload,
+        requestedTitle: params.requestedTitle,
+        requestedAuthor: authoritativeSeedAuthor,
+      })
+    : undefined;
 }
 
 function resolveCandidateTitleAuthorities(result: UnifiedSearchResult): string[] {
@@ -1967,7 +2266,10 @@ function extractTrustedOpenLibraryAliasTitles(params: {
           })
       )
       .filter((candidate) =>
-        titlesMatchRequestedAuthor(normalizeCandidateAuthor(candidate), requestedAuthorNorm)
+        titlesMatchRequestedAuthor(
+          normalizeCandidateAuthor(candidate, requestedAuthorNorm, params.requestedTitle),
+          requestedAuthorNorm
+        )
       )
       .flatMap((candidate) => resolveCandidateTitleAuthorities(candidate))
       .filter((title) => {
@@ -2080,12 +2382,49 @@ function isWeakBulkCandidate(params: {
   result: UnifiedSearchResult;
   requestedTitleNorm: string;
   requestedAuthorNorm: string;
+  requestedTitle?: string;
 }): boolean {
-  const titleNorm = normalizeSearchText(params.result.title);
-  const authorNorm = normalizeCandidateAuthor(params.result);
+  const titleNorm = normalizeSearchText(extractCandidateTitle(params.result));
+  const requestedTitle = params.requestedTitle || params.requestedTitleNorm;
+  const authorNorm = normalizeCandidateAuthor(
+    params.result,
+    params.requestedAuthorNorm,
+    requestedTitle
+  );
+  const candidateAuthors = extractCandidateAuthorNames(params.result);
+  const overrideAuthor = resolveCanonicalSeedAuthorityAuthor({
+    title: requestedTitle,
+  });
 
   if (!titleNorm || !authorNorm) {
     return true;
+  }
+
+  if (candidateAuthors.every((author) => hasRejectedContributorCandidateSignal(author))) {
+    return true;
+  }
+
+  if (candidateAuthors.some((author) => hasRejectedContributorCandidateSignal(author))) {
+    if (!candidateAuthors.some((author) => normalizeSearchText(author) === params.requestedAuthorNorm)) {
+      return true;
+    }
+  }
+
+  if (hasRejectedCandidateTitleSignal(extractCandidateTitle(params.result))) {
+    return true;
+  }
+
+  if (
+    overrideAuthor &&
+    candidateAuthors.length > 0 &&
+    !candidateAuthors.some((author) =>
+      authorMatchesCanonicalSeedAuthority({
+        title: requestedTitle,
+        author,
+      })
+    )
+  ) {
+    return false;
   }
 
   if (titleNorm.includes(` by ${params.requestedAuthorNorm}`)) {
@@ -2111,9 +2450,24 @@ function computeBulkCandidateScore(params: {
   result: UnifiedSearchResult;
   requestedTitleNorm: string;
   requestedAuthorNorm: string;
+  requestedTitle?: string;
 }): number {
-  const titleNorm = normalizeSearchText(params.result.title);
-  const authorNorm = normalizeCandidateAuthor(params.result);
+  const requestedTitle = params.requestedTitle || params.requestedTitleNorm;
+  const titleNorm = normalizeSearchText(extractCandidateTitle(params.result));
+  const authorNorm = normalizeCandidateAuthor(
+    params.result,
+    params.requestedAuthorNorm,
+    requestedTitle
+  );
+  const preferredAuthor = resolvePreferredCandidateAuthor(
+    params.result,
+    params.requestedAuthorNorm,
+    requestedTitle
+  );
+  const candidateAuthors = extractCandidateAuthorNames(params.result);
+  const overrideAuthor = resolveCanonicalSeedAuthorityAuthor({
+    title: requestedTitle,
+  });
   let score = 0;
 
   if (titleNorm === params.requestedTitleNorm) {
@@ -2138,6 +2492,25 @@ function computeBulkCandidateScore(params: {
 
   if (candidateHasUsableCover(params.result)) {
     score += 10;
+  }
+
+  if (preferredAuthor && !hasContributorRoleSignal(preferredAuthor)) {
+    score += 30;
+  }
+
+  if (
+    overrideAuthor &&
+    normalizeSearchText(preferredAuthor) === normalizeSearchText(overrideAuthor)
+  ) {
+    score += 160;
+  }
+
+  if (candidateAuthors.some((author) => hasRejectedContributorCandidateSignal(author))) {
+    score -= 120;
+  }
+
+  if (hasRejectedCandidateTitleSignal(extractCandidateTitle(params.result))) {
+    score -= 140;
   }
 
   score += Number.isFinite(params.result.confidence) ? params.result.confidence : 0;
@@ -2189,6 +2562,7 @@ function selectStrongestBulkProviderCandidate(params: {
         result,
         requestedTitleNorm,
         requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
       })
   );
 
@@ -2197,17 +2571,42 @@ function selectStrongestBulkProviderCandidate(params: {
     return null;
   }
 
+  const knownWorkForm = inferKnownCanonicalLiteraryForm({
+    title: params.requestedTitle,
+    author: params.requestedAuthor,
+  });
+
   return [...candidates].sort((left, right) => {
+    if (knownWorkForm) {
+      const rightAuthorNorm = normalizeCandidateAuthor(
+        right,
+        requestedAuthorNorm,
+        params.requestedTitle
+      );
+      const leftAuthorNorm = normalizeCandidateAuthor(
+        left,
+        requestedAuthorNorm,
+        params.requestedTitle
+      );
+      const knownAuthorDelta =
+        Number(rightAuthorNorm === requestedAuthorNorm) -
+        Number(leftAuthorNorm === requestedAuthorNorm);
+      if (knownAuthorDelta !== 0) {
+        return knownAuthorDelta;
+      }
+    }
     const scoreDelta =
       computeBulkCandidateScore({
         result: right,
         requestedTitleNorm,
         requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
       }) -
       computeBulkCandidateScore({
         result: left,
         requestedTitleNorm,
         requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
       });
     if (scoreDelta !== 0) return scoreDelta;
     const sourceDelta = sourceAuthorityRank(right.source) - sourceAuthorityRank(left.source);
@@ -3489,25 +3888,43 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         continue;
       }
 
-      const query = `${entry.title} ${entry.author}`.trim();
-      const search = await unifiedSearch(query, {
-        limit: 10,
-      });
-      let providerCandidate = selectStrongestBulkProviderCandidate({
-        results: search.results,
-        requestedTitle: entry.title,
-        requestedAuthor: entry.author,
-      });
-
-      if (providerCandidate?.source === "googleBooks") {
-        const openLibraryRetryCandidate = await retryOpenLibraryBulkProviderCandidate({
-          requestedTitle: entry.title,
-          requestedAuthor: entry.author,
-        });
-        if (openLibraryRetryCandidate) {
-          providerCandidate = openLibraryRetryCandidate;
+      let providerPhase;
+      try {
+        providerPhase = await withTimeout(
+          resolveSeedBatchProviderPhase({
+            title: entry.title,
+            author: entry.author,
+          }),
+          PROVIDER_PHASE_TIMEOUT_MS
+        );
+      } catch (error) {
+        if (!isProviderPhaseTimeoutError(error)) {
+          throw error;
         }
+
+        const fallback = await materializeSeedOnlyCanonicalFallback({
+          rawBook: buildSeedOnlyFallbackRawBook({
+            title: entry.title,
+            author: entry.author,
+          }),
+          ingestionKey: `canonical_seed_timeout:${normalizeSearchText(entry.author)}::${normalizeSearchText(entry.title)}`,
+        });
+
+        results.push({
+          row: entry.row,
+          input: entry.input,
+          title: entry.title,
+          author: entry.author,
+          status: "timeout_fallback",
+          canonicalBookId: fallback.canonicalBookId,
+          bookId: fallback.bookId,
+          editionId: fallback.editionId || undefined,
+          message: `Provider phase exceeded ${PROVIDER_PHASE_TIMEOUT_MS}ms; saved canonical seed fallback.`,
+        });
+        continue;
       }
+
+      const { providerCandidate, providerSource, preparedRawBook, message } = providerPhase;
 
       if (!providerCandidate) {
         const canonicalReuse = await resolveExistingCanonicalByAuthorAndTitle({
@@ -3539,15 +3956,11 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           title: entry.title,
           author: entry.author,
           status: "failed",
-          message: "No provider candidate matched this row.",
+          message: message || "No provider candidate matched this row.",
         });
         continue;
       }
 
-      const providerSource: "googleBooks" | "openLibrary" | null =
-        providerCandidate.source === "googleBooks" || providerCandidate.source === "openLibrary"
-          ? providerCandidate.source
-          : null;
       if (!providerSource) {
         results.push({
           row: entry.row,
@@ -3555,17 +3968,10 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           title: entry.title,
           author: entry.author,
           status: "failed",
-          message: "Provider candidate source is unsupported.",
+          message: message || "Provider candidate source is unsupported.",
         });
         continue;
       }
-
-      providerCandidate = await enrichGoogleWinnerWithOpenLibraryAliases({
-        selectedCandidate: providerCandidate,
-        requestedTitle: entry.title,
-        requestedAuthor: entry.author,
-        initialResults: Array.isArray(search.results) ? search.results : [],
-      });
 
       const candidateMatchedExisting = await resolveExistingCanonicalWorkForSeed({
         title: entry.title,
@@ -3592,11 +3998,6 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         continue;
       }
 
-      const preparedRawBook = prepareBulkCandidateRawBook({
-        result: providerCandidate,
-        requestedTitle: entry.title,
-        requestedAuthor: entry.author,
-      });
       if (!preparedRawBook) {
         results.push({
           row: entry.row,
@@ -3604,7 +4005,7 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           title: entry.title,
           author: entry.author,
           status: "failed",
-          message: "Provider candidate could not be normalized into canonical seed input.",
+          message: message || "Provider candidate could not be normalized into canonical seed input.",
         });
         continue;
       }

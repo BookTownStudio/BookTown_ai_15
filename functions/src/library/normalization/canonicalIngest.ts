@@ -23,6 +23,44 @@ const TITLE_DECORATION_PATTERNS = [
   /\s+\b(?:unabridged|annotated|illustrated)\b.*$/iu,
 ];
 
+const REJECTED_CONTRIBUTOR_PATTERNS = [
+  /\bsummary\b/u,
+  /\bnotes?\b/u,
+  /\bedited\b/u,
+  /\bintroduction\b/u,
+  /\btranslated\b/u,
+  /\btranslator\b/u,
+  /\bpublic\b/u,
+  /\bcompanion\b/u,
+  /\bguide\b/u,
+];
+
+const REJECTED_TITLE_PATTERNS = [
+  /\bnotes?\b/u,
+  /\bsummary\b/u,
+  /\bstudy\s+guide\b/u,
+  /\bcommentary\b/u,
+  /\bcompanion\b/u,
+  /\bguide\b/u,
+];
+
+const KNOWN_CANONICAL_WORK_LITERARY_FORMS = new Map<string, string>([
+  ["william shakespeare::macbeth", "play"],
+  ["william shakespeare::hamlet", "play"],
+  ["simone de beauvoir::the second sex", "nonfiction"],
+  ["simone de beauvoir::le deuxieme sexe", "nonfiction"],
+  ["nguyen du::the tale of kieu", "poetry"],
+  ["nguyen du::truyen kieu", "poetry"],
+]);
+
+const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
+  ["macbeth", "William Shakespeare"],
+  ["hamlet", "William Shakespeare"],
+  ["the divine comedy", "Dante Alighieri"],
+  ["one hundred years of solitude", "Gabriel Garcia Marquez"],
+  ["war and peace", "Leo Tolstoy"],
+]);
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -62,9 +100,99 @@ function firstNonEmptyString(...values: unknown[]): string {
   return "";
 }
 
-function hasContributorRoleSignal(value: string): boolean {
+function normalizeCanonicalPersonDisplayName(value: string): string {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) {
+    return "";
+  }
+
+  if (
+    normalized.includes("tolstoy") &&
+    (normalized.includes("leo") || normalized.includes("lev") || normalized.includes("graf"))
+  ) {
+    return "Leo Tolstoy";
+  }
+
+  if (normalized === "gabriel garcia marquez" || normalized === "gabriel garcia marquez") {
+    return "Gabriel Garcia Marquez";
+  }
+
+  return value.trim();
+}
+
+function extractAuthorFamilyTokens(value: string): string[] {
+  const normalized = normalizeSearchText(value);
+  if (!normalized) {
+    return [];
+  }
+  return normalized
+    .split(" ")
+    .filter((token) => token.length > 2)
+    .slice(-2);
+}
+
+export function hasContributorRoleSignal(value: string): boolean {
   const normalized = normalizeSearchText(value);
   return CONTRIBUTOR_ROLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+export function hasRejectedContributorCandidateSignal(value: string): boolean {
+  const normalized = normalizeSearchText(value);
+  return REJECTED_CONTRIBUTOR_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+export function hasRejectedCandidateTitleSignal(value: string): boolean {
+  const normalized = normalizeSearchText(value);
+  return REJECTED_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
+}
+
+export function inferKnownCanonicalLiteraryForm(params: {
+  title?: string;
+  author?: string;
+}): string {
+  const titleNorm = normalizeSearchText(params.title || "");
+  const authorNorm = normalizeSearchText(params.author || "");
+  if (!titleNorm || !authorNorm) {
+    return "";
+  }
+  return KNOWN_CANONICAL_WORK_LITERARY_FORMS.get(`${authorNorm}::${titleNorm}`) || "";
+}
+
+export function resolveCanonicalSeedAuthorityAuthor(params: {
+  title?: string;
+  fallbackAuthor?: string;
+}): string {
+  const titleNorm = normalizeSearchText(params.title || "");
+  const override = titleNorm ? KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES.get(titleNorm) || "" : "";
+  const selected = override || params.fallbackAuthor || "";
+  return normalizeCanonicalPersonDisplayName(selected);
+}
+
+export function authorMatchesCanonicalSeedAuthority(params: {
+  title?: string;
+  author?: string;
+}): boolean {
+  const expectedAuthor = resolveCanonicalSeedAuthorityAuthor({
+    title: params.title,
+  });
+  const candidateAuthor = normalizeCanonicalPersonDisplayName(params.author || "");
+  if (!expectedAuthor || !candidateAuthor) {
+    return false;
+  }
+
+  const expectedNorm = normalizeSearchText(expectedAuthor);
+  const candidateNorm = normalizeSearchText(candidateAuthor);
+  if (expectedNorm === candidateNorm) {
+    return true;
+  }
+
+  const expectedFamilyTokens = extractAuthorFamilyTokens(expectedAuthor);
+  const candidateFamilyTokens = extractAuthorFamilyTokens(candidateAuthor);
+  if (expectedFamilyTokens.length === 0 || candidateFamilyTokens.length === 0) {
+    return false;
+  }
+
+  return expectedFamilyTokens.some((token) => candidateFamilyTokens.includes(token));
 }
 
 function extractProviderAuthors(rawBook: Record<string, unknown>): string[] {
@@ -96,6 +224,38 @@ function selectPrimaryCreator(params: {
 
   const primary = params.providerAuthors.find((author) => !hasContributorRoleSignal(author));
   return primary || params.providerAuthors[0] || "Unknown";
+}
+
+function readSeedAuthorLock(rawBook: Record<string, unknown>): {
+  author: string;
+  authorEn: string;
+  authors: string[];
+  authorCanonicalKey: string;
+} | null {
+  const record = asRecord(rawBook.seedAuthorLock);
+  if (!record) {
+    return null;
+  }
+
+  const author = asNonEmptyString(record.author);
+  const authorEn = asNonEmptyString(record.authorEn) || author;
+  const authors = uniqueStrings([
+    ...asStringArray(record.authors),
+    author,
+    authorEn,
+  ]);
+  const authorCanonicalKey = asNonEmptyString(record.authorCanonicalKey);
+
+  if (!author || !authorEn || authors.length === 0 || !authorCanonicalKey) {
+    return null;
+  }
+
+  return {
+    author,
+    authorEn,
+    authors,
+    authorCanonicalKey,
+  };
 }
 
 function stripDecoratedTitle(params: {
@@ -139,6 +299,19 @@ function inferLiteraryForm(rawBook: Record<string, unknown>): string {
   const direct = asNonEmptyString(rawBook.literaryForm).toLowerCase();
   if (direct) {
     return direct;
+  }
+
+  const knownWorkForm = inferKnownCanonicalLiteraryForm({
+    title:
+      asNonEmptyString(rawBook.titleEn) ||
+      asNonEmptyString(rawBook.title),
+    author:
+      asNonEmptyString(rawBook.authorEn) ||
+      asNonEmptyString(rawBook.author) ||
+      asStringArray(rawBook.authors)[0],
+  });
+  if (knownWorkForm) {
+    return knownWorkForm;
   }
 
   const normalizedSignals = [
@@ -216,11 +389,14 @@ export function normalizeCanonicalIngestPayload(params: {
   requestedAuthor?: string;
 }): Record<string, unknown> {
   const normalized: Record<string, unknown> = { ...params.rawBook };
+  const seedAuthorLock = readSeedAuthorLock(normalized);
   const providerAuthors = extractProviderAuthors(normalized);
-  const primaryAuthor = selectPrimaryCreator({
-    requestedAuthor: params.requestedAuthor,
-    providerAuthors,
-  });
+  const primaryAuthor =
+    seedAuthorLock?.author ||
+    selectPrimaryCreator({
+      requestedAuthor: params.requestedAuthor,
+      providerAuthors,
+    });
   const providerTitle = firstNonEmptyString(normalized.title, normalized.titleEn, params.requestedTitle);
   const canonicalTitle = stripDecoratedTitle({
     providerTitle,
@@ -234,7 +410,10 @@ export function normalizeCanonicalIngestPayload(params: {
     normalized.summary
   );
   const trustedWorkLevelSource = hasTrustedWorkLevelSource(params.source, normalized);
-  const contributorNames = providerAuthors.filter((author) => author !== primaryAuthor);
+  const primaryAuthorNorm = normalizeSearchText(primaryAuthor);
+  const contributorNames = providerAuthors.filter(
+    (author) => normalizeSearchText(author) !== primaryAuthorNorm
+  );
   const needsEnrichment =
     !description ||
     (!literaryForm && !trustedWorkLevelSource);
@@ -253,7 +432,13 @@ export function normalizeCanonicalIngestPayload(params: {
     normalized.titleEn = canonicalTitle;
   }
 
-  if (primaryAuthor) {
+  if (seedAuthorLock) {
+    normalized.author = seedAuthorLock.author;
+    normalized.authorEn = seedAuthorLock.authorEn;
+    normalized.authors = seedAuthorLock.authors;
+    normalized.authorCanonicalKey = seedAuthorLock.authorCanonicalKey;
+    normalized.seedAuthorLock = seedAuthorLock;
+  } else if (primaryAuthor) {
     normalized.author = primaryAuthor;
     normalized.authorEn = primaryAuthor;
     normalized.authors = [primaryAuthor];

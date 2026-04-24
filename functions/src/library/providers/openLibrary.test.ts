@@ -135,6 +135,7 @@ describe("resolveOpenLibraryReadableCandidate", () => {
       externalId: "OL66554W",
       editionExternalId: "OL50444320M",
       openLibraryEditionId: "OL50444320M",
+      rawProviderAuthors: ["Jane Austen"],
       isbn13: "9780141439518",
       language: "eng",
       workLevelSource: true,

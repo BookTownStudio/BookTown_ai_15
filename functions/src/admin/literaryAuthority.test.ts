@@ -7,6 +7,7 @@ const storageFiles = new Set<string>();
 let uuidCounter = 0;
 let timestampCounter = 0;
 const ingestBookServerSideMock = vi.fn();
+const materializeSeedOnlyCanonicalFallbackMock = vi.fn();
 const unifiedSearchMock = vi.fn();
 
 type SpecialValue =
@@ -316,6 +317,7 @@ vi.mock("../shared/auth", () => ({
 
 vi.mock("../library/ingestBook", () => ({
   ingestBookServerSide: ingestBookServerSideMock,
+  materializeSeedOnlyCanonicalFallback: materializeSeedOnlyCanonicalFallbackMock,
 }));
 
 vi.mock("../library/search/searchEngine", () => ({
@@ -356,6 +358,7 @@ describe("adminCreateCanonicalBook", () => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
     ingestBookServerSideMock.mockReset();
+    materializeSeedOnlyCanonicalFallbackMock.mockReset();
     unifiedSearchMock.mockReset();
   });
 
@@ -467,6 +470,10 @@ describe("adminCreateCanonicalBook", () => {
             resultType: "external",
             source: "openLibrary",
             externalId: "OL1W",
+            title: "The Brothers Karamazov",
+            titleEn: "The Brothers Karamazov",
+            authors: ["Fyodor Dostoevsky"],
+            authorEn: "Fyodor Dostoevsky",
             rawBook: { title: "The Brothers Karamazov", author: "Fyodor Dostoevsky" },
           },
         ],
@@ -480,6 +487,10 @@ describe("adminCreateCanonicalBook", () => {
             resultType: "external",
             source: "googleBooks",
             externalId: "gb-77",
+            title: "Nausea",
+            titleEn: "Nausea",
+            authors: ["Jean-Paul Sartre"],
+            authorEn: "Jean-Paul Sartre",
             rawBook: { title: "Nausea", author: "Jean-Paul Sartre" },
           },
         ],
@@ -680,6 +691,125 @@ describe("adminCreateCanonicalBook", () => {
         canonicalBookId: "crime-1",
       })
     );
+  });
+
+  it("creates seedAuthorLock for every canonical seed row and keeps provider contributors as non-canonical metadata", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const cases = [
+      {
+        title: "Crime and Punishment",
+        seedAuthor: "Fyodor Dostoevsky",
+        providerAuthor: "ClassyBookRead",
+      },
+      {
+        title: "Candide",
+        seedAuthor: "Voltaire",
+        providerAuthor: "Tobias Smollett",
+      },
+      {
+        title: "Dead Souls",
+        seedAuthor: "Nikolai Gogol",
+        providerAuthor: "D. J. Hogarth",
+      },
+      {
+        title: "The Stranger",
+        seedAuthor: "Albert Camus",
+        providerAuthor: "Mary L Dennis",
+      },
+      {
+        title: "The Odyssey",
+        seedAuthor: "Homer",
+        providerAuthor: "Όμηρος",
+      },
+    ];
+
+    for (const [index, row] of cases.entries()) {
+      unifiedSearchMock.mockResolvedValueOnce({
+        results: [
+          {
+            id: `seed-${index}`,
+            editionId: `seed-${index}`,
+            bookId: `seed-${index}`,
+            workId: null,
+            externalId: `SEED${index}`,
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: row.title,
+            titleEn: row.title,
+            titleAr: "",
+            authors: [row.providerAuthor],
+            authorEn: row.providerAuthor,
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 75,
+            rank: index + 1,
+            rawBook: {
+              key: `/works/SEED${index}W`,
+              openLibraryWorkId: `SEED${index}W`,
+              title: row.title,
+              author: row.providerAuthor,
+              authors: [row.providerAuthor],
+              language: "en",
+            },
+          },
+        ],
+      });
+
+      ingestBookServerSideMock.mockResolvedValueOnce({
+        canonicalBookId: `book-${index}`,
+        bookId: `book-${index}`,
+        editionId: `googleBooks:SEED${index}`,
+        status: "CREATED",
+      });
+    }
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: cases.map((row) => `${row.title} | ${row.seedAuthor}`).join("\n"),
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledTimes(cases.length);
+    for (const [index, row] of cases.entries()) {
+      const rawBook = ingestBookServerSideMock.mock.calls[index][0].rawBook;
+
+      expect(rawBook).toMatchObject({
+        author: row.seedAuthor,
+        authorEn: row.seedAuthor,
+        authors: [row.seedAuthor],
+        seedAuthorLock: {
+          author: row.seedAuthor,
+          authorEn: row.seedAuthor,
+          authors: [row.seedAuthor],
+          authorCanonicalKey: `${row.seedAuthor.toLowerCase()}::unknown`,
+          source: "canonical_seed",
+        },
+      });
+      expect(rawBook.author).not.toBe(row.providerAuthor);
+      expect(rawBook.authors).not.toContain(row.providerAuthor);
+      expect([
+        ...(Array.isArray(rawBook.authorAliases) ? rawBook.authorAliases : []),
+        ...(Array.isArray(rawBook.editionContributors) ? rawBook.editionContributors : []),
+        ...(Array.isArray(rawBook.providerAuthors) ? rawBook.providerAuthors : []),
+      ]).toContain(row.providerAuthor);
+    }
   });
 
   it("prefers a cover-bearing candidate when authority signals are otherwise equal", async () => {
@@ -1249,6 +1379,679 @@ describe("adminCreateCanonicalBook", () => {
           editionContributors: ["Alasdair D. F. Macrae"],
           literaryForm: "play",
           needsEnrichment: true,
+        }),
+      })
+    );
+  });
+
+  it("prefers the literary creator for Macbeth before canonical normalization begins", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "macbeth-bad",
+          editionId: "macbeth-bad",
+          bookId: "macbeth-bad",
+          workId: null,
+          externalId: "MACBETH_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Macbeth Study Guide",
+          titleEn: "Macbeth Study Guide",
+          titleAr: "",
+          authors: ["Summary Companion"],
+          authorEn: "Summary Companion",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 95,
+          rank: 1,
+          rawBook: {
+            title: "Macbeth Study Guide",
+            authors: ["Summary Companion"],
+          },
+        },
+        {
+          id: "macbeth-good",
+          editionId: "macbeth-good",
+          bookId: "macbeth-good",
+          workId: null,
+          externalId: "MACBETH_GOOD",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Macbeth",
+          titleEn: "Macbeth",
+          titleAr: "",
+          authors: ["William Shakespeare"],
+          authorEn: "William Shakespeare",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 70,
+          rank: 3,
+          rawBook: {
+            key: "/works/OLMACBETHW",
+            openLibraryWorkId: "OLMACBETHW",
+            title: "Macbeth",
+            authors: ["William Shakespeare"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "macbeth-work",
+      bookId: "macbeth-work",
+      editionId: "openLibrary:MACBETH_GOOD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Macbeth | William Shakespeare",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "MACBETH_GOOD",
+        rawBook: expect.objectContaining({
+          title: "Macbeth",
+          authors: ["William Shakespeare"],
+          literaryForm: "play",
+        }),
+      })
+    );
+  });
+
+  it("prefers the literary creator for Hamlet before canonical normalization begins", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "hamlet-bad",
+          editionId: "hamlet-bad",
+          bookId: "hamlet-bad",
+          workId: null,
+          externalId: "HAMLET_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Hamlet translated by Modern School Edition",
+          titleEn: "Hamlet translated by Modern School Edition",
+          titleAr: "",
+          authors: ["Modern School Edition"],
+          authorEn: "Modern School Edition",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 96,
+          rank: 1,
+          rawBook: {
+            title: "Hamlet translated by Modern School Edition",
+            authors: ["Modern School Edition"],
+          },
+        },
+        {
+          id: "hamlet-good",
+          editionId: "hamlet-good",
+          bookId: "hamlet-good",
+          workId: null,
+          externalId: "HAMLET_GOOD",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Hamlet",
+          titleEn: "Hamlet",
+          titleAr: "",
+          authors: ["William Shakespeare"],
+          authorEn: "William Shakespeare",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 68,
+          rank: 4,
+          rawBook: {
+            key: "/works/OLHAMLETW",
+            openLibraryWorkId: "OLHAMLETW",
+            title: "Hamlet",
+            authors: ["William Shakespeare"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "hamlet-work",
+      bookId: "hamlet-work",
+      editionId: "openLibrary:HAMLET_GOOD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Hamlet | William Shakespeare",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerExternalId: "HAMLET_GOOD",
+        rawBook: expect.objectContaining({
+          title: "Hamlet",
+          authors: ["William Shakespeare"],
+          author: "William Shakespeare",
+          authorEn: "William Shakespeare",
+          authorCanonicalKey: "william shakespeare::unknown",
+          seedAuthorLock: {
+            author: "William Shakespeare",
+            authorEn: "William Shakespeare",
+            authors: ["William Shakespeare"],
+            authorCanonicalKey: "william shakespeare::unknown",
+            source: "canonical_seed",
+          },
+          literaryForm: "play",
+        }),
+      })
+    );
+  });
+
+  it("times out one provider row into seed fallback and still returns later row results", async () => {
+    vi.useFakeTimers();
+
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock
+      .mockImplementationOnce(() => new Promise(() => {}))
+      .mockResolvedValueOnce({
+        results: [],
+      });
+
+    materializeSeedOnlyCanonicalFallbackMock.mockResolvedValueOnce({
+      canonicalBookId: "hamlet-fallback",
+      bookId: "hamlet-fallback",
+      editionId: null,
+      status: "CREATED",
+    });
+
+    const pending = callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: ["Hamlet | William Shakespeare", "No Match | Unknown Author"].join("\n"),
+      },
+    });
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    const result = await pending;
+
+    expect(materializeSeedOnlyCanonicalFallbackMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawBook: expect.objectContaining({
+          title: "Hamlet",
+          author: "William Shakespeare",
+          authorCanonicalKey: "william shakespeare::unknown",
+          seedAuthorLock: {
+            author: "William Shakespeare",
+            authorEn: "William Shakespeare",
+            authors: ["William Shakespeare"],
+            authorCanonicalKey: "william shakespeare::unknown",
+            source: "canonical_seed",
+          },
+        }),
+      })
+    );
+
+    expect(result).toMatchObject({
+      rows: [
+        {
+          title: "Hamlet",
+          status: "timeout_fallback",
+          bookId: "hamlet-fallback",
+        },
+        {
+          title: "No Match",
+          status: "failed",
+          message: "No provider candidate matched this row.",
+        },
+      ],
+      summary: {
+        successCount: 1,
+        existingCount: 0,
+        failedCount: 1,
+      },
+    });
+
+    vi.useRealTimers();
+  });
+
+  it("prefers the literary creator for The Second Sex before canonical normalization begins", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "secondsx-bad",
+          editionId: "secondsx-bad",
+          bookId: "secondsx-bad",
+          workId: null,
+          externalId: "SECONDSEX_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Second Sex Commentary",
+          titleEn: "The Second Sex Commentary",
+          titleAr: "",
+          authors: ["Commentary Guide"],
+          authorEn: "Commentary Guide",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 94,
+          rank: 1,
+          rawBook: {
+            title: "The Second Sex Commentary",
+            authors: ["Commentary Guide"],
+          },
+        },
+        {
+          id: "secondsx-good",
+          editionId: "secondsx-good",
+          bookId: "secondsx-good",
+          workId: null,
+          externalId: "SECONDSEX_GOOD",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Second Sex",
+          titleEn: "The Second Sex",
+          titleAr: "",
+          authors: ["Simone de Beauvoir"],
+          authorEn: "Simone de Beauvoir",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 66,
+          rank: 5,
+          rawBook: {
+            key: "/works/OLSECONDSEXW",
+            openLibraryWorkId: "OLSECONDSEXW",
+            title: "The Second Sex",
+            authors: ["Simone de Beauvoir"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "secondsex-work",
+      bookId: "secondsex-work",
+      editionId: "openLibrary:SECONDSEX_GOOD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Second Sex | Simone de Beauvoir",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerExternalId: "SECONDSEX_GOOD",
+        rawBook: expect.objectContaining({
+          title: "The Second Sex",
+          authors: ["Simone de Beauvoir"],
+          literaryForm: "nonfiction",
+        }),
+      })
+    );
+  });
+
+  it("prefers the literary creator for The Tale of Kieu before canonical normalization begins", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "kieu-bad",
+          editionId: "kieu-bad",
+          bookId: "kieu-bad",
+          workId: null,
+          externalId: "KIEU_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Tale of Kieu Summary Guide",
+          titleEn: "The Tale of Kieu Summary Guide",
+          titleAr: "",
+          authors: ["Public Companion"],
+          authorEn: "Public Companion",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 93,
+          rank: 1,
+          rawBook: {
+            title: "The Tale of Kieu Summary Guide",
+            authors: ["Public Companion"],
+          },
+        },
+        {
+          id: "kieu-good",
+          editionId: "kieu-good",
+          bookId: "kieu-good",
+          workId: null,
+          externalId: "KIEU_GOOD",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Tale of Kieu",
+          titleEn: "The Tale of Kieu",
+          titleAr: "",
+          authors: ["Nguyen Du"],
+          authorEn: "Nguyen Du",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 65,
+          rank: 4,
+          rawBook: {
+            key: "/works/OLKIEUW",
+            openLibraryWorkId: "OLKIEUW",
+            title: "The Tale of Kieu",
+            authors: ["Nguyen Du"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "kieu-work",
+      bookId: "kieu-work",
+      editionId: "openLibrary:KIEU_GOOD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Tale of Kieu | Nguyen Du",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerExternalId: "KIEU_GOOD",
+        rawBook: expect.objectContaining({
+          title: "The Tale of Kieu",
+          authors: ["Nguyen Du"],
+          literaryForm: "poetry",
+        }),
+      })
+    );
+  });
+
+  it("overrides War and Peace to Leo Tolstoy during deterministic seed ingestion", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "warpeace-bad",
+          editionId: "warpeace-bad",
+          bookId: "warpeace-bad",
+          workId: null,
+          externalId: "WARPEACE_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "War and Peace",
+          titleEn: "War and Peace",
+          titleAr: "",
+          authors: ["Tolstoy, Leo, graf, 1828-1910"],
+          authorEn: "Tolstoy, Leo, graf, 1828-1910",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 91,
+          rank: 1,
+          rawBook: {
+            title: "War and Peace",
+            authors: ["Tolstoy, Leo, graf, 1828-1910"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "warpeace-work",
+      bookId: "warpeace-work",
+      editionId: "googleBooks:WARPEACE_BAD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "War and Peace | Leo Tolstoy",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerExternalId: "WARPEACE_BAD",
+        rawBook: expect.objectContaining({
+          title: "War and Peace",
+          author: "Leo Tolstoy",
+          authorEn: "Leo Tolstoy",
+          authors: ["Leo Tolstoy"],
+        }),
+      })
+    );
+  });
+
+  it("overrides The Divine Comedy to Dante Alighieri during deterministic seed ingestion", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "divine-bad",
+          editionId: "divine-bad",
+          bookId: "divine-bad",
+          workId: null,
+          externalId: "DIVINE_BAD",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Divine Comedy",
+          titleEn: "The Divine Comedy",
+          titleAr: "",
+          authors: ["Public School Notes"],
+          authorEn: "Public School Notes",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            title: "The Divine Comedy",
+            authors: ["Public School Notes"],
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "divine-work",
+      bookId: "divine-work",
+      editionId: "googleBooks:DIVINE_BAD",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Divine Comedy | Dante Alighieri",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerExternalId: "DIVINE_BAD",
+        rawBook: expect.objectContaining({
+          title: "The Divine Comedy",
+          author: "Dante Alighieri",
+          authorEn: "Dante Alighieri",
+          authors: ["Dante Alighieri"],
         }),
       })
     );
@@ -2841,6 +3644,202 @@ describe("adminCreateCanonicalBook", () => {
     expect(second.bookId).not.toBe(first.bookId);
     expect(getDoc(`books/${second.bookId}`)?.author).toBe("Charlotte Bronte");
     expect(getDoc("book_identity/provider:openLibrary:OLLOCK1W")?.bookId).toBe(first.bookId);
+  });
+
+  it("keeps Hamlet seed-author lock through final book persistence even when provider author differs", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "googleBooks",
+      authorityStatus: "canonical",
+      providerExternalId: "hamlet-seed-lock-1",
+      rawBook: {
+        title: "Hamlet",
+        titleEn: "Hamlet",
+        author: "Literatura Pública",
+        authorEn: "Literatura Pública",
+        authors: ["Literatura Pública"],
+        authorAliases: ["Literatura Pública"],
+        language: "en",
+        literaryForm: "play",
+        seedAuthorLock: {
+          author: "William Shakespeare",
+          authorEn: "William Shakespeare",
+          authors: ["William Shakespeare"],
+          authorCanonicalKey: "william shakespeare::unknown",
+          source: "canonical_seed",
+        },
+      },
+      ingestionKey: "googleBooks:hamlet-seed-lock-1",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const authorId = typeof book?.authorId === "string" ? book.authorId : "";
+    const author = authorId ? getDoc(`authors/${authorId}`) : null;
+
+    expect(book?.title).toBe("Hamlet");
+    expect(book?.author).toBe("William Shakespeare");
+    expect(book?.authorEn).toBe("William Shakespeare");
+    expect(book?.authors).toEqual(["William Shakespeare"]);
+    expect(String(book?.authorCanonicalKey || "")).toContain("william shakespeare");
+    expect(book?.author).not.toBe("Literatura Pública");
+    expect(book?.authors).not.toContain("Literatura Pública");
+    expect(book?.provenance).toMatchObject({
+      seedAuthorLock: {
+        author: "William Shakespeare",
+        authorEn: "William Shakespeare",
+        authors: ["William Shakespeare"],
+        authorCanonicalKey: "william shakespeare::unknown",
+        source: "canonical_seed",
+      },
+    });
+    expect(author?.nameEn).toBe("William Shakespeare");
+  });
+
+  it("upgrades seed author lock canonical key when the same author root gains birth year authority", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "War and Peace",
+        titleEn: "War and Peace",
+        author: "Leo Tolstoy",
+        authorEn: "Leo Tolstoy",
+        authors: ["Leo Tolstoy"],
+        authorCanonicalKey: "leo tolstoy::unknown",
+        birthYear: "1828",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:war-and-peace:tolstoy",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+
+    expect(book?.author).toBe("Leo Tolstoy");
+    expect(book?.authorCanonicalKey).toBe("leo tolstoy::1828");
+    expect(book?.provenance).toMatchObject({
+      seedAuthorLock: {
+        authorCanonicalKey: "leo tolstoy::unknown",
+      },
+    });
+  });
+
+  it("rejects impossible same-root seed author birth-year upgrades", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "War and Peace",
+        titleEn: "War and Peace",
+        author: "Leo Tolstoy",
+        authorEn: "Leo Tolstoy",
+        authors: ["Leo Tolstoy"],
+        authorCanonicalKey: "leo tolstoy::unknown",
+        birthYear: "1930",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:war-and-peace:tolstoy-impossible-year",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const author = getDoc(`authors/${book?.authorId}`);
+
+    expect(book?.author).toBe("Leo Tolstoy");
+    expect(book?.authorEn).toBe("Leo Tolstoy");
+    expect(String(book?.authorCanonicalKey || "")).toMatch(/^leo tolstoy::/);
+    expect(book?.authorCanonicalKey).not.toBe("leo tolstoy::1930");
+    expect(author?.canonicalKey).not.toBe("leo tolstoy::1930");
+  });
+
+  it("normalizes inverted library-form canonical seed author names before book persistence", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Anna Karenina",
+        titleEn: "Anna Karenina",
+        author: "Tolstoy, Leo, graf, 1828-1910",
+        authorEn: "Tolstoy, Leo, graf, 1828-1910",
+        authors: ["Tolstoy, Leo, graf, 1828-1910"],
+        authorCanonicalKey: "leo tolstoy::unknown",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:anna-karenina:tolstoy",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+
+    expect(book?.author).toBe("Leo Tolstoy");
+    expect(book?.authorEn).toBe("Leo Tolstoy");
+    expect(book?.authors).toEqual(["Leo Tolstoy"]);
+    expect(book?.author).not.toBe("Tolstoy, Leo, graf, 1828-1910");
+  });
+
+  it("keeps known seed author display when provider materialization input is Unknown", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "The Brothers Karamazov",
+        titleEn: "The Brothers Karamazov",
+        author: "Unknown",
+        authorEn: "Unknown",
+        authors: ["Unknown"],
+        authorCanonicalKey: "fyodor dostoevsky::unknown",
+        seedAuthorLock: {
+          author: "Fyodor Dostoevsky",
+          authorEn: "Fyodor Dostoevsky",
+          authors: ["Fyodor Dostoevsky"],
+          authorCanonicalKey: "fyodor dostoevsky::unknown",
+          source: "canonical_seed",
+        },
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:brothers-karamazov:dostoevsky",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+
+    expect(book?.author).toBe("Fyodor Dostoevsky");
+    expect(book?.authorEn).toBe("Fyodor Dostoevsky");
+    expect(book?.authors).toEqual(["Fyodor Dostoevsky"]);
+    expect(book?.author).not.toBe("Unknown");
+  });
+
+  it("recovers Brothers Karamazov seed author from canonical key when provider author collapses", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "The Brothers Karamazov",
+        titleEn: "The Brothers Karamazov",
+        author: "Unknown",
+        authorEn: "Unknown",
+        authors: ["Unknown"],
+        authorCanonicalKey: "fyodor dostoevsky::unknown",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:brothers-karamazov:dostoevsky-key-fallback",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+
+    expect(book?.author).toBe("Fyodor Dostoevsky");
+    expect(book?.authorEn).toBe("Fyodor Dostoevsky");
+    expect(book?.authors).toEqual(["Fyodor Dostoevsky"]);
+    expect(String(book?.authorCanonicalKey || "")).toMatch(/^fyodor dostoevsky::/);
+    expect(book?.author).not.toBe("Unknown");
+    expect(book?.authorCanonicalKey).not.toBe("unknown::unknown");
   });
 
   it("still reuses the existing book when provider work id and author both match", async () => {

@@ -17,6 +17,10 @@ import {
   getProviderAllowedAuthorFields,
   isRegisteredProvider,
 } from "../providerRoleRegistry";
+import {
+  isUnknownAuthorDisplayName,
+  normalizeCanonicalAuthorDisplayName,
+} from "./authorNameNormalization";
 
 const db = admin.firestore();
 
@@ -258,12 +262,15 @@ function extractAuthorNames(rawAuthor: Record<string, unknown>): {
 } {
   const wikidataNameEn = extractWikidataLangValue(rawAuthor, "labels", "en")[0] || "";
   const wikidataNameAr = extractWikidataLangValue(rawAuthor, "labels", "ar")[0] || "";
-  const directNameEn =
+  const directNameEn = normalizeCanonicalAuthorDisplayName(
     asNonEmptyString(rawAuthor.nameEn) ||
-    asNonEmptyString(rawAuthor.name) ||
-    asNonEmptyString(rawAuthor.personal_name) ||
-    wikidataNameEn;
-  const directNameAr = asNonEmptyString(rawAuthor.nameAr) || wikidataNameAr || directNameEn;
+      asNonEmptyString(rawAuthor.name) ||
+      asNonEmptyString(rawAuthor.personal_name) ||
+      wikidataNameEn
+  );
+  const directNameAr = normalizeCanonicalAuthorDisplayName(
+    asNonEmptyString(rawAuthor.nameAr) || wikidataNameAr || directNameEn
+  );
 
   const aliases = uniqueStrings([
     ...asStringArray(rawAuthor.aliases),
@@ -272,11 +279,15 @@ function extractAuthorNames(rawAuthor: Record<string, unknown>): {
     ...asStringArray(rawAuthor.aka),
     ...extractWikidataLangValue(rawAuthor, "aliases", "en"),
     ...extractWikidataLangValue(rawAuthor, "aliases", "ar"),
-  ]);
+  ].map((entry) => normalizeCanonicalAuthorDisplayName(entry)));
 
   return {
-    nameEn: directNameEn || directNameAr || "Unknown",
-    nameAr: directNameAr || directNameEn || "Unknown",
+    nameEn: isUnknownAuthorDisplayName(directNameEn)
+      ? directNameAr || "Unknown"
+      : directNameEn,
+    nameAr: isUnknownAuthorDisplayName(directNameAr)
+      ? directNameEn || "Unknown"
+      : directNameAr,
     aliases: aliases.filter((entry) => entry !== directNameEn && entry !== directNameAr),
   };
 }
@@ -686,13 +697,29 @@ export function buildRawAuthorFromBookPayload(params: {
     params.source === "openLibrary"
       ? openLibraryAuthorKeys[0] || asNonEmptyString(params.rawBook.authorId) || undefined
       : undefined;
+  const primaryAuthor = normalizeCanonicalAuthorDisplayName(params.primaryAuthor);
+  const authorEnCandidate = normalizeCanonicalAuthorDisplayName(params.rawBook.authorEn);
+  const authorArCandidate = normalizeCanonicalAuthorDisplayName(params.rawBook.authorAr);
+  const nameEn = isUnknownAuthorDisplayName(authorEnCandidate)
+    ? primaryAuthor
+    : authorEnCandidate;
+  const nameAr = isUnknownAuthorDisplayName(authorArCandidate) ? "" : authorArCandidate;
+  const aliases = uniqueStrings(
+    asStringArray(params.rawBook.authors)
+      .map((entry) => normalizeCanonicalAuthorDisplayName(entry))
+      .filter((entry) => !isUnknownAuthorDisplayName(entry))
+  );
 
   return {
     providerExternalId,
     rawAuthor: {
-      nameEn: asNonEmptyString(params.rawBook.authorEn) || params.primaryAuthor,
-      nameAr: asNonEmptyString(params.rawBook.authorAr),
-      aliases: asStringArray(params.rawBook.authors),
+      nameEn: nameEn || primaryAuthor || "Unknown",
+      nameAr,
+      birthYear: asNonEmptyString(params.rawBook.birthYear),
+      birthDate: asNonEmptyString(params.rawBook.birthDate),
+      deathYear: asNonEmptyString(params.rawBook.deathYear),
+      deathDate: asNonEmptyString(params.rawBook.deathDate),
+      aliases,
       sourceIds: providerExternalId ? { openLibrary: providerExternalId } : {},
     },
   };

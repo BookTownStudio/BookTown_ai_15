@@ -31,6 +31,13 @@ type IngestionRequest = {
   rawBook?: Record<string, unknown>;
 };
 
+type SeedFallbackMaterializationResult = {
+  canonicalBookId: string;
+  bookId: string;
+  editionId: string | null;
+  status: string;
+};
+
 const SEARCH_STOPWORDS = new Set([
   "a",
   "an",
@@ -67,6 +74,10 @@ function asStringArray(value: unknown): string[] {
     .filter((entry): entry is string => typeof entry === "string")
     .map((entry) => entry.trim())
     .filter((entry) => entry.length > 0);
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter((entry) => entry.length > 0)));
 }
 
 function normalizeSearchText(value?: string | null): string {
@@ -172,6 +183,117 @@ function sanitizeProviderAuthorityPayload(
   delete sanitized.canonicalAuthorIds;
   delete sanitized.authorNamesNormalized;
   return sanitized;
+}
+
+function readSeedAuthorLock(rawBook: Record<string, unknown>): {
+  author: string;
+  authorEn: string;
+  authors: string[];
+  authorCanonicalKey: string;
+} | null {
+  const record = asRecord(rawBook.seedAuthorLock);
+  if (!record) {
+    return null;
+  }
+
+  const author = asNonEmptyString(record.author) || asNonEmptyString(rawBook.authorEn) || asNonEmptyString(rawBook.author);
+  const authorEn = asNonEmptyString(record.authorEn) || author;
+  const authors = uniqueStrings([
+    ...asStringArray(record.authors),
+    ...[author, authorEn].filter((value): value is string => typeof value === "string" && value.length > 0),
+  ]);
+  const authorCanonicalKey =
+    asNonEmptyString(record.authorCanonicalKey) || asNonEmptyString(rawBook.authorCanonicalKey);
+
+  if (!author || !authorEn || authors.length === 0 || !authorCanonicalKey) {
+    return null;
+  }
+
+  return {
+    author,
+    authorEn,
+    authors,
+    authorCanonicalKey,
+  };
+}
+
+function buildSeedFallbackAuthorityRawBook(
+  rawBook: Record<string, unknown>
+): Record<string, unknown> {
+  const title = extractTitle(rawBook);
+  const titleEn = asNonEmptyString(rawBook.titleEn) || title;
+  const titleAr = asNonEmptyString(rawBook.titleAr);
+  const seedAuthorLock = readSeedAuthorLock(rawBook);
+  const fallbackAuthor =
+    seedAuthorLock?.author ||
+    asNonEmptyString(rawBook.authorEn) ||
+    asNonEmptyString(rawBook.author) ||
+    extractAuthors(rawBook)[0] ||
+    "Unknown";
+  const fallbackAuthorEn = seedAuthorLock?.authorEn || fallbackAuthor;
+  const fallbackAuthors =
+    seedAuthorLock?.authors.length
+      ? seedAuthorLock.authors
+      : uniqueStrings([
+          ...extractAuthors(rawBook),
+          fallbackAuthor,
+          fallbackAuthorEn,
+        ]);
+  const fallbackAuthorCanonicalKey =
+    seedAuthorLock?.authorCanonicalKey || asNonEmptyString(rawBook.authorCanonicalKey);
+
+  return {
+    ...rawBook,
+    title,
+    titleEn,
+    ...(titleAr ? { titleAr } : {}),
+    author: fallbackAuthor,
+    authorEn: fallbackAuthorEn,
+    authors: fallbackAuthors.length > 0 ? fallbackAuthors : [fallbackAuthor],
+    ...(fallbackAuthorCanonicalKey ? { authorCanonicalKey: fallbackAuthorCanonicalKey } : {}),
+    ...(fallbackAuthorCanonicalKey
+      ? {
+          seedAuthorLock: {
+            author: fallbackAuthor,
+            authorEn: fallbackAuthorEn,
+            authors: fallbackAuthors.length > 0 ? fallbackAuthors : [fallbackAuthor],
+            authorCanonicalKey: fallbackAuthorCanonicalKey,
+            source: "canonical_seed",
+          },
+        }
+      : {}),
+    language: extractLanguage(rawBook),
+    canonicalLocked: true,
+    authorityStatus: "canonical",
+    workType: "canonical",
+    rightsMode: asNonEmptyString(rawBook.rightsMode) || "public_free",
+    visibility: asNonEmptyString(rawBook.visibility) || "public",
+    publicationState: asNonEmptyString(rawBook.publicationState) || "published",
+  };
+}
+
+export async function materializeSeedOnlyCanonicalFallback(params: {
+  preferredBookId?: string;
+  rawBook: Record<string, unknown>;
+  ingestionKey?: string | null;
+}): Promise<SeedFallbackMaterializationResult> {
+  const authorityRawBook = buildSeedFallbackAuthorityRawBook(params.rawBook);
+  const transactionResult = await materializeBookAuthority({
+    source: "canonical_seed",
+    authorityStatus: "canonical",
+    preferredBookId: params.preferredBookId,
+    rawBook: authorityRawBook,
+    createEdition: false,
+    ingestionKey: asNonEmptyString(params.ingestionKey) || undefined,
+    literaryAuthorityClass: asNonEmptyString(authorityRawBook.literaryAuthorityClass),
+  });
+
+  return {
+    canonicalBookId: transactionResult.canonicalBookId,
+    bookId: transactionResult.bookId,
+    editionId: transactionResult.editionId,
+    status: transactionResult.status,
+  };
 }
 
 async function fetchGoogleBooksCanonicalMetadata(

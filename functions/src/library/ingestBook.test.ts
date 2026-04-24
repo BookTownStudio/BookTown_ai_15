@@ -310,6 +310,50 @@ describe("ingestBook v2 smoke", () => {
     expect(edition?.editionContributors).toEqual(["Alasdair D. F. Macrae"]);
   });
 
+  it("keeps Hamlet seed-author lock through provider ingest and never stores Literatura Pública as canonical author", async () => {
+    const result = await callIngest({
+      id: "hamlet-seed-1",
+      externalId: "hamlet-seed-1",
+      title: "Hamlet",
+      titleEn: "Hamlet",
+      author: "Literatura Pública",
+      authorEn: "Literatura Pública",
+      authors: ["Literatura Pública"],
+      authorAliases: ["Literatura Pública"],
+      language: "en",
+      literaryForm: "play",
+      seedAuthorLock: {
+        author: "William Shakespeare",
+        authorEn: "William Shakespeare",
+        authors: ["William Shakespeare"],
+        authorCanonicalKey: "william shakespeare::unknown",
+        source: "canonical_seed",
+      },
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const authorId = typeof book?.authorId === "string" ? book.authorId : "";
+    const author = authorId ? getDoc(`authors/${authorId}`) : null;
+
+    expect(book?.title).toBe("Hamlet");
+    expect(book?.author).toBe("William Shakespeare");
+    expect(book?.authorEn).toBe("William Shakespeare");
+    expect(book?.authors).toEqual(["William Shakespeare"]);
+    expect(String(book?.authorCanonicalKey || "")).toContain("william shakespeare");
+    expect(book?.author).not.toBe("Literatura Pública");
+    expect(book?.authors).not.toContain("Literatura Pública");
+    expect(book?.provenance).toMatchObject({
+      seedAuthorLock: {
+        author: "William Shakespeare",
+        authorEn: "William Shakespeare",
+        authors: ["William Shakespeare"],
+        authorCanonicalKey: "william shakespeare::unknown",
+        source: "canonical_seed",
+      },
+    });
+    expect(author?.nameEn).toBe("William Shakespeare");
+  });
+
   it("adds alternate Open Library cover candidates when Google Books has no direct cover", async () => {
     const result = await callIngest({
       id: "cover-fallback-1",

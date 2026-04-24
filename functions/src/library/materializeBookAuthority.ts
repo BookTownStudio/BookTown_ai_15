@@ -24,8 +24,18 @@ import {
   buildRawAuthorFromBookPayload,
   materializeCanonicalAuthorInTransaction,
 } from "./authors/authorCatalog";
+import {
+  isTrustedAuthorBirthYearForCanonicalRoot,
+  isUnknownAuthorDisplayName,
+  normalizeCanonicalAuthorDisplayName,
+} from "./authors/authorNameNormalization";
 import { resolveAuthorProviderPayload } from "./authors/providerSources";
 import { buildCanonicalKey } from "./persistence/canonicalKey";
+import {
+  canonicalAuthorKeysShareRoot,
+  extractCanonicalAuthorKeyRoot,
+  normalizeAuthorYear,
+} from "./persistence/canonicalAuthorKey";
 import { buildBookSearchPatch, buildEditionSearchPatch } from "./search/searchIndexing";
 
 const db = admin.firestore();
@@ -43,7 +53,11 @@ export type LiteraryAuthoritySource =
   | "user_upload";
 
 type MetadataAuthorityField = "cover" | "description";
-type MetadataAuthoritySource = "manualAdmin" | "googleBooks" | "openLibrary";
+type MetadataAuthoritySource =
+  | "manualAdmin"
+  | "googleBooks"
+  | "goodreads_import"
+  | "openLibrary";
 type AuthorityConfidence = "high" | "medium" | "low";
 type AcceptedAuthority = "manualAuthority" | "openLibrary" | "wikidata" | "googleBooks";
 type FieldConfidenceLevel = "restricted" | "direct" | "weighted";
@@ -190,19 +204,160 @@ function extractAuthors(rawBook: Record<string, unknown>): string[] {
   const arrayAuthors = uniqueStrings([
     ...asStringArray(rawBook.authors),
     ...asStringArray(rawBook.author_name),
-  ]);
+  ].map((entry) => normalizeCanonicalAuthorDisplayName(entry)))
+    .filter((entry) => !isUnknownAuthorDisplayName(entry));
 
   if (arrayAuthors.length > 0) {
     return arrayAuthors;
   }
 
   const fallback = uniqueStrings([
-    asNonEmptyString(rawBook.author),
-    asNonEmptyString(rawBook.authorEn),
-    asNonEmptyString(rawBook.authorAr),
-  ]);
+    normalizeCanonicalAuthorDisplayName(rawBook.author),
+    normalizeCanonicalAuthorDisplayName(rawBook.authorEn),
+    normalizeCanonicalAuthorDisplayName(rawBook.authorAr),
+  ]).filter((entry) => !isUnknownAuthorDisplayName(entry));
 
   return fallback.length > 0 ? fallback : ["Unknown"];
+}
+
+type SeedAuthorLock = {
+  author: string;
+  authorEn: string;
+  authors: string[];
+  authorCanonicalKey: string;
+  source?: string;
+};
+
+function readSeedAuthorLock(value: unknown): SeedAuthorLock | null {
+  const record = asRecord(value);
+  if (!record) {
+    return null;
+  }
+
+  const authorCanonicalKey = asNonEmptyString(record.authorCanonicalKey);
+  const authorRootDisplay = canonicalAuthorRootToDisplayName(
+    extractCanonicalAuthorKeyRoot(authorCanonicalKey)
+  );
+  const rawAuthor = normalizeCanonicalAuthorDisplayName(record.author);
+  const rawAuthorEn = normalizeCanonicalAuthorDisplayName(record.authorEn);
+  const author = isUnknownAuthorDisplayName(rawAuthor)
+    ? isUnknownAuthorDisplayName(rawAuthorEn)
+      ? authorRootDisplay
+      : rawAuthorEn
+    : rawAuthor;
+  const authorEn = isUnknownAuthorDisplayName(rawAuthorEn) ? author : rawAuthorEn;
+  const authors = uniqueStrings([author, authorEn])
+    .filter((entry) => !isUnknownAuthorDisplayName(entry));
+
+  if (
+    isUnknownAuthorDisplayName(author) ||
+    isUnknownAuthorDisplayName(authorEn) ||
+    authors.length === 0 ||
+    !authorCanonicalKey
+  ) {
+    return null;
+  }
+
+  return {
+    author,
+    authorEn,
+    authors,
+    authorCanonicalKey,
+  };
+}
+
+function canonicalAuthorRootToDisplayName(root: string): string {
+  const normalizedRoot = root.trim();
+  if (!normalizedRoot || normalizedRoot === "unknown") {
+    return "";
+  }
+
+  return normalizedRoot
+    .split(/\s+/)
+    .map((token) => token.charAt(0).toUpperCase() + token.slice(1))
+    .join(" ");
+}
+
+function resolveSeedAuthorLock(params: {
+  source: LiteraryAuthoritySource;
+  rawBook: Record<string, unknown>;
+  existingBook: Record<string, unknown> | null;
+}): SeedAuthorLock | null {
+  const incomingExplicitLock = readSeedAuthorLock(params.rawBook.seedAuthorLock);
+  const existingLock = readSeedAuthorLock(asRecord(params.existingBook?.provenance)?.seedAuthorLock);
+  const incomingLock =
+    params.source === "canonical_seed"
+      ? readSeedAuthorLock({
+          author: asNonEmptyString(params.rawBook.author),
+          authorEn: asNonEmptyString(params.rawBook.authorEn) || asNonEmptyString(params.rawBook.author),
+          authors: extractAuthors(params.rawBook),
+          authorCanonicalKey: asNonEmptyString(params.rawBook.authorCanonicalKey),
+        })
+      : null;
+
+  return incomingExplicitLock || incomingLock || existingLock;
+}
+
+function extractCanonicalAuthorKeyYear(value: string): string {
+  const [, rawYear = ""] = value.split("::");
+  return normalizeAuthorYear(rawYear);
+}
+
+function canUpgradeSeedAuthorCanonicalKey(params: {
+  seedAuthorLock: SeedAuthorLock;
+  materializedAuthorCanonicalKey: string;
+}): boolean {
+  const seedCanonicalKey = params.seedAuthorLock.authorCanonicalKey;
+  const materializedCanonicalKey = params.materializedAuthorCanonicalKey;
+
+  if (seedCanonicalKey === materializedCanonicalKey) {
+    return false;
+  }
+
+  if (!canonicalAuthorKeysShareRoot(materializedCanonicalKey, seedCanonicalKey)) {
+    return false;
+  }
+
+  const seedYear = extractCanonicalAuthorKeyYear(seedCanonicalKey);
+  const materializedYear = extractCanonicalAuthorKeyYear(materializedCanonicalKey);
+  if (seedYear && seedYear !== "unknown") {
+    return false;
+  }
+
+  if (!materializedYear || materializedYear === "unknown") {
+    return false;
+  }
+
+  const seedRoot = extractCanonicalAuthorKeyRoot(seedCanonicalKey);
+  return isTrustedAuthorBirthYearForCanonicalRoot(seedRoot, materializedYear);
+}
+
+function seedAuthorBirthYearPatch(
+  seedAuthorLock: SeedAuthorLock,
+  rawBook: Record<string, unknown>
+): { birthYear?: string; birthDate?: string } {
+  const candidateBirthYear =
+    normalizeAuthorYear(rawBook.birthYear as string | number | null) ||
+    normalizeAuthorYear(asNonEmptyString(rawBook.birthDate));
+
+  if (!candidateBirthYear) {
+    return {};
+  }
+
+  const seedRoot = extractCanonicalAuthorKeyRoot(seedAuthorLock.authorCanonicalKey);
+  if (isTrustedAuthorBirthYearForCanonicalRoot(seedRoot, candidateBirthYear)) {
+    return {};
+  }
+
+  logger.warn("[BOOK_AUTHORITY][SEED_AUTHOR_BIRTH_YEAR_REJECTED]", {
+    lockedAuthor: seedAuthorLock.author,
+    lockedAuthorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+    rejectedBirthYear: candidateBirthYear,
+  });
+  return {
+    birthYear: "",
+    birthDate: "",
+  };
 }
 
 function extractLanguage(rawBook: Record<string, unknown>): string {
@@ -313,6 +468,9 @@ function normalizeMetadataAuthoritySource(
   if (source === "booktown_canonical" || source === "canonical_seed") {
     return "manualAdmin";
   }
+  if (source === "goodreads_import") {
+    return "goodreads_import";
+  }
   if (
     isDirectAuthorityProvider(source) &&
     (source === "googleBooks" || source === "openLibrary")
@@ -331,13 +489,25 @@ function getMetadataAuthorityScore(
     if (source === "manualAdmin") return 100;
     if (source === "googleBooks") return 90;
     if (source === "openLibrary") return 70;
+    if (source === "goodreads_import") return 0;
     return 0;
   }
 
   if (source === "manualAdmin") return 100;
   if (source === "googleBooks") return 80;
   if (source === "openLibrary") return 70;
+  if (source === "goodreads_import") return 60;
   return 0;
+}
+
+function isTrustedProviderDescriptionFillSource(
+  source: LiteraryAuthoritySource
+): boolean {
+  return (
+    source === "googleBooks" ||
+    source === "openLibrary" ||
+    source === "goodreads_import"
+  );
 }
 
 function isValidHttpUrl(value: string): boolean {
@@ -388,6 +558,7 @@ function resolveExistingMetadataAuthority(params: {
   const storedSource: MetadataAuthoritySource | null =
     storedSourceRaw === "manualAdmin" ||
     storedSourceRaw === "googleBooks" ||
+    storedSourceRaw === "goodreads_import" ||
     storedSourceRaw === "openLibrary"
       ? storedSourceRaw
       : normalizeMetadataAuthoritySource(asNonEmptyString(params.existingBook?.source) as LiteraryAuthoritySource);
@@ -411,12 +582,15 @@ function resolveMetadataField(params: {
   existingBook: Record<string, unknown> | null;
   existingValue: string;
   incomingValue: string;
+  incomingRawSource: LiteraryAuthoritySource;
   incomingSource: MetadataAuthoritySource | null;
 }): {
   value: string;
   source: MetadataAuthoritySource | null;
   authority: number | null;
   acceptedIncoming: boolean;
+  authorityMode?: "provider_fill";
+  filledBySource?: LiteraryAuthoritySource;
 } {
   const existingValue = params.existingValue.trim();
   const incomingValue =
@@ -434,6 +608,12 @@ function resolveMetadataField(params: {
     existingBook: params.existingBook,
   });
   const incomingAuthority = getMetadataAuthorityScore(params.field, params.incomingSource);
+  const hasSeedLineage = Boolean(asRecord(params.existingBook?.provenance)?.seedAuthorLock);
+  const canApplyProviderFill =
+    params.field === "description" &&
+    !existingValue &&
+    hasSeedLineage &&
+    isTrustedProviderDescriptionFillSource(params.incomingRawSource);
 
   if (!incomingIsValid) {
     return {
@@ -441,6 +621,19 @@ function resolveMetadataField(params: {
       source: existingValue ? existingAuthority.source : null,
       authority: existingValue ? existingAuthority.authority : null,
       acceptedIncoming: false,
+    };
+  }
+
+  if (canApplyProviderFill) {
+    return {
+      value: incomingValue,
+      source: existingAuthority.source || "manualAdmin",
+      authority:
+        existingAuthority.authority ||
+        getMetadataAuthorityScore(params.field, "manualAdmin"),
+      acceptedIncoming: true,
+      authorityMode: "provider_fill",
+      filledBySource: params.incomingRawSource,
     };
   }
 
@@ -1488,18 +1681,29 @@ function buildRawAuthorPayload(params: {
     };
   }
 
+  const primaryAuthor = normalizeCanonicalAuthorDisplayName(params.primaryAuthor);
+  const author = normalizeCanonicalAuthorDisplayName(params.rawBook.author);
+  const authorEn = normalizeCanonicalAuthorDisplayName(params.rawBook.authorEn);
+  const authorAr = normalizeCanonicalAuthorDisplayName(params.rawBook.authorAr);
+
   return {
     source: "booktown",
     rawAuthor: {
-      name: asNonEmptyString(params.rawBook.author) || params.primaryAuthor,
-      nameEn: asNonEmptyString(params.rawBook.authorEn) || params.primaryAuthor,
-      nameAr: asNonEmptyString(params.rawBook.authorAr),
+      name: isUnknownAuthorDisplayName(author) ? primaryAuthor : author,
+      nameEn: isUnknownAuthorDisplayName(authorEn) ? primaryAuthor : authorEn,
+      nameAr: isUnknownAuthorDisplayName(authorAr) ? "" : authorAr,
+      birthYear: asNonEmptyString(params.rawBook.birthYear),
+      birthDate: asNonEmptyString(params.rawBook.birthDate),
+      deathYear: asNonEmptyString(params.rawBook.deathYear),
+      deathDate: asNonEmptyString(params.rawBook.deathDate),
       aliases: uniqueStrings([
-        ...asStringArray(params.rawBook.authors),
-        asNonEmptyString(params.rawBook.author),
-        asNonEmptyString(params.rawBook.authorEn),
-        asNonEmptyString(params.rawBook.authorAr),
-      ]),
+        ...asStringArray(params.rawBook.authors).map((entry) =>
+          normalizeCanonicalAuthorDisplayName(entry)
+        ),
+        author,
+        authorEn,
+        authorAr,
+      ]).filter((entry) => !isUnknownAuthorDisplayName(entry)),
     },
   };
 }
@@ -2063,20 +2267,33 @@ export async function materializeBookAuthorityInTransaction(
   const bookRef = db.collection("books").doc(bookId);
   const bookSnap = await params.tx.get(bookRef);
   const existingBook = (bookSnap.data() || null) as Record<string, unknown> | null;
+  const existingProvenance = asRecord(existingBook?.provenance);
+  const seedAuthorLock = resolveSeedAuthorLock({
+    source: params.source,
+    rawBook,
+    existingBook,
+  });
   const coverJobRef = db.collection("cover_jobs").doc(bookId);
   const coverJobSnap = await params.tx.get(coverJobRef);
   const existingCoverJob = (coverJobSnap.data() || {}) as Record<string, unknown>;
   const title = asNonEmptyString(existingBook?.title) || incomingTitle;
   const authors =
-    asStringArray(existingBook?.authors).length > 0
+    seedAuthorLock?.authors ||
+    (asStringArray(existingBook?.authors).length > 0
       ? asStringArray(existingBook?.authors)
-      : incomingAuthors;
-  const primaryAuthor = asNonEmptyString(existingBook?.author) || incomingPrimaryAuthor;
+      : incomingAuthors);
+  const primaryAuthor =
+    seedAuthorLock?.author ||
+    asNonEmptyString(existingBook?.author) ||
+    incomingPrimaryAuthor;
   const language = asNonEmptyString(existingBook?.language) || extractLanguage(rawBook);
   const titleEn = asNonEmptyString(existingBook?.titleEn) || asNonEmptyString(rawBook.titleEn) || title;
   const titleAr = asNonEmptyString(existingBook?.titleAr) || asNonEmptyString(rawBook.titleAr);
   const authorEn =
-    asNonEmptyString(existingBook?.authorEn) || asNonEmptyString(rawBook.authorEn) || primaryAuthor;
+    seedAuthorLock?.authorEn ||
+    asNonEmptyString(existingBook?.authorEn) ||
+    asNonEmptyString(rawBook.authorEn) ||
+    primaryAuthor;
   const authorAr = asNonEmptyString(existingBook?.authorAr) || asNonEmptyString(rawBook.authorAr);
   const metadataSource = normalizeMetadataAuthoritySource(params.source);
   const now = FieldValue.serverTimestamp();
@@ -2105,6 +2322,7 @@ export async function materializeBookAuthorityInTransaction(
     existingBook,
     existingValue: asNonEmptyString(existingBook?.description),
     incomingValue: resolveDescription(rawBook),
+    incomingRawSource: params.source,
     incomingSource: metadataSource,
   });
   const coverDecision = resolveMetadataField({
@@ -2112,6 +2330,7 @@ export async function materializeBookAuthorityInTransaction(
     existingBook,
     existingValue: asNonEmptyString(existingBook?.coverUrl),
     incomingValue: incomingCoverCandidates[0] || "",
+    incomingRawSource: params.source,
     incomingSource: metadataSource,
   });
   const effectiveCoverCandidates = coverDecision.acceptedIncoming ? incomingCoverCandidates : [];
@@ -2122,9 +2341,21 @@ export async function materializeBookAuthorityInTransaction(
   const descriptionAr = descriptionDecision.acceptedIncoming
     ? asNonEmptyString(rawBook.descriptionAr)
     : asNonEmptyString(existingBook?.descriptionAr);
+  const authorMaterializationRawBook = seedAuthorLock
+    ? {
+        ...rawBook,
+        ...seedAuthorBirthYearPatch(seedAuthorLock, rawBook),
+        author: seedAuthorLock.author,
+        authorEn: seedAuthorLock.authorEn,
+        authors: seedAuthorLock.authors,
+        authorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+      }
+    : rawBook;
   const author =
     asNonEmptyString(existingBook?.authorId) &&
-    asNonEmptyString(existingBook?.authorCanonicalKey)
+    asNonEmptyString(existingBook?.authorCanonicalKey) &&
+    (!seedAuthorLock ||
+      asNonEmptyString(existingBook?.authorCanonicalKey) === seedAuthorLock.authorCanonicalKey)
       ? {
           authorId: asNonEmptyString(existingBook?.authorId),
           canonicalKey: asNonEmptyString(existingBook?.authorCanonicalKey),
@@ -2132,9 +2363,61 @@ export async function materializeBookAuthorityInTransaction(
       : await materializeCanonicalAuthor({
           tx: params.tx,
           source: params.source,
-          rawBook,
+          rawBook: authorMaterializationRawBook,
           primaryAuthor,
         });
+
+  const seedAuthorKeyUpgradeAllowed = seedAuthorLock
+    ? canUpgradeSeedAuthorCanonicalKey({
+        seedAuthorLock,
+        materializedAuthorCanonicalKey: author.canonicalKey,
+      })
+    : false;
+  const effectiveAuthorCanonicalKey = seedAuthorKeyUpgradeAllowed
+    ? author.canonicalKey
+    : seedAuthorLock?.authorCanonicalKey || author.canonicalKey;
+
+  if (
+    seedAuthorLock &&
+    author.canonicalKey !== seedAuthorLock.authorCanonicalKey &&
+    !canonicalAuthorKeysShareRoot(author.canonicalKey, seedAuthorLock.authorCanonicalKey)
+  ) {
+    const materializedRoot = extractCanonicalAuthorKeyRoot(author.canonicalKey);
+    const seedRoot = extractCanonicalAuthorKeyRoot(seedAuthorLock.authorCanonicalKey);
+    if (materializedRoot === "unknown" && seedRoot && seedRoot !== "unknown") {
+      logger.warn("[BOOK_AUTHORITY][SEED_AUTHOR_LOCK_IGNORED_UNKNOWN_PROVIDER_AUTHOR]", {
+        source: params.source,
+        bookId,
+        lockedAuthor: seedAuthorLock.author,
+        lockedAuthorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+        materializedAuthorCanonicalKey: author.canonicalKey,
+      });
+    } else {
+      logger.error("[BOOK_AUTHORITY][SEED_AUTHOR_LOCK_CONFLICT]", {
+        source: params.source,
+        bookId,
+        lockedAuthor: seedAuthorLock.author,
+        lockedAuthorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+        materializedAuthorCanonicalKey: author.canonicalKey,
+      });
+      throw new Error("[BOOK_AUTHORITY] seed author lock conflict.");
+    }
+  }
+
+  if (
+    seedAuthorLock &&
+    author.canonicalKey !== seedAuthorLock.authorCanonicalKey &&
+    canonicalAuthorKeysShareRoot(author.canonicalKey, seedAuthorLock.authorCanonicalKey) &&
+    !seedAuthorKeyUpgradeAllowed
+  ) {
+    logger.warn("[BOOK_AUTHORITY][SEED_AUTHOR_KEY_UPGRADE_REJECTED]", {
+      source: params.source,
+      bookId,
+      lockedAuthor: seedAuthorLock.author,
+      lockedAuthorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+      materializedAuthorCanonicalKey: author.canonicalKey,
+    });
+  }
 
   const authorityFields = toAuthorityFields({
     requestedAuthorityStatus: params.authorityStatus,
@@ -2286,14 +2569,15 @@ export async function materializeBookAuthorityInTransaction(
     existing: asRecord(existingBook?.titleAuthority),
   });
   const abstractDescriptionAuthority =
-    descriptionDecision.acceptedIncoming || !asNonEmptyString(existingBook?.abstractDescription)
+    descriptionDecision.authorityMode === "provider_fill"
+      ? toAuthorityEvidence("canonical_seed")
+      : descriptionDecision.acceptedIncoming || !asNonEmptyString(existingBook?.abstractDescription)
       ? toAuthorityEvidence(params.source)
       : asRecord(existingBook?.abstractDescriptionAuthority);
   const originalLanguageAuthority = toCompatibilityAuthorityEvidence({
     trust: canonicalFieldTrust.originalLanguage,
     existing: asRecord(existingBook?.originalLanguageAuthority),
   });
-  const existingProvenance = asRecord(existingBook?.provenance);
   const existingCanonicalRelations = asRecord(existingBook?.canonicalRelations);
   const primaryEditionId =
     asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
@@ -2337,6 +2621,14 @@ export async function materializeBookAuthorityInTransaction(
       },
     ],
   });
+  const descriptionFillProvenance =
+    descriptionDecision.authorityMode === "provider_fill"
+      ? {
+          mode: "provider_fill" as const,
+          filledBySource: descriptionDecision.filledBySource || params.source,
+          updatedAt: now,
+        }
+      : null;
 
   const bookBase: Record<string, unknown> = {
     id: bookId,
@@ -2365,12 +2657,12 @@ export async function materializeBookAuthorityInTransaction(
     title,
     titleEn,
     titleAr,
-    author: primaryAuthor,
-    authorEn,
+    author: seedAuthorLock?.author || primaryAuthor,
+    authorEn: seedAuthorLock?.authorEn || authorEn,
     authorAr,
-    authors,
+    authors: seedAuthorLock?.authors || authors,
     authorId: author.authorId,
-    authorCanonicalKey: author.canonicalKey,
+    authorCanonicalKey: effectiveAuthorCanonicalKey,
     description,
     descriptionEn,
     descriptionAr,
@@ -2437,8 +2729,49 @@ export async function materializeBookAuthorityInTransaction(
               ...(asRecord(existingProvenance?.fieldConfidence) || {}),
               ...fieldConfidencePatch,
             },
+            ...(descriptionFillProvenance
+              ? {
+                  descriptionAuthority: descriptionFillProvenance,
+                }
+              : {}),
+            ...(seedAuthorLock
+              ? {
+                  seedAuthorLock: {
+                    author: seedAuthorLock.author,
+                    authorEn: seedAuthorLock.authorEn,
+                    authors: seedAuthorLock.authors,
+                    authorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+                    source: "canonical_seed",
+                  },
+                }
+              : {}),
           },
         }
+      : seedAuthorLock
+        ? {
+            provenance: {
+              ...(existingProvenance || {}),
+              ...(descriptionFillProvenance
+                ? {
+                    descriptionAuthority: descriptionFillProvenance,
+                  }
+                : {}),
+              seedAuthorLock: {
+                author: seedAuthorLock.author,
+                authorEn: seedAuthorLock.authorEn,
+                authors: seedAuthorLock.authors,
+                authorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+                source: "canonical_seed",
+              },
+            },
+          }
+      : descriptionFillProvenance
+        ? {
+            provenance: {
+              ...(existingProvenance || {}),
+              descriptionAuthority: descriptionFillProvenance,
+            },
+          }
       : {}),
     createdAt: existingBook?.createdAt || now,
     updatedAt: now,
