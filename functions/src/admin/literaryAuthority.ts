@@ -6,9 +6,11 @@ import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
 import {
+  fetchGoogleBooksCanonicalMetadata,
   ingestBookServerSide,
   materializeSeedOnlyCanonicalFallback,
 } from "../library/ingestBook";
+import { fetchOpenLibraryCanonicalMetadata } from "../library/providers/openLibrary";
 import {
   authorMatchesCanonicalSeedAuthority,
   hasContributorRoleSignal,
@@ -482,6 +484,12 @@ async function resolveSeedBatchProviderPhase(params: {
     requestedTitle: params.title,
     requestedAuthor: params.author,
     initialResults: searchResults,
+  });
+  providerCandidate = await hydrateSeedCandidateDescription({
+    result: providerCandidate,
+    requestedTitle: params.title,
+    requestedAuthor: params.author,
+    searchResults,
   });
 
   const preparedRawBook = prepareBulkCandidateRawBook({
@@ -2042,6 +2050,267 @@ function candidateHasUsableCover(result: UnifiedSearchResult): boolean {
     typeof rawBook?.cover_i === "string" && rawBook.cover_i.trim().length > 0;
 
   return directCoverUrl || rawCoverUrl || rawThumbnail || rawCoverId || rawCoverI;
+}
+
+function normalizeSeedDescriptionText(value: string): string {
+  return value.replace(/\s+/gu, " ").trim();
+}
+
+function isUsableSeedDescriptionText(value: string): boolean {
+  const normalized = normalizeSeedDescriptionText(value);
+  if (normalized.length < 80) {
+    return false;
+  }
+  if (normalized.includes("\uFFFD")) {
+    return false;
+  }
+  if (
+    /\b(unabridged|abridged|illustrated edition|collector(?:'s)? edition|special edition|paperback edition|hardcover edition|movie tie-?in|box set|omnibus)\b/iu.test(
+      normalized
+    )
+  ) {
+    return false;
+  }
+  if (/[^\p{L}\p{N}\s]{6,}/u.test(normalized)) {
+    return false;
+  }
+  return true;
+}
+
+function resolveSeedDescription(rawBook: Record<string, unknown>): string {
+  return (
+    asNonEmptyString(rawBook.descriptionEn) ||
+    asNonEmptyString(rawBook.description) ||
+    asNonEmptyString(rawBook.abstractDescription) ||
+    asNonEmptyString(rawBook.summary) ||
+    ""
+  );
+}
+
+function normalizeOpenLibraryWorkIdForFetch(value: string): string {
+  return value
+    .replace(/^openLibrary:/i, "")
+    .replace(/^\/works\//i, "")
+    .replace(/^OL_/i, "")
+    .replace(/^ol_/i, "")
+    .trim();
+}
+
+function normalizeOpenLibrarySeedWorkIdCandidate(value: unknown): string {
+  const normalized = normalizeOpenLibraryWorkIdForFetch(asNonEmptyString(value));
+  return /^OL\d+W$/iu.test(normalized) ? normalized : "";
+}
+
+function extractOpenLibrarySeedWorkIdForFetch(result: UnifiedSearchResult): string {
+  if (result.source !== "openLibrary") {
+    return "";
+  }
+
+  const rawBook = asRecord(result.rawBook) || {};
+  const workIdentity = asRecord(rawBook.workIdentity);
+  const providerIds = asRecord(rawBook.providerIds);
+  const candidates = [
+    rawBook.openLibraryWorkId,
+    rawBook.workId,
+    rawBook.key,
+    rawBook.providerWorkId,
+    workIdentity?.providerWorkId,
+    providerIds?.openLibrary,
+    result.workId,
+    result.externalId,
+    result.id,
+    ...asStringArray(rawBook.providerExternalIds),
+    ...asStringArray(workIdentity?.alternateProviderWorkIds),
+  ];
+
+  for (const candidate of candidates) {
+    const workId = normalizeOpenLibrarySeedWorkIdCandidate(candidate);
+    if (workId) {
+      return workId;
+    }
+  }
+
+  return "";
+}
+
+function mergeSeedHydratedMetadata(params: {
+  result: UnifiedSearchResult;
+  hydratedRawBook: Record<string, unknown>;
+  hydratedSource: "googleBooks" | "openLibrary";
+  description: string;
+  providerExternalId: string;
+}): UnifiedSearchResult {
+  const rawBook =
+    params.result.rawBook && typeof params.result.rawBook === "object" && !Array.isArray(params.result.rawBook)
+      ? ({ ...(params.result.rawBook as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+  const hydrated = params.hydratedRawBook;
+  const coverImages = asRecord(hydrated.coverImages);
+  const imageLinks = asRecord(hydrated.imageLinks);
+  const coverUrl = pickFirstNonEmptyString([
+    hydrated.coverUrl,
+    hydrated.thumbnail,
+    coverImages?.large,
+    coverImages?.medium,
+    coverImages?.small,
+  ]);
+  const coverId = pickFirstNonEmptyString([hydrated.coverId, hydrated.cover_i]);
+  const providerPatch =
+    params.hydratedSource === "openLibrary"
+      ? {
+          openLibraryWorkId: params.providerExternalId,
+          ...(asNonEmptyString(hydrated.openLibraryEditionId)
+            ? { openLibraryEditionId: asNonEmptyString(hydrated.openLibraryEditionId) }
+            : {}),
+          ...(asNonEmptyString(hydrated.editionExternalId)
+            ? { editionExternalId: asNonEmptyString(hydrated.editionExternalId) }
+            : {}),
+        }
+      : params.hydratedSource === "googleBooks"
+        ? {
+            googleBooksVolumeId: params.providerExternalId,
+          }
+        : {};
+
+  return {
+    ...params.result,
+    rawBook: {
+      ...rawBook,
+      description: params.description,
+      descriptionEn: params.description,
+      abstractDescription: params.description,
+      ...(coverUrl ? { coverUrl } : {}),
+      ...(coverId ? { coverId, cover_i: coverId } : {}),
+      ...(imageLinks ? { imageLinks } : {}),
+      ...providerPatch,
+    },
+  };
+}
+
+function selectGoogleBooksDescriptionFallbackCandidate(params: {
+  searchResults: UnifiedSearchResult[];
+  requestedTitle: string;
+  requestedAuthor: string;
+}): UnifiedSearchResult | null {
+  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
+  const requestedAuthorNorm = normalizeSearchText(params.requestedAuthor);
+  const candidates = params.searchResults.filter(
+    (result) =>
+      result.resultType === "external" &&
+      result.source === "googleBooks" &&
+      typeof result.externalId === "string" &&
+      result.externalId.trim().length > 0 &&
+      !isWeakBulkCandidate({
+        result,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
+      })
+  );
+
+  return [...candidates].sort((left, right) => {
+    const scoreDelta =
+      computeBulkCandidateScore({
+        result: right,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
+      }) -
+      computeBulkCandidateScore({
+        result: left,
+        requestedTitleNorm,
+        requestedAuthorNorm,
+        requestedTitle: params.requestedTitle,
+      });
+    if (scoreDelta !== 0) return scoreDelta;
+    return left.rank - right.rank;
+  })[0] || null;
+}
+
+async function resolveGoogleBooksSeedDescriptionFallback(params: {
+  result: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+  searchResults: UnifiedSearchResult[];
+}): Promise<UnifiedSearchResult> {
+  const googleFallbackCandidate =
+    params.result.source === "googleBooks"
+      ? params.result
+      : selectGoogleBooksDescriptionFallbackCandidate({
+          searchResults: params.searchResults,
+          requestedTitle: params.requestedTitle,
+          requestedAuthor: params.requestedAuthor,
+        });
+  const googleVolumeId = asNonEmptyString(googleFallbackCandidate?.externalId);
+  if (!googleVolumeId) {
+    return params.result;
+  }
+
+  const hydratedRawBook = await fetchGoogleBooksCanonicalMetadata(googleVolumeId);
+  if (!hydratedRawBook) {
+    return params.result;
+  }
+
+  const hydratedDescription = normalizeSeedDescriptionText(resolveSeedDescription(hydratedRawBook));
+  if (!isUsableSeedDescriptionText(hydratedDescription)) {
+    return params.result;
+  }
+
+  return mergeSeedHydratedMetadata({
+    result: params.result,
+    hydratedRawBook,
+    hydratedSource: "googleBooks",
+    description: hydratedDescription,
+    providerExternalId: googleVolumeId,
+  });
+}
+
+async function hydrateSeedCandidateDescription(params: {
+  result: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+  searchResults: UnifiedSearchResult[];
+}): Promise<UnifiedSearchResult> {
+  const result = params.result;
+  if (result.source !== "openLibrary" && result.source !== "googleBooks") {
+    return result;
+  }
+
+  const rawBook =
+    result.rawBook && typeof result.rawBook === "object" && !Array.isArray(result.rawBook)
+      ? (result.rawBook as Record<string, unknown>)
+      : {};
+  if (isUsableSeedDescriptionText(resolveSeedDescription(rawBook))) {
+    return result;
+  }
+
+  if (result.source === "googleBooks") {
+    return resolveGoogleBooksSeedDescriptionFallback(params);
+  }
+
+  const providerExternalId =
+    extractOpenLibrarySeedWorkIdForFetch(result);
+  if (!providerExternalId) {
+    return result;
+  }
+
+  const hydratedRawBook = await fetchOpenLibraryCanonicalMetadata(providerExternalId);
+  if (!hydratedRawBook) {
+    return resolveGoogleBooksSeedDescriptionFallback(params);
+  }
+
+  const hydratedDescription = normalizeSeedDescriptionText(resolveSeedDescription(hydratedRawBook));
+  if (!isUsableSeedDescriptionText(hydratedDescription)) {
+    return resolveGoogleBooksSeedDescriptionFallback(params);
+  }
+
+  return mergeSeedHydratedMetadata({
+    result,
+    hydratedRawBook,
+    hydratedSource: "openLibrary",
+    description: hydratedDescription,
+    providerExternalId,
+  });
 }
 
 function normalizeBulkCanonicalTitle(params: {

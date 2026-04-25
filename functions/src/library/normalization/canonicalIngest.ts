@@ -53,6 +53,19 @@ const KNOWN_CANONICAL_WORK_LITERARY_FORMS = new Map<string, string>([
   ["nguyen du::truyen kieu", "poetry"],
 ]);
 
+const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
+  ["the odyssey", "epic"],
+  ["oedipus rex", "play"],
+  ["the aeneid", "epic"],
+  ["candide", "philosophy"],
+  ["the stranger", "novel"],
+  ["the trial", "novel"],
+  ["crime and punishment", "novel"],
+  ["war and peace", "novel"],
+  ["madame bovary", "novel"],
+  ["the analects", "philosophy"],
+]);
+
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
   ["macbeth", "William Shakespeare"],
   ["hamlet", "William Shakespeare"],
@@ -156,6 +169,14 @@ export function inferKnownCanonicalLiteraryForm(params: {
     return "";
   }
   return KNOWN_CANONICAL_WORK_LITERARY_FORMS.get(`${authorNorm}::${titleNorm}`) || "";
+}
+
+function inferCanonicalSeedTitleLiteraryForm(title?: string): string {
+  const titleNorm = normalizeSearchText(title || "");
+  if (!titleNorm) {
+    return "";
+  }
+  return CANONICAL_SEED_TITLE_LITERARY_FORMS.get(titleNorm) || "";
 }
 
 export function resolveCanonicalSeedAuthorityAuthor(params: {
@@ -403,7 +424,15 @@ export function normalizeCanonicalIngestPayload(params: {
     requestedTitle: params.requestedTitle,
     requestedAuthor: primaryAuthor,
   });
-  const literaryForm = inferLiteraryForm(normalized);
+  const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
+  const isCanonicalSeedPayload = Boolean(
+    seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
+  );
+  const seedTitleLiteraryForm =
+    directLiteraryForm || !isCanonicalSeedPayload
+      ? ""
+      : inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle);
+  const literaryForm = directLiteraryForm || seedTitleLiteraryForm || inferLiteraryForm(normalized);
   const description = firstNonEmptyString(
     normalized.descriptionEn,
     normalized.description,

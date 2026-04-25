@@ -296,7 +296,7 @@ export async function materializeSeedOnlyCanonicalFallback(params: {
   };
 }
 
-async function fetchGoogleBooksCanonicalMetadata(
+export async function fetchGoogleBooksCanonicalMetadata(
   providerExternalId: string
 ): Promise<Record<string, unknown> | null> {
   const apiKey = process.env.GOOGLE_BOOKS_API_KEY;

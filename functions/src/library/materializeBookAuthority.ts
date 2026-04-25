@@ -303,6 +303,11 @@ function extractCanonicalAuthorKeyYear(value: string): string {
   return normalizeAuthorYear(rawYear);
 }
 
+function isSyntheticAncientSeedAuthorYear(value: string): boolean {
+  const year = normalizeAuthorYear(value);
+  return /^0\d{3}$/.test(year);
+}
+
 function canUpgradeSeedAuthorCanonicalKey(params: {
   seedAuthorLock: SeedAuthorLock;
   materializedAuthorCanonicalKey: string;
@@ -328,6 +333,10 @@ function canUpgradeSeedAuthorCanonicalKey(params: {
     return false;
   }
 
+  if (isSyntheticAncientSeedAuthorYear(materializedYear)) {
+    return false;
+  }
+
   const seedRoot = extractCanonicalAuthorKeyRoot(seedCanonicalKey);
   return isTrustedAuthorBirthYearForCanonicalRoot(seedRoot, materializedYear);
 }
@@ -342,6 +351,19 @@ function seedAuthorBirthYearPatch(
 
   if (!candidateBirthYear) {
     return {};
+  }
+
+  if (isSyntheticAncientSeedAuthorYear(candidateBirthYear)) {
+    logger.warn("[BOOK_AUTHORITY][SEED_AUTHOR_BIRTH_YEAR_REJECTED]", {
+      lockedAuthor: seedAuthorLock.author,
+      lockedAuthorCanonicalKey: seedAuthorLock.authorCanonicalKey,
+      rejectedBirthYear: candidateBirthYear,
+      reason: "synthetic_ancient_year",
+    });
+    return {
+      birthYear: "",
+      birthDate: "",
+    };
   }
 
   const seedRoot = extractCanonicalAuthorKeyRoot(seedAuthorLock.authorCanonicalKey);

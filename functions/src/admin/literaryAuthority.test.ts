@@ -8,6 +8,8 @@ let uuidCounter = 0;
 let timestampCounter = 0;
 const ingestBookServerSideMock = vi.fn();
 const materializeSeedOnlyCanonicalFallbackMock = vi.fn();
+const fetchGoogleBooksCanonicalMetadataMock = vi.fn();
+const fetchOpenLibraryCanonicalMetadataMock = vi.fn();
 const unifiedSearchMock = vi.fn();
 
 type SpecialValue =
@@ -316,8 +318,13 @@ vi.mock("../shared/auth", () => ({
 }));
 
 vi.mock("../library/ingestBook", () => ({
+  fetchGoogleBooksCanonicalMetadata: fetchGoogleBooksCanonicalMetadataMock,
   ingestBookServerSide: ingestBookServerSideMock,
   materializeSeedOnlyCanonicalFallback: materializeSeedOnlyCanonicalFallbackMock,
+}));
+
+vi.mock("../library/providers/openLibrary", () => ({
+  fetchOpenLibraryCanonicalMetadata: fetchOpenLibraryCanonicalMetadataMock,
 }));
 
 vi.mock("../library/search/searchEngine", () => ({
@@ -359,6 +366,8 @@ describe("adminCreateCanonicalBook", () => {
     vi.clearAllMocks();
     ingestBookServerSideMock.mockReset();
     materializeSeedOnlyCanonicalFallbackMock.mockReset();
+    fetchGoogleBooksCanonicalMetadataMock.mockReset();
+    fetchOpenLibraryCanonicalMetadataMock.mockReset();
     unifiedSearchMock.mockReset();
   });
 
@@ -810,6 +819,625 @@ describe("adminCreateCanonicalBook", () => {
         ...(Array.isArray(rawBook.providerAuthors) ? rawBook.providerAuthors : []),
       ]).toContain(row.providerAuthor);
     }
+  });
+
+  it("fills deterministic literaryForm for configured canonical seed titles only when missing", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const cases = [
+      { title: "The Odyssey", author: "Homer", literaryForm: "epic" },
+      { title: "Oedipus Rex", author: "Sophocles", literaryForm: "play" },
+      { title: "The Aeneid", author: "Virgil", literaryForm: "epic" },
+      { title: "Candide", author: "Voltaire", literaryForm: "philosophy" },
+      { title: "The Stranger", author: "Albert Camus", literaryForm: "novel" },
+      { title: "The Trial", author: "Franz Kafka", literaryForm: "novel" },
+      { title: "Crime and Punishment", author: "Fyodor Dostoevsky", literaryForm: "novel" },
+      { title: "War and Peace", author: "Leo Tolstoy", literaryForm: "novel" },
+      { title: "Madame Bovary", author: "Gustave Flaubert", literaryForm: "novel" },
+      { title: "The Analects", author: "Confucius", literaryForm: "philosophy" },
+    ];
+
+    for (const [index, row] of cases.entries()) {
+      unifiedSearchMock.mockResolvedValueOnce({
+        results: [
+          {
+            id: `form-${index}`,
+            editionId: `form-${index}`,
+            bookId: `form-${index}`,
+            workId: null,
+            externalId: `FORM${index}`,
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title: row.title,
+            titleEn: row.title,
+            titleAr: "",
+            authors: [row.author],
+            authorEn: row.author,
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 80,
+            rank: index + 1,
+            rawBook: {
+              key: `/works/FORM${index}W`,
+              openLibraryWorkId: `FORM${index}W`,
+              title: row.title,
+              author: row.author,
+              authors: [row.author],
+              language: "en",
+            },
+          },
+        ],
+      });
+
+      ingestBookServerSideMock.mockResolvedValueOnce({
+        canonicalBookId: `form-book-${index}`,
+        bookId: `form-book-${index}`,
+        editionId: `openLibrary:FORM${index}`,
+        status: "CREATED",
+      });
+    }
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: cases.map((row) => `${row.title} | ${row.author}`).join("\n"),
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledTimes(cases.length);
+    for (const [index, row] of cases.entries()) {
+      const rawBook = ingestBookServerSideMock.mock.calls[index][0].rawBook;
+      expect(rawBook).toMatchObject({
+        title: row.title,
+        author: row.author,
+        authorEn: row.author,
+        authors: [row.author],
+        literaryForm: row.literaryForm,
+      });
+    }
+  });
+
+  it("preserves existing literaryForm on canonical seed rows", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "odyssey-existing-form",
+          editionId: "odyssey-existing-form",
+          bookId: "odyssey-existing-form",
+          workId: null,
+          externalId: "ODYSSEY_EXISTING_FORM",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 80,
+          rank: 1,
+          rawBook: {
+            key: "/works/OLEXISTINGFORMW",
+            openLibraryWorkId: "OLEXISTINGFORMW",
+            title: "The Odyssey",
+            author: "Homer",
+            authors: ["Homer"],
+            literaryForm: "poetry",
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "odyssey-existing-form",
+      bookId: "odyssey-existing-form",
+      editionId: "openLibrary:ODYSSEY_EXISTING_FORM",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Odyssey | Homer",
+      },
+    });
+
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rawBook: expect.objectContaining({
+          title: "The Odyssey",
+          author: "Homer",
+          literaryForm: "poetry",
+        }),
+      })
+    );
+  });
+
+  it("hydrates Open Library work metadata for canonical seed rows when search candidate description is empty", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const hydratedDescription =
+      "Odysseus struggles across the wine-dark sea after the Trojan War, meeting monsters, storms, temptation, and divine opposition before returning to Ithaca to reclaim his household and identity.";
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-odyssey-empty-description",
+          editionId: "ol-odyssey-empty-description",
+          bookId: "ol-odyssey-empty-description",
+          workId: null,
+          externalId: "OL66554W",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            key: "/works/OL66554W",
+            openLibraryWorkId: "OL66554W",
+            title: "The Odyssey",
+            author: "Homer",
+            authors: ["Homer"],
+            description: "",
+            descriptionEn: "",
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+      source: "openLibrary",
+      externalId: "OL66554W",
+      key: "/works/OL66554W",
+      openLibraryWorkId: "OL66554W",
+      openLibraryEditionId: "OL123M",
+      editionExternalId: "OL123M",
+      title: "The Odyssey",
+      authors: ["Provider Author Should Not Win"],
+      description: hydratedDescription,
+      descriptionEn: hydratedDescription,
+      coverId: "12345",
+      coverUrl: "https://covers.openlibrary.org/b/id/12345-L.jpg",
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "odyssey-hydrated",
+      bookId: "odyssey-hydrated",
+      editionId: "openLibrary:OL66554W",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Odyssey | Homer",
+      },
+    });
+
+    expect(fetchOpenLibraryCanonicalMetadataMock).toHaveBeenCalledWith("OL66554W");
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL66554W",
+        rawBook: expect.objectContaining({
+          title: "The Odyssey",
+          author: "Homer",
+          authorEn: "Homer",
+          authors: ["Homer"],
+          description: hydratedDescription,
+          descriptionEn: hydratedDescription,
+          abstractDescription: hydratedDescription,
+          coverUrl: "https://covers.openlibrary.org/b/id/12345-L.jpg",
+          coverId: "12345",
+          openLibraryWorkId: "OL66554W",
+          openLibraryEditionId: "OL123M",
+          editionExternalId: "OL123M",
+        }),
+      })
+    );
+  });
+
+  it("falls back to Google Books description metadata when Open Library work description is unusable", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const fallbackDescription =
+      "Homer's epic follows Odysseus through perilous seas, strange islands, and divine tests as he struggles to return to Ithaca and restore his place beside Penelope after the Trojan War.";
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-odyssey-weak-description",
+          editionId: "ol-odyssey-weak-description",
+          bookId: "ol-odyssey-weak-description",
+          workId: null,
+          externalId: "OL66554W",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            key: "/works/OL66554W",
+            openLibraryWorkId: "OL66554W",
+            title: "The Odyssey",
+            author: "Homer",
+            authors: ["Homer"],
+            description: "",
+            descriptionEn: "",
+            language: "en",
+          },
+        },
+        {
+          id: "gb-odyssey-description",
+          editionId: "gb-odyssey-description",
+          bookId: "gb-odyssey-description",
+          workId: null,
+          externalId: "GBODYSSEY",
+          source: "googleBooks",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 70,
+          rank: 2,
+          rawBook: {
+            id: "GBODYSSEY",
+            externalId: "GBODYSSEY",
+            source: "googleBooks",
+            title: "The Odyssey",
+            authors: ["Homer"],
+          },
+        },
+      ],
+    });
+
+    fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+      source: "openLibrary",
+      externalId: "OL66554W",
+      key: "/works/OL66554W",
+      openLibraryWorkId: "OL66554W",
+      title: "The Odyssey",
+      authors: ["Provider Author Should Not Win"],
+      description: "Too short.",
+      descriptionEn: "Too short.",
+    });
+    fetchGoogleBooksCanonicalMetadataMock.mockResolvedValueOnce({
+      id: "GBODYSSEY",
+      externalId: "GBODYSSEY",
+      source: "googleBooks",
+      title: "Provider Title Should Not Win",
+      authors: ["Provider Author Should Not Win"],
+      description: fallbackDescription,
+      imageLinks: {
+        thumbnail: "http://books.google.com/books/content?id=GBODYSSEY&printsec=frontcover&img=1&zoom=1",
+      },
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "odyssey-google-description",
+      bookId: "odyssey-google-description",
+      editionId: "openLibrary:OL66554W",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Odyssey | Homer",
+      },
+    });
+
+    expect(fetchOpenLibraryCanonicalMetadataMock).toHaveBeenCalledWith("OL66554W");
+    expect(fetchGoogleBooksCanonicalMetadataMock).toHaveBeenCalledWith("GBODYSSEY");
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL66554W",
+        rawBook: expect.objectContaining({
+          title: "The Odyssey",
+          author: "Homer",
+          authorEn: "Homer",
+          authors: ["Homer"],
+          description: fallbackDescription,
+          descriptionEn: fallbackDescription,
+          abstractDescription: fallbackDescription,
+          googleBooksVolumeId: "GBODYSSEY",
+          openLibraryWorkId: "OL66554W",
+        }),
+      })
+    );
+  });
+
+  it("hydrates The Odyssey description from Open Library workIdentity provider work id", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const hydratedDescription =
+      "The Odyssey is an ancient Greek epic poem following Odysseus through perilous seas, divine opposition, strange islands, and the long struggle to return home to Ithaca.";
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-odyssey-edition-survivor",
+          editionId: "ol-odyssey-edition-survivor",
+          bookId: "ol-odyssey-edition-survivor",
+          workId: null,
+          externalId: "OL123M",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            title: "The Odyssey",
+            author: "Homer",
+            authors: ["Homer"],
+            workIdentity: {
+              providerWorkId: "openLibrary:OL61982W",
+            },
+            description: "",
+            descriptionEn: "",
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+      source: "openLibrary",
+      externalId: "OL61982W",
+      key: "/works/OL61982W",
+      openLibraryWorkId: "OL61982W",
+      title: "The Odyssey",
+      authors: ["Provider Author Should Not Win"],
+      description: hydratedDescription,
+      descriptionEn: hydratedDescription,
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "odyssey-workidentity-description",
+      bookId: "odyssey-workidentity-description",
+      editionId: "openLibrary:OL123M",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Odyssey | Homer",
+      },
+    });
+
+    expect(fetchOpenLibraryCanonicalMetadataMock).toHaveBeenCalledWith("OL61982W");
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL123M",
+        rawBook: expect.objectContaining({
+          title: "The Odyssey",
+          author: "Homer",
+          authors: ["Homer"],
+          description: hydratedDescription,
+          descriptionEn: hydratedDescription,
+          abstractDescription: hydratedDescription,
+          openLibraryWorkId: "OL61982W",
+        }),
+      })
+    );
+  });
+
+  it("hydrates Candide description from Open Library providerExternalIds work id", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const hydratedDescription =
+      "Candide follows a young man trained to believe that all is for the best as war, disaster, hypocrisy, and absurd violence steadily expose the limits of that optimism.";
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-candide-edition-survivor",
+          editionId: "ol-candide-edition-survivor",
+          bookId: "ol-candide-edition-survivor",
+          workId: null,
+          externalId: "OL456M",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "Candide",
+          titleEn: "Candide",
+          titleAr: "",
+          authors: ["Voltaire"],
+          authorEn: "Voltaire",
+          authorAr: "",
+          description: "",
+          descriptionEn: "",
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 88,
+          rank: 1,
+          rawBook: {
+            title: "Candide",
+            author: "Voltaire",
+            authors: ["Voltaire"],
+            providerExternalIds: ["openLibrary:OL100672W"],
+            description: "",
+            descriptionEn: "",
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+      source: "openLibrary",
+      externalId: "OL100672W",
+      key: "/works/OL100672W",
+      openLibraryWorkId: "OL100672W",
+      title: "Candide",
+      authors: ["Provider Author Should Not Win"],
+      description: hydratedDescription,
+      descriptionEn: hydratedDescription,
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "candide-providerids-description",
+      bookId: "candide-providerids-description",
+      editionId: "openLibrary:OL456M",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "Candide | Voltaire",
+      },
+    });
+
+    expect(fetchOpenLibraryCanonicalMetadataMock).toHaveBeenCalledWith("OL100672W");
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OL456M",
+        rawBook: expect.objectContaining({
+          title: "Candide",
+          author: "Voltaire",
+          authors: ["Voltaire"],
+          description: hydratedDescription,
+          descriptionEn: hydratedDescription,
+          abstractDescription: hydratedDescription,
+          openLibraryWorkId: "OL100672W",
+        }),
+      })
+    );
   });
 
   it("prefers a cover-bearing candidate when authority signals are otherwise equal", async () => {
@@ -3753,6 +4381,62 @@ describe("adminCreateCanonicalBook", () => {
     expect(String(book?.authorCanonicalKey || "")).toMatch(/^leo tolstoy::/);
     expect(book?.authorCanonicalKey).not.toBe("leo tolstoy::1930");
     expect(author?.canonicalKey).not.toBe("leo tolstoy::1930");
+  });
+
+  it("rejects synthetic ancient Homer year upgrades under seed author lock", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "The Odyssey",
+        titleEn: "The Odyssey",
+        author: "Homer",
+        authorEn: "Homer",
+        authors: ["Homer"],
+        authorCanonicalKey: "homer::unknown",
+        birthYear: "0009",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:odyssey:homer-synthetic-year",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const author = getDoc(`authors/${book?.authorId}`);
+
+    expect(book?.author).toBe("Homer");
+    expect(book?.authorCanonicalKey).toBe("homer::unknown");
+    expect(author?.canonicalKey).toBe("homer::unknown");
+    expect(book?.authorCanonicalKey).not.toBe("homer::0009");
+  });
+
+  it("rejects synthetic ancient Sophocles year upgrades under seed author lock", async () => {
+    const materializeBookAuthority = await getMaterializeBookAuthorityFn();
+
+    const result = await materializeBookAuthority({
+      source: "canonical_seed",
+      authorityStatus: "canonical",
+      rawBook: {
+        title: "Oedipus Rex",
+        titleEn: "Oedipus Rex",
+        author: "Sophocles",
+        authorEn: "Sophocles",
+        authors: ["Sophocles"],
+        authorCanonicalKey: "sophocles::unknown",
+        birthYear: "0049",
+        language: "en",
+      },
+      ingestionKey: "canonical_seed:oedipus-rex:sophocles-synthetic-year",
+    });
+
+    const book = getDoc(`books/${result.bookId}`);
+    const author = getDoc(`authors/${book?.authorId}`);
+
+    expect(book?.author).toBe("Sophocles");
+    expect(book?.authorCanonicalKey).toBe("sophocles::unknown");
+    expect(author?.canonicalKey).toBe("sophocles::unknown");
+    expect(book?.authorCanonicalKey).not.toBe("sophocles::0049");
   });
 
   it("normalizes inverted library-form canonical seed author names before book persistence", async () => {
