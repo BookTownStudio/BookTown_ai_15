@@ -55,15 +55,23 @@ const KNOWN_CANONICAL_WORK_LITERARY_FORMS = new Map<string, string>([
 
 const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["the odyssey", "epic"],
+  ["the iliad", "epic"],
   ["oedipus rex", "play"],
   ["the aeneid", "epic"],
+  ["the divine comedy", "epic poem"],
+  ["don quixote", "novel"],
+  ["the tale of genji", "novel"],
   ["candide", "philosophy"],
   ["the stranger", "novel"],
   ["the trial", "novel"],
   ["crime and punishment", "novel"],
   ["war and peace", "novel"],
   ["madame bovary", "novel"],
+  ["season of migration to the north", "novel"],
+  ["the aleph", "short stories"],
   ["the analects", "philosophy"],
+  ["beloved", "novel"],
+  ["pride and prejudice", "novel"],
 ]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
@@ -424,16 +432,14 @@ export function normalizeCanonicalIngestPayload(params: {
     requestedTitle: params.requestedTitle,
     requestedAuthor: primaryAuthor,
   });
-  const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
-  const isCanonicalSeedPayload = Boolean(
-    seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
-  );
-  const seedTitleLiteraryForm =
-    directLiteraryForm || !isCanonicalSeedPayload
-      ? ""
-      : inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle);
-  const literaryForm = directLiteraryForm || seedTitleLiteraryForm || inferLiteraryForm(normalized);
-  const description = firstNonEmptyString(
+const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
+const isCanonicalSeedPayload = Boolean(
+  seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
+);
+const seedTitleLiteraryForm = isCanonicalSeedPayload
+  ? inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle)
+  : "";
+const literaryForm = seedTitleLiteraryForm || directLiteraryForm || inferLiteraryForm(normalized);  const description = firstNonEmptyString(
     normalized.descriptionEn,
     normalized.description,
     normalized.summary

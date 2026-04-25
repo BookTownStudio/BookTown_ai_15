@@ -825,14 +825,20 @@ describe("adminCreateCanonicalBook", () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
     const cases = [
       { title: "The Odyssey", author: "Homer", literaryForm: "epic" },
+      { title: "The Iliad", author: "Homer", literaryForm: "epic" },
       { title: "Oedipus Rex", author: "Sophocles", literaryForm: "play" },
       { title: "The Aeneid", author: "Virgil", literaryForm: "epic" },
+      { title: "The Divine Comedy", author: "Dante Alighieri", literaryForm: "epic poem" },
+      { title: "Don Quixote", author: "Miguel de Cervantes", literaryForm: "novel" },
+      { title: "The Tale of Genji", author: "Murasaki Shikibu", literaryForm: "novel" },
       { title: "Candide", author: "Voltaire", literaryForm: "philosophy" },
       { title: "The Stranger", author: "Albert Camus", literaryForm: "novel" },
       { title: "The Trial", author: "Franz Kafka", literaryForm: "novel" },
       { title: "Crime and Punishment", author: "Fyodor Dostoevsky", literaryForm: "novel" },
       { title: "War and Peace", author: "Leo Tolstoy", literaryForm: "novel" },
       { title: "Madame Bovary", author: "Gustave Flaubert", literaryForm: "novel" },
+      { title: "Season of Migration to the North", author: "Tayeb Salih", literaryForm: "novel" },
+      { title: "The Aleph", author: "Jorge Luis Borges", literaryForm: "short stories" },
       { title: "The Analects", author: "Confucius", literaryForm: "philosophy" },
     ];
 
@@ -918,11 +924,11 @@ describe("adminCreateCanonicalBook", () => {
     unifiedSearchMock.mockResolvedValueOnce({
       results: [
         {
-          id: "odyssey-existing-form",
-          editionId: "odyssey-existing-form",
-          bookId: "odyssey-existing-form",
+          id: "divine-comedy-existing-form",
+          editionId: "divine-comedy-existing-form",
+          bookId: "divine-comedy-existing-form",
           workId: null,
-          externalId: "ODYSSEY_EXISTING_FORM",
+          externalId: "DIVINE_COMEDY_EXISTING_FORM",
           source: "openLibrary",
           resultType: "external",
           workType: "edition",
@@ -930,11 +936,11 @@ describe("adminCreateCanonicalBook", () => {
           ebookClass: "unavailable",
           sourceClass: "external_provider",
           languageTruth: "match",
-          title: "The Odyssey",
-          titleEn: "The Odyssey",
+          title: "The Divine Comedy",
+          titleEn: "The Divine Comedy",
           titleAr: "",
-          authors: ["Homer"],
-          authorEn: "Homer",
+          authors: ["Dante Alighieri"],
+          authorEn: "Dante Alighieri",
           authorAr: "",
           description: "",
           descriptionEn: "",
@@ -951,11 +957,11 @@ describe("adminCreateCanonicalBook", () => {
           confidence: 80,
           rank: 1,
           rawBook: {
-            key: "/works/OLEXISTINGFORMW",
-            openLibraryWorkId: "OLEXISTINGFORMW",
-            title: "The Odyssey",
-            author: "Homer",
-            authors: ["Homer"],
+            key: "/works/OLDIVINEFORMW",
+            openLibraryWorkId: "OLDIVINEFORMW",
+            title: "The Divine Comedy",
+            author: "Dante Alighieri",
+            authors: ["Dante Alighieri"],
             literaryForm: "poetry",
             language: "en",
           },
@@ -964,24 +970,24 @@ describe("adminCreateCanonicalBook", () => {
     });
 
     ingestBookServerSideMock.mockResolvedValueOnce({
-      canonicalBookId: "odyssey-existing-form",
-      bookId: "odyssey-existing-form",
-      editionId: "openLibrary:ODYSSEY_EXISTING_FORM",
+      canonicalBookId: "divine-comedy-existing-form",
+      bookId: "divine-comedy-existing-form",
+      editionId: "openLibrary:DIVINE_COMEDY_EXISTING_FORM",
       status: "CREATED",
     });
 
     await callable.run({
       auth: { uid: "superadmin-1" },
       data: {
-        rows: "The Odyssey | Homer",
+        rows: "The Divine Comedy | Dante Alighieri",
       },
     });
 
     expect(ingestBookServerSideMock).toHaveBeenCalledWith(
       expect.objectContaining({
         rawBook: expect.objectContaining({
-          title: "The Odyssey",
-          author: "Homer",
+          title: "The Divine Comedy",
+          author: "Dante Alighieri",
           literaryForm: "poetry",
         }),
       })
@@ -1439,6 +1445,153 @@ describe("adminCreateCanonicalBook", () => {
       })
     );
   });
+
+  it.each([
+    {
+      title: "Don Quixote",
+      author: "Miguel de Cervantes",
+      workId: "OL40249930W",
+      expectedDescription: "Don Quixote follows an aging hidalgo",
+    },
+    {
+      title: "The Iliad",
+      author: "Homer",
+      workId: "OL43062233W",
+      expectedDescription: "The Iliad recounts the wrath of Achilles",
+    },
+    {
+      title: "Beloved",
+      author: "Toni Morrison",
+      workId: "OL18910369W",
+      expectedDescription: "Beloved follows Sethe",
+    },
+    {
+      title: "The Tale of Genji",
+      author: "Murasaki Shikibu",
+      workId: "OL32943042W",
+      expectedDescription: "The Tale of Genji follows Hikaru Genji",
+    },
+    {
+      title: "The Divine Comedy",
+      author: "Dante Alighieri",
+      workId: "OL2020506W",
+      expectedDescription: "The Divine Comedy follows Dante through Hell",
+    },
+    {
+      title: "War and Peace",
+      author: "Leo Tolstoy",
+      workId: "OL267171W",
+      expectedDescription: "War and Peace follows aristocratic families",
+    },
+    {
+      title: "The Aleph",
+      author: "Jorge Luis Borges",
+      workId: "OL444668W",
+      expectedDescription: "The Aleph gathers Borges's stories",
+    },
+  ])(
+    "fills missing canonical seed description for $title without changing identity fields",
+    async ({ title, author, workId, expectedDescription }) => {
+      const callable = await getAdminSeedCanonicalBatchCallable();
+
+      unifiedSearchMock.mockResolvedValueOnce({
+        results: [
+          {
+            id: `ol-${workId}`,
+            editionId: `ol-${workId}`,
+            bookId: `ol-${workId}`,
+            workId: null,
+            externalId: workId,
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title,
+            titleEn: title,
+            titleAr: "",
+            authors: [author],
+            authorEn: author,
+            authorAr: "",
+            description: "",
+            descriptionEn: "",
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 90,
+            rank: 1,
+            rawBook: {
+              key: `/works/${workId}`,
+              openLibraryWorkId: workId,
+              title,
+              author,
+              authors: [author],
+              description: "",
+              descriptionEn: "",
+              language: "en",
+            },
+          },
+        ],
+      });
+
+      fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+        source: "openLibrary",
+        externalId: workId,
+        key: `/works/${workId}`,
+        openLibraryWorkId: workId,
+        title,
+        authors: [author],
+        description: "",
+        descriptionEn: "",
+      });
+
+      ingestBookServerSideMock.mockResolvedValueOnce({
+        canonicalBookId: `${workId}-canonical`,
+        bookId: `${workId}-canonical`,
+        editionId: `openLibrary:${workId}`,
+        status: "CREATED",
+      });
+
+      await callable.run({
+        auth: { uid: "superadmin-1" },
+        data: {
+          rows: `${title} | ${author}`,
+        },
+      });
+
+      expect(fetchOpenLibraryCanonicalMetadataMock).toHaveBeenCalledWith(workId);
+      expect(fetchGoogleBooksCanonicalMetadataMock).not.toHaveBeenCalled();
+      const rawBook = ingestBookServerSideMock.mock.calls[0]?.[0]?.rawBook as
+        | Record<string, unknown>
+        | undefined;
+      expect(rawBook?.canonicalKey).toBeUndefined();
+      expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "openLibrary",
+          providerExternalId: workId,
+          rawBook: expect.objectContaining({
+            title,
+            author,
+            authorEn: author,
+            authors: [author],
+            description: expect.stringContaining(expectedDescription),
+            descriptionEn: expect.stringContaining(expectedDescription),
+            abstractDescription: expect.stringContaining(expectedDescription),
+            openLibraryWorkId: workId,
+          }),
+        })
+      );
+    }
+  );
 
   it("prefers a cover-bearing candidate when authority signals are otherwise equal", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
@@ -2314,6 +2467,93 @@ describe("adminCreateCanonicalBook", () => {
 
     vi.useRealTimers();
   });
+
+  it.each([
+    {
+      title: "Beloved",
+      author: "Toni Morrison",
+      literaryForm: "novel",
+      expectedDescription: "Beloved follows Sethe",
+    },
+    {
+      title: "The Iliad",
+      author: "Homer",
+      literaryForm: "epic",
+      expectedDescription: "The Iliad recounts the wrath of Achilles",
+    },
+    {
+      title: "Don Quixote",
+      author: "Miguel de Cervantes",
+      literaryForm: "novel",
+      expectedDescription: "Don Quixote follows an aging hidalgo",
+    },
+  ])(
+    "normalizes timeout seed fallback metadata for $title before materialization",
+    async ({ title, author, literaryForm, expectedDescription }) => {
+      vi.useFakeTimers();
+
+      try {
+        const callable = await getAdminSeedCanonicalBatchCallable();
+
+        unifiedSearchMock.mockImplementationOnce(() => new Promise(() => {}));
+        materializeSeedOnlyCanonicalFallbackMock.mockResolvedValueOnce({
+          canonicalBookId: `${title}-fallback`,
+          bookId: `${title}-fallback`,
+          editionId: null,
+          status: "CREATED",
+        });
+
+        const pending = callable.run({
+          auth: { uid: "superadmin-1" },
+          data: {
+            rows: `${title} | ${author}`,
+          },
+        });
+
+        await vi.advanceTimersByTimeAsync(10_000);
+        const result = await pending;
+
+        expect(materializeSeedOnlyCanonicalFallbackMock).toHaveBeenCalledWith(
+          expect.objectContaining({
+            rawBook: expect.objectContaining({
+              title,
+              titleEn: title,
+              author,
+              authorEn: author,
+              authors: [author],
+              literaryForm,
+              description: expect.stringContaining(expectedDescription),
+              descriptionEn: expect.stringContaining(expectedDescription),
+              abstractDescription: expect.stringContaining(expectedDescription),
+              authorityStatus: "canonical",
+              workType: "canonical",
+              canonicalLocked: true,
+              seedAuthorLock: expect.objectContaining({
+                author,
+                authorEn: author,
+                authors: [author],
+              }),
+            }),
+          })
+        );
+        expect(result).toMatchObject({
+          rows: [
+            {
+              title,
+              status: "timeout_fallback",
+            },
+          ],
+          summary: {
+            successCount: 1,
+            existingCount: 0,
+            failedCount: 0,
+          },
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    }
+  );
 
   it("prefers the literary creator for The Second Sex before canonical normalization begins", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();

@@ -132,6 +132,55 @@ type AdminSeedCanonicalBatchSummary = {
 
 const PROVIDER_PHASE_TIMEOUT_MS = 10_000;
 
+const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
+  title: string;
+  author: string;
+  description: string;
+}> = [
+  {
+    title: "Don Quixote",
+    author: "Miguel de Cervantes",
+    description:
+      "Don Quixote follows an aging hidalgo who reinvents himself as a knight errant, traveling with Sancho Panza through comic misadventures that test illusion, honor, storytelling, and the boundary between fantasy and reality.",
+  },
+  {
+    title: "The Iliad",
+    author: "Homer",
+    description:
+      "The Iliad recounts the wrath of Achilles during the Trojan War, tracing conflict among Greek warriors, Trojan defenders, and the gods as questions of honor, mortality, grief, and glory drive the epic toward Hector's death.",
+  },
+  {
+    title: "Beloved",
+    author: "Toni Morrison",
+    description:
+      "Beloved follows Sethe, a formerly enslaved woman in post-Civil War Ohio, as the return of a mysterious young woman forces her household to confront trauma, memory, motherhood, and the living presence of the past.",
+  },
+  {
+    title: "The Tale of Genji",
+    author: "Murasaki Shikibu",
+    description:
+      "The Tale of Genji follows Hikaru Genji and generations of the Heian court, using romance, exile, rivalry, and ritual to examine desire, impermanence, politics, and the emotional costs of aristocratic life.",
+  },
+  {
+    title: "The Divine Comedy",
+    author: "Dante Alighieri",
+    description:
+      "The Divine Comedy follows Dante through Hell, Purgatory, and Paradise, using an allegorical journey through the afterlife to examine sin, justice, redemption, and the soul's movement toward divine understanding.",
+  },
+  {
+    title: "War and Peace",
+    author: "Leo Tolstoy",
+    description:
+      "War and Peace follows aristocratic families during the Napoleonic wars, weaving battles, domestic life, political change, and philosophical reflection into a large-scale study of history, fate, and human choice.",
+  },
+  {
+    title: "The Aleph",
+    author: "Jorge Luis Borges",
+    description:
+      "The Aleph gathers Borges's stories of mirrors, labyrinths, infinity, and memory, where philosophical puzzles and fictional inventions unsettle the boundaries between reality, language, and imagination.",
+  },
+];
+
 class ProviderPhaseTimeoutError extends Error {
   readonly code = "PROVIDER_PHASE_TIMEOUT";
 
@@ -402,6 +451,10 @@ function buildSeedOnlyFallbackRawBook(params: {
     title: params.title,
     author: canonicalAuthor,
   });
+  const description = resolveCanonicalSeedDescriptionFallback({
+    requestedTitle: params.title,
+    requestedAuthor: canonicalAuthor,
+  });
 
   return applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
     requestedTitle: params.title,
@@ -420,6 +473,13 @@ function buildSeedOnlyFallbackRawBook(params: {
       visibility: "public",
       publicationState: "published",
       ...(literaryForm ? { literaryForm } : {}),
+      ...(description
+        ? {
+            description,
+            descriptionEn: description,
+            abstractDescription: description,
+          }
+        : {}),
     },
   });
 }
@@ -2187,6 +2247,41 @@ function mergeSeedHydratedMetadata(params: {
   };
 }
 
+function resolveCanonicalSeedDescriptionFallback(params: {
+  requestedTitle: string;
+  requestedAuthor: string;
+}): string {
+  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
+  const requestedAuthorNorm = normalizeSearchText(params.requestedAuthor);
+  const fallback = CANONICAL_SEED_DESCRIPTION_FALLBACKS.find(
+    (entry) =>
+      normalizeSearchText(entry.title) === requestedTitleNorm &&
+      normalizeSearchText(entry.author) === requestedAuthorNorm
+  );
+  const description = normalizeSeedDescriptionText(fallback?.description || "");
+  return isUsableSeedDescriptionText(description) ? description : "";
+}
+
+function mergeSeedDescriptionOnly(params: {
+  result: UnifiedSearchResult;
+  description: string;
+}): UnifiedSearchResult {
+  const rawBook =
+    params.result.rawBook && typeof params.result.rawBook === "object" && !Array.isArray(params.result.rawBook)
+      ? ({ ...(params.result.rawBook as Record<string, unknown>) } as Record<string, unknown>)
+      : {};
+
+  return {
+    ...params.result,
+    rawBook: {
+      ...rawBook,
+      description: params.description,
+      descriptionEn: params.description,
+      abstractDescription: params.description,
+    },
+  };
+}
+
 function selectGoogleBooksDescriptionFallbackCandidate(params: {
   searchResults: UnifiedSearchResult[];
   requestedTitle: string;
@@ -2265,6 +2360,37 @@ async function resolveGoogleBooksSeedDescriptionFallback(params: {
   });
 }
 
+async function resolveSeedDescriptionFallback(params: {
+  result: UnifiedSearchResult;
+  requestedTitle: string;
+  requestedAuthor: string;
+  searchResults: UnifiedSearchResult[];
+  allowCanonicalSeedDescription: boolean;
+}): Promise<UnifiedSearchResult> {
+  const googleFallback = await resolveGoogleBooksSeedDescriptionFallback(params);
+  const googleFallbackRawBook = asRecord(googleFallback.rawBook) || {};
+  if (isUsableSeedDescriptionText(resolveSeedDescription(googleFallbackRawBook))) {
+    return googleFallback;
+  }
+
+  if (!params.allowCanonicalSeedDescription) {
+    return params.result;
+  }
+
+  const canonicalSeedDescription = resolveCanonicalSeedDescriptionFallback({
+    requestedTitle: params.requestedTitle,
+    requestedAuthor: params.requestedAuthor,
+  });
+  if (!canonicalSeedDescription) {
+    return params.result;
+  }
+
+  return mergeSeedDescriptionOnly({
+    result: params.result,
+    description: canonicalSeedDescription,
+  });
+}
+
 async function hydrateSeedCandidateDescription(params: {
   result: UnifiedSearchResult;
   requestedTitle: string;
@@ -2280,28 +2406,42 @@ async function hydrateSeedCandidateDescription(params: {
     result.rawBook && typeof result.rawBook === "object" && !Array.isArray(result.rawBook)
       ? (result.rawBook as Record<string, unknown>)
       : {};
-  if (isUsableSeedDescriptionText(resolveSeedDescription(rawBook))) {
+  const selectedSeedDescription = resolveSeedDescription(rawBook);
+  if (isUsableSeedDescriptionText(selectedSeedDescription)) {
     return result;
   }
+  const canUseCanonicalSeedDescription = !asNonEmptyString(selectedSeedDescription);
 
   if (result.source === "googleBooks") {
-    return resolveGoogleBooksSeedDescriptionFallback(params);
+    return resolveSeedDescriptionFallback({
+      ...params,
+      allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
+    });
   }
 
   const providerExternalId =
     extractOpenLibrarySeedWorkIdForFetch(result);
   if (!providerExternalId) {
-    return result;
+    return resolveSeedDescriptionFallback({
+      ...params,
+      allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
+    });
   }
 
   const hydratedRawBook = await fetchOpenLibraryCanonicalMetadata(providerExternalId);
   if (!hydratedRawBook) {
-    return resolveGoogleBooksSeedDescriptionFallback(params);
+    return resolveSeedDescriptionFallback({
+      ...params,
+      allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
+    });
   }
 
   const hydratedDescription = normalizeSeedDescriptionText(resolveSeedDescription(hydratedRawBook));
   if (!isUsableSeedDescriptionText(hydratedDescription)) {
-    return resolveGoogleBooksSeedDescriptionFallback(params);
+    return resolveSeedDescriptionFallback({
+      ...params,
+      allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
+    });
   }
 
   return mergeSeedHydratedMetadata({
@@ -4171,11 +4311,20 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           throw error;
         }
 
+        const fallbackRawBook = buildSeedOnlyFallbackRawBook({
+          title: entry.title,
+          author: entry.author,
+        });
+        const fallbackAuthor =
+          asNonEmptyString(fallbackRawBook.author) || entry.author;
+        const normalizedFallbackRawBook = normalizeBatchCanonicalSeedPayload({
+          rawBook: fallbackRawBook,
+          requestedTitle: entry.title,
+          requestedAuthor: fallbackAuthor,
+        });
+
         const fallback = await materializeSeedOnlyCanonicalFallback({
-          rawBook: buildSeedOnlyFallbackRawBook({
-            title: entry.title,
-            author: entry.author,
-          }),
+          rawBook: normalizedFallbackRawBook,
           ingestionKey: `canonical_seed_timeout:${normalizeSearchText(entry.author)}::${normalizeSearchText(entry.title)}`,
         });
 
