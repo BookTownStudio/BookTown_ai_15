@@ -792,7 +792,13 @@ function mapAdminCanonicalBatchRow(item: unknown, index: number): AdminCanonical
   }
   const data = item as Record<string, unknown>;
   const context = `admin canonical batch row #${index}`;
-  const status = readRequiredString(data.status, 'status', context);
+  const rawStatus = readRequiredString(data.status, 'status', context);
+  const status =
+    rawStatus === 'seed_fallback' ||
+    rawStatus === 'timeout_fallback' ||
+    rawStatus === 'canonical_seed'
+      ? 'created'
+      : rawStatus;
   if (status !== 'created' && status !== 'existing' && status !== 'failed') {
     throw new Error(`[adminService] ${context}.status is invalid.`);
   }

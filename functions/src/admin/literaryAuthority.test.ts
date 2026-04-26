@@ -409,6 +409,34 @@ describe("adminCreateCanonicalBook", () => {
     expect(typeof book?.authorCanonicalKey).toBe("string");
   });
 
+  it("strips simple HTML tags from direct canonical description fields before materialization", async () => {
+    const callable = await getAdminCreateCanonicalBookCallable();
+    const htmlDescription =
+      "A <i>canonical</i><br> admin-created <b>book</b> description with enough literary context to remain readable while removing simple provider markup.";
+    const sanitizedDescription =
+      "A canonical admin-created book description with enough literary context to remain readable while removing simple provider markup.";
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        title: "The Master and Margarita",
+        author: "Mikhail Bulgakov",
+        language: "en",
+        description: htmlDescription,
+      },
+    });
+
+    const response = result as {
+      book: {
+        bookId: string;
+      };
+    };
+    const book = getDoc(`books/${response.book.bookId}`);
+
+    expect(book?.description).toBe(sanitizedDescription);
+    expect(book?.descriptionEn).toBe(sanitizedDescription);
+  });
+
   it("creates a cover job through the shared cover_jobs pipeline when coverUrl is provided", async () => {
     const callable = await getAdminCreateCanonicalBookCallable();
     const result = await callable.run({
@@ -576,6 +604,66 @@ describe("adminCreateCanonicalBook", () => {
       successCount: 2,
       existingCount: 1,
       failedCount: 1,
+    });
+  });
+
+  it("creates a seed-only canonical fallback when provider miss has deterministic seed authority", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+
+    unifiedSearchMock
+      .mockResolvedValueOnce({
+        results: [],
+      })
+      .mockResolvedValueOnce({
+        results: [],
+      });
+
+    materializeSeedOnlyCanonicalFallbackMock.mockResolvedValueOnce({
+      canonicalBookId: "beloved-seed-fallback",
+      bookId: "beloved-seed-fallback",
+      editionId: null,
+      status: "CREATED",
+    });
+
+    const result = await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: ["Beloved | Toni Morrison", "Unknown Work | Unknown Author"].join("\n"),
+      },
+    });
+
+    expect(materializeSeedOnlyCanonicalFallbackMock).toHaveBeenCalledTimes(1);
+    expect(materializeSeedOnlyCanonicalFallbackMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        ingestionKey: "canonical_seed_provider_miss:toni morrison::beloved",
+        rawBook: expect.objectContaining({
+          title: "Beloved",
+          author: "Toni Morrison",
+          authorCanonicalKey: "toni morrison::unknown",
+          literaryForm: "novel",
+          description: expect.stringContaining("Beloved follows Sethe"),
+        }),
+      })
+    );
+    expect(ingestBookServerSideMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      rows: [
+        {
+          title: "Beloved",
+          status: "created",
+          bookId: "beloved-seed-fallback",
+        },
+        {
+          title: "Unknown Work",
+          status: "failed",
+          message: "No provider candidate matched this row.",
+        },
+      ],
+      summary: {
+        successCount: 1,
+        existingCount: 0,
+        failedCount: 1,
+      },
     });
   });
 
@@ -918,8 +1006,10 @@ describe("adminCreateCanonicalBook", () => {
     }
   });
 
-  it("preserves existing literaryForm on canonical seed rows", async () => {
+  it("locks deterministic seed authority fields over provider literaryForm and description", async () => {
     const callable = await getAdminSeedCanonicalBatchCallable();
+    const providerDescription =
+      "A publisher marketing description for a decorated school edition with ancillary commentary, lesson material, and contextual material that should not become canonical.";
 
     unifiedSearchMock.mockResolvedValueOnce({
       results: [
@@ -942,8 +1032,8 @@ describe("adminCreateCanonicalBook", () => {
           authors: ["Dante Alighieri"],
           authorEn: "Dante Alighieri",
           authorAr: "",
-          description: "",
-          descriptionEn: "",
+          description: providerDescription,
+          descriptionEn: providerDescription,
           descriptionAr: "",
           coverUrl: "",
           language: "en",
@@ -963,6 +1053,8 @@ describe("adminCreateCanonicalBook", () => {
             author: "Dante Alighieri",
             authors: ["Dante Alighieri"],
             literaryForm: "poetry",
+            description: providerDescription,
+            descriptionEn: providerDescription,
             language: "en",
           },
         },
@@ -988,9 +1080,18 @@ describe("adminCreateCanonicalBook", () => {
         rawBook: expect.objectContaining({
           title: "The Divine Comedy",
           author: "Dante Alighieri",
-          literaryForm: "poetry",
+          literaryForm: "epic poem",
+          authorityStatus: "canonical",
+          canonicalLocked: true,
+          workType: "canonical",
+          description: expect.stringContaining("The Divine Comedy follows Dante through Hell"),
+          descriptionEn: expect.stringContaining("The Divine Comedy follows Dante through Hell"),
+          abstractDescription: expect.stringContaining("The Divine Comedy follows Dante through Hell"),
         }),
       })
+    );
+    expect(ingestBookServerSideMock.mock.calls[0]?.[0]?.rawBook.description).not.toContain(
+      "publisher marketing description"
     );
   });
 
@@ -1247,6 +1348,93 @@ describe("adminCreateCanonicalBook", () => {
           abstractDescription: fallbackDescription,
           googleBooksVolumeId: "GBODYSSEY",
           openLibraryWorkId: "OL66554W",
+        }),
+      })
+    );
+  });
+
+  it("strips simple HTML tags from final canonical seed description fields before ingest", async () => {
+    const callable = await getAdminSeedCanonicalBatchCallable();
+    const htmlDescription =
+      "The <i>Odyssey</i><br> follows <b>Odysseus</b> through perilous seas, divine opposition, strange islands, and the long struggle to return home to Ithaca after the Trojan War.";
+    const sanitizedDescription =
+      "The Odyssey follows Odysseus through perilous seas, divine opposition, strange islands, and the long struggle to return home to Ithaca after the Trojan War.";
+
+    unifiedSearchMock.mockResolvedValueOnce({
+      results: [
+        {
+          id: "ol-html-description",
+          editionId: "ol-html-description",
+          bookId: "ol-html-description",
+          workId: null,
+          externalId: "OLHTMLW",
+          source: "openLibrary",
+          resultType: "external",
+          workType: "edition",
+          editionPresence: "edition",
+          ebookClass: "unavailable",
+          sourceClass: "external_provider",
+          languageTruth: "match",
+          title: "The Odyssey",
+          titleEn: "The Odyssey",
+          titleAr: "",
+          authors: ["Homer"],
+          authorEn: "Homer",
+          authorAr: "",
+          description: htmlDescription,
+          descriptionEn: htmlDescription,
+          descriptionAr: "",
+          coverUrl: "",
+          language: "en",
+          available: false,
+          acquired: false,
+          readAccess: "none",
+          readProvider: null,
+          hasEbook: false,
+          downloadable: false,
+          isEbookAvailable: false,
+          confidence: 90,
+          rank: 1,
+          rawBook: {
+            key: "/works/OLHTMLW",
+            openLibraryWorkId: "OLHTMLW",
+            title: "The Odyssey",
+            author: "Homer",
+            authors: ["Homer"],
+            description: htmlDescription,
+            descriptionEn: htmlDescription,
+            abstractDescription: `<p>${htmlDescription}</p>`,
+            language: "en",
+          },
+        },
+      ],
+    });
+
+    ingestBookServerSideMock.mockResolvedValueOnce({
+      canonicalBookId: "odyssey-html-description",
+      bookId: "odyssey-html-description",
+      editionId: "openLibrary:OLHTMLW",
+      status: "CREATED",
+    });
+
+    await callable.run({
+      auth: { uid: "superadmin-1" },
+      data: {
+        rows: "The Odyssey | Homer",
+      },
+    });
+
+    expect(fetchOpenLibraryCanonicalMetadataMock).not.toHaveBeenCalled();
+    expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        source: "openLibrary",
+        providerExternalId: "OLHTMLW",
+        rawBook: expect.objectContaining({
+          title: "The Odyssey",
+          author: "Homer",
+          description: sanitizedDescription,
+          descriptionEn: sanitizedDescription,
+          abstractDescription: sanitizedDescription,
         }),
       })
     );
@@ -1587,6 +1775,247 @@ describe("adminCreateCanonicalBook", () => {
             descriptionEn: expect.stringContaining(expectedDescription),
             abstractDescription: expect.stringContaining(expectedDescription),
             openLibraryWorkId: workId,
+          }),
+        })
+      );
+    }
+  );
+
+  it.each([
+    {
+      title: "War and Peace",
+      author: "Leo Tolstoy",
+      workId: "OL267171W",
+      pollutedDescription:
+        "Summary, A collection of seven critical essays discussing Tolstoy's novel, arranged in chronological order of their original publication.",
+      expectedDescription: "War and Peace follows aristocratic families",
+    },
+    {
+      title: "The Aleph",
+      author: "Jorge Luis Borges",
+      workId: "OL444668W",
+      pollutedDescription:
+        "A compilation of short stories written since World War II by authors from Europe, Asia, Australia, Africa and North and South America.",
+      expectedDescription: "The Aleph gathers Borges's stories",
+    },
+    {
+      title: "Hamlet",
+      author: "William Shakespeare",
+      workId: "OLHAMLETW",
+      pollutedDescription:
+        "Biography : William Shakespeare, a provider note about the playwright that describes surrounding historical material rather than the dramatic work itself.",
+      expectedDescription: "Hamlet follows the prince of Denmark",
+    },
+    {
+      title: "Pride and Prejudice",
+      author: "Jane Austen",
+      workId: "OLPRIDEW",
+      pollutedDescription:
+        "Page 2 of a letter from Jane Austen to her sister Cassandra, cataloged as an archival image note rather than a description of the novel.",
+      expectedDescription: "Pride and Prejudice follows Elizabeth Bennet",
+    },
+  ])(
+    "rejects known polluted canonical seed description for $title and applies deterministic fallback",
+    async ({ title, author, workId, pollutedDescription, expectedDescription }) => {
+      const callable = await getAdminSeedCanonicalBatchCallable();
+
+      unifiedSearchMock.mockResolvedValueOnce({
+        results: [
+          {
+            id: `ol-${workId}`,
+            editionId: `ol-${workId}`,
+            bookId: `ol-${workId}`,
+            workId: null,
+            externalId: workId,
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title,
+            titleEn: title,
+            titleAr: "",
+            authors: [author],
+            authorEn: author,
+            authorAr: "",
+            description: pollutedDescription,
+            descriptionEn: pollutedDescription,
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 90,
+            rank: 1,
+            rawBook: {
+              key: `/works/${workId}`,
+              openLibraryWorkId: workId,
+              title,
+              author,
+              authors: [author],
+              description: pollutedDescription,
+              descriptionEn: pollutedDescription,
+              language: "en",
+            },
+          },
+        ],
+      });
+
+      fetchOpenLibraryCanonicalMetadataMock.mockResolvedValueOnce({
+        source: "openLibrary",
+        externalId: workId,
+        key: `/works/${workId}`,
+        openLibraryWorkId: workId,
+        title,
+        authors: [author],
+        description: pollutedDescription,
+        descriptionEn: pollutedDescription,
+      });
+
+      ingestBookServerSideMock.mockResolvedValueOnce({
+        canonicalBookId: `${workId}-canonical`,
+        bookId: `${workId}-canonical`,
+        editionId: `openLibrary:${workId}`,
+        status: "CREATED",
+      });
+
+      await callable.run({
+        auth: { uid: "superadmin-1" },
+        data: {
+          rows: `${title} | ${author}`,
+        },
+      });
+
+      expect(fetchGoogleBooksCanonicalMetadataMock).not.toHaveBeenCalled();
+      expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "openLibrary",
+          providerExternalId: workId,
+          rawBook: expect.objectContaining({
+            title,
+            author,
+            description: expect.stringContaining(expectedDescription),
+            descriptionEn: expect.stringContaining(expectedDescription),
+            abstractDescription: expect.stringContaining(expectedDescription),
+          }),
+        })
+      );
+      expect(ingestBookServerSideMock.mock.calls[0]?.[0]?.rawBook.description).not.toContain(
+        pollutedDescription
+      );
+    }
+  );
+
+  it.each([
+    {
+      title: "Anna Karenina",
+      author: "Leo Tolstoy",
+      workId: "OLANNAW",
+      canonicalBookId: "anna-karenina-canonical",
+      providerDescription:
+        "Summary, A collection of seven critical essays discussing Tolstoy's novel, arranged in chronological order of their original publication.",
+    },
+    {
+      title: "Macbeth",
+      author: "William Shakespeare",
+      workId: "OLMACBETHW",
+      canonicalBookId: "macbeth-canonical",
+      providerDescription:
+        "Biography : William Shakespeare appears in this unrelated catalog note, but this text remains a provider description because the seed title is not Hamlet.",
+    },
+    {
+      title: "Emma",
+      author: "Jane Austen",
+      workId: "OLEMMW",
+      canonicalBookId: "emma-canonical",
+      providerDescription:
+        "Page 2 of a letter from Jane Austen to her sister Cassandra appears in this unrelated note, but this text remains unchanged because the seed title is not Pride and Prejudice.",
+    },
+  ])(
+    "leaves unrelated provider descriptions unchanged when $title contains a rejected seed phrase",
+    async ({ title, author, workId, canonicalBookId, providerDescription }) => {
+      const callable = await getAdminSeedCanonicalBatchCallable();
+
+      unifiedSearchMock.mockResolvedValueOnce({
+        results: [
+          {
+            id: `ol-${workId}`,
+            editionId: `ol-${workId}`,
+            bookId: `ol-${workId}`,
+            workId: null,
+            externalId: workId,
+            source: "openLibrary",
+            resultType: "external",
+            workType: "edition",
+            editionPresence: "edition",
+            ebookClass: "unavailable",
+            sourceClass: "external_provider",
+            languageTruth: "match",
+            title,
+            titleEn: title,
+            titleAr: "",
+            authors: [author],
+            authorEn: author,
+            authorAr: "",
+            description: providerDescription,
+            descriptionEn: providerDescription,
+            descriptionAr: "",
+            coverUrl: "",
+            language: "en",
+            available: false,
+            acquired: false,
+            readAccess: "none",
+            readProvider: null,
+            hasEbook: false,
+            downloadable: false,
+            isEbookAvailable: false,
+            confidence: 90,
+            rank: 1,
+            rawBook: {
+              key: `/works/${workId}`,
+              openLibraryWorkId: workId,
+              title,
+              author,
+              authors: [author],
+              description: providerDescription,
+              descriptionEn: providerDescription,
+              language: "en",
+            },
+          },
+        ],
+      });
+
+      ingestBookServerSideMock.mockResolvedValueOnce({
+        canonicalBookId,
+        bookId: canonicalBookId,
+        editionId: `openLibrary:${workId}`,
+        status: "CREATED",
+      });
+
+      await callable.run({
+        auth: { uid: "superadmin-1" },
+        data: {
+          rows: `${title} | ${author}`,
+        },
+      });
+
+      expect(fetchOpenLibraryCanonicalMetadataMock).not.toHaveBeenCalled();
+      expect(ingestBookServerSideMock).toHaveBeenCalledWith(
+        expect.objectContaining({
+          source: "openLibrary",
+          providerExternalId: workId,
+          rawBook: expect.objectContaining({
+            title,
+            author,
+            description: providerDescription,
+            descriptionEn: providerDescription,
           }),
         })
       );
@@ -2387,13 +2816,12 @@ describe("adminCreateCanonicalBook", () => {
           author: "William Shakespeare",
           authorEn: "William Shakespeare",
           authorCanonicalKey: "william shakespeare::unknown",
-          seedAuthorLock: {
+          seedAuthorLock: expect.objectContaining({
             author: "William Shakespeare",
             authorEn: "William Shakespeare",
             authors: ["William Shakespeare"],
             authorCanonicalKey: "william shakespeare::unknown",
-            source: "canonical_seed",
-          },
+          }),
           literaryForm: "play",
         }),
       })
@@ -2434,13 +2862,12 @@ describe("adminCreateCanonicalBook", () => {
           title: "Hamlet",
           author: "William Shakespeare",
           authorCanonicalKey: "william shakespeare::unknown",
-          seedAuthorLock: {
+          seedAuthorLock: expect.objectContaining({
             author: "William Shakespeare",
             authorEn: "William Shakespeare",
             authors: ["William Shakespeare"],
             authorCanonicalKey: "william shakespeare::unknown",
-            source: "canonical_seed",
-          },
+          }),
         }),
       })
     );
@@ -2449,7 +2876,7 @@ describe("adminCreateCanonicalBook", () => {
       rows: [
         {
           title: "Hamlet",
-          status: "timeout_fallback",
+          status: "created",
           bookId: "hamlet-fallback",
         },
         {
@@ -2540,7 +2967,7 @@ describe("adminCreateCanonicalBook", () => {
           rows: [
             {
               title,
-              status: "timeout_fallback",
+              status: "created",
             },
           ],
           summary: {

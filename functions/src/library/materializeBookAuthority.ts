@@ -2607,7 +2607,12 @@ export async function materializeBookAuthorityInTransaction(
     editionId ||
     null;
   const directPublisher = resolvePublisher(rawBook);
-  const literaryForm = asNonEmptyString(rawBook.literaryForm) || asNonEmptyString(existingBook?.literaryForm);
+  const hasSeedLineage = Boolean(
+    seedAuthorLock || asRecord(existingBook?.provenance)?.seedAuthorLock
+  );
+  const literaryForm = hasSeedLineage
+    ? asNonEmptyString(existingBook?.literaryForm) || asNonEmptyString(rawBook.literaryForm)
+    : asNonEmptyString(rawBook.literaryForm) || asNonEmptyString(existingBook?.literaryForm);
   const needsEnrichment =
     rawBook.needsEnrichment === true || existingBook?.needsEnrichment === true;
   const fieldConfidencePatch = buildFieldConfidencePatch({
