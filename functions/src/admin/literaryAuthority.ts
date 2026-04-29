@@ -115,7 +115,7 @@ type AdminSeedCanonicalBatchRow = {
   input: string;
   title: string;
   author: string;
-  status: "created" | "existing" | "failed";
+  status: "created" | "existing" | "failed" | "timeout_fallback";
   canonicalBookId?: string;
   bookId?: string;
   editionId?: string;
@@ -168,18 +168,6 @@ const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
       "The Divine Comedy follows Dante through Hell, Purgatory, and Paradise, using an allegorical journey through the afterlife to examine sin, justice, redemption, and the soul's movement toward divine understanding.",
   },
   {
-    title: "Hamlet",
-    author: "William Shakespeare",
-    description:
-      "Hamlet follows the prince of Denmark as he confronts his father's murder, his mother's remarriage, political corruption, revenge, madness, mortality, and the collapse of trust inside the royal court.",
-  },
-  {
-    title: "Pride and Prejudice",
-    author: "Jane Austen",
-    description:
-      "Pride and Prejudice follows Elizabeth Bennet as questions of manners, family, class, judgment, and marriage shape her changing understanding of Fitzwilliam Darcy and herself.",
-  },
-  {
     title: "War and Peace",
     author: "Leo Tolstoy",
     description:
@@ -190,28 +178,6 @@ const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
     author: "Jorge Luis Borges",
     description:
       "The Aleph gathers Borges's stories of mirrors, labyrinths, infinity, and memory, where philosophical puzzles and fictional inventions unsettle the boundaries between reality, language, and imagination.",
-  },
-];
-
-const CANONICAL_SEED_REJECTED_DESCRIPTION_SIGNATURES: Array<{
-  title: string;
-  contains: string;
-}> = [
-  {
-    title: "War and Peace",
-    contains: "seven critical essays discussing Tolstoy's novel",
-  },
-  {
-    title: "The Aleph",
-    contains: "compilation of short stories written since World War II",
-  },
-  {
-    title: "Hamlet",
-    contains: "Biography : William Shakespeare",
-  },
-  {
-    title: "Pride and Prejudice",
-    contains: "Page 2 of a letter from Jane Austen to her sister Cassandra",
   },
 ];
 
@@ -490,57 +456,32 @@ function buildSeedOnlyFallbackRawBook(params: {
     requestedAuthor: canonicalAuthor,
   });
 
-  return stripSimpleHtmlTagsFromCanonicalDescriptionFields(
-    applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
-      requestedTitle: params.title,
-      requestedAuthor: canonicalAuthor,
-      rawBook: {
-        title: params.title,
-        titleEn: params.title,
-        author: canonicalAuthor,
-        authorEn: canonicalAuthor,
-        authors: [canonicalAuthor],
-        language: "en",
-        canonicalLocked: true,
-        authorityStatus: "canonical",
-        workType: "canonical",
-        rightsMode: "public_free",
-        visibility: "public",
-        publicationState: "published",
-        ...(literaryForm ? { literaryForm } : {}),
-        ...(description
-          ? {
-              description,
-              descriptionEn: description,
-              abstractDescription: description,
-            }
-          : {}),
-      },
-    })
-  );
-}
-
-function buildKnownSeedOnlyFallbackRawBook(params: {
-  title: string;
-  author: string;
-}): Record<string, unknown> | null {
-  const fallbackRawBook = buildSeedOnlyFallbackRawBook(params);
-  const fallbackAuthor = asNonEmptyString(fallbackRawBook.author) || params.author;
-  const normalizedFallbackRawBook = normalizeBatchCanonicalSeedPayload({
-    rawBook: fallbackRawBook,
+  return applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
     requestedTitle: params.title,
-    requestedAuthor: fallbackAuthor,
+    requestedAuthor: canonicalAuthor,
+    rawBook: {
+      title: params.title,
+      titleEn: params.title,
+      author: canonicalAuthor,
+      authorEn: canonicalAuthor,
+      authors: [canonicalAuthor],
+      language: "en",
+      canonicalLocked: true,
+      authorityStatus: "canonical",
+      workType: "canonical",
+      rightsMode: "public_free",
+      visibility: "public",
+      publicationState: "published",
+      ...(literaryForm ? { literaryForm } : {}),
+      ...(description
+        ? {
+            description,
+            descriptionEn: description,
+            abstractDescription: description,
+          }
+        : {}),
+    },
   });
-  if (!normalizedFallbackRawBook) {
-    return null;
-  }
-
-  const hasDeterministicAuthority =
-    Boolean(asNonEmptyString(normalizedFallbackRawBook.literaryForm)) ||
-    Boolean(resolveSeedDescription(normalizedFallbackRawBook)) ||
-    Boolean(resolveCanonicalSeedAuthorityAuthor({ title: params.title }));
-
-  return hasDeterministicAuthority ? normalizedFallbackRawBook : null;
 }
 
 async function resolveSeedBatchProviderPhase(params: {
@@ -2175,31 +2116,6 @@ function normalizeSeedDescriptionText(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
 }
 
-const CANONICAL_DESCRIPTION_FIELDS = [
-  "description",
-  "descriptionEn",
-  "abstractDescription",
-] as const;
-
-function stripSimpleHtmlTagsFromDescriptionText(value: string): string {
-  return normalizeSeedDescriptionText(
-    value.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*)?\s*\/?>/gu, " ")
-  );
-}
-
-function stripSimpleHtmlTagsFromCanonicalDescriptionFields(
-  rawBook: Record<string, unknown>
-): Record<string, unknown> {
-  const next = { ...rawBook };
-  for (const field of CANONICAL_DESCRIPTION_FIELDS) {
-    const value = next[field];
-    if (typeof value === "string" && value.includes("<") && value.includes(">")) {
-      next[field] = stripSimpleHtmlTagsFromDescriptionText(value);
-    }
-  }
-  return next;
-}
-
 function isUsableSeedDescriptionText(value: string): boolean {
   const normalized = normalizeSeedDescriptionText(value);
   if (normalized.length < 80) {
@@ -2346,23 +2262,6 @@ function resolveCanonicalSeedDescriptionFallback(params: {
   return isUsableSeedDescriptionText(description) ? description : "";
 }
 
-function isRejectedCanonicalSeedProviderDescription(params: {
-  requestedTitle: string;
-  description: string;
-}): boolean {
-  const requestedTitleNorm = normalizeSearchText(params.requestedTitle);
-  const descriptionNorm = normalizeSeedDescriptionText(params.description).toLowerCase();
-  if (!requestedTitleNorm || !descriptionNorm) {
-    return false;
-  }
-
-  return CANONICAL_SEED_REJECTED_DESCRIPTION_SIGNATURES.some(
-    (entry) =>
-      normalizeSearchText(entry.title) === requestedTitleNorm &&
-      descriptionNorm.includes(entry.contains.toLowerCase())
-  );
-}
-
 function mergeSeedDescriptionOnly(params: {
   result: UnifiedSearchResult;
   description: string;
@@ -2467,31 +2366,10 @@ async function resolveSeedDescriptionFallback(params: {
   requestedAuthor: string;
   searchResults: UnifiedSearchResult[];
   allowCanonicalSeedDescription: boolean;
-  preferCanonicalSeedDescription?: boolean;
 }): Promise<UnifiedSearchResult> {
-  if (params.preferCanonicalSeedDescription && params.allowCanonicalSeedDescription) {
-    const canonicalSeedDescription = resolveCanonicalSeedDescriptionFallback({
-      requestedTitle: params.requestedTitle,
-      requestedAuthor: params.requestedAuthor,
-    });
-    if (canonicalSeedDescription) {
-      return mergeSeedDescriptionOnly({
-        result: params.result,
-        description: canonicalSeedDescription,
-      });
-    }
-  }
-
   const googleFallback = await resolveGoogleBooksSeedDescriptionFallback(params);
   const googleFallbackRawBook = asRecord(googleFallback.rawBook) || {};
-  const googleFallbackDescription = resolveSeedDescription(googleFallbackRawBook);
-  if (
-    isUsableSeedDescriptionText(googleFallbackDescription) &&
-    !isRejectedCanonicalSeedProviderDescription({
-      requestedTitle: params.requestedTitle,
-      description: googleFallbackDescription,
-    })
-  ) {
+  if (isUsableSeedDescriptionText(resolveSeedDescription(googleFallbackRawBook))) {
     return googleFallback;
   }
 
@@ -2529,21 +2407,15 @@ async function hydrateSeedCandidateDescription(params: {
       ? (result.rawBook as Record<string, unknown>)
       : {};
   const selectedSeedDescription = resolveSeedDescription(rawBook);
-  const selectedDescriptionRejected = isRejectedCanonicalSeedProviderDescription({
-    requestedTitle: params.requestedTitle,
-    description: selectedSeedDescription,
-  });
-  if (isUsableSeedDescriptionText(selectedSeedDescription) && !selectedDescriptionRejected) {
+  if (isUsableSeedDescriptionText(selectedSeedDescription)) {
     return result;
   }
-  const canUseCanonicalSeedDescription =
-    !asNonEmptyString(selectedSeedDescription) || selectedDescriptionRejected;
+  const canUseCanonicalSeedDescription = !asNonEmptyString(selectedSeedDescription);
 
   if (result.source === "googleBooks") {
     return resolveSeedDescriptionFallback({
       ...params,
       allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
-      preferCanonicalSeedDescription: selectedDescriptionRejected,
     });
   }
 
@@ -2553,7 +2425,6 @@ async function hydrateSeedCandidateDescription(params: {
     return resolveSeedDescriptionFallback({
       ...params,
       allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
-      preferCanonicalSeedDescription: selectedDescriptionRejected,
     });
   }
 
@@ -2562,22 +2433,14 @@ async function hydrateSeedCandidateDescription(params: {
     return resolveSeedDescriptionFallback({
       ...params,
       allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
-      preferCanonicalSeedDescription: selectedDescriptionRejected,
     });
   }
 
   const hydratedDescription = normalizeSeedDescriptionText(resolveSeedDescription(hydratedRawBook));
-  const hydratedDescriptionRejected = isRejectedCanonicalSeedProviderDescription({
-    requestedTitle: params.requestedTitle,
-    description: hydratedDescription,
-  });
-  if (!isUsableSeedDescriptionText(hydratedDescription) || hydratedDescriptionRejected) {
+  if (!isUsableSeedDescriptionText(hydratedDescription)) {
     return resolveSeedDescriptionFallback({
       ...params,
-      allowCanonicalSeedDescription:
-        canUseCanonicalSeedDescription || hydratedDescriptionRejected,
-      preferCanonicalSeedDescription:
-        selectedDescriptionRejected || hydratedDescriptionRejected,
+      allowCanonicalSeedDescription: canUseCanonicalSeedDescription,
     });
   }
 
@@ -2656,34 +2519,12 @@ function applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite(params: {
     ...asStringArray(params.rawBook.authorAliases),
   ]).filter((author) => normalizeSearchText(author) !== seedAuthorNorm);
 
-  const canonicalDescription = resolveCanonicalSeedDescriptionFallback({
-    requestedTitle: params.requestedTitle,
-    requestedAuthor: seedAuthor,
-  });
-  const literaryForm = asNonEmptyString(params.rawBook.literaryForm);
-
   return {
     ...params.rawBook,
-    title: params.requestedTitle,
-    titleEn: params.requestedTitle,
     author: seedAuthor,
     authorEn: seedAuthor,
     authors: [seedAuthor],
     authorCanonicalKey: seedAuthorCanonicalKey,
-    canonicalLocked: true,
-    authorityStatus: "canonical",
-    workType: "canonical",
-    rightsMode: asNonEmptyString(params.rawBook.rightsMode) || "public_free",
-    visibility: asNonEmptyString(params.rawBook.visibility) || "public",
-    publicationState: asNonEmptyString(params.rawBook.publicationState) || "published",
-    ...(literaryForm ? { literaryForm } : {}),
-    ...(canonicalDescription
-      ? {
-          description: canonicalDescription,
-          descriptionEn: canonicalDescription,
-          abstractDescription: canonicalDescription,
-        }
-      : {}),
     seedAuthorLock: {
       author: seedAuthor,
       authorEn: seedAuthor,
@@ -2769,13 +2610,11 @@ function prepareBulkCandidateRawBook(params: {
     requestedAuthor: authoritativeSeedAuthor,
   });
   return normalizedSeedPayload
-    ? stripSimpleHtmlTagsFromCanonicalDescriptionFields(
-        applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
-          rawBook: normalizedSeedPayload,
-          requestedTitle: params.requestedTitle,
-          requestedAuthor: authoritativeSeedAuthor,
-        })
-      )
+    ? applyCanonicalSeedAuthorOverrideAtFinalPayloadWrite({
+        rawBook: normalizedSeedPayload,
+        requestedTitle: params.requestedTitle,
+        requestedAuthor: authoritativeSeedAuthor,
+      })
     : undefined;
 }
 
@@ -4249,34 +4088,32 @@ export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) =
   const isArabic = language.startsWith("ar");
   const ingestionKey = `admin_canonical:${normalizeSearchText(input.author)}::${normalizeSearchText(input.title)}`;
 
-  const rawBook = stripSimpleHtmlTagsFromCanonicalDescriptionFields({
-    title: input.title,
-    titleEn: input.title,
-    titleAr: isArabic ? input.title : "",
-    author: input.author,
-    authorEn: input.author,
-    authorAr: isArabic ? input.author : "",
-    authors: [input.author],
-    description: input.description || "",
-    descriptionEn: input.description || "",
-    descriptionAr: isArabic ? input.description || "" : "",
-    language,
-    canonicalLocked: true,
-    rightsMode: "public_free",
-    visibility: "public",
-    publicationState: "published",
-    hasEbook: false,
-    downloadable: false,
-    isEbookAvailable: false,
-    ...(input.isbn10 ? { isbn10: input.isbn10 } : {}),
-    ...(input.isbn13 ? { isbn13: input.isbn13 } : {}),
-    ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
-  });
-
   const result = await materializeBookAuthority({
     source: "booktown_canonical",
     authorityStatus: "canonical",
-    rawBook,
+    rawBook: {
+      title: input.title,
+      titleEn: input.title,
+      titleAr: isArabic ? input.title : "",
+      author: input.author,
+      authorEn: input.author,
+      authorAr: isArabic ? input.author : "",
+      authors: [input.author],
+      description: input.description || "",
+      descriptionEn: input.description || "",
+      descriptionAr: isArabic ? input.description || "" : "",
+      language,
+      canonicalLocked: true,
+      rightsMode: "public_free",
+      visibility: "public",
+      publicationState: "published",
+      hasEbook: false,
+      downloadable: false,
+      isEbookAvailable: false,
+      ...(input.isbn10 ? { isbn10: input.isbn10 } : {}),
+      ...(input.isbn13 ? { isbn13: input.isbn13 } : {}),
+      ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
+    },
     createEdition: Boolean(input.isbn10 || input.isbn13),
     coverCandidates: input.coverUrl ? [input.coverUrl] : [],
     ingestionKey,
@@ -4496,7 +4333,7 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           input: entry.input,
           title: entry.title,
           author: entry.author,
-          status: "created",
+          status: "timeout_fallback",
           canonicalBookId: fallback.canonicalBookId,
           bookId: fallback.bookId,
           editionId: fallback.editionId || undefined,
@@ -4527,30 +4364,6 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
               ? { source: existingSource }
               : {}),
             message: `Reused canonical work ${canonicalReuse.bookId}; provider miss fell back to strict canonical authority reuse.`,
-          });
-          continue;
-        }
-
-        const fallbackRawBook = buildKnownSeedOnlyFallbackRawBook({
-          title: entry.title,
-          author: entry.author,
-        });
-        if (fallbackRawBook) {
-          const fallback = await materializeSeedOnlyCanonicalFallback({
-            rawBook: fallbackRawBook,
-            ingestionKey: `canonical_seed_provider_miss:${normalizeSearchText(entry.author)}::${normalizeSearchText(entry.title)}`,
-          });
-
-          results.push({
-            row: entry.row,
-            input: entry.input,
-            title: entry.title,
-            author: entry.author,
-            status: "created",
-            canonicalBookId: fallback.canonicalBookId,
-            bookId: fallback.bookId,
-            editionId: fallback.editionId || undefined,
-            message: "Created canonical seed fallback after provider miss.",
           });
           continue;
         }

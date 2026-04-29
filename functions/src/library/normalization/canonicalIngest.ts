@@ -59,6 +59,9 @@ const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["oedipus rex", "play"],
   ["the aeneid", "epic"],
   ["the divine comedy", "epic poem"],
+  ["the muqaddimah", "historical philosophy"],
+  ["the bhagavad gita", "philosophy"],
+  ["the mahabharata", "epic"],
   ["don quixote", "novel"],
   ["the tale of genji", "novel"],
   ["candide", "philosophy"],
@@ -72,6 +75,13 @@ const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["the analects", "philosophy"],
   ["beloved", "novel"],
   ["pride and prejudice", "novel"],
+  ["faust part two", "drama"],
+  ["the prince", "political philosophy"],
+  ["The Muqaddimah", "historical philosophy"],
+  ["The Bhagavad Gita", "philosophy"],
+  ["The Mahabharata", "epic"],
+  ["Faust Part Two", "drama"],
+  ["The Prince", "political philosophy"],
 ]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
