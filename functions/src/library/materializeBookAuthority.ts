@@ -125,6 +125,7 @@ export type MaterializeBookAuthorityParams = {
   coverJobStatus?: CoverJobStatus;
   coverJobMaxAttempts?: number;
   literaryAuthorityClass?: string | null;
+  descriptionAuthorityOverride?: "manualAdmin";
 };
 
 export type MaterializeBookAuthorityResult = {
@@ -542,7 +543,11 @@ function isValidHttpUrl(value: string): boolean {
 }
 
 function normalizeDescriptionText(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  const stripped =
+    value.includes("<") && value.includes(">")
+      ? value.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*)?\s*\/?>/gu, " ")
+      : value;
+  return stripped.replace(/\s+/gu, " ").trim();
 }
 
 function isValidDescriptionText(value: string): boolean {
@@ -2345,7 +2350,10 @@ export async function materializeBookAuthorityInTransaction(
     existingValue: asNonEmptyString(existingBook?.description),
     incomingValue: resolveDescription(rawBook),
     incomingRawSource: params.source,
-    incomingSource: metadataSource,
+    incomingSource:
+      params.descriptionAuthorityOverride === "manualAdmin"
+        ? "manualAdmin"
+        : metadataSource,
   });
   const coverDecision = resolveMetadataField({
     field: "cover",
@@ -2358,7 +2366,7 @@ export async function materializeBookAuthorityInTransaction(
   const effectiveCoverCandidates = coverDecision.acceptedIncoming ? incomingCoverCandidates : [];
   const description = descriptionDecision.value;
   const descriptionEn = descriptionDecision.acceptedIncoming
-    ? asNonEmptyString(rawBook.descriptionEn) || description
+    ? normalizeDescriptionText(asNonEmptyString(rawBook.descriptionEn) || description)
     : asNonEmptyString(existingBook?.descriptionEn) || description;
   const descriptionAr = descriptionDecision.acceptedIncoming
     ? asNonEmptyString(rawBook.descriptionAr)

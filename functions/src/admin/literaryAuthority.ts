@@ -179,6 +179,90 @@ const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
     description:
       "The Aleph gathers Borges's stories of mirrors, labyrinths, infinity, and memory, where philosophical puzzles and fictional inventions unsettle the boundaries between reality, language, and imagination.",
   },
+  {
+    title: "Hamlet",
+    author: "William Shakespeare",
+    description:
+      "Hamlet follows the prince of Denmark as he confronts his father's murder, his mother's remarriage, political corruption, revenge, madness, mortality, and the collapse of trust inside the royal court.",
+  },
+  {
+    title: "Pride and Prejudice",
+    author: "Jane Austen",
+    description:
+      "Pride and Prejudice follows Elizabeth Bennet as questions of manners, family, class, judgment, and marriage shape her changing understanding of Fitzwilliam Darcy and herself.",
+  },
+  {
+    title: "The Muqaddimah",
+    author: "Ibn Khaldun",
+    description:
+      "The Muqaddimah introduces Ibn Khaldun's theory of society, history, power, labor, and civilizational rise and decline.",
+  },
+  {
+    title: "The Bhagavad Gita",
+    author: "Anonymous",
+    description:
+      "The Bhagavad Gita presents a dialogue on duty, action, devotion, knowledge, and liberation on the battlefield of Kurukshetra.",
+  },
+  {
+    title: "The Mahabharata",
+    author: "Anonymous",
+    description:
+      "The Mahabharata follows dynastic conflict, exile, war, and moral struggle across one of the largest epic traditions in world literature.",
+  },
+  {
+    title: "The Prince",
+    author: "Niccolò Machiavelli",
+    description:
+      "The Prince examines political power, statecraft, force, prudence, and rule under unstable historical conditions.",
+  },
+  {
+    title: "Faust Part Two",
+    author: "Johann Wolfgang von Goethe",
+    description:
+      "Faust Part Two expands Faust's journey through empire, myth, ambition, and redemption across political and symbolic worlds.",
+  },
+  {
+    title: "The Aeneid",
+    author: "Virgil",
+    description:
+      "The Aeneid follows Aeneas from Troy to Italy, joining exile, war, prophecy, and imperial destiny in Rome's foundational epic.",
+  },
+  {
+    title: "The Waste Land",
+    author: "T. S. Eliot",
+    description:
+      "The Waste Land gathers fractured voices, cultural fragments, and ritual echoes to examine spiritual exhaustion, historical rupture, and modern consciousness.",
+  },
+  {
+    title: "Divan of Hafez",
+    author: "Hafez",
+    description:
+      "The Divan of Hafez gathers lyric poems of love, longing, divine beauty, irony, and mystical reflection in Persian poetic tradition.",
+  },
+  {
+    title: "The Conference of the Birds",
+    author: "Farid ud-Din Attar",
+    description:
+      "The Conference of the Birds follows birds seeking the Simorgh through trials of desire, loss, self-knowledge, and mystical transformation.",
+  },
+  {
+    title: "The Tale of Kieu",
+    author: "Nguyễn Du",
+    description:
+      "The Tale of Kieu follows Thuy Kieu through sacrifice, separation, injustice, and endurance in a major work of Vietnamese poetic tradition.",
+  },
+  {
+    title: "Their Eyes Were Watching God",
+    author: "Zora Neale Hurston",
+    description:
+      "Their Eyes Were Watching God follows Janie Crawford through love, voice, independence, and self-realization across changing stages of her life.",
+  },
+  {
+    title: "The Epic of Gilgamesh",
+    author: "Anonymous",
+    description:
+      "The Epic of Gilgamesh follows friendship, kingship, grief, and the search for mortality's meaning in one of humanity's earliest epics.",
+  },
 ];
 
 class ProviderPhaseTimeoutError extends Error {
@@ -2113,7 +2197,11 @@ function candidateHasUsableCover(result: UnifiedSearchResult): boolean {
 }
 
 function normalizeSeedDescriptionText(value: string): string {
-  return value.replace(/\s+/gu, " ").trim();
+  const stripped =
+    value.includes("<") && value.includes(">")
+      ? value.replace(/<\/?[A-Za-z][A-Za-z0-9:-]*(?:\s+[^<>]*)?\s*\/?>/gu, " ")
+      : value;
+  return stripped.replace(/\s+/gu, " ").trim();
 }
 
 function isUsableSeedDescriptionText(value: string): boolean {
@@ -2125,7 +2213,7 @@ function isUsableSeedDescriptionText(value: string): boolean {
     return false;
   }
   if (
-    /\b(unabridged|abridged|illustrated edition|collector(?:'s)? edition|special edition|paperback edition|hardcover edition|movie tie-?in|box set|omnibus)\b/iu.test(
+    /\b(summary|publisher|marketing|biography|catalog(?:ed|ue)?|commentary|compilation|lesson material|contextual material|archival image|unabridged|abridged|illustrated edition|collector(?:'s)? edition|special edition|paperback edition|hardcover edition|movie tie-?in|box set|omnibus)\b/iu.test(
       normalized
     )
   ) {
@@ -2265,6 +2353,7 @@ function resolveCanonicalSeedDescriptionFallback(params: {
 function mergeSeedDescriptionOnly(params: {
   result: UnifiedSearchResult;
   description: string;
+  canonicalFallback?: boolean;
 }): UnifiedSearchResult {
   const rawBook =
     params.result.rawBook && typeof params.result.rawBook === "object" && !Array.isArray(params.result.rawBook)
@@ -2278,6 +2367,7 @@ function mergeSeedDescriptionOnly(params: {
       description: params.description,
       descriptionEn: params.description,
       abstractDescription: params.description,
+      ...(params.canonicalFallback === false ? {} : { canonicalSeedDescriptionFallback: true }),
     },
   };
 }
@@ -2406,11 +2496,15 @@ async function hydrateSeedCandidateDescription(params: {
     result.rawBook && typeof result.rawBook === "object" && !Array.isArray(result.rawBook)
       ? (result.rawBook as Record<string, unknown>)
       : {};
-  const selectedSeedDescription = resolveSeedDescription(rawBook);
+  const selectedSeedDescription = normalizeSeedDescriptionText(resolveSeedDescription(rawBook));
   if (isUsableSeedDescriptionText(selectedSeedDescription)) {
-    return result;
+    return mergeSeedDescriptionOnly({
+      result,
+      description: selectedSeedDescription,
+      canonicalFallback: false,
+    });
   }
-  const canUseCanonicalSeedDescription = !asNonEmptyString(selectedSeedDescription);
+  const canUseCanonicalSeedDescription = !isUsableSeedDescriptionText(selectedSeedDescription);
 
   if (result.source === "googleBooks") {
     return resolveSeedDescriptionFallback({
@@ -2604,6 +2698,9 @@ function prepareBulkCandidateRawBook(params: {
   rawBook.author = authoritativeSeedAuthor;
   rawBook.authorEn = authoritativeSeedAuthor;
   rawBook.authors = [authoritativeSeedAuthor];
+  rawBook.authorityStatus = "canonical";
+  rawBook.canonicalLocked = true;
+  rawBook.workType = "canonical";
   const normalizedSeedPayload = normalizeBatchCanonicalSeedPayload({
     rawBook,
     requestedTitle: params.requestedTitle,
@@ -4368,6 +4465,40 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
           continue;
         }
 
+        const fallbackRawBook = buildSeedOnlyFallbackRawBook({
+          title: entry.title,
+          author: entry.author,
+        });
+        const fallbackAuthor =
+          asNonEmptyString(fallbackRawBook.author) || entry.author;
+        const normalizedFallbackRawBook = normalizeBatchCanonicalSeedPayload({
+          rawBook: fallbackRawBook,
+          requestedTitle: entry.title,
+          requestedAuthor: fallbackAuthor,
+        });
+        if (
+          asNonEmptyString(normalizedFallbackRawBook.literaryForm) &&
+          asNonEmptyString(normalizedFallbackRawBook.description)
+        ) {
+          const fallback = await materializeSeedOnlyCanonicalFallback({
+            rawBook: normalizedFallbackRawBook,
+            ingestionKey: `canonical_seed_provider_miss:${normalizeSearchText(entry.author)}::${normalizeSearchText(entry.title)}`,
+          });
+
+          results.push({
+            row: entry.row,
+            input: entry.input,
+            title: entry.title,
+            author: entry.author,
+            status: mapBatchRowStatus(fallback.status),
+            canonicalBookId: fallback.canonicalBookId,
+            bookId: fallback.bookId,
+            editionId: fallback.editionId || undefined,
+            message: "Provider miss saved deterministic canonical seed fallback.",
+          });
+          continue;
+        }
+
         results.push({
           row: entry.row,
           input: entry.input,
@@ -4459,6 +4590,8 @@ export const adminSeedCanonicalBatch = onCall({ cors: true }, async (request) =>
         source: providerSource,
         providerExternalId: providerCandidate.externalId,
         rawBook: preparedRawBook,
+        trustedDescriptionAuthoritySource:
+          preparedRawBook.canonicalSeedDescriptionFallback === true ? "manualAdmin" : undefined,
       });
 
       results.push({

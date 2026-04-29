@@ -1,0 +1,659 @@
+🔹 INIT: Starting script...
+✅ Firebase Admin initialized
+🔹 RUN: Querying Firestore...
+📊 SNAPSHOT RECEIVED
+📦 Document count: 50
+📄 Processing doc: 04ecc5cf-d220-4601-bf90-1c82d7c73dac
+📄 Processing doc: 059064a4-bc23-4783-b67f-9dcad07f69a3
+📄 Processing doc: 08ff3b30-b749-4234-b1b2-3d49042dcd96
+📄 Processing doc: 1f751273-b3ff-4541-a7c2-380c8fce4d52
+📄 Processing doc: 271aafd9-771c-479e-bce6-983937543356
+📄 Processing doc: 273cf7b8-aea6-4d64-8d42-0aeb3bb49327
+📄 Processing doc: 28047180-afaf-4c6e-a4f0-0e88d424469e
+📄 Processing doc: 3532003b-5d2c-4944-b3ce-8f8ad685b0e7
+📄 Processing doc: 3f2115a7-5d3c-42a7-8893-904fbcd1ff05
+📄 Processing doc: 409b3c63-89f6-46af-a2ff-3b067cbc021a
+📄 Processing doc: 40db8b73-7699-4da8-862d-200b0daa8b84
+📄 Processing doc: 40ed7b8c-f279-469b-86d3-05d3596a4c17
+📄 Processing doc: 43490e37-3cfe-459c-b8ba-e85965d0ab9d
+📄 Processing doc: 50da169f-00de-40fb-9973-162636299bd7
+📄 Processing doc: 56b329cc-ca17-452d-bb29-a8a0350ce3dc
+📄 Processing doc: 58363dd9-935d-4fab-acbf-8662f2604feb
+📄 Processing doc: 592fa538-ff2a-4c62-b8a4-14e00f128839
+📄 Processing doc: 5dfdf572-5634-4cca-a3eb-cad2c073650c
+📄 Processing doc: 6ee3d13c-4c08-40df-8ece-cde62c6b2780
+📄 Processing doc: 6f953c6b-61a8-4987-be35-05abf25e0b66
+📄 Processing doc: 70643325-3c02-4fb6-8c05-816a5a6b76c7
+📄 Processing doc: 8637179c-dacf-4ec9-aaf6-7a1bd7eeb384
+📄 Processing doc: 8902b2c0-cc5a-42ba-83d5-10de1f283064
+📄 Processing doc: 89b769a8-d615-4bd8-b482-fb92f64cca76
+📄 Processing doc: 8a3674ed-9fd0-469e-a838-bdd6fad0a75c
+📄 Processing doc: 8e00a00d-b3b0-4d9c-a8d4-c74adaf56302
+📄 Processing doc: 93381e16-160e-484a-bdc5-22ed437ae4ea
+📄 Processing doc: 9441ba0f-2390-4785-a59c-891bc5e49025
+📄 Processing doc: 9654574b-7cfa-46ea-87b7-2daf9c759f1c
+📄 Processing doc: a021c1d5-d2f8-47ec-af5e-12aeab6c79c4
+📄 Processing doc: a1dee313-9051-4db4-b40b-ba0fed112ee0
+📄 Processing doc: a243eff8-2c3a-4c60-b7a0-40df6486295e
+📄 Processing doc: a31a74a4-ac9a-4146-b495-57bdfb76f402
+📄 Processing doc: a4949829-0465-4a30-ae80-c149da94a846
+📄 Processing doc: a4f04259-e013-4a2e-a971-bf3055ace663
+📄 Processing doc: a7ec1e1b-a115-4e34-9c64-24363d0cfe41
+📄 Processing doc: aca5d678-f2cc-49f8-899b-615ca2b085c5
+📄 Processing doc: b161fb8b-656b-44db-b043-0e6a62a75047
+📄 Processing doc: b899a99e-f28d-4730-b579-94610ef327f2
+📄 Processing doc: bab07a3c-8dab-4e6a-a024-9805e5aaf3ae
+📄 Processing doc: be5dae27-b6d3-4e32-92d3-8427da5f88a6
+📄 Processing doc: c0892e34-b521-4963-b3fd-29a8648b8c30
+📄 Processing doc: cd051225-2bee-47ba-be42-73c0ba0295fc
+📄 Processing doc: d875966b-6d4e-4d34-85cd-40a8c5b427f2
+📄 Processing doc: dd5c24f3-f17a-404e-be23-9642fd8d8d3d
+📄 Processing doc: ddf4ca6d-4a3f-4a57-9b1e-5edcd3a5627c
+📄 Processing doc: e760b97f-4a81-4aad-ba29-30ffe10a9a63
+📄 Processing doc: edb03891-e4d2-481f-a55d-5fe32c755571
+📄 Processing doc: eeee733b-9faa-4530-a07f-18e6a4b1d919
+📄 Processing doc: f1c82d98-7ec0-46c6-9432-576c5299645a
+✅ FINAL OUTPUT:
+[
+  {
+    "id": "04ecc5cf-d220-4601-bf90-1c82d7c73dac",
+    "title": "The Trial",
+    "author": "Franz Kafka",
+    "authorCanonicalKey": "franz kafka::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Trial follows Josef K. after an unexplained arrest, tracing his bewildering passage through opaque courts, social suspicion, guilt, and institutional power.",
+    "providers": null
+  },
+  {
+    "id": "059064a4-bc23-4783-b67f-9dcad07f69a3",
+    "title": "The Book of Disquiet",
+    "author": "Fernando Pessoa",
+    "authorCanonicalKey": "fernando pessoa::1888",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "philosophical prose",
+    "description": "The Book of Disquiet gathers fragmentary reflections on solitude, identity, perception, and inner life through Pessoa's semi-fictional voice.",
+    "providers": null
+  },
+  {
+    "id": "08ff3b30-b749-4234-b1b2-3d49042dcd96",
+    "title": "Madame Bovary",
+    "author": "Gustave Flaubert",
+    "authorCanonicalKey": "gustave flaubert::1821",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Madame Bovary follows Emma Bovary as romantic fantasy, provincial dissatisfaction, debt, and desire lead her toward isolation and catastrophe.",
+    "providers": null
+  },
+  {
+    "id": "1f751273-b3ff-4541-a7c2-380c8fce4d52",
+    "title": "The Muqaddimah",
+    "author": "Ibn Khaldun",
+    "authorCanonicalKey": "ibn khaldun::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "historical philosophy",
+    "description": "The Muqaddimah introduces Ibn Khaldun's theory of society, history, power, labor, and civilizational rise and decline.",
+    "providers": null
+  },
+  {
+    "id": "271aafd9-771c-479e-bce6-983937543356",
+    "title": "The Tale of Genji",
+    "author": "Murasaki Shikibu",
+    "authorCanonicalKey": "murasaki shikibu::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Tale of Genji follows Hikaru Genji and generations of the Heian court, using romance, exile, rivalry, and ritual to examine desire, impermanence, politics, and the emotional costs of aristocratic life.",
+    "providers": null
+  },
+  {
+    "id": "273cf7b8-aea6-4d64-8d42-0aeb3bb49327",
+    "title": "Waiting for Godot",
+    "author": "Samuel Beckett",
+    "authorCanonicalKey": "samuel beckett::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "play",
+    "description": "Waiting for Godot follows two figures waiting beside a road, turning repetition, comic exchange, uncertainty, and delay into a stark drama of human expectation.",
+    "providers": null
+  },
+  {
+    "id": "28047180-afaf-4c6e-a4f0-0e88d424469e",
+    "title": "The Tale of Kieu",
+    "author": "Nguyễn Du",
+    "authorCanonicalKey": "nguyen du::1765",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "poetry",
+    "description": "The Tale of Kieu follows Thuy Kieu through sacrifice, separation, injustice, and endurance in a major work of Vietnamese poetic tradition.",
+    "providers": null
+  },
+  {
+    "id": "3532003b-5d2c-4944-b3ce-8f8ad685b0e7",
+    "title": "Anna Karenina",
+    "author": "Leo Tolstoy",
+    "authorCanonicalKey": "leo tolstoy::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Anna Karenina follows Anna, Levin, and Russian society through love, marriage, family duty, faith, and social judgment as private desire collides with public convention.",
+    "providers": null
+  },
+  {
+    "id": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+    "title": "The Republic",
+    "author": "Plato",
+    "authorCanonicalKey": "plato::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "philosophy",
+    "description": "The Republic presents Socrates' inquiry into justice, the ideal city, education, poetry, political order, and the philosophical life.",
+    "providers": null
+  },
+  {
+    "id": "409b3c63-89f6-46af-a2ff-3b067cbc021a",
+    "title": "Macbeth",
+    "author": "William Shakespeare",
+    "authorCanonicalKey": "william shakespeare::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "play",
+    "description": "Macbeth follows a Scottish nobleman whose encounter with prophecy and hunger for power drive him into murder, tyranny, guilt, and ruin.",
+    "providers": null
+  },
+  {
+    "id": "40db8b73-7699-4da8-862d-200b0daa8b84",
+    "title": "The Odyssey",
+    "author": "Homer",
+    "authorCanonicalKey": "homer::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic",
+    "description": "The Odyssey follows Odysseus through perilous seas, divine opposition, strange islands, and the long struggle to return home to Ithaca after the Trojan War.",
+    "providers": null
+  },
+  {
+    "id": "40ed7b8c-f279-469b-86d3-05d3596a4c17",
+    "title": "Crime and Punishment",
+    "author": "Fyodor Dostoevsky",
+    "authorCanonicalKey": "fyodor dostoevsky::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Crime and Punishment follows Raskolnikov after a murder in St. Petersburg, tracing guilt, pride, poverty, moral torment, and the possibility of redemption.",
+    "providers": null
+  },
+  {
+    "id": "43490e37-3cfe-459c-b8ba-e85965d0ab9d",
+    "title": "The Plague",
+    "author": "Albert Camus",
+    "authorCanonicalKey": "albert camus::1913",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Plague follows the city of Oran under epidemic quarantine, examining suffering, solidarity, moral duty, absurdity, and resistance in the face of collective crisis.",
+    "providers": null
+  },
+  {
+    "id": "50da169f-00de-40fb-9973-162636299bd7",
+    "title": "The Divine Comedy",
+    "author": "Dante Alighieri",
+    "authorCanonicalKey": "dante alighieri::1265",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic poem",
+    "description": "The Divine Comedy follows Dante through Hell, Purgatory, and Paradise, using an allegorical journey through the afterlife to examine sin, justice, redemption, and the soul's movement toward divine understanding.",
+    "providers": null
+  },
+  {
+    "id": "56b329cc-ca17-452d-bb29-a8a0350ce3dc",
+    "title": "Hamlet",
+    "author": "William Shakespeare",
+    "authorCanonicalKey": "william shakespeare::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "play",
+    "description": "Hamlet follows the prince of Denmark as he confronts his father's murder, his mother's remarriage, political corruption, revenge, madness, mortality, and the collapse of trust inside the royal court.",
+    "providers": null
+  },
+  {
+    "id": "58363dd9-935d-4fab-acbf-8662f2604feb",
+    "title": "The Aleph",
+    "author": "Jorge Luis Borges",
+    "authorCanonicalKey": "jorge luis borges::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "short stories",
+    "description": "The Aleph gathers Borges's stories of mirrors, labyrinths, infinity, and memory, where philosophical puzzles and fictional inventions unsettle the boundaries between reality, language, and imagination.",
+    "providers": null
+  },
+  {
+    "id": "592fa538-ff2a-4c62-b8a4-14e00f128839",
+    "title": "Their Eyes Were Watching God",
+    "author": "Zora Neale Hurston",
+    "authorCanonicalKey": "zora neale hurston::1891",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Their Eyes Were Watching God follows Janie Crawford through love, voice, independence, and self-realization across changing stages of her life.",
+    "providers": null
+  },
+  {
+    "id": "5dfdf572-5634-4cca-a3eb-cad2c073650c",
+    "title": "The Waste Land",
+    "author": "T. S. Eliot",
+    "authorCanonicalKey": "t s eliot::1888",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "poetry",
+    "description": "The Waste Land gathers fractured voices, cultural fragments, and ritual echoes to examine spiritual exhaustion, historical rupture, and modern consciousness.",
+    "providers": null
+  },
+  {
+    "id": "6ee3d13c-4c08-40df-8ece-cde62c6b2780",
+    "title": "Leaves of Grass",
+    "author": "Walt Whitman",
+    "authorCanonicalKey": "walt whitman::1819",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "poetry",
+    "description": "Leaves of Grass gathers Whitman's expansive poems of the self, the body, democracy, nature, labor, sexuality, death, and the many voices of American life.",
+    "providers": null
+  },
+  {
+    "id": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+    "title": "The Brothers Karamazov",
+    "author": "Fyodor Dostoevsky",
+    "authorCanonicalKey": "fyodor dostoevsky::1821",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Brothers Karamazov follows a divided family through murder, faith, doubt, rivalry, freedom, and moral responsibility in a searching drama of conscience.",
+    "providers": null
+  },
+  {
+    "id": "70643325-3c02-4fb6-8c05-816a5a6b76c7",
+    "title": "The Second Sex",
+    "author": "Simone de Beauvoir",
+    "authorCanonicalKey": "simone de beauvoir::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "nonfiction",
+    "description": "The Second Sex examines the historical, social, philosophical, and personal conditions through which women are made into the Other.",
+    "providers": null
+  },
+  {
+    "id": "8637179c-dacf-4ec9-aaf6-7a1bd7eeb384",
+    "title": "Invisible Man",
+    "author": "Ralph Ellison",
+    "authorCanonicalKey": "ralph ellison::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Invisible Man follows an unnamed narrator through race, invisibility, ideology, and identity in modern American life.",
+    "providers": null
+  },
+  {
+    "id": "8902b2c0-cc5a-42ba-83d5-10de1f283064",
+    "title": "The Analects",
+    "author": "Confucius",
+    "authorCanonicalKey": "confucius::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "philosophy",
+    "description": "The Analects gathers sayings and dialogues attributed to Confucius, presenting ethical reflection on virtue, ritual, learning, governance, and humane conduct.",
+    "providers": null
+  },
+  {
+    "id": "89b769a8-d615-4bd8-b482-fb92f64cca76",
+    "title": "The Master and Margarita",
+    "author": "Mikhail Bulgakov",
+    "authorCanonicalKey": "mikhail bulgakov::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Master and Margarita interweaves a devilish visit to Moscow with a retelling of Pilate and Yeshua, satirizing power, fear, love, art, and spiritual judgment.",
+    "providers": null
+  },
+  {
+    "id": "8a3674ed-9fd0-469e-a838-bdd6fad0a75c",
+    "title": "The Canterbury Tales",
+    "author": "Geoffrey Chaucer",
+    "authorCanonicalKey": "geoffrey chaucer::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "narrative poem",
+    "description": "The Canterbury Tales gathers pilgrims traveling to Canterbury, using their stories to portray social ranks, desire, conflict, and medieval life.",
+    "providers": null
+  },
+  {
+    "id": "8e00a00d-b3b0-4d9c-a8d4-c74adaf56302",
+    "title": "A Passage to India",
+    "author": "E. M. Forster",
+    "authorCanonicalKey": "e m forster::1879",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "A Passage to India follows friendship, misunderstanding, empire, and accusation under British colonial rule in India.",
+    "providers": null
+  },
+  {
+    "id": "93381e16-160e-484a-bdc5-22ed437ae4ea",
+    "title": "Things Fall Apart",
+    "author": "Chinua Achebe",
+    "authorCanonicalKey": "chinua achebe::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Things Fall Apart follows Okonkwo and his Igbo community as personal ambition, colonial intrusion, and cultural change lead to tragedy.",
+    "providers": null
+  },
+  {
+    "id": "9441ba0f-2390-4785-a59c-891bc5e49025",
+    "title": "The Bhagavad Gita",
+    "author": "Anonymous",
+    "authorCanonicalKey": "anonymous::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "philosophy",
+    "description": "The Bhagavad Gita presents a dialogue on duty, action, devotion, knowledge, and liberation on the battlefield of Kurukshetra.",
+    "providers": null
+  },
+  {
+    "id": "9654574b-7cfa-46ea-87b7-2daf9c759f1c",
+    "title": "Pride and Prejudice",
+    "author": "Jane Austen",
+    "authorCanonicalKey": "jane austen::1775",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Pride and Prejudice follows Elizabeth Bennet as questions of manners, family, class, judgment, and marriage shape her changing understanding of Fitzwilliam Darcy and herself.",
+    "providers": null
+  },
+  {
+    "id": "a021c1d5-d2f8-47ec-af5e-12aeab6c79c4",
+    "title": "The Metamorphosis",
+    "author": "Franz Kafka",
+    "authorCanonicalKey": "franz kafka::1883",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novella",
+    "description": "The Metamorphosis follows Gregor Samsa after his inexplicable transformation, examining family obligation, shame, alienation, labor, and bodily estrangement.",
+    "providers": null
+  },
+  {
+    "id": "a1dee313-9051-4db4-b40b-ba0fed112ee0",
+    "title": "Heart of Darkness",
+    "author": "Joseph Conrad",
+    "authorCanonicalKey": "joseph conrad::1857",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novella",
+    "description": "Heart of Darkness follows Marlow's journey into the Congo, exposing imperial violence, moral disorientation, and the darkness within systems of conquest.",
+    "providers": null
+  },
+  {
+    "id": "a243eff8-2c3a-4c60-b7a0-40df6486295e",
+    "title": "Thus Spoke Zarathustra",
+    "author": "Friedrich Nietzsche",
+    "authorCanonicalKey": "friedrich nietzsche::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "philosophical prose",
+    "description": "Thus Spoke Zarathustra presents Nietzsche's prophetic speeches on freedom, self-overcoming, and the creation of values after the death of God.",
+    "providers": null
+  },
+  {
+    "id": "a31a74a4-ac9a-4146-b495-57bdfb76f402",
+    "title": "The Aeneid",
+    "author": "Virgil",
+    "authorCanonicalKey": "virgil::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic",
+    "description": "The Aeneid follows Aeneas from Troy to Italy, joining exile, war, prophecy, and imperial destiny in Rome's foundational epic.",
+    "providers": null
+  },
+  {
+    "id": "a4949829-0465-4a30-ae80-c149da94a846",
+    "title": "Don Quixote",
+    "author": "Miguel de Cervantes",
+    "authorCanonicalKey": "miguel de cervantes::1547",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Don Quixote follows an aging hidalgo who reinvents himself as a knight errant, traveling with Sancho Panza through comic misadventures that test illusion, honor, storytelling, and the boundary between fantasy and reality.",
+    "providers": null
+  },
+  {
+    "id": "a4f04259-e013-4a2e-a971-bf3055ace663",
+    "title": "The Stranger",
+    "author": "Albert Camus",
+    "authorCanonicalKey": "albert camus::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Stranger follows Meursault through emotional detachment, violence, judgment, and the confrontation between absurdity and social meaning.",
+    "providers": null
+  },
+  {
+    "id": "a7ec1e1b-a115-4e34-9c64-24363d0cfe41",
+    "title": "Season of Migration to the North",
+    "author": "Tayeb Salih",
+    "authorCanonicalKey": "tayeb salih::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Season of Migration to the North follows a Sudanese narrator and the enigmatic Mustafa Sa'eed as questions of empire, identity, and violence unfold after colonial rule.",
+    "providers": null
+  },
+  {
+    "id": "aca5d678-f2cc-49f8-899b-615ca2b085c5",
+    "title": "The Prince",
+    "author": "Niccolò Machiavelli",
+    "authorCanonicalKey": "niccolo machiavelli::1469",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "political philosophy",
+    "description": "The Prince examines political power, statecraft, force, prudence, and rule under unstable historical conditions.",
+    "providers": null
+  },
+  {
+    "id": "b161fb8b-656b-44db-b043-0e6a62a75047",
+    "title": "The Mahabharata",
+    "author": "Anonymous",
+    "authorCanonicalKey": "anonymous::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic",
+    "description": "The Mahabharata follows dynastic conflict, exile, war, and moral struggle across one of the largest epic traditions in world literature.",
+    "providers": null
+  },
+  {
+    "id": "b899a99e-f28d-4730-b579-94610ef327f2",
+    "title": "Faust",
+    "author": "Johann Wolfgang von Goethe",
+    "authorCanonicalKey": "johann wolfgang von goethe::1825",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "drama",
+    "description": "Faust follows a scholar's pact with Mephistopheles, pursuing knowledge, desire, power, and redemption across human and metaphysical realms.",
+    "providers": null
+  },
+  {
+    "id": "bab07a3c-8dab-4e6a-a024-9805e5aaf3ae",
+    "title": "The Iliad",
+    "author": "Homer",
+    "authorCanonicalKey": "homer::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic",
+    "description": "The Iliad recounts the wrath of Achilles during the Trojan War, tracing conflict among Greek warriors, Trojan defenders, and the gods as questions of honor, mortality, grief, and glory drive the epic toward Hector's death.",
+    "providers": null
+  },
+  {
+    "id": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+    "title": "One Hundred Years of Solitude",
+    "author": "Gabriel Garcia Marquez",
+    "authorCanonicalKey": "gabriel garcia marquez::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "One Hundred Years of Solitude follows the Buendia family and the town of Macondo across generations, blending history, myth, solitude, desire, and political violence.",
+    "providers": null
+  },
+  {
+    "id": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+    "title": "War and Peace",
+    "author": "Leo Tolstoy",
+    "authorCanonicalKey": "leo tolstoy::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "War and Peace follows aristocratic families during the Napoleonic wars, weaving battles, domestic life, political change, and philosophical reflection into a large-scale study of history, fate, and human choice.",
+    "providers": null
+  },
+  {
+    "id": "cd051225-2bee-47ba-be42-73c0ba0295fc",
+    "title": "Pedro Páramo",
+    "author": "Juan Rulfo",
+    "authorCanonicalKey": "juan rulfo::1917",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Pedro Paramo follows Juan Preciado into Comala, where memory, ghosts, desire, violence, and broken promises reveal the legacy of a dead patriarch.",
+    "providers": null
+  },
+  {
+    "id": "d875966b-6d4e-4d34-85cd-40a8c5b427f2",
+    "title": "The Sound and the Fury",
+    "author": "William Faulkner",
+    "authorCanonicalKey": "william faulkner::1897",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "The Sound and the Fury traces the decline of the Compson family through fractured memory, grief, obsession, and shifting voices in the American South.",
+    "providers": null
+  },
+  {
+    "id": "dd5c24f3-f17a-404e-be23-9642fd8d8d3d",
+    "title": "Divan of Hafez",
+    "author": "Hafez",
+    "authorCanonicalKey": "hafez::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "poetry",
+    "description": "The Divan of Hafez gathers lyric poems of love, longing, divine beauty, irony, and mystical reflection in Persian poetic tradition.",
+    "providers": null
+  },
+  {
+    "id": "ddf4ca6d-4a3f-4a57-9b1e-5edcd3a5627c",
+    "title": "The Conference of the Birds",
+    "author": "Farid ud-Din Attar",
+    "authorCanonicalKey": "farid ud din attar::1119",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "poetry",
+    "description": "The Conference of the Birds follows birds seeking the Simorgh through trials of desire, loss, self-knowledge, and mystical transformation.",
+    "providers": null
+  },
+  {
+    "id": "e760b97f-4a81-4aad-ba29-30ffe10a9a63",
+    "title": "The Epic of Gilgamesh",
+    "author": "Anonymous",
+    "authorCanonicalKey": "anonymous::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "epic",
+    "description": "The Epic of Gilgamesh follows friendship, kingship, grief, and the search for mortality's meaning in one of humanity's earliest epics.",
+    "providers": null
+  },
+  {
+    "id": "edb03891-e4d2-481f-a55d-5fe32c755571",
+    "title": "The Oresteia",
+    "author": "Aeschylus",
+    "authorCanonicalKey": "aeschylus::unknown",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "tragedy",
+    "description": "The Oresteia follows the fall of the house of Atreus through murder, revenge, and trial, tracing how cycles of blood vengeance give way to civic justice.",
+    "providers": null
+  },
+  {
+    "id": "eeee733b-9faa-4530-a07f-18e6a4b1d919",
+    "title": "Beloved",
+    "author": "Toni Morrison",
+    "authorCanonicalKey": "toni morrison::1959",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "novel",
+    "description": "Beloved follows Sethe, a formerly enslaved woman in post-Civil War Ohio, as the return of a mysterious young woman forces her household to confront trauma, memory, motherhood, and the living presence of the past.",
+    "providers": null
+  },
+  {
+    "id": "f1c82d98-7ec0-46c6-9432-576c5299645a",
+    "title": "Faust Part Two",
+    "author": "Johann Wolfgang von Goethe",
+    "authorCanonicalKey": "johann wolfgang von goethe::1749",
+    "authorityStatus": "canonical",
+    "language": "en",
+    "publicationYear": null,
+    "literaryForm": "drama",
+    "description": "Faust Part Two expands Faust's journey through empire, myth, ambition, and redemption across political and symbolic worlds.",
+    "providers": null
+  }
+]
+🔹 END: Script finished

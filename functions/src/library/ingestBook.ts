@@ -660,6 +660,7 @@ export async function ingestBookServerSide(params: {
   source: IngestSource;
   preferredBookId?: string;
   rawBook?: Record<string, unknown>;
+  trustedDescriptionAuthoritySource?: "manualAdmin";
 }): Promise<{
   canonicalBookId: string;
   bookId: string;
@@ -716,6 +717,7 @@ export async function ingestBookServerSide(params: {
         : undefined,
     providerExternalId: externalId,
     rawBook: authorityRawBook,
+    descriptionAuthorityOverride: params.trustedDescriptionAuthoritySource,
     coverCandidates,
     createEdition: true,
     ingestionKey: `${source}:${externalId}`,

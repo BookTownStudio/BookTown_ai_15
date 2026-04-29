@@ -77,11 +77,12 @@ const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["pride and prejudice", "novel"],
   ["faust part two", "drama"],
   ["the prince", "political philosophy"],
-  ["The Muqaddimah", "historical philosophy"],
-  ["The Bhagavad Gita", "philosophy"],
-  ["The Mahabharata", "epic"],
-  ["Faust Part Two", "drama"],
-  ["The Prince", "political philosophy"],
+  ["the waste land", "poetry"],
+  ["divan of hafez", "poetry"],
+  ["the conference of the birds", "poetry"],
+  ["the tale of kieu", "poetry"],
+  ["their eyes were watching god", "novel"],
+  ["the epic of gilgamesh", "epic"],
 ]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
@@ -442,14 +443,15 @@ export function normalizeCanonicalIngestPayload(params: {
     requestedTitle: params.requestedTitle,
     requestedAuthor: primaryAuthor,
   });
-const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
-const isCanonicalSeedPayload = Boolean(
-  seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
-);
-const seedTitleLiteraryForm = isCanonicalSeedPayload
-  ? inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle)
-  : "";
-const literaryForm = seedTitleLiteraryForm || directLiteraryForm || inferLiteraryForm(normalized);  const description = firstNonEmptyString(
+  const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
+  const isCanonicalSeedPayload = Boolean(
+    seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
+  );
+  const seedTitleLiteraryForm = isCanonicalSeedPayload
+    ? inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle)
+    : "";
+  const literaryForm = seedTitleLiteraryForm || directLiteraryForm || inferLiteraryForm(normalized);
+  const description = firstNonEmptyString(
     normalized.descriptionEn,
     normalized.description,
     normalized.summary
@@ -508,6 +510,8 @@ const literaryForm = seedTitleLiteraryForm || directLiteraryForm || inferLiterar
 
   if (needsEnrichment) {
     normalized.needsEnrichment = true;
+  } else {
+    delete normalized.needsEnrichment;
   }
 
   return normalized;

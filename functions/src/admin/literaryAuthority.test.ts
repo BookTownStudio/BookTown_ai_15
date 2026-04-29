@@ -928,6 +928,12 @@ describe("adminCreateCanonicalBook", () => {
       { title: "Season of Migration to the North", author: "Tayeb Salih", literaryForm: "novel" },
       { title: "The Aleph", author: "Jorge Luis Borges", literaryForm: "short stories" },
       { title: "The Analects", author: "Confucius", literaryForm: "philosophy" },
+      { title: "The Waste Land", author: "T. S. Eliot", literaryForm: "poetry" },
+      { title: "Divan of Hafez", author: "Hafez", literaryForm: "poetry" },
+      { title: "The Conference of the Birds", author: "Farid ud-Din Attar", literaryForm: "poetry" },
+      { title: "The Tale of Kieu", author: "Nguyen Du", literaryForm: "poetry" },
+      { title: "Their Eyes Were Watching God", author: "Zora Neale Hurston", literaryForm: "novel" },
+      { title: "The Epic of Gilgamesh", author: "Anonymous", literaryForm: "epic" },
     ];
 
     for (const [index, row] of cases.entries()) {
@@ -2876,7 +2882,7 @@ describe("adminCreateCanonicalBook", () => {
       rows: [
         {
           title: "Hamlet",
-          status: "created",
+          status: "timeout_fallback",
           bookId: "hamlet-fallback",
         },
         {
@@ -2913,6 +2919,78 @@ describe("adminCreateCanonicalBook", () => {
       author: "Miguel de Cervantes",
       literaryForm: "novel",
       expectedDescription: "Don Quixote follows an aging hidalgo",
+    },
+    {
+      title: "The Muqaddimah",
+      author: "Ibn Khaldun",
+      literaryForm: "historical philosophy",
+      expectedDescription: "The Muqaddimah introduces Ibn Khaldun's theory",
+    },
+    {
+      title: "The Bhagavad Gita",
+      author: "Anonymous",
+      literaryForm: "philosophy",
+      expectedDescription: "The Bhagavad Gita presents a dialogue",
+    },
+    {
+      title: "The Mahabharata",
+      author: "Anonymous",
+      literaryForm: "epic",
+      expectedDescription: "The Mahabharata follows dynastic conflict",
+    },
+    {
+      title: "The Prince",
+      author: "Niccolò Machiavelli",
+      literaryForm: "political philosophy",
+      expectedDescription: "The Prince examines political power",
+    },
+    {
+      title: "Faust Part Two",
+      author: "Johann Wolfgang von Goethe",
+      literaryForm: "drama",
+      expectedDescription: "Faust Part Two expands Faust's journey",
+    },
+    {
+      title: "The Aeneid",
+      author: "Virgil",
+      literaryForm: "epic",
+      expectedDescription: "The Aeneid follows Aeneas from Troy",
+    },
+    {
+      title: "The Waste Land",
+      author: "T. S. Eliot",
+      literaryForm: "poetry",
+      expectedDescription: "The Waste Land gathers fractured voices",
+    },
+    {
+      title: "Divan of Hafez",
+      author: "Hafez",
+      literaryForm: "poetry",
+      expectedDescription: "The Divan of Hafez gathers lyric poems",
+    },
+    {
+      title: "The Conference of the Birds",
+      author: "Farid ud-Din Attar",
+      literaryForm: "poetry",
+      expectedDescription: "The Conference of the Birds follows birds",
+    },
+    {
+      title: "The Tale of Kieu",
+      author: "Nguyen Du",
+      literaryForm: "poetry",
+      expectedDescription: "The Tale of Kieu follows Thuy Kieu",
+    },
+    {
+      title: "Their Eyes Were Watching God",
+      author: "Zora Neale Hurston",
+      literaryForm: "novel",
+      expectedDescription: "Their Eyes Were Watching God follows Janie Crawford",
+    },
+    {
+      title: "The Epic of Gilgamesh",
+      author: "Anonymous",
+      literaryForm: "epic",
+      expectedDescription: "The Epic of Gilgamesh follows friendship",
     },
   ])(
     "normalizes timeout seed fallback metadata for $title before materialization",
@@ -2967,7 +3045,7 @@ describe("adminCreateCanonicalBook", () => {
           rows: [
             {
               title,
-              status: "created",
+              status: "timeout_fallback",
             },
           ],
           summary: {
