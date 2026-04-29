@@ -43,6 +43,36 @@ const fixes = [
     description:
       "The Aeneid follows Aeneas from Troy to Italy, joining exile, war, prophecy, and imperial destiny in Rome's foundational epic.",
   },
+  {
+  title: "The Waste Land",
+  description:
+    "The Waste Land gathers fractured voices, cultural fragments, and ritual echoes to examine spiritual exhaustion, historical rupture, and modern consciousness.",
+    },
+    {
+    title: "Divan of Hafez",
+    description:
+        "The Divan of Hafez gathers lyric poems of love, longing, divine beauty, irony, and mystical reflection in Persian poetic tradition.",
+    },
+    {
+      title: "The Conference of the Birds",
+      description:
+        "The Conference of the Birds follows birds seeking the Simorgh through trials of desire, loss, self-knowledge, and mystical transformation.",
+    },
+    {
+      title: "The Tale of Kieu",
+      description:
+        "The Tale of Kieu follows Thuy Kieu through sacrifice, separation, injustice, and endurance in a major work of Vietnamese poetic tradition.",
+    },
+    {
+      title: "Their Eyes Were Watching God",
+      description:
+        "Their Eyes Were Watching God follows Janie Crawford through love, voice, independence, and self-realization across changing stages of her life.",
+    },
+    {
+      title: "The Epic of Gilgamesh",
+      description:
+        "The Epic of Gilgamesh follows friendship, kingship, grief, and the search for mortality's meaning in one of humanity's earliest epics.",
+    },
 ];
 
 (async () => {

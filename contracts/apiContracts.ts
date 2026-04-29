@@ -397,6 +397,19 @@ const adminCanonicalBatchRowSchema = z
   })
   .strict();
 
+const adminRepairCanonicalSeedMetadataRowSchema = z
+  .object({
+    row: z.number().int().positive(),
+    input: z.string().min(1),
+    title: z.string().min(1),
+    author: z.string().min(1),
+    status: z.enum(["repaired", "unchanged", "missing", "failed"]),
+    bookId: z.string().min(1).optional(),
+    updatedFields: z.array(z.string().min(1)).optional(),
+    message: z.string().min(1).optional(),
+  })
+  .strict();
+
 const adminDeleteCascadeSchema = z
   .object({
     books: z.number().int().nonnegative(),
@@ -2058,6 +2071,31 @@ export const apiContracts = {
             .object({
               successCount: z.number().int().nonnegative(),
               existingCount: z.number().int().nonnegative(),
+              failedCount: z.number().int().nonnegative(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/CatalogAuthorityTab.tsx"],
+      }
+    ),
+
+    adminRepairCanonicalSeedMetadata: defineContract(
+      z
+        .object({
+          rows: z.string().min(1).max(30000),
+        })
+        .strict(),
+      z
+        .object({
+          rows: z.array(adminRepairCanonicalSeedMetadataRowSchema),
+          summary: z
+            .object({
+              repairedCount: z.number().int().nonnegative(),
+              unchangedCount: z.number().int().nonnegative(),
+              missingCount: z.number().int().nonnegative(),
               failedCount: z.number().int().nonnegative(),
             })
             .strict(),
