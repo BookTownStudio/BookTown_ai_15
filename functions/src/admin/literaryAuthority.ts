@@ -263,6 +263,30 @@ const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
     description:
       "The Epic of Gilgamesh follows friendship, kingship, grief, and the search for mortality's meaning in one of humanity's earliest epics.",
   },
+  {
+    title: "Hopscotch",
+    author: "Julio Cortázar",
+    description:
+      "Hopscotch follows Horacio Oliveira across Paris and Buenos Aires, using fractured sequence, exile, love, and play to test narrative form.",
+  },
+  {
+    title: "The Magic Mountain",
+    author: "Thomas Mann",
+    description:
+      "The Magic Mountain follows Hans Castorp in a Swiss sanatorium, where illness, time, intellect, and European crisis reshape his education.",
+  },
+  {
+    title: "Dream of the Red Chamber",
+    author: "Cao Xueqin",
+    description:
+      "Dream of the Red Chamber follows the Jia family through love, decline, memory, and social order in Qing aristocratic life.",
+  },
+  {
+    title: "Cities of Salt",
+    author: "Abdul Rahman Munif",
+    description:
+      "Cities of Salt follows desert communities transformed by oil, labor, exile, and political change in the modern Arab world.",
+  },
 ];
 
 class ProviderPhaseTimeoutError extends Error {

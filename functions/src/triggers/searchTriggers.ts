@@ -177,12 +177,22 @@ async function deleteBookmarkProjection(uid: string, entityId: string) {
     await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).delete();
 }
 
-export const syncBookmarkToSearchIndex = onDocumentCreated("users/{uid}/post_bookmarks/{entityId}", async (event) => {
+export const syncBookmarkToSearchIndex = onDocumentCreated("users/{uid}/bookmarks/{entityId}", async (event) => {
     const { uid, entityId } = event.params;
-    await writeBookmarkProjection({ uid, entityId, entityType: 'post' });
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    const entityType = data?.type;
+    if (
+        entityType !== 'post' &&
+        entityType !== 'venue' &&
+        entityType !== 'event' &&
+        entityType !== 'quote'
+    ) {
+        return;
+    }
+    await writeBookmarkProjection({ uid, entityId, entityType });
 });
 
-export const removeBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/post_bookmarks/{entityId}", async (event) => {
+export const removeBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/bookmarks/{entityId}", async (event) => {
     const { uid, entityId } = event.params;
     await deleteBookmarkProjection(uid, entityId);
 });
@@ -203,16 +213,6 @@ export const syncEventBookmarkToSearchIndex = onDocumentCreated("users/{uid}/eve
 });
 
 export const removeEventBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/event_bookmarks/{entityId}", async (event) => {
-    const { uid, entityId } = event.params;
-    await deleteBookmarkProjection(uid, entityId);
-});
-
-export const syncQuoteBookmarkToSearchIndex = onDocumentCreated("users/{uid}/bookmarks/{entityId}", async (event) => {
-    const { uid, entityId } = event.params;
-    await writeBookmarkProjection({ uid, entityId, entityType: 'quote' });
-});
-
-export const removeQuoteBookmarkFromSearchIndex = onDocumentDeleted("users/{uid}/bookmarks/{entityId}", async (event) => {
     const { uid, entityId } = event.params;
     await deleteBookmarkProjection(uid, entityId);
 });

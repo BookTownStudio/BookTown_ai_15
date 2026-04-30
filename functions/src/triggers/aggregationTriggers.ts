@@ -343,8 +343,11 @@ export const onPostCommentDeleted = onDocumentDeleted(
 );
 
 export const onPostBookmarkCreated = onDocumentCreated(
-  "users/{userId}/post_bookmarks/{entityId}",
+  "users/{userId}/bookmarks/{entityId}",
   async (event) => {
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    if (data?.type !== "post") return;
+
     await updateStatCounter(
       "post_stats",
       event.params.entityId,
@@ -360,14 +363,17 @@ export const onPostBookmarkCreated = onDocumentCreated(
         delta: 1,
       },
       sourceEventId: event.id,
-      sourcePath: `users/${event.params.userId}/post_bookmarks/${event.params.entityId}`,
+      sourcePath: `users/${event.params.userId}/bookmarks/${event.params.entityId}`,
     });
   }
 );
 
 export const onPostBookmarkDeleted = onDocumentDeleted(
-  "users/{userId}/post_bookmarks/{entityId}",
+  "users/{userId}/bookmarks/{entityId}",
   async (event) => {
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    if (data?.type !== "post") return;
+
     await updateStatCounter(
       "post_stats",
       event.params.entityId,
@@ -383,7 +389,7 @@ export const onPostBookmarkDeleted = onDocumentDeleted(
         delta: -1,
       },
       sourceEventId: event.id,
-      sourcePath: `users/${event.params.userId}/post_bookmarks/${event.params.entityId}`,
+      sourcePath: `users/${event.params.userId}/bookmarks/${event.params.entityId}`,
     });
   }
 );

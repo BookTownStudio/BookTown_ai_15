@@ -264,11 +264,17 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     return { previousSnapshot };
   },
 
-  onSuccess: async () => {
+  onSuccess: async (_data, id) => {
     if (uid) {
-      await queryClient.invalidateQueries({
-        queryKey: queryKeys.user.bookmarks(uid) as unknown as any[],
-      });
+      await Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.user.bookmarks(uid) as unknown as any[],
+        }),
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.user.bookmarkStatus(uid, 'post', id) as unknown as any[],
+        }),
+        queryClient.invalidateQueries({ queryKey: interactionKey }),
+      ]);
     }
   },
 

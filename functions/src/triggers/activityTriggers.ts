@@ -80,7 +80,10 @@ export const onActivityPostLiked = onDocumentCreated("users/{userId}/likes/{post
     return;
 });
 
-export const onActivityPostBookmarked = onDocumentCreated("users/{userId}/post_bookmarks/{postId}", async (event) => {
+export const onActivityPostBookmarked = onDocumentCreated("users/{userId}/bookmarks/{postId}", async (event) => {
+    const data = event.data?.data() as Record<string, unknown> | undefined;
+    if (data?.type !== "post") return;
+
     const postSnap = await db.collection('posts').doc(event.params.postId).get();
     const targetOwner = postSnap.exists ? postSnap.data()?.authorId : null;
 

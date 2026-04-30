@@ -83,6 +83,10 @@ const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["the tale of kieu", "poetry"],
   ["their eyes were watching god", "novel"],
   ["the epic of gilgamesh", "epic"],
+  ["hopscotch", "novel"],
+  ["the magic mountain", "novel"],
+  ["dream of the red chamber", "novel"],
+  ["cities of salt", "novel"],
 ]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([

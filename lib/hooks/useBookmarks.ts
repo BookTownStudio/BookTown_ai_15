@@ -8,7 +8,7 @@ import { queryKeys } from '../queryKeys.ts';
 /**
  * useBookmarks
  * Authoritative read path for user-saved items.
- * ENFORCEMENT: Fetches from typed bookmark subcollections.
+ * ENFORCEMENT: Fetches canonical post/quote bookmarks from users/{uid}/bookmarks.
  */
 export const useBookmarks = () => {
     const { user } = useAuth();

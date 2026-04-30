@@ -1,18 +1,19 @@
 
 import React from 'react';
-import { Bookmark, BookmarkType } from '../../types/entities.ts';
+import { Bookmark } from '../../types/entities.ts';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useAuth } from '../../lib/auth.tsx';
-import { View } from '../../types/navigation.ts';
 import GlassCard from '../ui/GlassCard.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import { useBookmarkToggle } from '../../lib/hooks/useBookmarkToggle.ts';
+import { useQuery } from '../../lib/react-query.ts';
+import { queryKeys } from '../../lib/queryKeys.ts';
+import { dataService } from '../../services/dataService.ts';
 
 // Data hooks
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { useQuoteDetails } from '../../lib/hooks/useQuoteDetails.ts';
-import { usePostDetails } from '../../lib/hooks/usePostDetails.ts';
 import { useAuthorDetails } from '../../lib/hooks/useAuthorDetails.ts';
 import { useVenueDetails } from '../../lib/hooks/useVenueDetails.ts';
 
@@ -69,7 +70,12 @@ const QuoteItem: React.FC<QuoteItemProps> = ({ lang, quote, isLoading }) => {
 };
 
 const PostItem: React.FC<ItemProps> = ({ bookmark, lang, onPress }) => {
-    const { data: post, isLoading } = usePostDetails(bookmark.entityId);
+    const { data: post, isLoading } = useQuery({
+        queryKey: queryKeys.social.post(bookmark.entityId) as unknown as any[],
+        queryFn: () => dataService.social.getPost(bookmark.entityId),
+        enabled: bookmark.type === 'post' && !!bookmark.entityId,
+        staleTime: 1000 * 30,
+    });
     if (isLoading) return <LoadingCard />;
     if (!post) return null;
 

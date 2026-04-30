@@ -281,10 +281,7 @@ service cloud.firestore {
 
       match /post_bookmarks/{postId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && request.resource.data.type == "post"
-          && request.resource.data.entityId == postId;
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /venue_bookmarks/{venueId} {
@@ -306,7 +303,21 @@ service cloud.firestore {
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(uid);
         allow create, update: if isActiveOwner(uid)
-          && request.resource.data.type == "quote";
+          && (
+            request.resource.data.type == "quote"
+            || (
+              request.resource.data.type == "post"
+              && request.resource.data.entityId == bookmarkId
+              && request.resource.data.version == 1
+              && request.resource.data.keys().hasOnly([
+                "type",
+                "entityId",
+                "timestamp",
+                "version"
+              ])
+              && exists(/databases/$(database)/documents/posts/$(bookmarkId))
+            )
+          );
         allow delete: if isActiveOwner(uid);
       }
 

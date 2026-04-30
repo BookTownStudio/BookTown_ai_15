@@ -531,7 +531,7 @@ async function readViewerInteractionStateMap(
         db
           .collection("users")
           .doc(viewerUid)
-          .collection("post_bookmarks")
+          .collection("bookmarks")
           .where(FieldPath.documentId(), "in", postIdBatch)
           .get(),
         db
@@ -549,6 +549,8 @@ async function readViewerInteractionStateMap(
       });
 
       bookmarksSnap.docs.forEach((docSnap) => {
+        const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+        if (data.type !== "post") return;
         const current = viewerStateMap.get(docSnap.id);
         if (!current) return;
         viewerStateMap.set(docSnap.id, { ...current, bookmarked: true });

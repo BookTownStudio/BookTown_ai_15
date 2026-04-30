@@ -934,6 +934,10 @@ describe("adminCreateCanonicalBook", () => {
       { title: "The Tale of Kieu", author: "Nguyen Du", literaryForm: "poetry" },
       { title: "Their Eyes Were Watching God", author: "Zora Neale Hurston", literaryForm: "novel" },
       { title: "The Epic of Gilgamesh", author: "Anonymous", literaryForm: "epic" },
+      { title: "Hopscotch", author: "Julio Cortázar", literaryForm: "novel" },
+      { title: "The Magic Mountain", author: "Thomas Mann", literaryForm: "novel" },
+      { title: "Dream of the Red Chamber", author: "Cao Xueqin", literaryForm: "novel" },
+      { title: "Cities of Salt", author: "Abdul Rahman Munif", literaryForm: "novel" },
     ];
 
     for (const [index, row] of cases.entries()) {
@@ -2991,6 +2995,30 @@ describe("adminCreateCanonicalBook", () => {
       author: "Anonymous",
       literaryForm: "epic",
       expectedDescription: "The Epic of Gilgamesh follows friendship",
+    },
+    {
+      title: "Hopscotch",
+      author: "Julio Cortázar",
+      literaryForm: "novel",
+      expectedDescription: "Hopscotch follows Horacio Oliveira",
+    },
+    {
+      title: "The Magic Mountain",
+      author: "Thomas Mann",
+      literaryForm: "novel",
+      expectedDescription: "The Magic Mountain follows Hans Castorp",
+    },
+    {
+      title: "Dream of the Red Chamber",
+      author: "Cao Xueqin",
+      literaryForm: "novel",
+      expectedDescription: "Dream of the Red Chamber follows the Jia family",
+    },
+    {
+      title: "Cities of Salt",
+      author: "Abdul Rahman Munif",
+      literaryForm: "novel",
+      expectedDescription: "Cities of Salt follows desert communities",
     },
   ])(
     "normalizes timeout seed fallback metadata for $title before materialization",

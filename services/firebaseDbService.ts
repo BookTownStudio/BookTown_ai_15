@@ -1260,10 +1260,9 @@ class FirebaseUserService {
     if (!db) return [];
 
     const bookmarkCollections = [
-      "post_bookmarks",
+      "bookmarks",
       "venue_bookmarks",
       "event_bookmarks",
-      "bookmarks",
     ] as const;
 
     const snaps = await Promise.all(

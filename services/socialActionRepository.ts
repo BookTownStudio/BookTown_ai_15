@@ -3,7 +3,6 @@ import {
     setDoc,
     deleteDoc,
     getDoc,
-    increment,
     runTransaction,
     serverTimestamp,
     collection,
@@ -72,7 +71,7 @@ function requireId(value: string, field: string): string {
 }
 
 function bookmarkCollectionForType(type: BookmarkType): string {
-    if (type === 'post') return 'post_bookmarks';
+    if (type === 'post') return 'bookmarks';
     if (type === 'venue') return 'venue_bookmarks';
     if (type === 'event') return 'event_bookmarks';
     return 'bookmarks';
@@ -83,13 +82,6 @@ function normalizeBookmarkType(type: string): BookmarkType {
         return type;
     }
     return 'post';
-}
-
-function readNonNegativeBookmarkCount(source: unknown): number {
-    if (typeof source !== 'number' || !Number.isFinite(source)) {
-        return 0;
-    }
-    return Math.max(0, Math.trunc(source));
 }
 
 class UnifiedSocialActionRepository implements SocialActionRepository {
@@ -163,30 +155,7 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
                 { merge: true }
             );
 
-            if (entityType !== 'post') {
-                return;
-            }
-
-            const postRef = doc(db, 'posts', normalizedEntityId);
-            const postSnap = await transaction.get(postRef);
-
-            if (!postSnap.exists()) {
-                throw new Error('POST_NOT_FOUND');
-            }
-
-            const postData = postSnap.data() as Record<string, unknown>;
-            const counters =
-                postData.counters && typeof postData.counters === 'object'
-                    ? (postData.counters as Record<string, unknown>)
-                    : {};
-            const currentBookmarks = readNonNegativeBookmarkCount(
-                postData.bookmarksCount ?? counters.bookmarks
-            );
-
-            transaction.update(postRef, {
-                'counters.bookmarks': increment(1),
-                bookmarksCount: currentBookmarks + 1,
-            });
+            // Post counters are server-owned and maintained by Firestore triggers.
         });
     }
 
@@ -209,37 +178,7 @@ class UnifiedSocialActionRepository implements SocialActionRepository {
 
             transaction.delete(bookmarkRef);
 
-            if (entityType !== 'post') {
-                return;
-            }
-
-            const postRef = doc(db, 'posts', normalizedEntityId);
-            const postSnap = await transaction.get(postRef);
-            if (!postSnap.exists()) {
-                return;
-            }
-
-            const postData = postSnap.data() as Record<string, unknown>;
-            const counters =
-                postData.counters && typeof postData.counters === 'object'
-                    ? (postData.counters as Record<string, unknown>)
-                    : {};
-            const currentBookmarks = readNonNegativeBookmarkCount(
-                postData.bookmarksCount ?? counters.bookmarks
-            );
-
-            if (currentBookmarks <= 0) {
-                transaction.update(postRef, {
-                    'counters.bookmarks': 0,
-                    bookmarksCount: 0,
-                });
-                return;
-            }
-
-            transaction.update(postRef, {
-                'counters.bookmarks': increment(-1),
-                bookmarksCount: currentBookmarks - 1,
-            });
+            // Post counters are server-owned and maintained by Firestore triggers.
         });
     }
 
