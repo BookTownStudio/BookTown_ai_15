@@ -41,7 +41,7 @@ async function run() {
         language: d.language || null,
         publicationYear: d.publicationYear || null,
         literaryForm: d.literaryForm || null,
-        description: d.description || d.abstractDescription || null,
+        description: d.description || d.descriptionEn || d.abstractDescription || null,
         providers: d.acquiredFromProvider || null
       });
     });

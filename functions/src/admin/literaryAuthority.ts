@@ -287,6 +287,54 @@ const CANONICAL_SEED_DESCRIPTION_FALLBACKS: Array<{
     description:
       "Cities of Salt follows desert communities transformed by oil, labor, exile, and political change in the modern Arab world.",
   },
+  {
+    title: "Journey to the West",
+    author: "Wu Cheng'en",
+    description:
+      "Journey to the West follows a monk and his companions through pilgrimage, trial, transformation, and spiritual discipline across mythic landscapes.",
+  },
+  {
+    title: "The Cairo Trilogy",
+    author: "Naguib Mahfouz",
+    description:
+      "The Cairo Trilogy follows a Cairo family across generations, tracing authority, domestic life, nationalism, and social transformation.",
+  },
+  {
+    title: "The Palm-Wine Drinkard",
+    author: "Amos Tutuola",
+    description:
+      "The Palm-Wine Drinkard follows a drinker through supernatural journeys, oral invention, and encounters with spirits in Yoruba imaginative tradition.",
+  },
+  {
+    title: "The Man Without Qualities",
+    author: "Robert Musil",
+    description:
+      "The Man Without Qualities follows Ulrich through intellectual uncertainty, political drift, and social fragmentation in late imperial Europe.",
+  },
+  {
+    title: "The Leopard",
+    author: "Giuseppe Tomasi di Lampedusa",
+    description:
+      "The Leopard follows a Sicilian aristocratic family confronting political transition, mortality, and historical decline during Italian unification.",
+  },
+  {
+    title: "Independent People",
+    author: "Halldór Laxness",
+    description:
+      "Independent People follows an Icelandic farmer through poverty, endurance, family strain, and the hard demands of independence.",
+  },
+  {
+    title: "Dead Souls",
+    author: "Nikolai Vasilievich Gogol",
+    description:
+      "Dead Souls follows Chichikov through provincial Russia, using comic transactions to expose greed, bureaucracy, and moral emptiness.",
+  },
+  {
+    title: "Moby-Dick; or, The Whale",
+    author: "Herman Melville",
+    description:
+      "Moby-Dick follows Captain Ahab's pursuit of a white whale, joining obsession, labor, fate, and metaphysical struggle at sea.",
+  },
 ];
 
 class ProviderPhaseTimeoutError extends Error {

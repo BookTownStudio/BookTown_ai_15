@@ -40,6 +40,15 @@ import { buildBookSearchPatch, buildEditionSearchPatch } from "./search/searchIn
 
 const db = admin.firestore();
 
+const PROTECTED_FIELDS = [
+  "title",
+  "author",
+  "authorCanonicalKey",
+  "publicationYear",
+  "canonicalEra",
+  "literaryForm",
+] as const;
+
 export type BookAuthorityState = "canonical" | "provisional";
 
 export type LiteraryAuthoritySource =
@@ -165,6 +174,26 @@ function uniqueStrings(values: readonly string[], max = 40): string[] {
     if (dedup.size >= max) break;
   }
   return Array.from(dedup);
+}
+
+function applyCanonicalProtection(
+  existing: Record<string, unknown> | null | undefined,
+  incoming: Record<string, unknown>
+): Record<string, unknown> {
+  if (existing?.canonicalLocked !== true) {
+    return incoming;
+  }
+
+  const protectedIncoming = { ...incoming };
+  for (const field of PROTECTED_FIELDS) {
+    if (!Object.prototype.hasOwnProperty.call(protectedIncoming, field)) {
+      continue;
+    }
+    if (existing[field] !== undefined && existing[field] !== null) {
+      protectedIncoming[field] = existing[field];
+    }
+  }
+  return protectedIncoming;
 }
 
 function normalizeIsbn(value: unknown, length: 10 | 13): string {
@@ -1959,12 +1988,13 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     bookPatch.language = language;
   }
 
-  const mergedBook = { ...existingBook, ...bookPatch };
-  if (Object.keys(bookPatch).length > 0) {
+  const protectedBookPatch = applyCanonicalProtection(existingBook, bookPatch);
+  const mergedBook = { ...existingBook, ...protectedBookPatch };
+  if (Object.keys(protectedBookPatch).length > 0) {
     params.tx.set(
       bookRef,
       {
-        ...bookPatch,
+        ...protectedBookPatch,
         updatedAt: now,
         ...buildBookSearchPatch(mergedBook),
       },
@@ -2061,16 +2091,19 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     const existingProvenance = asRecord(existingBook.provenance);
     params.tx.set(
       bookRef,
-      {
-        provenance: {
-          ...(existingProvenance || {}),
-          fieldConfidence: {
-            ...(asRecord(existingProvenance?.fieldConfidence) || {}),
-            ...fieldConfidencePatch,
+      applyCanonicalProtection(
+        existingBook,
+        {
+          provenance: {
+            ...(existingProvenance || {}),
+            fieldConfidence: {
+              ...(asRecord(existingProvenance?.fieldConfidence) || {}),
+              ...fieldConfidencePatch,
+            },
           },
-        },
-        updatedAt: now,
-      },
+          updatedAt: now,
+        }
+      ),
       { merge: true }
     );
   }
@@ -2082,36 +2115,39 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
 
     params.tx.set(
       bookRef,
-      {
-        provenance: {
-          weightedBookEvidence: {
-            ...(existingWeightedEvidence || {}),
-            [params.source]: {
-              ...(existingSourceEvidence || {}),
-              source: params.source,
-              confidence: "medium",
-              ...(oclcNumber
-                ? { oclcNumber }
-                : existingSourceEvidence?.oclcNumber
-                  ? { oclcNumber: existingSourceEvidence.oclcNumber }
+      applyCanonicalProtection(
+        existingBook,
+        {
+          provenance: {
+            weightedBookEvidence: {
+              ...(existingWeightedEvidence || {}),
+              [params.source]: {
+                ...(existingSourceEvidence || {}),
+                source: params.source,
+                confidence: "medium",
+                ...(oclcNumber
+                  ? { oclcNumber }
+                  : existingSourceEvidence?.oclcNumber
+                    ? { oclcNumber: existingSourceEvidence.oclcNumber }
+                    : {}),
+                ...(isFinitePublicationYearValue(editionCountSupport)
+                  ? { editionCount: editionCountSupport }
+                  : typeof existingSourceEvidence?.editionCount === "number"
+                    ? { editionCount: existingSourceEvidence.editionCount }
+                    : {}),
+                ...(isFinitePublicationYearValue(publicationYear)
+                  ? { publicationYear }
                   : {}),
-              ...(isFinitePublicationYearValue(editionCountSupport)
-                ? { editionCount: editionCountSupport }
-                : typeof existingSourceEvidence?.editionCount === "number"
-                  ? { editionCount: existingSourceEvidence.editionCount }
-                  : {}),
-              ...(isFinitePublicationYearValue(publicationYear)
-                ? { publicationYear }
-                : {}),
-              ...(language ? { language } : {}),
-              ...(publisher ? { publisher } : {}),
-              ...(format ? { format } : {}),
-              updatedAt: now,
+                ...(language ? { language } : {}),
+                ...(publisher ? { publisher } : {}),
+                ...(format ? { format } : {}),
+                updatedAt: now,
+              },
             },
           },
-        },
-        updatedAt: now,
-      },
+          updatedAt: now,
+        }
+      ),
       { merge: true }
     );
   }
@@ -2141,7 +2177,7 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
     source: params.source,
     bookId: existingTarget.bookId,
     editionId,
-    appliedBookFields: Object.keys(bookPatch),
+    appliedBookFields: Object.keys(protectedBookPatch),
     appliedEditionFields:
       editionRef && existingEdition
         ? Object.keys({
@@ -2812,7 +2848,8 @@ export async function materializeBookAuthorityInTransaction(
     updatedAt: now,
   };
 
-  const searchPatch = buildBookSearchPatch(bookBase);
+  const protectedBookBase = applyCanonicalProtection(existingBook, bookBase);
+  const searchPatch = buildBookSearchPatch(protectedBookBase);
   const shouldHaveEbook =
     params.source === "user_upload" ||
     searchPatch.hasEbook === true ||
@@ -2821,7 +2858,7 @@ export async function materializeBookAuthorityInTransaction(
     rawBook.isEbookAvailable === true;
 
   const finalBookPayload: Record<string, unknown> = {
-    ...bookBase,
+    ...protectedBookBase,
     ...searchPatch,
     hasEbook: shouldHaveEbook,
     downloadable: shouldHaveEbook || searchPatch.downloadable === true,
@@ -2843,7 +2880,11 @@ export async function materializeBookAuthorityInTransaction(
     );
   }
 
-  params.tx.set(bookRef, finalBookPayload, { merge: true });
+  params.tx.set(
+    bookRef,
+    applyCanonicalProtection(existingBook, finalBookPayload),
+    { merge: true }
+  );
 
   if (editionId) {
     const editionProviderIdentity = resolveEditionProviderIdentity({

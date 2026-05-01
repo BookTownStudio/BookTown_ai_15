@@ -87,6 +87,14 @@ const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
   ["the magic mountain", "novel"],
   ["dream of the red chamber", "novel"],
   ["cities of salt", "novel"],
+  ["journey to the west", "novel"],
+  ["the cairo trilogy", "novel"],
+  ["the palm-wine drinkard", "novel"],
+  ["the man without qualities", "novel"],
+  ["the leopard", "novel"],
+  ["independent people", "novel"],
+  ["dead souls", "novel"],
+  ["moby-dick; or, the whale", "novel"],
 ]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([

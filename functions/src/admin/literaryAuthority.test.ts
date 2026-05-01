@@ -938,6 +938,14 @@ describe("adminCreateCanonicalBook", () => {
       { title: "The Magic Mountain", author: "Thomas Mann", literaryForm: "novel" },
       { title: "Dream of the Red Chamber", author: "Cao Xueqin", literaryForm: "novel" },
       { title: "Cities of Salt", author: "Abdul Rahman Munif", literaryForm: "novel" },
+      { title: "Journey to the West", author: "Wu Cheng'en", literaryForm: "novel" },
+      { title: "The Cairo Trilogy", author: "Naguib Mahfouz", literaryForm: "novel" },
+      { title: "The Palm-Wine Drinkard", author: "Amos Tutuola", literaryForm: "novel" },
+      { title: "The Man Without Qualities", author: "Robert Musil", literaryForm: "novel" },
+      { title: "The Leopard", author: "Giuseppe Tomasi di Lampedusa", literaryForm: "novel" },
+      { title: "Independent People", author: "Halldór Laxness", literaryForm: "novel" },
+      { title: "Dead Souls", author: "Nikolai Vasilievich Gogol", literaryForm: "novel" },
+      { title: "Moby-Dick; or, The Whale", author: "Herman Melville", literaryForm: "novel" },
     ];
 
     for (const [index, row] of cases.entries()) {
@@ -3019,6 +3027,54 @@ describe("adminCreateCanonicalBook", () => {
       author: "Abdul Rahman Munif",
       literaryForm: "novel",
       expectedDescription: "Cities of Salt follows desert communities",
+    },
+    {
+      title: "Journey to the West",
+      author: "Wu Cheng'en",
+      literaryForm: "novel",
+      expectedDescription: "Journey to the West follows a monk",
+    },
+    {
+      title: "The Cairo Trilogy",
+      author: "Naguib Mahfouz",
+      literaryForm: "novel",
+      expectedDescription: "The Cairo Trilogy follows a Cairo family",
+    },
+    {
+      title: "The Palm-Wine Drinkard",
+      author: "Amos Tutuola",
+      literaryForm: "novel",
+      expectedDescription: "The Palm-Wine Drinkard follows a drinker",
+    },
+    {
+      title: "The Man Without Qualities",
+      author: "Robert Musil",
+      literaryForm: "novel",
+      expectedDescription: "The Man Without Qualities follows Ulrich",
+    },
+    {
+      title: "The Leopard",
+      author: "Giuseppe Tomasi di Lampedusa",
+      literaryForm: "novel",
+      expectedDescription: "The Leopard follows a Sicilian aristocratic family",
+    },
+    {
+      title: "Independent People",
+      author: "Halldór Laxness",
+      literaryForm: "novel",
+      expectedDescription: "Independent People follows an Icelandic farmer",
+    },
+    {
+      title: "Dead Souls",
+      author: "Nikolai Vasilievich Gogol",
+      literaryForm: "novel",
+      expectedDescription: "Dead Souls follows Chichikov",
+    },
+    {
+      title: "Moby-Dick; or, The Whale",
+      author: "Herman Melville",
+      literaryForm: "novel",
+      expectedDescription: "Moby-Dick follows Captain Ahab's pursuit",
     },
   ])(
     "normalizes timeout seed fallback metadata for $title before materialization",
