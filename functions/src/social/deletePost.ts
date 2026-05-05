@@ -6,8 +6,23 @@ import {
     getRoleFromClaims,
 } from "../shared/auth";
 import { checkUserMutationQuota } from "../utils/mutationQuota";
+import { z, parseInput } from "../shared/validation";
 
 const RESTORE_WINDOW_MINUTES = 5;
+
+const deleteSocialPostSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    type: z.enum(["soft", "hard"]).optional(),
+    reportId: z.string().trim().min(1).max(190).optional(),
+  })
+  .strict();
+
+const restoreSocialPostSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+  })
+  .strict();
 
 /**
  * deleteSocialPost
@@ -17,21 +32,15 @@ const RESTORE_WINDOW_MINUTES = 5;
 export const deleteSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId, type = 'soft', reportId } = request.data as {
-        postId?: string;
-        type?: 'soft' | 'hard';
-        reportId?: string;
-    };
+    const { postId, type = 'soft', reportId } = parseInput(deleteSocialPostSchema, request.data);
     const uid = caller.uid;
     const role = getRoleFromClaims(caller);
     const isModerator = role === "moderator" || role === "superadmin";
 
-    if (!postId) {
-        throw new HttpsError("invalid-argument", "postId required.");
-    }
-
     const db = admin.firestore();
     const postRef = db.collection('posts').doc(postId);
+
+    await checkUserMutationQuota(db, uid, "deletePost");
 
     try {
         const result = await db.runTransaction(async (transaction) => {
@@ -48,8 +57,6 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
             if (!isOwner && !isModerator) {
                 throw new HttpsError("permission-denied", "POST_DELETE_FORBIDDEN");
             }
-
-            await checkUserMutationQuota(db, transaction, uid, "deletePost");
 
             const now = admin.firestore.Timestamp.now();
             const wasAlreadyDeleted = post?.isDeleted === true || post?.status === "deleted";
@@ -113,7 +120,7 @@ export const deleteSocialPost = onCall({ cors: true }, async (request) => {
 export const restoreSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId } = request.data;
+    const { postId } = parseInput(restoreSocialPostSchema, request.data);
     const uid = caller.uid;
 
     const db = admin.firestore();

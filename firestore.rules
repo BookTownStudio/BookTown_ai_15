@@ -505,7 +505,7 @@ service cloud.firestore {
     match /notification_preferences/{uid} {
       allow read: if isOwner(uid);
       allow create, update: if isActiveOwner(uid);
-      allow delete: if false;
+      allow delete: if isActiveOwner(uid);
     }
 
     /* =========================
@@ -631,10 +631,8 @@ service cloud.firestore {
         && isBoundedString(request.resource.data.type, 80)
         && isBoundedString(request.resource.data.address, 240)
         && isBoundedString(request.resource.data.imageUrl, 1024)
-        && request.resource.data.descriptionEn is string
-        && request.resource.data.descriptionEn.size() <= 2000
-        && request.resource.data.descriptionAr is string
-        && request.resource.data.descriptionAr.size() <= 2000;
+        && isBoundedString(request.resource.data.descriptionEn, 2000)
+        && isBoundedString(request.resource.data.descriptionAr, 2000);
 
       allow update: if isSignedIn()
         && resource.data.ownerId == request.auth.uid
@@ -643,10 +641,8 @@ service cloud.firestore {
         && isBoundedString(request.resource.data.type, 80)
         && isBoundedString(request.resource.data.address, 240)
         && isBoundedString(request.resource.data.imageUrl, 1024)
-        && request.resource.data.descriptionEn is string
-        && request.resource.data.descriptionEn.size() <= 2000
-        && request.resource.data.descriptionAr is string
-        && request.resource.data.descriptionAr.size() <= 2000;
+        && isBoundedString(request.resource.data.descriptionEn, 2000)
+        && isBoundedString(request.resource.data.descriptionAr, 2000);
 
       allow delete: if false;
 
@@ -725,7 +721,7 @@ service cloud.firestore {
 
         allow create: if isSignedIn()
           && request.resource.data.userId == request.auth.uid
-          && request.resource.data.venueId == eventId
+          && request.resource.data.eventId == eventId
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1
           && request.resource.data.rating <= 5
@@ -735,7 +731,7 @@ service cloud.firestore {
         allow update: if isSignedIn()
           && resource.data.userId == request.auth.uid
           && request.resource.data.userId == resource.data.userId
-          && request.resource.data.venueId == resource.data.venueId
+          && request.resource.data.eventId == resource.data.eventId
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1
           && request.resource.data.rating <= 5

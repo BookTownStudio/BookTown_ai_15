@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
+import { deleteShelfBookInTransaction } from "./shelfBookEntry";
 
 const db = admin.firestore();
 
@@ -51,14 +52,8 @@ export const removeBookFromShelf = onCall<RemoveBookFromShelfRequest>(
         shelfData,
       });
 
-      tx.set(
-        shelfRef,
-        {
-          [`entries.${bookId}`]: FieldValue.delete(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      // Remove from shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
+      deleteShelfBookInTransaction(tx, db, shelfId, bookId);
     });
 
     return { ok: true };

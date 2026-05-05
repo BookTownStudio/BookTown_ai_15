@@ -12,6 +12,7 @@ import {
 } from "./intelligence/agentContextBuilder";
 import { runLibrarianRecommendation } from "./ai/librarian";
 import { enforceSearchRequestQuota } from "./utils/searchRequestQuota";
+import { normalizeSearchText } from "./library/normalization/bookSearchNormalization";
 
 type SearchBookResponse = {
   id: string;
@@ -114,17 +115,6 @@ function shouldEnforceSearchAppCheck(): boolean {
 
 function shouldEnforceSearchRateLimit(): boolean {
   return process.env.NODE_ENV !== "test" && process.env.FUNCTIONS_EMULATOR !== "true";
-}
-
-function normalizeSearchText(value?: string | null): string {
-  if (!value) return "";
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function normalizeLibrarianQuery(value: string): string {

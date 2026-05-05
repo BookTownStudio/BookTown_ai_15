@@ -5,6 +5,27 @@ import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 const MAX_CASCADE_DELETE_DOCS = 450;
 
+function isAuthoredProjectBook(
+  bookData: Record<string, unknown>,
+  uid: string,
+  projectId: string
+): boolean {
+  const ownerMatches =
+    bookData.ownerId === uid ||
+    bookData.ownerUid === uid;
+  const projectMatches = bookData.projectId === projectId;
+  const source = typeof bookData.source === "string" ? bookData.source : "";
+  const bookType = typeof bookData.bookType === "string" ? bookData.bookType : "";
+
+  return (
+    ownerMatches &&
+    projectMatches &&
+    (source === "write_publish" ||
+      source === "write_release" ||
+      bookType === "authored_native")
+  );
+}
+
 /**
  * deleteWriteProject
  * Authoritative delete with deterministic cascade cleanup.
@@ -132,7 +153,7 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
         continue;
       }
       const bookData = bookSnap.data() as Record<string, unknown>;
-      if (bookData.ownerId === uid && bookData.projectId === canonicalProjectId) {
+      if (isAuthoredProjectBook(bookData, uid, canonicalProjectId)) {
         batch.delete(bookRef);
       }
     }

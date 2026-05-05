@@ -1,0 +1,106 @@
+{
+  "task": "Full System Audit — BookTown",
+  "mode": "deep-wide-readonly",
+  "instructions": [
+    "Scan the entire codebase (frontend, backend, functions, services, hooks, UI, Firestore rules, schemas, search engine, admin tools)",
+    
+    "Do NOT modify any code",
+    
+    "Audit the system across the following dimensions:",
+
+    "1. ARCHITECTURE AUDIT",
+    "- Evaluate system structure (frontend, backend, domains)",
+    "- Detect monoliths, tight coupling, improper separation of concerns",
+    "- Identify cold-start risks and heavy dependency loading",
+    "- Flag violations of modular design",
+
+    "2. CODE QUALITY AUDIT",
+    "- Detect dead code, unused files, unreachable logic",
+    "- Identify duplicate logic across modules",
+    "- Detect unsafe patterns (any, weak typing, unchecked casting)",
+    "- Identify overly complex functions",
+
+    "3. DATA MODEL & FIRESTORE AUDIT",
+    "- Validate schema consistency across collections",
+    "- Detect anti-patterns (nested maps, unbounded arrays, document size risks)",
+    "- Check referential integrity risks",
+    "- Identify missing indexes or inefficient queries",
+
+    "4. CANONICAL AUTHORITY AUDIT",
+    "- Verify single source of truth for canonical identity",
+    "- Detect duplicate canonicalKey generation paths",
+    "- Identify potential duplication risks",
+    "- Evaluate conflict detection and merge capabilities",
+    "- Validate alias system usage",
+
+    "5. SEARCH & RANKING AUDIT",
+    "- Analyze search pipeline (normalization, ranking, fallback)",
+    "- Detect non-deterministic ranking",
+    "- Identify deduplication weaknesses",
+    "- Evaluate transliteration and Arabic handling",
+    "- Flag ranking inconsistencies",
+
+    "6. SECURITY AUDIT",
+    "- Review Firestore rules",
+    "- Validate callable function authentication and authorization",
+    "- Detect missing validation or overposting risks",
+    "- Identify sensitive logic exposed to client",
+    "- Evaluate quota enforcement",
+
+    "7. UI/UX AUDIT",
+    "- Evaluate layout consistency (PageShell, widths, containers)",
+    "- Detect inconsistent spacing, alignment, hierarchy",
+    "- Evaluate usability of core flows (search, read, write, admin)",
+    "- Identify friction points and confusion risks",
+    "- Evaluate visual clarity and minimalism",
+
+    "8. PERFORMANCE AUDIT",
+    "- Detect heavy components or unnecessary renders",
+    "- Identify large bundle sizes and unused imports",
+    "- Evaluate React Query usage and caching strategy",
+    "- Detect unnecessary network calls",
+
+    "9. SCALABILITY AUDIT",
+    "- Identify bottlenecks in Firestore writes/reads",
+    "- Detect hot document risks",
+    "- Evaluate indexing strategy",
+    "- Identify growth risks (collections, quotas, AI usage)",
+
+    "10. PRODUCT & LAUNCH RISK AUDIT",
+    "- Identify hidden blockers for launch",
+    "- Detect fragile flows (search, ingestion, reading)",
+    "- Evaluate system behavior under real users",
+    "- Identify failure points and edge cases",
+
+    "For EACH dimension:",
+    "- List findings",
+    "- Assign severity: critical / high / medium / low",
+    "- Provide clear explanation",
+    "- Suggest fix direction (NOT code)",
+
+    "OUTPUT REQUIREMENTS:",
+    "- Create folder /audit if not exists",
+    "- Generate separate markdown files:",
+    "  /audit/architecture_audit.md",
+    "  /audit/code_audit.md",
+    "  /audit/firestore_audit.md",
+    "  /audit/canonical_authority_audit.md",
+    "  /audit/search_audit.md",
+    "  /audit/security_audit.md",
+    "  /audit/ui_ux_audit.md",
+    "  /audit/performance_audit.md",
+    "  /audit/scalability_audit.md",
+    "  /audit/launch_risk_audit.md",
+
+    "- Each file must be detailed, structured, and actionable",
+    "- No summaries only — deep analysis required"
+  ],
+  "constraints": [
+    "Read-only audit (no code modification)",
+    "Do not assume — verify from code",
+    "Be strict and critical",
+    "Focus on production-grade standards",
+    "Avoid generic advice — tie findings to actual code"
+  ],
+  "output": "Full multi-file audit report in /audit folder"
+}

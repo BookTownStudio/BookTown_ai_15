@@ -281,38 +281,23 @@ function chunked<T>(values: readonly T[], chunkSize: number): T[][] {
 }
 
 async function enforceSearchRateLimit(uid: string): Promise<void> {
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - (nowMs % RATE_LIMIT_WINDOW_MS);
+  const windowEndMs = windowStartMs + RATE_LIMIT_WINDOW_MS;
   const rateRef = db
     .collection("users")
     .doc(uid)
     .collection("meta")
-    .doc("social_search_rate");
-  const nowMs = Date.now();
+    .doc(`social_search_rate_${windowStartMs}`);
 
   await db.runTransaction(async (transaction) => {
     const snap = await transaction.get(rateRef);
-    const data = (snap.data() || {}) as Record<string, unknown>;
-
-    const windowStartMs =
-      typeof data.windowStartMs === "number" && Number.isFinite(data.windowStartMs)
-        ? Math.trunc(data.windowStartMs)
-        : nowMs;
     const count =
-      typeof data.count === "number" && Number.isFinite(data.count)
-        ? Math.trunc(data.count)
+      snap.exists &&
+      typeof snap.get("count") === "number" &&
+      Number.isFinite(snap.get("count") as number)
+        ? Math.max(0, Math.trunc(snap.get("count") as number))
         : 0;
-
-    if (nowMs - windowStartMs >= RATE_LIMIT_WINDOW_MS) {
-      transaction.set(
-        rateRef,
-        {
-          windowStartMs: nowMs,
-          count: 1,
-          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-      return;
-    }
 
     if (count >= RATE_LIMIT_REQUESTS_PER_WINDOW) {
       throw new HttpsError(
@@ -324,9 +309,14 @@ async function enforceSearchRateLimit(uid: string): Promise<void> {
     transaction.set(
       rateRef,
       {
-        windowStartMs,
+        uid,
         count: count + 1,
+        limit: RATE_LIMIT_REQUESTS_PER_WINDOW,
+        windowStartMs,
+        windowEndMs,
+        expiresAt: admin.firestore.Timestamp.fromMillis(windowStartMs + 2 * 60 * 1000),
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        ...(snap.exists ? {} : { createdAt: admin.firestore.FieldValue.serverTimestamp() }),
       },
       { merge: true }
     );

@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 
 import { admin } from "../firebaseAdmin";
 import { normalizeSearchText } from "../search/normalization";
+import { normalizeIsbn } from "./normalization/bookSearchNormalization";
 import {
   areAuthorityAuthorsEquivalent,
   extractAuthorityAuthorReference,
@@ -36,6 +37,15 @@ import {
   extractCanonicalAuthorKeyRoot,
   normalizeAuthorYear,
 } from "./persistence/canonicalAuthorKey";
+import {
+  buildBookOntology,
+  normalizeBookOntologyConfidence,
+  normalizeBookOntologySource,
+  normalizeBookForm,
+  readBookOntology,
+  type BookOntology,
+  type BookOntologySource,
+} from "./ontology/bookOntology";
 import { buildBookSearchPatch, buildEditionSearchPatch } from "./search/searchIndexing";
 
 const db = admin.firestore();
@@ -47,6 +57,10 @@ const PROTECTED_FIELDS = [
   "publicationYear",
   "canonicalEra",
   "literaryForm",
+  "description",
+  "coverUrl",
+  "language",
+  "originalLanguage",
 ] as const;
 
 export type BookAuthorityState = "canonical" | "provisional";
@@ -59,7 +73,9 @@ export type LiteraryAuthoritySource =
   | "loc"
   | "openLibrary"
   | "worldcat"
-  | "user_upload";
+  | "user_upload"
+  | "write_publish"
+  | "write_release";
 
 type MetadataAuthorityField = "cover" | "description";
 type MetadataAuthoritySource =
@@ -194,15 +210,6 @@ function applyCanonicalProtection(
     }
   }
   return protectedIncoming;
-}
-
-function normalizeIsbn(value: unknown, length: 10 | 13): string {
-  if (typeof value !== "string") return "";
-  const digits = value.replace(/[^0-9Xx]/g, "").toUpperCase();
-  if (length === 10) {
-    return /^\d{9}[\dX]$/.test(digits) ? digits : "";
-  }
-  return /^\d{13}$/.test(digits) ? digits : "";
 }
 
 function normalizeSourceIdentityValue(source: string, providerExternalId: string): string {
@@ -548,18 +555,14 @@ function getMetadataAuthorityScore(
   if (source === "manualAdmin") return 100;
   if (source === "googleBooks") return 80;
   if (source === "openLibrary") return 70;
-  if (source === "goodreads_import") return 60;
+  if (source === "goodreads_import") return 0;
   return 0;
 }
 
 function isTrustedProviderDescriptionFillSource(
   source: LiteraryAuthoritySource
 ): boolean {
-  return (
-    source === "googleBooks" ||
-    source === "openLibrary" ||
-    source === "goodreads_import"
-  );
+  return source === "googleBooks" || source === "openLibrary";
 }
 
 function isValidHttpUrl(value: string): boolean {
@@ -1003,6 +1006,120 @@ function toAuthorityEvidence(source: LiteraryAuthoritySource): {
     confidence,
     lastAcceptedAt: FieldValue.serverTimestamp(),
   };
+}
+
+function resolveOntologySource(params: {
+  source: LiteraryAuthoritySource;
+  rawOntology: unknown;
+}): BookOntologySource {
+  const rawRecord = asRecord(params.rawOntology);
+  const explicit = normalizeBookOntologySource(rawRecord?.source);
+  if (explicit) {
+    return explicit;
+  }
+
+  if (params.source === "canonical_seed") {
+    return "seed";
+  }
+  if (params.source === "booktown_canonical") {
+    return "admin";
+  }
+  if (
+    params.source === "googleBooks" ||
+    params.source === "goodreads_import" ||
+    params.source === "loc" ||
+    params.source === "openLibrary" ||
+    params.source === "worldcat"
+  ) {
+    return "provider";
+  }
+
+  return "migration";
+}
+
+function canOverwriteExistingOntology(params: {
+  source: LiteraryAuthoritySource;
+  authorityStatus: BookAuthorityState;
+}): boolean {
+  return (
+    params.authorityStatus === "canonical" ||
+    params.source === "booktown_canonical" ||
+    params.source === "canonical_seed"
+  );
+}
+
+function resolveMaterializedOntology(params: {
+  existingBook: Record<string, unknown> | null;
+  rawBook: Record<string, unknown>;
+  source: LiteraryAuthoritySource;
+  authorityStatus: BookAuthorityState;
+  updatedAt: FirebaseFirestore.FieldValue;
+}): BookOntology {
+  const existingOntology = readBookOntology(params.existingBook?.ontology);
+  const incomingOntology = readBookOntology(params.rawBook.ontology);
+  const canOverwrite = canOverwriteExistingOntology({
+    source: params.source,
+    authorityStatus: params.authorityStatus,
+  });
+
+  if (existingOntology && !canOverwrite) {
+    return existingOntology;
+  }
+
+  if (incomingOntology) {
+    return {
+      ...incomingOntology,
+      updatedAt: params.updatedAt,
+    };
+  }
+
+  const legacyLiteraryForm =
+    asNonEmptyString(params.rawBook.literaryForm) ||
+    asNonEmptyString(params.existingBook?.literaryForm);
+  if (existingOntology && !legacyLiteraryForm) {
+    return existingOntology;
+  }
+
+  const rawOntologyRecord = asRecord(params.rawBook.ontology);
+  return buildBookOntology({
+    literaryForm: legacyLiteraryForm || "unknown",
+    source: resolveOntologySource({
+      source: params.source,
+      rawOntology: params.rawBook.ontology,
+    }),
+    confidence:
+      normalizeBookOntologyConfidence(rawOntologyRecord?.confidence) ||
+      (legacyLiteraryForm ? "mapped" : "unknown"),
+    updatedAt: params.updatedAt,
+    canonicalTradition: rawOntologyRecord?.canonicalTradition,
+  });
+}
+
+function enforceOntologyInvariant(params: {
+  ontology: BookOntology | null;
+  source: LiteraryAuthoritySource;
+  updatedAt: FirebaseFirestore.FieldValue;
+}): BookOntology {
+  const form = normalizeBookForm(params.ontology?.form);
+  if (params.ontology && form) {
+    return {
+      ...params.ontology,
+      form,
+    };
+  }
+
+  logger.error("[BOOK_AUTHORITY][ONTOLOGY_FORM_MISSING]", {
+    source: params.source,
+  });
+  return buildBookOntology({
+    literaryForm: "unknown",
+    source: resolveOntologySource({
+      source: params.source,
+      rawOntology: null,
+    }),
+    confidence: "unknown",
+    updatedAt: params.updatedAt,
+  });
 }
 
 function normalizeAuthorityConfidence(value: unknown): AuthorityConfidence | null {
@@ -2651,12 +2768,17 @@ export async function materializeBookAuthorityInTransaction(
     editionId ||
     null;
   const directPublisher = resolvePublisher(rawBook);
-  const hasSeedLineage = Boolean(
-    seedAuthorLock || asRecord(existingBook?.provenance)?.seedAuthorLock
-  );
-  const literaryForm = hasSeedLineage
-    ? asNonEmptyString(existingBook?.literaryForm) || asNonEmptyString(rawBook.literaryForm)
-    : asNonEmptyString(rawBook.literaryForm) || asNonEmptyString(existingBook?.literaryForm);
+  const ontology = enforceOntologyInvariant({
+    ontology: resolveMaterializedOntology({
+      existingBook,
+      rawBook,
+      source: params.source,
+      authorityStatus: authorityFields.authorityStatus,
+      updatedAt: now,
+    }),
+    source: params.source,
+    updatedAt: now,
+  });
   const needsEnrichment =
     rawBook.needsEnrichment === true || existingBook?.needsEnrichment === true;
   const fieldConfidencePatch = buildFieldConfidencePatch({
@@ -2714,7 +2836,8 @@ export async function materializeBookAuthorityInTransaction(
     originalTitle,
     canonicalAuthorIds,
     originalLanguage,
-    ...(literaryForm ? { literaryForm } : {}),
+    ontology,
+    literaryForm: ontology.form,
     workIdentity,
     canonicalFieldTrust,
     abstractDescription: description,

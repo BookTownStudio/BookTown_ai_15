@@ -1,0 +1,26 @@
+import { wrapCallableV2 } from "../contracts/wrapCallableV2";
+import { requestEbookReadAccess as requestEbookReadAccessRaw } from "../reader/requestEbookReadAccess";
+import { acquireExternalEbookForRead as acquireExternalEbookForReadRaw } from "../library/acquireExternalEbookForRead";
+import { recordReadingProgress as recordReadingProgressRaw } from "../reader/recordReadingProgress";
+import { getReaderProgress as getReaderProgressRaw } from "../reader/getReaderProgress";
+import { getReaderBookmarks as getReaderBookmarksRaw } from "../reader/getReaderBookmarks";
+import { getReaderHighlights as getReaderHighlightsRaw } from "../reader/getReaderHighlights";
+import { getReaderInsights as getReaderInsightsRaw } from "../reader/getReaderInsights";
+import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "../reader/getOrCreateReadingSession";
+import { updateReadingSessionNarration as updateReadingSessionNarrationRaw } from "../reader/updateReadingSessionNarration";
+import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "../reader/requestEbookOfflineAccess";
+import { getReaderManifest as getReaderManifestRaw } from "../reader/getReaderManifest";
+import { syncReaderOperations as syncReaderOperationsRaw } from "../reader/syncReaderOperations";
+
+export const requestEbookReadAccessV2 = wrapCallableV2("requestEbookReadAccess", requestEbookReadAccessRaw);
+export const acquireExternalEbookForRead = wrapCallableV2("acquireExternalEbookForRead", acquireExternalEbookForReadRaw);
+export const recordReadingProgress = wrapCallableV2("recordReadingProgress", recordReadingProgressRaw);
+export const getReaderProgress = wrapCallableV2("getReaderProgress", getReaderProgressRaw);
+export const getReaderBookmarks = wrapCallableV2("getReaderBookmarks", getReaderBookmarksRaw);
+export const getReaderHighlights = wrapCallableV2("getReaderHighlights", getReaderHighlightsRaw);
+export const getReaderInsights = wrapCallableV2("getReaderInsights", getReaderInsightsRaw);
+export const getOrCreateReadingSession = wrapCallableV2("getOrCreateReadingSession", getOrCreateReadingSessionRaw);
+export const updateReadingSessionNarration = wrapCallableV2("updateReadingSessionNarration", updateReadingSessionNarrationRaw);
+export const getReaderManifest = wrapCallableV2("getReaderManifest", getReaderManifestRaw);
+export const syncReaderOperations = wrapCallableV2("syncReaderOperations", syncReaderOperationsRaw);
+export const requestEbookOfflineAccess = wrapCallableV2("requestEbookOfflineAccess", requestEbookOfflineAccessRaw);

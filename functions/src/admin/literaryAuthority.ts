@@ -16,11 +16,15 @@ import {
   hasContributorRoleSignal,
   hasRejectedCandidateTitleSignal,
   hasRejectedContributorCandidateSignal,
-  inferKnownCanonicalLiteraryForm,
   normalizeBatchCanonicalSeedPayload,
   resolveCanonicalSeedAuthorityAuthor,
 } from "../library/normalization/canonicalIngest";
-import { buildCanonicalKey } from "../library/persistence/canonicalKey";
+import { buildCanonicalKey, normalizeCanonicalPart } from "../library/persistence/canonicalKey";
+import {
+  buildCanonicalAuthorKey,
+  extractCanonicalAuthorKeyRoot,
+} from "../library/persistence/canonicalAuthorKey";
+import { detectCanonicalConflicts } from "../library/canonicalConflictDetection";
 import {
   buildBookSearchPatch,
   buildEditionSearchPatch,
@@ -43,6 +47,14 @@ import {
   type AdminAuthorUpsertInput,
   upsertAdminAuthorInTransaction,
 } from "../library/authors/authorCatalog";
+import {
+  parseInput,
+  adminAuthorCreateSchema,
+  adminAuthorUpdateSchema,
+  adminCreateCanonicalBookSchema,
+  adminAuthorIdSchema,
+  adminMergeCanonicalBooksSchema,
+} from "../shared/validation";
 
 const db = admin.firestore();
 const MAX_ADMIN_LIMIT = 50;
@@ -603,10 +615,6 @@ function buildSeedOnlyFallbackRawBook(params: {
       title: params.title,
       fallbackAuthor: params.author,
     }) || params.author;
-  const literaryForm = inferKnownCanonicalLiteraryForm({
-    title: params.title,
-    author: canonicalAuthor,
-  });
   const description = resolveCanonicalSeedDescriptionFallback({
     requestedTitle: params.title,
     requestedAuthor: canonicalAuthor,
@@ -628,7 +636,6 @@ function buildSeedOnlyFallbackRawBook(params: {
       rightsMode: "public_free",
       visibility: "public",
       publicationState: "published",
-      ...(literaryForm ? { literaryForm } : {}),
       ...(description
         ? {
             description,
@@ -3149,30 +3156,7 @@ function selectStrongestBulkProviderCandidate(params: {
     return null;
   }
 
-  const knownWorkForm = inferKnownCanonicalLiteraryForm({
-    title: params.requestedTitle,
-    author: params.requestedAuthor,
-  });
-
   return [...candidates].sort((left, right) => {
-    if (knownWorkForm) {
-      const rightAuthorNorm = normalizeCandidateAuthor(
-        right,
-        requestedAuthorNorm,
-        params.requestedTitle
-      );
-      const leftAuthorNorm = normalizeCandidateAuthor(
-        left,
-        requestedAuthorNorm,
-        params.requestedTitle
-      );
-      const knownAuthorDelta =
-        Number(rightAuthorNorm === requestedAuthorNorm) -
-        Number(leftAuthorNorm === requestedAuthorNorm);
-      if (knownAuthorDelta !== 0) {
-        return knownAuthorDelta;
-      }
-    }
     const scoreDelta =
       computeBulkCandidateScore({
         result: right,
@@ -3690,7 +3674,6 @@ async function executeDeleteExecutionPlan(plan: DeleteExecutionPlan): Promise<vo
       : undefined;
     await shelfRef.set(
       {
-        [`entries.${bookId}`]: FieldValue.delete(),
         ...(orderedBookIds ? { orderedBookIds } : {}),
         updatedAt: FieldValue.serverTimestamp(),
       },
@@ -4088,6 +4071,7 @@ function buildCanonicalBookInput(data: Record<string, unknown>): {
   language?: string;
   description?: string;
   coverUrl?: string;
+  titleAliases: string[];
   isbn10?: string;
   isbn13?: string;
 } {
@@ -4096,11 +4080,13 @@ function buildCanonicalBookInput(data: Record<string, unknown>): {
   const language = normalizeLanguage(readOptionalString(data.language, "language", 16));
   const description = readOptionalString(data.description, "description", 5000);
   const coverUrl = readOptionalUrl(data.coverUrl, "coverUrl", 500);
+  const titleAliases = readStringArray(data.titleAliases, 24);
   const { isbn10, isbn13 } = parseOptionalIsbn(data.isbn);
 
   return {
     title,
     author,
+    titleAliases,
     ...(language ? { language } : {}),
     ...(description ? { description } : {}),
     ...(coverUrl ? { coverUrl } : {}),
@@ -4161,8 +4147,7 @@ export const adminListAuthors = onCall({ cors: true }, async (request) => {
 
 export const adminGetAuthor = onCall({ cors: true }, async (request) => {
   assertRoleFromClaims(request.auth, "superadmin");
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const authorId = readRequiredString(data.authorId, "authorId", 180);
+  const authorId = parseInput(adminAuthorIdSchema, request.data?.authorId);
   const snap = await db.collection("authors").doc(authorId).get();
   if (!snap.exists) {
     throw new HttpsError("not-found", "Author not found.");
@@ -4175,8 +4160,35 @@ export const adminGetAuthor = onCall({ cors: true }, async (request) => {
 
 export const adminAuthorCreate = onCall({ cors: true }, async (request) => {
   const caller = assertRoleFromClaims(request.auth, "superadmin");
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const input = buildAuthorInput(data);
+  const validatedData = parseInput(adminAuthorCreateSchema, request.data);
+  const input = buildAuthorInput(validatedData);
+
+  const canonicalName = input.canonicalName || "Unknown";
+  const canonicalKey = buildCanonicalAuthorKey({
+    name: canonicalName,
+    birthYear: input.birthDate?.substring(0, 4),
+  });
+
+  const existingSnap = await db
+    .collection("author_identity")
+    .doc(canonicalKey)
+    .get();
+
+  if (existingSnap.exists) {
+    const existingData = existingSnap.data() as Record<string, unknown>;
+    const existingAuthorId = typeof existingData.authorId === "string" 
+      ? existingData.authorId 
+      : "unknown";
+    logger.warn("[ADMIN_AUTHOR][DUPLICATE_CREATE_ATTEMPT]", {
+      actorUid: caller.uid,
+      canonicalKey,
+      existingAuthorId,
+    });
+    throw new HttpsError(
+      "already-exists",
+      `Author with canonical key "${canonicalKey}" already exists (ID: ${existingAuthorId}).`
+    );
+  }
 
   const result = await db.runTransaction((tx) =>
     upsertAdminAuthorInTransaction({
@@ -4187,6 +4199,27 @@ export const adminAuthorCreate = onCall({ cors: true }, async (request) => {
   );
 
   const snap = await db.collection("authors").doc(result.authorId).get();
+  const now = admin.firestore.Timestamp.now();
+  
+  await db.collection("admin_audit_log").add({
+    action: "author_create",
+    resourceType: "author",
+    resourceId: result.authorId,
+    actorUid: caller.uid,
+    canonicalKey: canonicalKey,
+    canonicalName: input.canonicalName,
+    status: result.status,
+    timestamp: now,
+    source: "admin_api",
+  });
+
+  logger.info("[ADMIN_AUDIT][AUTHOR_CREATED]", {
+    actorUid: caller.uid,
+    authorId: result.authorId,
+    canonicalKey,
+    status: result.status,
+  });
+
   return {
     author: mapAdminAuthor(snap.data() as DocumentData, snap.id),
     status: result.status,
@@ -4195,13 +4228,17 @@ export const adminAuthorCreate = onCall({ cors: true }, async (request) => {
 
 export const adminAuthorUpdate = onCall({ cors: true }, async (request) => {
   const caller = assertRoleFromClaims(request.auth, "superadmin");
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const authorId = readRequiredString(data.authorId, "authorId", 180);
+  const validatedData = parseInput(adminAuthorUpdateSchema, request.data);
+
+  const authorId = parseInput(adminAuthorIdSchema, validatedData.authorId);
+
+  const authorSnap = await db.collection("authors").doc(authorId).get();
+  if (!authorSnap.exists) {
+    throw new HttpsError("not-found", `Author with ID "${authorId}" not found.`);
+  }
+
   const input = {
-    ...buildAuthorInput({
-      ...data,
-      authorId,
-    }),
+    ...buildAuthorInput(validatedData),
     authorId,
   };
 
@@ -4214,6 +4251,29 @@ export const adminAuthorUpdate = onCall({ cors: true }, async (request) => {
   );
 
   const snap = await db.collection("authors").doc(result.authorId).get();
+  const now = admin.firestore.Timestamp.now();
+  
+  await db.collection("admin_audit_log").add({
+    action: "author_update",
+    resourceType: "author",
+    resourceId: result.authorId,
+    actorUid: caller.uid,
+    canonicalKey: buildCanonicalAuthorKey({
+      name: input.canonicalName,
+      birthYear: input.birthDate?.substring(0, 4),
+    }),
+    canonicalName: input.canonicalName,
+    status: result.status,
+    timestamp: now,
+    source: "admin_api",
+  });
+
+  logger.info("[ADMIN_AUDIT][AUTHOR_UPDATED]", {
+    actorUid: caller.uid,
+    authorId: result.authorId,
+    status: result.status,
+  });
+
   return {
     author: mapAdminAuthor(snap.data() as DocumentData, snap.id),
     status: result.status,
@@ -4222,8 +4282,7 @@ export const adminAuthorUpdate = onCall({ cors: true }, async (request) => {
 
 export const adminAuthorArchive = onCall({ cors: true }, async (request) => {
   const caller = assertRoleFromClaims(request.auth, "superadmin");
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const authorId = readRequiredString(data.authorId, "authorId", 180);
+  const authorId = parseInput(adminAuthorIdSchema, request.data?.authorId);
   const authorRef = db.collection("authors").doc(authorId);
   const snap = await authorRef.get();
   if (!snap.exists) {
@@ -4242,6 +4301,22 @@ export const adminAuthorArchive = onCall({ cors: true }, async (request) => {
   );
 
   const archivedSnap = await authorRef.get();
+  const now = admin.firestore.Timestamp.now();
+
+  await db.collection("admin_audit_log").add({
+    action: "author_archive",
+    resourceType: "author",
+    resourceId: authorId,
+    actorUid: caller.uid,
+    status: "archived",
+    timestamp: now,
+    source: "admin_api",
+  });
+
+  logger.info("[ADMIN_AUDIT][AUTHOR_ARCHIVED]", {
+    actorUid: caller.uid,
+    authorId,
+  });
 
   return {
     author: mapAdminAuthor(archivedSnap.data() as DocumentData, archivedSnap.id),
@@ -4250,11 +4325,95 @@ export const adminAuthorArchive = onCall({ cors: true }, async (request) => {
 });
 
 export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) => {
-  assertRoleFromClaims(request.auth, "superadmin");
-  const data = (request.data ?? {}) as Record<string, unknown>;
-  const input = buildCanonicalBookInput(data);
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const validatedData = parseInput(adminCreateCanonicalBookSchema, request.data);
+  const input = buildCanonicalBookInput(validatedData);
   const language = input.language || "en";
   const isArabic = language.startsWith("ar");
+
+  const canonicalKey = buildCanonicalKey({
+    title: input.title,
+    author: input.author,
+  });
+
+  // Pre-write conflict detection
+  const conflictDetection = await detectCanonicalConflicts({
+    title: input.title,
+    author: input.author,
+    similarityThreshold: 0.9,
+    maxCandidates: 5,
+  });
+
+  if (conflictDetection.hasExactMatch) {
+    const existingBookId = conflictDetection.exactMatchBookId;
+    logger.warn("[ADMIN_BOOK][DUPLICATE_CREATE_ATTEMPT]", {
+      actorUid: caller.uid,
+      canonicalKey,
+      existingBookId,
+      conflictType: "exact",
+    });
+    throw new HttpsError(
+      "already-exists",
+      `Canonical book with key "${canonicalKey}" already exists (ID: ${existingBookId}).`,
+      {
+        conflictType: "exact",
+        existingBookId,
+        canonicalKey,
+      }
+    );
+  }
+
+  if (conflictDetection.hasSimilarConflicts) {
+    logger.warn("[ADMIN_BOOK][SIMILAR_CONFLICT_DETECTED]", {
+      actorUid: caller.uid,
+      canonicalKey,
+      title: input.title,
+      author: input.author,
+      conflictCount: conflictDetection.conflictCandidates.length,
+      topCandidate: conflictDetection.conflictCandidates[0],
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      `Similar canonical books already exist. Please review the conflicts before proceeding.`,
+      {
+        conflictType: "similar",
+        canonicalKey,
+        conflictCandidates: conflictDetection.conflictCandidates,
+      }
+    );
+  }
+
+  const authorNameNormalized = normalizeCanonicalPart(input.author);
+  const authorKeySnaps = await db
+    .collection("author_identity")
+    .where("identityType", "==", "canonical")
+    .limit(100)
+    .get();
+
+  const matchingAuthorId = authorKeySnaps.docs
+    .map((doc) => {
+      const data = doc.data() as Record<string, unknown>;
+      const keyRoot = extractCanonicalAuthorKeyRoot(doc.id);
+      return { keyRoot, authorId: data.authorId };
+    })
+    .find(
+      (entry) =>
+        typeof entry.authorId === "string" &&
+        entry.keyRoot === authorNameNormalized
+    )?.authorId;
+
+  if (!matchingAuthorId) {
+    logger.warn("[ADMIN_BOOK][AUTHOR_NOT_FOUND]", {
+      actorUid: caller.uid,
+      authorName: input.author,
+      authorNameNormalized,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      `No canonical author found for "${input.author}". Please create the author first.`
+    );
+  }
+
   const ingestionKey = `admin_canonical:${normalizeSearchText(input.author)}::${normalizeSearchText(input.title)}`;
 
   const result = await materializeBookAuthority({
@@ -4279,6 +4438,7 @@ export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) =
       hasEbook: false,
       downloadable: false,
       isEbookAvailable: false,
+      ...(input.titleAliases.length > 0 ? { titleAliases: input.titleAliases } : {}),
       ...(input.isbn10 ? { isbn10: input.isbn10 } : {}),
       ...(input.isbn13 ? { isbn13: input.isbn13 } : {}),
       ...(input.coverUrl ? { coverUrl: input.coverUrl } : {}),
@@ -4293,9 +4453,230 @@ export const adminCreateCanonicalBook = onCall({ cors: true }, async (request) =
     throw new HttpsError("internal", "Canonical book materialization completed without a book row.");
   }
 
+  const now = admin.firestore.Timestamp.now();
+
+  await db.collection("admin_audit_log").add({
+    action: "book_create",
+    resourceType: "book",
+    resourceId: result.bookId,
+    actorUid: caller.uid,
+    canonicalKey: canonicalKey,
+    title: input.title,
+    author: input.author,
+    status: result.status,
+    timestamp: now,
+    source: "admin_api",
+  });
+
+  logger.info("[ADMIN_AUDIT][BOOK_CREATED]", {
+    actorUid: caller.uid,
+    bookId: result.bookId,
+    canonicalKey,
+    status: result.status,
+  });
+
   return {
     book: mapAdminCanonicalBook(bookSnap.data() as DocumentData, bookSnap.id),
     status: result.status,
+  };
+});
+
+export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) => {
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const validatedData = parseInput(adminMergeCanonicalBooksSchema, request.data);
+  const sourceBookId = validatedData.sourceBookId;
+  const targetBookId = validatedData.targetBookId;
+
+  if (sourceBookId === targetBookId) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Source and target books must be different."
+    );
+  }
+
+  // Fetch both books
+  const [sourceSnap, targetSnap] = await Promise.all([
+    db.collection("books").doc(sourceBookId).get(),
+    db.collection("books").doc(targetBookId).get(),
+  ]);
+
+  if (!sourceSnap.exists) {
+    throw new HttpsError("not-found", `Source book "${sourceBookId}" not found.`);
+  }
+  if (!targetSnap.exists) {
+    throw new HttpsError("not-found", `Target book "${targetBookId}" not found.`);
+  }
+
+  const sourceData = sourceSnap.data() as Record<string, unknown>;
+  const targetData = targetSnap.data() as Record<string, unknown>;
+
+  logger.info("[ADMIN_BOOK][MERGE_START]", {
+    actorUid: caller.uid,
+    sourceBookId,
+    targetBookId,
+    sourceTitle: sourceData.title || sourceData.titleEn,
+    targetTitle: targetData.title || targetData.titleEn,
+  });
+
+  // Execute merge in a transaction to ensure atomicity
+  const mergeResult = await db.runTransaction(async (tx) => {
+    const referenceCounts = {
+      editionsFromSource: 0,
+      quotesFromSource: 0,
+      quotesAsSource: 0,
+      shelvesUpdated: 0,
+    };
+
+    // Find all editions linked to source book
+    const editionSnaps = await Promise.all([
+      tx.get(db.collection("editions").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("editions").where("workId", "==", sourceBookId)),
+      tx.get(db.collection("editions").where("canonicalBookId", "==", sourceBookId)),
+    ]);
+
+    for (const snap of editionSnaps) {
+      for (const doc of snap.docs) {
+        const editionData = doc.data() as Record<string, unknown>;
+        const updateData: Record<string, unknown> = {};
+
+        if (editionData.bookId === sourceBookId) updateData.bookId = targetBookId;
+        if (editionData.workId === sourceBookId) updateData.workId = targetBookId;
+        if (editionData.canonicalBookId === sourceBookId) {
+          updateData.canonicalBookId = targetBookId;
+        }
+        updateData.updatedAt = FieldValue.serverTimestamp();
+
+        tx.set(doc.ref, updateData, { merge: true });
+        referenceCounts.editionsFromSource += 1;
+      }
+    }
+
+    // Find all quotes linked to source book
+    const quoteSnaps = await Promise.all([
+      tx.get(db.collection("quotes").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("quotes").where("sourceBookId", "==", sourceBookId)),
+    ]);
+
+    for (const doc of quoteSnaps[0].docs) {
+      tx.set(
+        doc.ref,
+        {
+          bookId: targetBookId,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      referenceCounts.quotesFromSource += 1;
+    }
+
+    for (const doc of quoteSnaps[1].docs) {
+      tx.set(
+        doc.ref,
+        {
+          sourceBookId: targetBookId,
+          updatedAt: FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+      referenceCounts.quotesAsSource += 1;
+    }
+
+    // Find all shelves with source book
+    const userLibrarySnap = await tx.get(
+      db.collection("user_library_books").where("bookId", "==", sourceBookId)
+    );
+
+    for (const doc of userLibrarySnap.docs) {
+      const libraryData = doc.data() as Record<string, unknown>;
+      const shelfIds = Array.isArray(libraryData.shelfIds) ? libraryData.shelfIds : [];
+
+      for (const shelfId of shelfIds) {
+        const normalizedShelfId = typeof shelfId === "string" ? shelfId.trim() : "";
+        if (!normalizedShelfId) continue;
+
+        const shelfRef = db.collection("shelves").doc(normalizedShelfId);
+        const shelfSnap = await tx.get(shelfRef);
+        if (!shelfSnap.exists) continue;
+
+        const shelfData = shelfSnap.data() as Record<string, unknown>;
+        const orderedBookIds = Array.isArray(shelfData.orderedBookIds)
+          ? shelfData.orderedBookIds.map((id) =>
+              id === sourceBookId ? targetBookId : id
+            )
+          : [];
+
+        tx.set(
+          shelfRef,
+          {
+            orderedBookIds,
+            updatedAt: FieldValue.serverTimestamp(),
+          },
+          { merge: true }
+        );
+        referenceCounts.shelvesUpdated += 1;
+      }
+    }
+
+    // Delete all source book references
+    const sourceRefSnaps = await Promise.all([
+      tx.get(db.collection("book_identity").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("book_ingestions").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reading_progress").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("user_library_books").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("user_reviews").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reader_highlights").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reader_bookmarks").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reader_events").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reader_audit").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("reader_sync_idempotency").where("bookId", "==", sourceBookId)),
+      tx.get(db.collection("attachments").where("bookId", "==", sourceBookId)),
+    ]);
+
+    for (const snap of sourceRefSnaps) {
+      for (const doc of snap.docs) {
+        tx.delete(doc.ref);
+      }
+    }
+
+    // Delete the source book document itself
+    tx.delete(sourceSnap.ref);
+
+    return referenceCounts;
+  });
+
+  const now = admin.firestore.Timestamp.now();
+
+  await db.collection("admin_audit_log").add({
+    action: "book_merge",
+    resourceType: "book",
+    resourceId: targetBookId,
+    sourceBookId,
+    targetBookId,
+    actorUid: caller.uid,
+    sourceTitle: sourceData.title || sourceData.titleEn,
+    targetTitle: targetData.title || targetData.titleEn,
+    mergeStats: mergeResult,
+    timestamp: now,
+    source: "admin_api",
+  });
+
+  logger.info("[ADMIN_AUDIT][BOOK_MERGED]", {
+    actorUid: caller.uid,
+    sourceBookId,
+    targetBookId,
+    mergeStats: mergeResult,
+  });
+
+  const mergedTargetSnap = await db.collection("books").doc(targetBookId).get();
+
+  return {
+    sourceBookId,
+    targetBookId,
+    merged: true,
+    mergeStats: mergeResult,
+    targetBook: mergedTargetSnap.exists
+      ? mapAdminCanonicalBook(mergedTargetSnap.data() as DocumentData, targetBookId)
+      : null,
   };
 });
 

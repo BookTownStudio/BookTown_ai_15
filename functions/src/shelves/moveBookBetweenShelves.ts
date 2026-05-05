@@ -2,6 +2,10 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
+import {
+  writeShelfBookInTransaction,
+  deleteShelfBookInTransaction,
+} from "./shelfBookEntry";
 
 const db = admin.firestore();
 
@@ -147,33 +151,30 @@ export const moveBookBetweenShelves = onCall<MoveBookBetweenShelvesRequest>(
           ? sanitizeSnapshot(destinationEntry.snapshot)
           : null;
 
-      const movedEntry: Record<string, unknown> = {
-        ...sourceEntry,
+      const resolvedSnapshot = destinationSnapshot ?? sourceSnapshot ?? fallbackSnapshot ?? null;
+      const addedAt =
+        typeof sourceEntry.addedAt === "string" && sourceEntry.addedAt.trim().length > 0
+          ? sourceEntry.addedAt
+          : new Date().toISOString();
+
+      // Write to shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
+      deleteShelfBookInTransaction(tx, db, fromShelfId, bookId);
+
+      const recommendationOrigin =
+        sourceEntry.recommendationOrigin &&
+        typeof sourceEntry.recommendationOrigin === "object" &&
+        !Array.isArray(sourceEntry.recommendationOrigin)
+          ? (sourceEntry.recommendationOrigin as Record<string, unknown>)
+          : undefined;
+
+      writeShelfBookInTransaction(tx, db, {
+        shelfId: toShelfId,
         bookId,
-        addedAt:
-          typeof sourceEntry.addedAt === "string" && sourceEntry.addedAt.trim().length > 0
-            ? sourceEntry.addedAt
-            : new Date().toISOString(),
-        snapshot: destinationSnapshot ?? sourceSnapshot ?? fallbackSnapshot ?? null,
-      };
-
-      tx.set(
-        destinationRef,
-        {
-          [`entries.${bookId}`]: movedEntry,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
-
-      tx.set(
-        sourceRef,
-        {
-          [`entries.${bookId}`]: FieldValue.delete(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+        ownerId: uid,
+        addedAt,
+        snapshot: resolvedSnapshot as Record<string, unknown> | null,
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
+      });
     });
 
     return { ok: true };

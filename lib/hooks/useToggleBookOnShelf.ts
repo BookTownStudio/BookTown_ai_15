@@ -132,17 +132,13 @@ export const useToggleBookOnShelf = () => {
           old.map(shelf => {
             if (shelf.id !== shelfId) return shelf;
 
-            const updatedEntries = {
-              ...(shelf.entries || {}),
-              [bookId]: {
-                bookId,
-                addedAt: new Date().toISOString()
-              } as ShelfEntry
-            };
+            const updatedBookIds = Array.isArray(shelf.bookIds) && shelf.bookIds.includes(bookId)
+              ? shelf.bookIds
+              : [...(shelf.bookIds || []), bookId];
 
             return {
               ...shelf,
-              entries: updatedEntries,
+              bookIds: updatedBookIds,
               bookCount:
                 typeof shelf.bookCount === 'number'
                   ? shelf.bookCount + 1
@@ -261,12 +257,11 @@ export const useRemoveBookFromShelf = () => {
           old.map(shelf => {
             if (shelf.id !== shelfId) return shelf;
 
-            const updatedEntries = { ...(shelf.entries || {}) };
-            delete updatedEntries[bookId];
+            const updatedBookIds = (shelf.bookIds || []).filter(id => id !== bookId);
 
             return {
               ...shelf,
-              entries: updatedEntries,
+              bookIds: updatedBookIds,
               bookCount:
                 typeof shelf.bookCount === 'number'
                   ? Math.max(0, shelf.bookCount - 1)

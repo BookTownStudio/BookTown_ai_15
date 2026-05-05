@@ -1,0 +1,45 @@
+Let me read the search engine and all related components in parallel to do a thorough analysis.
+
+13 actions
+Let me pull all the critical sections of the engine in parallel — ranking, external fallback, deduplication, and normalization.
+
+7 actions
+Let me finish reading the key sections of the engine — the main search function, external fallback merger, and dedup logic — plus the rest of the harness tests.
+
+6 actions
+Let me read the final sections — the main unifiedSearch function, the dominant-family logic, and the remaining harness tests.
+
+5 actions
+I now have a complete picture of the engine — all 4,187 lines of ranking logic, every retrieval phase, the external fallback pipeline, dedup, the intent gate, the dominant-family filter, and the full test harness (1,337 lines). Let me write the evaluation report.
+
+2 actions
+
+1 output file
+Search Quality & Ranking Evaluation Report
+Text
+
+Open
+# Search Quality & Ranking Evaluation Report **Date:** 2026-05-03 ...
+
+Summarizing evaluation report findings
+Here's a summary of what the analysis found across the full 4,187-line engine and 1,337-line test harness:
+
+What is working correctly
+
+Canonical-first ordering is structurally guaranteed — no code path can surface an external result above a canonical one
+Classic literary works ("The Trial", "Crime and Punishment", "The Plague") are correctly pinned above derivative study guides, anthologies, and biographies through the literary correction system
+Typo correction ("harry potr" → "potter", "dostoyesvky" → "dostoevsky") is functional and conservative
+Author-intent queries correctly suppress biographies and collected-works rows
+Arabic exact-token search (رجال في الشمس, الأيام) returns the right canonical result at position 1
+External fallback is well-guarded by threshold (5 results), confidence gate, and circuit breaker
+Issues found, by priority
+
+Arabic harakat not stripped — users typing vocalized Arabic (with diacritics like رِجَالٌ) get zero results because the normalization strip range covers only Latin diacritics (U+0300–U+036F), not Arabic harakat (U+064B–U+065F). One-line fix.
+Duplicate rows for ISBN-less books — when a canonical Arabic or niche book has no ISBN, dedup between canonical and external relies entirely on canonicalKey string agreement. If Google Books returns the same title with a slightly different author form (e.g., with honorific), both rows appear in results.
+No transliteration — queries like "rejal fi el shams" or "naguib mahfouz" (phonetic Arabic) find nothing unless the book has a titleEn set.
+Harry Potter ordering is arbitrary — all five HP books score identically for "harry potter" (same coverage, same adjacency), so the tiebreaker falls to bookId.localeCompare(). In production with Firestore random IDs, this is unordered.
+Google Books API key is optional — without a key, the 100 req/day quota can be exhausted silently, making the fallback circuit trip repeatedly.
+Next, I can implement the harakat fix and add the six missing harness test cases (harakat, transliteration miss documentation, dedup edge case, pagination cursor, Arabic language filter, and HP ordering) — all the highest-risk gaps. Would you like me to do that?
+
+Checkpoint made
+5 minutes ago

@@ -15,6 +15,7 @@ import {
   sha256Hex,
   trimTo,
 } from "./goodreads/normalization";
+import { writeShelfBookInTransaction } from "../shelves/shelfBookEntry";
 import { detectSourceKind, sha256ForBuffer } from "./goodreads/sourceDetection";
 import type {
   CanonicalImportRow,
@@ -381,32 +382,26 @@ async function applyCanonicalRow(params: {
             titleEn: shelf.titleEn,
             titleAr,
             isSystem: shelf.isSystem,
-            entries: {},
             createdAt: now,
             updatedAt: now,
           },
           { merge: true }
         );
+      } else {
+        tx.set(shelfRef, { updatedAt: now }, { merge: true });
       }
 
-      tx.set(
-        shelfRef,
-        {
-          id: shelf.shelfId,
-          ownerId: uid,
-          updatedAt: now,
-          [`entries.${bookId}`]: {
-            bookId,
-            addedAt,
-            snapshot: {
-              titleEn: row.title,
-              titleAr: "",
-              coverUrl: "",
-            },
-          },
+      writeShelfBookInTransaction(tx, db, {
+        shelfId: shelf.shelfId,
+        bookId,
+        ownerId: uid,
+        addedAt,
+        snapshot: {
+          titleEn: row.title,
+          titleAr: "",
+          coverUrl: "",
         },
-        { merge: true }
-      );
+      });
     }
 
     if (writesRating) {

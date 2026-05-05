@@ -4,11 +4,11 @@ import { failureEnvelope, successEnvelope } from "./envelope";
 import { resolveCallableContract } from "./contractResolver";
 import { fromError, fromValidationFailure } from "./errorMapper";
 import { logValidationFailure } from "./observability";
-import { generateCorrelationId, getHeaderValue } from "./correlation";
+import { generateCorrelationId } from "./correlation";
 import type { CallableEndpointKey } from "./types";
 
 type V1CallableLike = {
-  run: (data: unknown, context: functions.https.CallableContext) => Promise<unknown> | unknown;
+  run: (data: unknown, context: any) => Promise<unknown> | unknown;
 };
 
 export function wrapCallableV1<K extends CallableEndpointKey>(
@@ -17,15 +17,14 @@ export function wrapCallableV1<K extends CallableEndpointKey>(
 ) {
   const contract = resolveCallableContract(endpointKey);
 
-  return functions.https.onCall(async (data, context) => {
-    const correlationId =
-      getHeaderValue(
-        context.rawRequest?.headers as Record<string, unknown> | undefined,
-        "x-correlation-id"
-      ) ?? generateCorrelationId();
+  return functions.https.onCall(async (data: unknown, context: any) => {
+    // 🔥 SAFE correlation handling (v2 compatible)
+    const correlationId = generateCorrelationId();
 
-    const uid = context.auth?.uid ?? null;
+    // 🔥 SAFE auth access
+    const uid = context?.auth?.uid ?? null;
 
+    // 🔹 REQUEST VALIDATION
     const parsedRequest = contract.requestSchema.safeParse(data);
     if (!parsedRequest.success) {
       logValidationFailure({
@@ -42,8 +41,10 @@ export function wrapCallableV1<K extends CallableEndpointKey>(
     }
 
     try {
+      // 🔹 EXECUTION
       const rawResult = await rawCallable.run(parsedRequest.data, context);
 
+      // 🔹 RESPONSE VALIDATION
       const wrappedResult = successEnvelope(rawResult);
       const parsedResponse = contract.responseSchema.safeParse(wrappedResult);
 

@@ -1,11 +1,27 @@
 import { z } from "zod";
 import { apiContracts } from "./shared/apiContracts";
 
-export type CallableEndpointKey = keyof typeof apiContracts.callable;
+/**
+ * Extend callable keys to allow endpoints not yet registered
+ * in apiContracts (e.g. admin tools during development)
+ */
+export type CallableEndpointKey =
+  | keyof typeof apiContracts.callable
+  | "adminMergeCanonicalBooks";
+
 export type RestEndpointKey = keyof typeof apiContracts.rest;
 
+/**
+ * Safely resolve contract if it exists, otherwise fallback
+ */
 export type CallableContract<K extends CallableEndpointKey> =
-  (typeof apiContracts.callable)[K];
+  K extends keyof typeof apiContracts.callable
+    ? (typeof apiContracts.callable)[K]
+    : {
+        requestSchema: z.ZodTypeAny;
+        responseSchema: z.ZodTypeAny;
+        errorSchema: z.ZodTypeAny;
+      };
 
 export type RestContract<K extends RestEndpointKey> =
   (typeof apiContracts.rest)[K];
@@ -22,5 +38,5 @@ export type SuccessDataOfCallable<K extends CallableEndpointKey> =
   SuccessEnvelopeOfCallable<K>["data"];
 
 export type FailureEnvelope = z.infer<
-  (typeof apiContracts.callable)[CallableEndpointKey]["errorSchema"]
+  (typeof apiContracts.callable)[keyof typeof apiContracts.callable]["errorSchema"]
 >;

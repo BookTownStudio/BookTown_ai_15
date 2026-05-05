@@ -1,4 +1,6 @@
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "../../search/normalization";
+import { normalizeIsbn } from "../normalization/bookSearchNormalization";
+import { resolveBookOntologyForm } from "../ontology/bookOntology";
 
 function asNonEmptyString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -12,13 +14,9 @@ function asStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
-function normalizeIsbn(value: unknown, length: 10 | 13): string {
-  if (typeof value !== "string") return "";
-  const digits = value.replace(/[^0-9Xx]/g, "").toUpperCase();
-  if (length === 10) {
-    return /^\d{9}[\dX]$/.test(digits) ? digits : "";
-  }
-  return /^\d{13}$/.test(digits) ? digits : "";
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
 }
 
 function resolveAuthors(data: Record<string, unknown>): string[] {
@@ -112,6 +110,7 @@ export function buildBookSearchPatch(data: Record<string, unknown>): Record<stri
   const canonicalTitleAuthorities = uniqueStrings(
     titleAuthorities.map((entry) => normalizeSearchText(entry))
   );
+  const form = resolveBookOntologyForm(data);
 
   return {
     normalizedTitle,
@@ -121,6 +120,7 @@ export function buildBookSearchPatch(data: Record<string, unknown>): Record<stri
     searchableTitleAuthor,
     search: {
       tokens,
+      form,
     },
     downloadable,
     hasEbook: downloadable,
@@ -155,6 +155,8 @@ export function bookSearchPatchNeedsUpdate(
 ): boolean {
   const currentTokens = asStringArray((data.search as Record<string, unknown> | undefined)?.tokens);
   const nextTokens = asStringArray((patch.search as Record<string, unknown> | undefined)?.tokens);
+  const currentSearch = asRecord(data.search);
+  const nextSearch = asRecord(patch.search);
   const currentAuthorNames = asStringArray(data.authorNamesNormalized);
   const nextAuthorNames = asStringArray(patch.authorNamesNormalized);
   const currentCanonicalTitleAuthorities = asStringArray(data.canonicalTitleAuthorities);
@@ -165,6 +167,7 @@ export function bookSearchPatchNeedsUpdate(
     asNonEmptyString(data.titleEnNormalized) !== asNonEmptyString(patch.titleEnNormalized) ||
     !stringArrayEquals(currentCanonicalTitleAuthorities, nextCanonicalTitleAuthorities) ||
     asNonEmptyString(data.searchableTitleAuthor) !== asNonEmptyString(patch.searchableTitleAuthor) ||
+    asNonEmptyString(currentSearch?.form) !== asNonEmptyString(nextSearch?.form) ||
     !stringArrayEquals(currentAuthorNames, nextAuthorNames) ||
     !stringArrayEquals(currentTokens, nextTokens) ||
     Boolean(data.downloadable) !== Boolean(patch.downloadable) ||

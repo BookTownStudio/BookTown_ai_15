@@ -4779,7 +4779,7 @@ describe("adminCreateCanonicalBook", () => {
     setDoc("book_ingestions/ingestion-1", { bookId: "book-1" }, false);
     setDoc("reading_progress/user-1_book-1", { bookId: "book-1" }, false);
     setDoc("user_library_books/user-1_book-1", { bookId: "book-1", shelfIds: ["shelf-1"] }, false);
-    setDoc("shelves/shelf-1", { entries: { "book-1": { addedAt: "ts" } }, orderedBookIds: ["book-1"] }, false);
+    setDoc("shelves/shelf-1", { bookIds: ["book-1"], orderedBookIds: ["book-1"] }, false);
     setDoc("quotes/quote-1", { bookId: "book-1" }, false);
     setDoc("authors/author-1", { bookIds: ["book-1", "book-9"] }, false);
     setDoc("cover_jobs/book-1", { status: "PENDING" }, false);

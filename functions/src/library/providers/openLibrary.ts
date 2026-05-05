@@ -4,6 +4,7 @@ import type {
   ExternalReadableCandidate,
   ProviderLookupContext,
 } from "./types";
+import { normalizeSearchText } from "../normalization/bookSearchNormalization";
 
 const OPEN_LIBRARY_TIMEOUT_MS = 15_000;
 
@@ -83,16 +84,6 @@ function extractPersistedSources(
   }
 
   return persisted;
-}
-
-function normalizeSearchText(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function hasReadableSearchSignal(doc: Record<string, unknown>): boolean {

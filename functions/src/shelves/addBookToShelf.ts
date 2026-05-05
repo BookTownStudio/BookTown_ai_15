@@ -7,6 +7,9 @@ import {
   sanitizeRecommendationOrigin,
 } from "../attribution/recommendationOrigin";
 import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
+import {
+  writeShelfBookInTransaction,
+} from "./shelfBookEntry";
 
 const db = admin.firestore();
 
@@ -114,24 +117,22 @@ export const addBookToShelf = onCall<AddBookToShelfRequest>({ cors: true }, asyn
       });
     }
 
-    const entryPayload: Record<string, unknown> = {
-      bookId,
-      addedAt:
-        typeof existingEntry?.addedAt === "string" && existingEntry.addedAt.trim().length > 0
-          ? existingEntry.addedAt
-          : new Date().toISOString(),
-      snapshot: snapshot ?? existingEntry?.snapshot ?? null,
-      ...(recommendationOrigin ? { recommendationOrigin } : {}),
-    };
+    const addedAt =
+      typeof existingEntry?.addedAt === "string" && existingEntry.addedAt.trim().length > 0
+        ? existingEntry.addedAt
+        : new Date().toISOString();
 
-    tx.set(
-      shelfRef,
-      {
-        [`entries.${bookId}`]: entryPayload,
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
+    // Write to shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
+    writeShelfBookInTransaction(tx, db, {
+      shelfId,
+      bookId,
+      ownerId: uid,
+      addedAt,
+      snapshot: (snapshot ?? existingEntry?.snapshot ?? null) as Record<string, unknown> | null,
+      ...(recommendationOrigin
+        ? { recommendationOrigin: recommendationOrigin as Record<string, unknown> }
+        : {}),
+    });
   });
 
   return { ok: true };

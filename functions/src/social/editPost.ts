@@ -66,6 +66,8 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
     const db = admin.firestore();
     const postRef = db.collection('posts').doc(postId);
 
+    await checkUserMutationQuota(db, uid, "editPost");
+
     try {
         const result = await db.runTransaction(async (transaction) => {
             const snap = await transaction.get(postRef);
@@ -83,8 +85,6 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
             if (post.status !== 'published') {
                 throw new HttpsError("failed-precondition", "POST_EDIT_BLOCKED: Edits only allowed on published posts.");
             }
-
-            await checkUserMutationQuota(db, transaction, uid, "editPost");
 
             const now = admin.firestore.Timestamp.now();
             const createdAt = post.timestamps.createdAt instanceof admin.firestore.Timestamp 

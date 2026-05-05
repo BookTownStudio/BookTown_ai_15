@@ -625,58 +625,40 @@ export const mockShelves: Shelf[] = [
         ownerId: 'alex_doe', 
         titleEn: 'Currently Reading', 
         titleAr: 'أقرأ حاليًا', 
-        entries: { 
-            'book1': { bookId: 'book1', addedAt: '2023-10-26T10:00:00Z', progress: 65 },
-            'book5': { bookId: 'book5', addedAt: '2023-11-01T12:00:00Z', progress: 25 },
-            'book2': { bookId: 'book2', addedAt: '2023-10-20T10:00:00Z', progress: 10 },
-        } 
+        bookIds: ['book1', 'book5', 'book2'],
     },
     { 
         id: 'want-to-read', 
         ownerId: 'alex_doe', 
         titleEn: 'Want to Read', 
         titleAr: 'أرغب في قراءته', 
-        entries: { 
-            'book2': { bookId: 'book2', addedAt: '2023-10-20T10:00:00Z' },
-            'book6': { bookId: 'book6', addedAt: '2023-10-21T10:00:00Z' },
-            'book7': { bookId: 'book7', addedAt: '2023-10-22T10:00:00Z' },
-            'book8': { bookId: 'book8', addedAt: '2023-10-23T10:00:00Z' },
-            'book9': { bookId: 'book9', addedAt: '2023-10-24T10:00:00Z' },
-        } 
+        bookIds: ['book2', 'book6', 'book7', 'book8', 'book9'],
     },
     { 
         id: 'finished', 
         ownerId: 'alex_doe', 
         titleEn: 'Finished', 
         titleAr: 'انتهيت من قراءته', 
-        entries: { 
-            'book4': { bookId: 'book4', addedAt: '2023-08-15T10:00:00Z' },
-            'book10': { bookId: 'book10', addedAt: '2023-07-10T10:00:00Z' },
-            'book3': { bookId: 'book3', addedAt: '2023-06-05T10:00:00Z' },
-        } 
+        bookIds: ['book4', 'book10', 'book3'],
     },
     { 
         id: 'sci-fi-faves', 
         ownerId: 'alex_doe', 
         titleEn: 'Sci-Fi Faves', 
         titleAr: 'مفضلاتي من الخيال العلمي', 
-        entries: { 
-            'book2': { bookId: 'book2', addedAt: '2023-09-15T10:00:00Z' }, 
-            'book3': { bookId: 'book3', addedAt: '2023-09-01T10:00:00Z' },
-            'book9': { bookId: 'book9', addedAt: '2023-10-01T10:00:00Z' }
-        } 
+        bookIds: ['book2', 'book3', 'book9'],
     },
 ];
 
 export const mockSamJonesShelves: Shelf[] = [
-    { id: '2024-reading-challenge', ownerId: 'sam_jones', titleEn: '2024 Reading Challenge', titleAr: 'تحدي قراءة 2024', entries: { 'book7': { bookId: 'book7', addedAt: '2024-01-01T10:00:00Z' } } },
-    { id: 'sam_want_to_read', ownerId: 'sam_jones', titleEn: 'Want to Read', titleAr: 'أرغب في قراءته', entries: { 'book8': { bookId: 'book8', addedAt: '2023-10-20T10:00:00Z' }, 'book9': { bookId: 'book9', addedAt: '2023-10-19T10:00:00Z' } } }
+    { id: '2024-reading-challenge', ownerId: 'sam_jones', titleEn: '2024 Reading Challenge', titleAr: 'تحدي قراءة 2024', bookIds: ['book7'] },
+    { id: 'sam_want_to_read', ownerId: 'sam_jones', titleEn: 'Want to Read', titleAr: 'أرغب في قراءته', bookIds: ['book8', 'book9'] },
 ];
 export const mockJaneSmithShelves: Shelf[] = [
-    { id: 'jane_thrillers', ownerId: 'jane_smith', titleEn: 'Thrillers & Mysteries', titleAr: 'إثارة وغموض', entries: { 'book4': { bookId: 'book4', addedAt: '2023-10-01T10:00:00Z' } } },
+    { id: 'jane_thrillers', ownerId: 'jane_smith', titleEn: 'Thrillers & Mysteries', titleAr: 'إثارة وغموض', bookIds: ['book4'] },
 ];
 export const mockMariaGarciaShelves: Shelf[] = [
-    { id: 'maria_poetry', ownerId: 'maria_garcia', titleEn: 'Modern Poetry', titleAr: 'الشعر الحديث', entries: { } },
+    { id: 'maria_poetry', ownerId: 'maria_garcia', titleEn: 'Modern Poetry', titleAr: 'الشعر الحديث', bookIds: [] },
 ];
 
 

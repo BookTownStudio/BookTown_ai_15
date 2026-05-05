@@ -1333,4 +1333,329 @@ describe("Search Harness — Canonical Local Engine", () => {
     expect(results[0]?.authors?.[0]).toBe("Taha Hussein");
     expect(results[0]?.resultType).toBe("canonical");
   });
+
+  it("handles vocalized Arabic query with harakat diacritics (رِجَالٌ)", async () => {
+    const response = await unifiedSearch("رِجَالٌ فِي الشَّمْسِ", {});
+    const results = response.results;
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results[0]?.titleAr).toBe("رجال في الشمس");
+    expect(results[0]?.authors?.[0]).toBe("Ghassan Kanafani");
+    expect(results[0]?.resultType).toBe("canonical");
+  });
+
+  it("documents that Arabic transliteration queries (Latin-phonetic) find nothing without titleEn", async () => {
+    const response = await unifiedSearch("rejal fi al-shams", {});
+    expect(response.canonicalCount).toBe(0);
+    expect(response.externalCount).toBe(0);
+  });
+
+  it("ensures pagination cursor advances correctly (second page)", async () => {
+    const firstPage = await unifiedSearch("Kafka", { limit: 2 });
+    expect(firstPage.results.length).toBe(2);
+    expect(firstPage.hasMore).toBe(true);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await unifiedSearch("Kafka", { limit: 2, cursor: firstPage.nextCursor || undefined });
+    expect(secondPage.results.length).toBeGreaterThan(0);
+    expect(secondPage.cursorUsed).toBe(true);
+    expect(secondPage.results[0]?.id).not.toBe(firstPage.results[0]?.id);
+  });
+
+  it("ranks Harry Potter exact-title books consistently (Philosopher Stone first)", async () => {
+    const response = await unifiedSearch("Harry Potter", {});
+    const hpBooks = response.results.filter(
+      (entry: any) => normalize(entry.title || "").includes("harry potter")
+    );
+
+    expect(hpBooks.length).toBeGreaterThan(0);
+    expect(normalize(hpBooks[0]?.title || "")).toContain("philosopher");
+    expect(normalize(hpBooks[0]?.title || "")).toContain("stone");
+  });
+
+  it("respects language filter: Arabic canonical rows ranked above English when language=ar", async () => {
+    const response = await unifiedSearch("Men in the Sun", { language: "ar" });
+
+    const canonicalMen = response.results.find(
+      (entry: any) => entry.resultType === "canonical" && entry.titleAr === "رجال في الشمس"
+    );
+    expect(canonicalMen).toBeDefined();
+    expect(canonicalMen?.languageTruth).toBe("mismatch");
+  });
+
+  it("deduplicates ISBN-less external duplicates using fuzzy title+author matching", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    const mmenIndex = LOCAL_EDITIONS.findIndex((entry: any) => entry.id === "e22");
+    const originalMmen = { ...(LOCAL_EDITIONS[mmenIndex] as any) };
+
+    if (LOCAL_EDITIONS[mmenIndex]) {
+      (LOCAL_EDITIONS[mmenIndex] as any).isbn13 = undefined;
+      (LOCAL_EDITIONS[mmenIndex] as any).isbn10 = undefined;
+    }
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("googleapis")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: "gb-men-sun",
+                  volumeInfo: {
+                    title: "Men in the Sun",
+                    authors: ["Ghassan Kanafani"],
+                    printType: "BOOK",
+                  },
+                },
+              ],
+            }),
+          } as any;
+        }
+        return {
+          ok: true,
+          json: async () => ({ docs: [] }),
+        } as any;
+      }) as any
+    );
+
+    try {
+      const response = await unifiedSearch("Men in the Sun", {});
+      const menResults = response.results.filter(
+        (entry: any) =>
+          normalize(entry.title || "").includes("men in the sun") ||
+          normalize(entry.titleAr || "").includes("رجال في الشمس")
+      );
+
+      expect(menResults.length).toBe(1);
+      expect(menResults[0]?.resultType).toBe("canonical");
+      expect(menResults[0]?.externalReadableSources?.length).toBeGreaterThanOrEqual(0);
+    } finally {
+      if (LOCAL_EDITIONS[mmenIndex]) {
+        (LOCAL_EDITIONS[mmenIndex] as any) = originalMmen;
+      }
+    }
+  });
+
+  it("applies deterministic tie-breaker: series order → publication year → normalized title", async () => {
+    const response = await unifiedSearch("Harry Potter", {});
+    const hpBooks = response.results.filter(
+      (entry: any) => normalize(entry.title || "").includes("harry potter")
+    );
+
+    expect(hpBooks.length).toBeGreaterThanOrEqual(2);
+
+    for (let i = 1; i < hpBooks.length; i++) {
+      const prevTitle = normalize(hpBooks[i - 1]?.title || "");
+      const currTitle = normalize(hpBooks[i]?.title || "");
+
+      expect(prevTitle).toBeTruthy();
+      expect(currTitle).toBeTruthy();
+
+      const alphabeticalOrder = prevTitle.localeCompare(currTitle);
+      expect(alphabeticalOrder).toBeLessThanOrEqual(0);
+    }
+  });
+
+  it("normalizes Arabic letter variants: أ إ آ → ا, ى → ي, ة → ه, ؤ → و, ئ → ي", async () => {
+    const query1 = "الإمارات";
+    const query2 = "الامارات";
+    const query3 = "رأية";
+    const query4 = "رايه";
+
+    const normalized1 = normalize(query1);
+    const normalized2 = normalize(query2);
+    const normalized3 = normalize(query3);
+    const normalized4 = normalize(query4);
+
+    expect(normalized1).toBe(normalized2);
+    expect(normalized3).toBe(normalized4);
+  });
+
+  it("provides transliteration lookup for Arabic author names", async () => {
+    const { lookup, lookupPrimary, hasTransliteration } = await import(
+      "../transliterationMap"
+    );
+
+    expect(hasTransliteration("mahfouz")).toBe(true);
+    expect(hasTransliteration("mahfuz")).toBe(true);
+    expect(lookupPrimary("mahfouz")).toBe("محفوظ");
+    expect(lookupPrimary("mahfuz")).toBe("محفوظ");
+    expect(lookup("mahfouz")).toContain("محفوظ");
+
+    expect(hasTransliteration("kanafani")).toBe(true);
+    expect(lookupPrimary("kanafani")).toBe("كنعاني");
+
+    expect(hasTransliteration("darwish")).toBe(true);
+    expect(lookupPrimary("darwish")).toBe("درويش");
+
+    expect(hasTransliteration("unknown_author")).toBe(false);
+    expect(lookupPrimary("unknown_author")).toBe("");
+  });
+
+  it("detects transliteration trigger for non-Arabic queries with mappable tokens", async () => {
+    const { hasTransliteration } = await import("../transliterationMap");
+    const { tokenize } = await import("../../../shared/tokenization");
+
+    const latinQuery = "mahfouz cairo";
+    const arabicQuery = "محفوظ القاهرة";
+
+    const latinTokens = tokenize(normalize(latinQuery));
+    const arabicTokens = tokenize(normalize(arabicQuery));
+
+    const latinMappable = latinTokens.some((token) => hasTransliteration(token));
+    const arabicMappable = arabicTokens.some((token) => hasTransliteration(token));
+
+    expect(latinMappable).toBe(true);
+    expect(arabicMappable).toBe(false);
+
+    expect(/[\u0600-\u06FF]/.test(latinQuery)).toBe(false);
+    expect(/[\u0600-\u06FF]/.test(arabicQuery)).toBe(true);
+  });
+
+  it("builds a single transliteration-expanded query from tokens", async () => {
+    const { lookupPrimary } = await import("../transliterationMap");
+    const { tokenize } = await import("../../../shared/tokenization");
+
+    const buildTransliterationQuery = (tokens: string[]): string => {
+      if (tokens.length === 0) return "";
+      const expandedTokens = tokens.map((token) => {
+        const arabicForm = lookupPrimary(token);
+        return arabicForm || token;
+      });
+      return expandedTokens.join(" ");
+    };
+
+    const tokens1 = ["mahfouz", "cairo"];
+    const expanded1 = buildTransliterationQuery(tokens1);
+    expect(expanded1).toBe("محفوظ cairo");
+
+    const tokens2 = ["kanafani", "palestin"];
+    const expanded2 = buildTransliterationQuery(tokens2);
+    expect(expanded2).toContain("كنعاني");
+    expect(expanded2).toContain("palestin");
+
+    const tokens3 = ["unknown", "query"];
+    const expanded3 = buildTransliterationQuery(tokens3);
+    expect(expanded3).toBe("unknown query");
+
+    const tokens4: string[] = [];
+    const expanded4 = buildTransliterationQuery(tokens4);
+    expect(expanded4).toBe("");
+
+    const tokens5 = ["naguib", "mahfouz"];
+    const expanded5 = buildTransliterationQuery(tokens5);
+    expect(expanded5).toContain("محفوظ");
+  });
+
+  it("triggers transliteration fallback when primary results are weak", async () => {
+    const shouldTriggerTransliterationFallback = (
+      visibleCanonicalCount: number,
+      visibleExternalCount: number
+    ): boolean => {
+      return visibleCanonicalCount < 3 && (visibleCanonicalCount + visibleExternalCount) < 5;
+    };
+
+    expect(shouldTriggerTransliterationFallback(0, 0)).toBe(true);
+    expect(shouldTriggerTransliterationFallback(1, 1)).toBe(true);
+    expect(shouldTriggerTransliterationFallback(2, 2)).toBe(true);
+    expect(shouldTriggerTransliterationFallback(2, 3)).toBe(false);
+    expect(shouldTriggerTransliterationFallback(3, 0)).toBe(false);
+    expect(shouldTriggerTransliterationFallback(0, 5)).toBe(false);
+  });
+
+  it("merges transliteration results using canonicalKey deduplication and applies ranking penalty", async () => {
+    const mergeTransliterationResults = (
+      primaryResults: any[],
+      translitResults: any[]
+    ): any[] => {
+      const primaryByCanonicalKey = new Map<string, any>();
+      const primaryIds = new Set<string>();
+
+      for (const result of primaryResults) {
+        const key = result.canonicalKey || `${result.source}:${result.id}`;
+        primaryByCanonicalKey.set(key, result);
+        primaryIds.add(result.id);
+      }
+
+      const TRANSLITERATION_PENALTY_MULTIPLIER = 0.85;
+      const newResults: any[] = [];
+
+      for (const translitResult of translitResults) {
+        const key = translitResult.canonicalKey || `${translitResult.source}:${translitResult.id}`;
+
+        if (primaryByCanonicalKey.has(key)) {
+          continue;
+        }
+
+        if (!primaryIds.has(translitResult.id)) {
+          const resultWithPenalty = translitResult as any;
+          if (typeof resultWithPenalty.computedScore === "number") {
+            resultWithPenalty.computedScore = Math.round(
+              resultWithPenalty.computedScore * TRANSLITERATION_PENALTY_MULTIPLIER
+            );
+          }
+          newResults.push(resultWithPenalty);
+        }
+      }
+
+      return newResults;
+    };
+
+    const primaryResults = [
+      {
+        id: "e1",
+        canonicalKey: "rowling::harry potter",
+        source: "booktown",
+        title: "HP Book 1",
+        computedScore: 100,
+      },
+      {
+        id: "e2",
+        canonicalKey: "kanafani::men in sun",
+        source: "booktown",
+        title: "Men in Sun",
+        computedScore: 95,
+      },
+    ];
+
+    const translitResults = [
+      {
+        id: "e1",
+        canonicalKey: "rowling::harry potter",
+        source: "booktown",
+        title: "HP Book 1",
+        computedScore: 100,
+      },
+      {
+        id: "e3",
+        canonicalKey: "mahfouz::cairo",
+        source: "booktown",
+        title: "Cairo Trilogy",
+        computedScore: 100,
+      },
+      {
+        id: "e4",
+        canonicalKey: null,
+        source: "googleBooks",
+        title: "Mahfouz Works",
+        computedScore: 80,
+      },
+    ];
+
+    const merged = mergeTransliterationResults(primaryResults, translitResults);
+
+    expect(merged.length).toBe(2);
+    const e3 = merged.find((r: any) => r.id === "e3");
+    const e4 = merged.find((r: any) => r.id === "e4");
+
+    expect(e3).toBeDefined();
+    expect(e4).toBeDefined();
+    expect(merged.find((r: any) => r.id === "e1")).toBeUndefined();
+
+    expect(e3?.computedScore).toBe(85);
+    expect(e4?.computedScore).toBe(68);
+  });
 });

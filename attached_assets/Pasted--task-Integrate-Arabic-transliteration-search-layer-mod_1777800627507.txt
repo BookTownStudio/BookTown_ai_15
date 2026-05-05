@@ -1,0 +1,48 @@
+{
+  "task": "Integrate Arabic transliteration search layer",
+  "mode": "feature-safe",
+  "instructions": [
+    "Locate unifiedSearch function in searchEngine.ts",
+    "Use existing transliterationEnabled flag (already implemented)",
+    
+    "Step 1: Create helper buildTransliterationQuery(tokens)",
+    "For each token, if transliteration mapping exists, replace with primary Arabic form",
+    "Keep non-mapped tokens unchanged",
+    "Return a single expanded query string (no combinations)",
+    
+    "Step 2: After primary search results are computed",
+    "Check if transliterationEnabled is true AND result count < 5 (threshold)",
+    
+    "Step 3: If condition met, generate transliteration query",
+    "Run search again using expanded Arabic query",
+    "Tag these results with transliterationDerived = true",
+    
+    "Step 4: Merge transliteration results with primary results",
+    "Deduplicate using canonicalKey",
+    "If canonicalKey mismatch, apply title similarity fallback",
+    "Always prefer canonical result over external duplicate",
+    
+    "Step 5: Apply ranking adjustment",
+    "For transliteration-derived results, apply score multiplier (e.g., score * 0.85)",
+    "Ensure exact-script matches always rank higher than transliteration matches",
+    
+    "Step 6: Maintain logging and tracing",
+    "Append transliteration phases to phaseOrder",
+    "Log when transliteration fallback is triggered",
+    
+    "Step 7: Add test cases",
+    "Test: 'mahfouz' returns نجيب محفوظ",
+    "Test: 'rejal fi al shams' returns رجال في الشمس",
+    "Test: 'mahfouz books' returns Arabic works",
+    "Test: 'ali' does NOT trigger excessive results"
+  ],
+  "constraints": [
+    "Do not modify existing primary ranking logic",
+    "Do not replace original query results",
+    "Do not run transliteration on Arabic queries",
+    "Do not generate multiple query combinations",
+    "Keep behavior deterministic",
+    "Avoid false positives"
+  ],
+  "output": "Transliteration search layer integrated with safe fallback and ranking control"
+}

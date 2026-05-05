@@ -1,8 +1,15 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { z, parseInput } from "../shared/validation";
 
 const db = admin.firestore();
+
+const incrementPostViewSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+  })
+  .strict();
 
 /**
  * incrementPostView
@@ -11,12 +18,8 @@ const db = admin.firestore();
  * Reach Policy: Unique viewers tracked via subcollection for deduplication.
  */
 export const incrementPostView = onCall({ cors: true }, async (request) => {
-    const { postId } = request.data;
+    const { postId } = parseInput(incrementPostViewSchema, request.data);
     const uid = request.auth?.uid || null;
-
-    if (!postId) {
-        throw new HttpsError("invalid-argument", "postId required.");
-    }
 
     const analyticsRef = db.collection('post_analytics').doc(postId);
     const now = admin.firestore.FieldValue.serverTimestamp();

@@ -799,22 +799,11 @@ const toProfilePublication = (
 };
 
 const toShelf = (source: Record<string, unknown>): Shelf => {
-  const entriesSource =
-    source.entries && typeof source.entries === "object" && !Array.isArray(source.entries)
-      ? (source.entries as Record<string, unknown>)
-      : {};
-  const entries: Shelf["entries"] = Object.fromEntries(
-    Object.entries(entriesSource)
-      .filter(([bookId, entry]) => {
-        return (
-          normalizeString(bookId, 128).length > 0 &&
-          !!entry &&
-          typeof entry === "object" &&
-          !Array.isArray(entry)
-        );
-      })
-      .map(([bookId, entry]) => [bookId, entry as ShelfEntry])
-  );
+  const bookIds: string[] = Array.isArray(source.bookIds)
+    ? source.bookIds
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .map((id) => id.trim().slice(0, 128))
+    : [];
   const orderedBookIds = Array.isArray(source.orderedBookIds)
     ? source.orderedBookIds
         .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
@@ -837,13 +826,13 @@ const toShelf = (source: Record<string, unknown>): Shelf => {
     titleAr: normalizeString(source.titleAr, 120) || normalizeString(source.titleEn, 120) || "Shelf",
     descriptionEn: normalizeString(source.descriptionEn, 280),
     descriptionAr: normalizeString(source.descriptionAr, 280),
-    entries,
+    bookIds,
     ...(orderedBookIds && orderedBookIds.length > 0 ? { orderedBookIds } : {}),
     ...(normalizeString(source.userCoverUrl, 2048)
       ? { userCoverUrl: normalizeString(source.userCoverUrl, 2048) }
       : {}),
     visibility,
-    bookCount: toNonNegativeInt(source.bookCount ?? Object.keys(entries).length),
+    bookCount: toNonNegativeInt(source.bookCount ?? bookIds.length),
     createdAt: toIsoString(source.createdAt),
     updatedAt: toIsoString(source.updatedAt),
     isSystem: source.isSystem === true,
@@ -1750,7 +1739,6 @@ class FirebaseShelfService {
     data: {
       titleEn: string;
       titleAr: string;
-      entries?: Record<string, any>;
       visibility?: Shelf["visibility"];
     }
   ): Promise<Shelf> {
@@ -1862,43 +1850,54 @@ class FirebaseShelfService {
     const db = getDb();
     if (!db) return [];
 
-    const shelfRef = doc(db, "shelves", shelfId);
-    const snap = await getDoc(shelfRef);
-    if (!snap.exists()) return [];
-
-    const data = snap.data() as any;
-    const canonicalEntries =
-      data?.entries && typeof data.entries === 'object'
-        ? data.entries
-        : {};
-
-    // Backward-compatibility: older upload flow wrote keys like "entries.<bookId>"
-    // as top-level fields. Merge them into the effective entries map for rendering.
-    const legacyEntries: Record<string, any> = {};
-    for (const [key, value] of Object.entries(data || {})) {
-      if (!key.startsWith('entries.')) continue;
-      if (!value || typeof value !== 'object') continue;
-
-      const legacyBookId = key.slice('entries.'.length).trim();
-      if (!legacyBookId) continue;
-
-      legacyEntries[legacyBookId] = value;
-    }
-
-    const entries = {
-      ...legacyEntries,
-      ...canonicalEntries,
-    };
-
-    const rawEntries = Object.entries(entries).map(([bookId, entry]: any) => ({
-      bookId,
-      ...(entry || {}),
-    }));
     const boundedLimit =
       typeof options?.limit === "number" && Number.isFinite(options.limit)
         ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
-        : rawEntries.length;
-    const boundedEntries = rawEntries.slice(0, boundedLimit);
+        : 200;
+
+    // Authoritative read from shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
+    // Single-field index on shelfId is auto-created by Firestore.
+    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
+
+    const shelfBooksQuery = query(
+      collection(
+        db,
+        "users",
+        normalizedUid,
+        "shelves",
+        normalizedShelfId,
+        "books"
+      ),
+  limit(boundedLimit)
+);    const snap = await getDocs(shelfBooksQuery);
+
+    const rawEntries = snap.docs
+      .map((sbDoc) => {
+        const sb = sbDoc.data();
+        const bookId = typeof sb.bookId === "string" ? sb.bookId.trim() : "";
+        if (!bookId) return null;
+        return {
+          bookId,
+          addedAt: typeof sb.addedAt === "string" && sb.addedAt.trim().length > 0
+            ? sb.addedAt.trim()
+            : new Date().toISOString(),
+          snapshot: sb.snapshot && typeof sb.snapshot === "object" && !Array.isArray(sb.snapshot)
+            ? sb.snapshot
+            : null,
+          ...(sb.recommendationOrigin &&
+            typeof sb.recommendationOrigin === "object" &&
+            !Array.isArray(sb.recommendationOrigin)
+            ? { recommendationOrigin: sb.recommendationOrigin }
+            : {}),
+        };
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
+
+    // Sort ascending by addedAt so order is stable and predictable.
+    rawEntries.sort((a, b) => a.addedAt.localeCompare(b.addedAt));
+
+    const boundedEntries = rawEntries;
 
     if (options?.resolveBooks === false) {
       return boundedEntries;

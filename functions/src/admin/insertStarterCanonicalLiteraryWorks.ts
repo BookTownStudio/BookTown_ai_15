@@ -1,4 +1,5 @@
 import { materializeBookAuthority } from "../library/materializeBookAuthority";
+import { buildCanonicalKey } from "../library/persistence/canonicalKey";
 
 type LiteraryAuthorityClass = "classic_work";
 
@@ -62,10 +63,6 @@ function parseDryRun(argv: string[]): boolean {
 
 function buildCanonicalDocId(work: StarterCanonicalWork): string {
   return `canonical_${slugify(work.author)}_${slugify(work.title)}`;
-}
-
-function buildCanonicalKey(work: StarterCanonicalWork): string {
-  return `${normalizeText(work.author)}::${normalizeText(work.title)}`;
 }
 
 async function run(options: ScriptOptions): Promise<void> {

@@ -2,8 +2,26 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
+import { z, parseInput } from "../shared/validation";
 
 const db = admin.firestore();
+
+const CANONICAL_REASONS = [
+  "spam",
+  "harassment",
+  "hate_speech",
+  "copyright",
+  "misinformation",
+  "other",
+] as const;
+
+const reportSocialPostSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    reason: z.enum(CANONICAL_REASONS),
+    details: z.string().trim().max(1000).optional(),
+  })
+  .strict();
 
 /**
  * reportSocialPost
@@ -13,22 +31,8 @@ const db = admin.firestore();
 export const reportSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId, reason, details } = request.data as {
-        postId?: string;
-        reason?: string;
-        details?: string;
-    };
+    const { postId, reason, details } = parseInput(reportSocialPostSchema, request.data);
     const uid = caller.uid;
-
-    if (!postId || !reason) {
-        throw new HttpsError("invalid-argument", "Missing required fields.");
-    }
-
-    // 2. Canonical Report Type Validation (POST_REPORTING_POLICY_V1)
-    const CANONICAL_REASONS = ["spam", "harassment", "hate_speech", "copyright", "misinformation", "other"];
-    if (!CANONICAL_REASONS.includes(reason.toLowerCase())) {
-        throw new HttpsError("invalid-argument", "INVALID_REPORT_TYPE: Reason must be one of " + CANONICAL_REASONS.join(", "));
-    }
 
     const now = admin.firestore.Timestamp.now();
     const dayAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);

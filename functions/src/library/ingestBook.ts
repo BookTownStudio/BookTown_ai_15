@@ -38,6 +38,8 @@ type SeedFallbackMaterializationResult = {
   status: string;
 };
 
+import { normalizeSearchText, normalizeIsbn } from "./normalization/bookSearchNormalization";
+
 const SEARCH_STOPWORDS = new Set([
   "a",
   "an",
@@ -80,32 +82,12 @@ function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter((entry) => entry.length > 0)));
 }
 
-function normalizeSearchText(value?: string | null): string {
-  if (!value) return "";
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 function tokenizeSearch(value?: string | null): string[] {
   const normalized = normalizeSearchText(value);
   if (!normalized) return [];
   return normalized
     .split(" ")
     .filter((token) => token.length > 1 && !SEARCH_STOPWORDS.has(token));
-}
-
-function normalizeIsbn(value: unknown, length: 10 | 13): string {
-  if (typeof value !== "string") return "";
-  const digits = value.replace(/[^0-9Xx]/g, "").toUpperCase();
-  if (length === 10) {
-    return /^\d{9}[\dX]$/.test(digits) ? digits : "";
-  }
-  return /^\d{13}$/.test(digits) ? digits : "";
 }
 
 function extractExternalId(

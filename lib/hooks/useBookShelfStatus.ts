@@ -16,7 +16,7 @@ const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
  * shelf membership for UI purposes.
  *
  * SOURCES OF TRUTH:
- * - shelves.entries              (user-managed shelves)
+ * - shelf_books collection       (user-managed shelves, via listUserShelves)
  * - reading_progress.status_state (system-managed)
  *
  * GUARANTEES:
@@ -41,8 +41,7 @@ export const useBookShelfStatus = (bookId?: string) => {
 
     return shelves.filter(
       shelf =>
-        shelf.entries &&
-        Object.prototype.hasOwnProperty.call(shelf.entries, bookId)
+        Array.isArray(shelf.bookIds) && shelf.bookIds.includes(bookId)
     );
   }, [shelves, bookId]);
 

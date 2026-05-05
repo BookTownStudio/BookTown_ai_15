@@ -14,28 +14,16 @@ import { initializeFirebase } from './lib/firebase.ts';
 import { QueryClientProvider } from '@tanstack/react-query';
 // FIX: Imported queryClient from the correct instance file (lib/query-client.ts)
 import { queryClient } from './lib/query-client.ts';
-import { I18nProvider } from './store/i18n.tsx';
 
 /* ------------------------------------------------------------------ */
 /* Bootstrap (order matters)                                           */
 /* ------------------------------------------------------------------ */
 
 // 1️⃣ Initialize Firebase exactly once before anything touches it
-const isReaderBenchmarkMode =
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('readerBenchmark') === '1';
-const isReaderHighlightBenchmarkMode =
-  typeof window !== 'undefined' &&
-  new URLSearchParams(window.location.search).get('readerHighlightE2E') === '1';
-
-if (!isReaderBenchmarkMode && !isReaderHighlightBenchmarkMode) {
-  initializeFirebase();
-}
+initializeFirebase();
 
 // 2️⃣ Enforce MEDIA_PERMISSION_GUARD_V1 at bootstrap
-if (!isReaderBenchmarkMode && !isReaderHighlightBenchmarkMode) {
-  initMediaGuard();
-}
+initMediaGuard();
 
 // 3️⃣ Safe build/version log
 // FIX: Safely access import.meta.env to prevent runtime errors
@@ -45,7 +33,7 @@ devLog(
 );
 
 /* ------------------------------------------------------------------ */
-/* React mount                                                        */
+/* React mount                                                         */
 /* ------------------------------------------------------------------ */
 
 const rootElement = document.getElementById('root');
@@ -56,34 +44,6 @@ if (!rootElement) {
 const root = createRoot(rootElement);
 
 async function mount() {
-  if (isReaderBenchmarkMode) {
-    const { default: ReaderPerfBenchmarkApp } = await import(
-      './app/benchmark/ReaderPerfBenchmarkApp.tsx'
-    );
-    root.render(
-      <React.StrictMode>
-        <I18nProvider>
-          <ReaderPerfBenchmarkApp />
-        </I18nProvider>
-      </React.StrictMode>
-    );
-    return;
-  }
-
-  if (isReaderHighlightBenchmarkMode) {
-    const { default: ReaderHighlightBenchmarkApp } = await import(
-      './app/benchmark/ReaderHighlightBenchmarkApp.tsx'
-    );
-    root.render(
-      <React.StrictMode>
-        <I18nProvider>
-          <ReaderHighlightBenchmarkApp />
-        </I18nProvider>
-      </React.StrictMode>
-    );
-    return;
-  }
-
   const { default: App } = await import('./App.tsx');
   root.render(
     <React.StrictMode>

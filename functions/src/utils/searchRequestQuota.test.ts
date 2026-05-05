@@ -80,35 +80,40 @@ class FakeFirestore {
   }
 }
 
+const NOW_MS = 1_700_000_000_000;
+const WINDOW_MS = 60 * 1000;
+const BUCKET_MS = WINDOW_MS / 4;
+const windowStartMs = NOW_MS - (NOW_MS % WINDOW_MS);
+const bucketIndex = Math.floor((NOW_MS % WINDOW_MS) / BUCKET_MS);
+const BUCKET_LIMIT = 15;
+
 describe("enforceSearchRequestQuota", () => {
-  it("records usage below limit", async () => {
+  it("records usage below limit in the correct sub-bucket document", async () => {
     const db = new FakeFirestore() as unknown as FirebaseFirestore.Firestore;
-    const nowMs = 1_700_000_000_000;
-    const windowStartMs = nowMs - (nowMs % (60 * 1000));
 
     await enforceSearchRequestQuota({
       db,
       actorKey: "actor_a",
-      nowMs,
+      nowMs: NOW_MS,
     });
 
-    const stored = (db as unknown as FakeFirestore).read(
-      "_request_quota",
-      `book_search_actor_a_${windowStartMs}`
-    );
+    const expectedDocId = `book_search_actor_a_${windowStartMs}_b${bucketIndex}`;
+    const stored = (db as unknown as FakeFirestore).read("_request_quota", expectedDocId);
     expect(stored?.count).toBe(1);
     expect(stored?.limit).toBe(60);
+    expect(stored?.bucketLimit).toBe(BUCKET_LIMIT);
+    expect(stored?.bucketIndex).toBe(bucketIndex);
+    expect(stored?.windowStartMs).toBe(windowStartMs);
   });
 
-  it("throws resource exhausted after limit is reached inside one window", async () => {
+  it("throws resource-exhausted after bucket limit is reached within one sub-bucket", async () => {
     const db = new FakeFirestore() as unknown as FirebaseFirestore.Firestore;
-    const nowMs = 1_700_000_000_000;
 
-    for (let i = 0; i < 60; i += 1) {
+    for (let i = 0; i < BUCKET_LIMIT; i += 1) {
       await enforceSearchRequestQuota({
         db,
         actorKey: "actor_b",
-        nowMs,
+        nowMs: NOW_MS,
       });
     }
 
@@ -116,11 +121,48 @@ describe("enforceSearchRequestQuota", () => {
       enforceSearchRequestQuota({
         db,
         actorKey: "actor_b",
-        nowMs,
+        nowMs: NOW_MS,
       })
     ).rejects.toMatchObject({
       code: "resource-exhausted",
       message: "BOOK_SEARCH_RATE_LIMIT_EXCEEDED",
     });
+  });
+
+  it("allows up to bucket limit across separate sub-buckets in the same window", async () => {
+    const db = new FakeFirestore() as unknown as FirebaseFirestore.Firestore;
+
+    const bucket0Ms = windowStartMs + 1;
+    const bucket1Ms = windowStartMs + BUCKET_MS + 1;
+
+    for (let i = 0; i < BUCKET_LIMIT; i += 1) {
+      await enforceSearchRequestQuota({ db, actorKey: "actor_c", nowMs: bucket0Ms });
+    }
+    for (let i = 0; i < BUCKET_LIMIT; i += 1) {
+      await enforceSearchRequestQuota({ db, actorKey: "actor_c", nowMs: bucket1Ms });
+    }
+
+    const expectedDoc0 = `book_search_actor_c_${windowStartMs}_b0`;
+    const expectedDoc1 = `book_search_actor_c_${windowStartMs}_b1`;
+    const stored0 = (db as unknown as FakeFirestore).read("_request_quota", expectedDoc0);
+    const stored1 = (db as unknown as FakeFirestore).read("_request_quota", expectedDoc1);
+    expect(stored0?.count).toBe(BUCKET_LIMIT);
+    expect(stored1?.count).toBe(BUCKET_LIMIT);
+  });
+
+  it("treats different actor keys as independent buckets", async () => {
+    const db = new FakeFirestore() as unknown as FirebaseFirestore.Firestore;
+
+    for (let i = 0; i < BUCKET_LIMIT; i += 1) {
+      await enforceSearchRequestQuota({ db, actorKey: "actor_x", nowMs: NOW_MS });
+    }
+
+    await expect(
+      enforceSearchRequestQuota({ db, actorKey: "actor_x", nowMs: NOW_MS })
+    ).rejects.toMatchObject({ code: "resource-exhausted" });
+
+    await expect(
+      enforceSearchRequestQuota({ db, actorKey: "actor_y", nowMs: NOW_MS })
+    ).resolves.toBeUndefined();
   });
 });

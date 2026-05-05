@@ -19,7 +19,6 @@ const getWindowStartMs = (nowMs: number, windowMs: number): number =>
 
 export async function checkUserMutationQuota(
   db: FirebaseFirestore.Firestore,
-  transaction: FirebaseFirestore.Transaction,
   uid: string,
   actionType: MutationActionType,
   nowMs: number = Date.now()
@@ -34,44 +33,49 @@ export async function checkUserMutationQuota(
   const windowEndMs = windowStartMs + quota.windowMs;
   const logId = `${normalizedUid}_${actionType}_${windowStartMs}`;
   const logRef = db.collection("user_mutation_logs").doc(logId);
-  const logSnap = await transaction.get(logRef);
-  const existingCountRaw = logSnap.exists ? (logSnap.data()?.count as unknown) : 0;
-  const existingCount =
-    typeof existingCountRaw === "number" && Number.isFinite(existingCountRaw)
-      ? Math.max(0, Math.trunc(existingCountRaw))
-      : 0;
 
-  if (existingCount >= quota.limit) {
-    const retryAfterSeconds = Math.max(
-      1,
-      Math.ceil((windowEndMs - nowMs) / 1000)
-    );
-    throw new HttpsError(
-      "permission-denied",
-      "MUTATION_RATE_LIMIT_EXCEEDED",
+  await db.runTransaction(async (transaction) => {
+    const logSnap = await transaction.get(logRef);
+    const existingCountRaw = logSnap.exists ? (logSnap.data()?.count as unknown) : 0;
+    const existingCount =
+      typeof existingCountRaw === "number" && Number.isFinite(existingCountRaw)
+        ? Math.max(0, Math.trunc(existingCountRaw))
+        : 0;
+
+    if (existingCount >= quota.limit) {
+      const retryAfterSeconds = Math.max(
+        1,
+        Math.ceil((windowEndMs - nowMs) / 1000)
+      );
+      throw new HttpsError(
+        "permission-denied",
+        "MUTATION_RATE_LIMIT_EXCEEDED",
+        {
+          actionType,
+          limit: quota.limit,
+          windowMs: quota.windowMs,
+          retryAfterSeconds,
+        }
+      );
+    }
+
+    const nowTs = admin.firestore.Timestamp.now();
+    const expiresAt = admin.firestore.Timestamp.fromMillis(windowStartMs + 2 * 60 * 1000);
+    transaction.set(
+      logRef,
       {
+        uid: normalizedUid,
         actionType,
+        count: existingCount + 1,
         limit: quota.limit,
         windowMs: quota.windowMs,
-        retryAfterSeconds,
-      }
+        windowStartMs,
+        windowEndMs,
+        expiresAt,
+        updatedAt: nowTs,
+        ...(logSnap.exists ? {} : { createdAt: nowTs }),
+      },
+      { merge: true }
     );
-  }
-
-  const nowTs = admin.firestore.Timestamp.now();
-  transaction.set(
-    logRef,
-    {
-      uid: normalizedUid,
-      actionType,
-      count: existingCount + 1,
-      limit: quota.limit,
-      windowMs: quota.windowMs,
-      windowStartMs,
-      windowEndMs,
-      updatedAt: nowTs,
-      ...(logSnap.exists ? {} : { createdAt: nowTs }),
-    },
-    { merge: true }
-  );
+  });
 }

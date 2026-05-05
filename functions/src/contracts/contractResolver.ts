@@ -30,7 +30,11 @@ export function normalizePath(path: string): string {
 export function resolveCallableContract<K extends CallableEndpointKey>(
   endpointKey: K
 ): CallableContract<K> {
-  const contract = apiContracts.callable[endpointKey];
+  // ✅ FIX: explicit safe cast for TS generic indexing
+  const contract = apiContracts.callable[
+    endpointKey as keyof typeof apiContracts.callable
+  ] as CallableContract<K>;
+
   if (!contract) {
     throw new Error(`Missing callable contract for endpoint: ${endpointKey}`);
   }

@@ -32,22 +32,48 @@ async function safeLogSystemEvent(
 /**
  * updateStatCounter
  * Authoritative atomic counter update.
+ * Dual-writes nested counters.{field} (legacy read path in read.ts) and flat
+ * {field}Count (canonical field consumed by syncPostStatsToSearchIndex).
+ *
+ * Idempotency: the counter write is bundled into a processMetricEventIdempotently
+ * transaction keyed by eventId (the Cloud Firestore trigger event ID).
+ * At-least-once trigger re-delivery with the same eventId will find the ledger
+ * doc already present and skip the increment — preventing double-counting.
  */
 async function updateStatCounter(
   collection: string,
   docId: string,
   field: string,
-  delta: number
+  delta: number,
+  eventId: string
 ) {
   const ref = db.collection(collection).doc(docId);
-  const fieldPath = `counters.${field}`;
-  await ref.set(
-    {
-      [fieldPath]: admin.firestore.FieldValue.increment(delta),
-      lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    },
-    { merge: true }
-  );
+  const postRef = collection === "post_stats" ? db.collection("posts").doc(docId) : null;
+  await processMetricEventIdempotently(eventId, async (tx) => {
+    tx.set(
+      ref,
+      {
+        counters: {
+          [field]: admin.firestore.FieldValue.increment(delta),
+        },
+        [`${field}Count`]: admin.firestore.FieldValue.increment(delta),
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    );
+    if (postRef) {
+      tx.set(
+        postRef,
+        {
+          counters: {
+            [field]: admin.firestore.FieldValue.increment(delta),
+          },
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+  });
 }
 
 /**
@@ -61,7 +87,7 @@ async function updateStatCounter(
  * Approach (Tier-1 stable):
  * - Maintain a per-user canonical set: user_library_books/{uid}_{bookId}
  * - Sources:
- *   - Shelf membership (entries map)
+ *   - Shelf membership (shelf_books collection)
  *   - Reading progress existence (reading_progress)
  */
 
@@ -191,7 +217,8 @@ export const onPostLikeCreated = onDocumentCreated(
       "post_stats",
       event.params.postId,
       "likes",
-      1
+      1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -214,7 +241,8 @@ export const onPostLikeDeleted = onDocumentDeleted(
       "post_stats",
       event.params.postId,
       "likes",
-      -1
+      -1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -237,7 +265,8 @@ export const onPostRepostCreated = onDocumentCreated(
       "post_stats",
       event.params.postId,
       "reposts",
-      1
+      1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -260,7 +289,8 @@ export const onPostRepostDeleted = onDocumentDeleted(
       "post_stats",
       event.params.postId,
       "reposts",
-      -1
+      -1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -283,7 +313,8 @@ export const onPostCommentCreated = onDocumentCreated(
       "post_stats",
       event.params.postId,
       "comments",
-      1
+      1,
+      event.id
     );
     const commentData = event.data?.data() as Record<string, unknown> | undefined;
     const uid =
@@ -316,7 +347,8 @@ export const onPostCommentDeleted = onDocumentDeleted(
       "post_stats",
       event.params.postId,
       "comments",
-      -1
+      -1,
+      event.id
     );
     const commentData = event.data?.data() as Record<string, unknown> | undefined;
     const uid =
@@ -352,7 +384,8 @@ export const onPostBookmarkCreated = onDocumentCreated(
       "post_stats",
       event.params.entityId,
       "bookmarks",
-      1
+      1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -378,7 +411,8 @@ export const onPostBookmarkDeleted = onDocumentDeleted(
       "post_stats",
       event.params.entityId,
       "bookmarks",
-      -1
+      -1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -500,24 +534,6 @@ export const onUserFollowDeleted = onDocumentDeleted(
   }
 );
 
-/**
- * Legacy path (kept for backward compatibility)
- */
-export const onShelfCreated = onDocumentCreated(
-  "users/{userId}/shelves/{shelfId}",
-  async (event) => {
-    await emitIntelligenceSignalSafe({
-      uid: event.params.userId,
-      signalType: "legacy_shelf_created",
-      signalFamily: "behavior",
-      payload: {
-        shelfId: event.params.shelfId,
-      },
-      sourceEventId: event.id,
-      sourcePath: `users/${event.params.userId}/shelves/${event.params.shelfId}`,
-    });
-  }
-);
 
 function normalizeReviewRating(value: unknown): number {
   const numeric = Number(value);
@@ -1024,7 +1040,8 @@ export const onEventRsvpCreated = onDocumentCreated(
       "event_stats",
       event.params.eventId,
       "rsvps",
-      1
+      1,
+      event.id
     );
     await emitIntelligenceSignalSafe({
       uid: event.params.userId,
@@ -1091,37 +1108,31 @@ export const onTopLevelShelfDeleted = onDocumentDeleted(
 );
 
 // ------------------------------------------------------------------
-// ✅ SHELF ENTRIES MAP DIFF → CANONICAL LIBRARY SET
+// ✅ SHELF_BOOKS WRITES → CANONICAL LIBRARY SET
 // ------------------------------------------------------------------
 
 export const onShelfEntriesWritten = onDocumentWritten(
-  "shelves/{shelfDocId}",
+  "shelf_books/{docId}",
   async (event) => {
     const before = event.data?.before?.data() as any;
     const after = event.data?.after?.data() as any;
-    if (!after) return;
 
-    const ownerId = after?.ownerId;
-    const shelfId = after?.id;
-    const isVirtual = Boolean(after?.isVirtual);
-    if (!ownerId || !shelfId || isVirtual) return;
+    const snap = after || before;
+    if (!snap) return;
 
-    const beforeEntries = before?.entries || {};
-    const afterEntries = after?.entries || {};
+    const ownerId = snap?.ownerId;
+    const shelfId = snap?.shelfId;
+    const bookId = snap?.bookId;
+    const isVirtual = Boolean(snap?.isVirtual);
+    if (!ownerId || !shelfId || !bookId || isVirtual) return;
 
-    const beforeIds = new Set(Object.keys(beforeEntries));
-    const afterIds = new Set(Object.keys(afterEntries));
+    const isCreate = !before && !!after;
+    const isDelete = !!before && !after;
+    if (!isCreate && !isDelete) return;
 
-    const added = [...afterIds].filter(id => !beforeIds.has(id));
-    const removed = [...beforeIds].filter(id => !afterIds.has(id));
-    if (!added.length && !removed.length) return;
-
-    for (const bookId of added) {
-      const entry = afterEntries?.[bookId];
+    if (isCreate) {
       const recommendationOrigin = sanitizeRecommendationOrigin(
-        entry && typeof entry === "object"
-          ? (entry as Record<string, unknown>).recommendationOrigin
-          : null
+        after?.recommendationOrigin ?? null
       );
       await applyLibraryBookDelta({
         uid: ownerId,
@@ -1129,50 +1140,48 @@ export const onShelfEntriesWritten = onDocumentWritten(
         addShelfId: shelfId,
         recommendationOrigin,
       });
+
+      await emitIntelligenceSignalSafe({
+        uid: ownerId,
+        signalType: "shelf_entries_changed",
+        signalFamily: "reading",
+        payload: {
+          shelfId,
+          addedCount: 1,
+          removedCount: 0,
+          addedBookIds: [bookId],
+          removedBookIds: [],
+          ...(recommendationOrigin
+            ? { addedRecommendationOrigins: [{ bookId, recommendationOrigin }] }
+            : {}),
+        },
+        sourceEventId: event.id,
+        sourcePath: `shelf_books/${event.params.docId}`,
+      });
     }
 
-    for (const bookId of removed) {
+    if (isDelete) {
       await applyLibraryBookDelta({
         uid: ownerId,
         bookId,
         removeShelfId: shelfId,
       });
+
+      await emitIntelligenceSignalSafe({
+        uid: ownerId,
+        signalType: "shelf_entries_changed",
+        signalFamily: "reading",
+        payload: {
+          shelfId,
+          addedCount: 0,
+          removedCount: 1,
+          addedBookIds: [],
+          removedBookIds: [bookId],
+        },
+        sourceEventId: event.id,
+        sourcePath: `shelf_books/${event.params.docId}`,
+      });
     }
-
-    const addedRecommendationOrigins = added
-      .map((bookId) => {
-        const entry = afterEntries?.[bookId];
-        const recommendationOrigin = sanitizeRecommendationOrigin(
-          entry && typeof entry === "object"
-            ? (entry as Record<string, unknown>).recommendationOrigin
-            : null
-        );
-        if (!recommendationOrigin) return null;
-        return {
-          bookId,
-          recommendationOrigin,
-        };
-      })
-      .filter((row): row is { bookId: string; recommendationOrigin: RecommendationOrigin } => row !== null)
-      .slice(0, 80);
-
-    await emitIntelligenceSignalSafe({
-      uid: ownerId,
-      signalType: "shelf_entries_changed",
-      signalFamily: "reading",
-      payload: {
-        shelfId,
-        addedCount: added.length,
-        removedCount: removed.length,
-        addedBookIds: added.slice(0, 80),
-        removedBookIds: removed.slice(0, 80),
-        ...(addedRecommendationOrigins.length > 0
-          ? { addedRecommendationOrigins }
-          : {}),
-      },
-      sourceEventId: event.id,
-      sourcePath: `shelves/${event.params.shelfDocId}`,
-    });
   }
 );
 

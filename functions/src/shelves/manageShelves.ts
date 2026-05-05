@@ -1,9 +1,12 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
+import { SHELF_BOOKS_COLLECTION } from "./shelfBookEntry";
 
 const db = admin.firestore();
 const MAX_SHELF_LIMIT = 200;
+// Firestore batches are capped at 500 operations per commit.
+const BATCH_SIZE = 500;
 
 type ShelfVisibility = "public" | "unlisted" | "private";
 
@@ -80,17 +83,19 @@ function resolveShelfVisibility(value: unknown): ShelfVisibility {
   return "public";
 }
 
-function normalizeEntries(value: unknown): Record<string, Record<string, unknown>> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return {};
-  }
+/**
+ * Builds an entries map keyed by bookId from shelf_books collection documents.
+ * This is the authoritative source for shelf membership (SHELF_BOOKS_SCHEMA_V1).
+ */
+function buildEntriesFromShelfBooks(
+  docs: FirebaseFirestore.QueryDocumentSnapshot[]
+): Record<string, Record<string, unknown>> {
   const result: Record<string, Record<string, unknown>> = {};
-  for (const [bookId, entry] of Object.entries(value as Record<string, unknown>)) {
-    const normalizedBookId = sanitizeString(bookId, 128);
-    if (!normalizedBookId || !entry || typeof entry !== "object" || Array.isArray(entry)) {
-      continue;
-    }
-    result[normalizedBookId] = { ...(entry as Record<string, unknown>) };
+  for (const sbDoc of docs) {
+    const sb = sbDoc.data() as Record<string, unknown>;
+    const bookId = sanitizeString(sb.bookId, 128);
+    if (!bookId) continue;
+    result[bookId] = { ...sb };
   }
   return result;
 }
@@ -118,11 +123,12 @@ function canReadShelf(
 
 function serializeShelfDoc(
   shelfId: string,
-  source: ShelfRecord
+  source: ShelfRecord,
+  prebuiltEntries: Record<string, Record<string, unknown>> = {}
 ): Record<string, unknown> {
   const titleEn = sanitizeString(source.titleEn, 120);
   const titleAr = sanitizeString(source.titleAr, 120);
-  const entries = normalizeEntries(source.entries);
+  const bookIds = Object.keys(prebuiltEntries);
   const orderedBookIds = normalizeOrderedBookIds(source.orderedBookIds);
   const copiedFromRaw =
     source.copiedFrom && typeof source.copiedFrom === "object" && !Array.isArray(source.copiedFrom)
@@ -136,14 +142,14 @@ function serializeShelfDoc(
     titleAr: titleAr || titleEn || "Shelf",
     descriptionEn: sanitizeString(source.descriptionEn, 280),
     descriptionAr: sanitizeString(source.descriptionAr, 280),
-    entries,
+    bookIds,
     ...(orderedBookIds ? { orderedBookIds } : {}),
     ...(sanitizeString(source.userCoverUrl, 2048)
       ? { userCoverUrl: sanitizeString(source.userCoverUrl, 2048) }
       : {}),
     visibility: resolveShelfVisibility(source.visibility),
     isSystem: source.isSystem === true,
-    bookCount: Object.keys(entries).length,
+    bookCount: bookIds.length,
     createdAt: toIsoString(source.createdAt),
     updatedAt: toIsoString(source.updatedAt),
     ...(copiedFromRaw
@@ -204,22 +210,63 @@ function sanitizeShelfPatch(input: unknown): Record<string, unknown> {
   return patch;
 }
 
+/**
+ * Batch-deletes all shelf_books documents belonging to a shelf.
+ * Requires a single-field index on shelf_books(shelfId).
+ * This is a best-effort cleanup — the shelf document is already deleted
+ * before this runs, so orphaned shelf_books docs are harmless but wasteful.
+ */
+async function deleteShelfBooksForShelf(shelfId: string): Promise<void> {
+  const snap = await db
+    .collection(SHELF_BOOKS_COLLECTION)
+    .where("shelfId", "==", shelfId)
+    .get();
+
+  if (snap.empty) return;
+
+  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
+    const batch = db.batch();
+    const chunk = snap.docs.slice(i, i + BATCH_SIZE);
+    for (const doc of chunk) {
+      batch.delete(doc.ref);
+    }
+    await batch.commit();
+  }
+}
+
 export const listUserShelves = onCall<ListUserShelvesRequest>({ cors: true }, async (request) => {
   const targetUid = readRequiredString(request.data?.uid, "uid", 128);
   const viewerUid = request.auth?.uid ? sanitizeString(request.auth.uid, 128) : null;
   const limitSize = toBoundedLimit(request.data?.limit, 100);
   const isOwnerView = viewerUid === targetUid;
 
-  const snap = await db
-    .collection("shelves")
-    .where("ownerId", "==", targetUid)
-    .orderBy("createdAt", "asc")
-    .limit(limitSize + 50)
-    .get();
+  // Fetch shelf metadata and all shelf_books for this user in parallel.
+  const [shelvesSnap, shelfBooksSnap] = await Promise.all([
+    db
+      .collection("shelves")
+      .where("ownerId", "==", targetUid)
+      .orderBy("createdAt", "asc")
+      .limit(limitSize + 50)
+      .get(),
+    db
+      .collection(SHELF_BOOKS_COLLECTION)
+      .where("ownerId", "==", targetUid)
+      .get(),
+  ]);
+
+  // Group shelf_books by shelfId for O(1) lookup per shelf.
+  const shelfBooksByShelf = new Map<string, FirebaseFirestore.QueryDocumentSnapshot[]>();
+  for (const sbDoc of shelfBooksSnap.docs) {
+    const sid = sanitizeString((sbDoc.data() as Record<string, unknown>).shelfId, 190);
+    if (!sid) continue;
+    if (!shelfBooksByShelf.has(sid)) shelfBooksByShelf.set(sid, []);
+    shelfBooksByShelf.get(sid)!.push(sbDoc);
+  }
 
   const items: Record<string, unknown>[] = [];
-  for (const shelfDoc of snap.docs) {
-    const shelf = serializeShelfDoc(shelfDoc.id, (shelfDoc.data() ?? {}) as ShelfRecord);
+  for (const shelfDoc of shelvesSnap.docs) {
+    const entries = buildEntriesFromShelfBooks(shelfBooksByShelf.get(shelfDoc.id) ?? []);
+    const shelf = serializeShelfDoc(shelfDoc.id, (shelfDoc.data() ?? {}) as ShelfRecord, entries);
     if (!isOwnerView && !canReadShelf(shelf, viewerUid)) {
       continue;
     }
@@ -231,18 +278,28 @@ export const listUserShelves = onCall<ListUserShelvesRequest>({ cors: true }, as
 
   return {
     items,
-    hasMore: snap.docs.length > items.length,
+    hasMore: shelvesSnap.docs.length > items.length,
   };
 });
 
 export const getShelf = onCall<GetShelfRequest>({ cors: true }, async (request) => {
   const shelfId = readRequiredString(request.data?.shelfId, "shelfId", 190);
   const viewerUid = request.auth?.uid ? sanitizeString(request.auth.uid, 128) : null;
-  const snap = await db.collection("shelves").doc(shelfId).get();
+  // Fetch shelf metadata and its shelf_books in parallel.
+  const [snap, shelfBooksSnap] = await Promise.all([
+    db.collection("shelves").doc(shelfId).get(),
+    db
+      .collection(SHELF_BOOKS_COLLECTION)
+      .where("shelfId", "==", shelfId)
+      .get(),
+  ]);
+
   if (!snap.exists) {
     throw new HttpsError("not-found", "Shelf not found.");
   }
-  const shelf = serializeShelfDoc(snap.id, (snap.data() ?? {}) as ShelfRecord);
+
+  const entries = buildEntriesFromShelfBooks(shelfBooksSnap.docs);
+  const shelf = serializeShelfDoc(snap.id, (snap.data() ?? {}) as ShelfRecord, entries);
   if (!canReadShelf(shelf, viewerUid)) {
     throw new HttpsError("permission-denied", "This shelf is not accessible.");
   }
@@ -265,7 +322,6 @@ export const createShelf = onCall<CreateShelfRequest>({ cors: true }, async (req
     ownerId: uid,
     titleEn,
     titleAr,
-    entries: {},
     visibility,
     createdAt: now,
     updatedAt: now,
@@ -277,7 +333,7 @@ export const createShelf = onCall<CreateShelfRequest>({ cors: true }, async (req
     ownerId: uid,
     titleEn,
     titleAr,
-    entries: {},
+    bookIds: [],
     visibility,
     isSystem: false,
     bookCount: 0,
@@ -352,6 +408,11 @@ export const deleteShelf = onCall<DeleteShelfRequest>({ cors: true }, async (req
     }
     tx.delete(shelfRef);
   });
+
+  // Best-effort cleanup of shelf_books docs for this shelf.
+  // Runs after the transaction so the shelf is already gone.
+  // Requires a single-field index on shelf_books(shelfId).
+  await deleteShelfBooksForShelf(shelfId);
 
   return {
     shelfId,

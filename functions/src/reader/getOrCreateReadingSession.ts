@@ -277,6 +277,11 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
     const narration = sanitizeNarrationSessionState(sessionData?.narration);
     const now = FieldValue.serverTimestamp();
 
+    // sessionSnap.exists guards createdAt so it is only written on first creation.
+    // Subsequent calls (resume, device switch) update the mutable fields only,
+    // preserving the original createdAt as an immutable first-open timestamp.
+    const isNewSession = !sessionSnap.exists;
+
     const sessionPayload: Record<string, unknown> = {
       userId: uid,
       bookId,
@@ -285,7 +290,7 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       format: manifest.format,
       manifestVersion: manifest.version,
       updatedAt: now,
-      createdAt: now,
+      ...(isNewSession ? { createdAt: now } : {}),
     };
 
     if (progressResumeAnchor) {

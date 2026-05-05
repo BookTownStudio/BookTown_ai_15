@@ -7,7 +7,7 @@ import { ShareIcon } from '../icons/ShareIcon.tsx';
 import { useToggleBookOnShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useAddReaction } from '../../lib/hooks/useLikeBook.ts';
+import { useAddReaction } from '../../lib/hooks/useAddReaction.ts';
 import { useSaveBookmark } from '../../lib/hooks/useSaveQuote.ts';
 import { useSaveQuote } from '../../lib/hooks/useSaveQuote.ts';
 import { useFollowUser } from '../../lib/hooks/useFollowUser.ts';

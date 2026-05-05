@@ -423,6 +423,8 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
     version: 1
   };
 
+  await checkUserMutationQuota(db, uid, "createPost");
+
   try {
     const result = await db.runTransaction(async (transaction) => {
         // Idempotency check: prevent duplicate publishing from UI glitches
@@ -492,8 +494,6 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
             });
         }
 
-        await checkUserMutationQuota(db, transaction, uid, "createPost");
-
         transaction.set(postRef, postData);
 
         for (const attachment of verifiedMediaAttachments) {
@@ -525,9 +525,15 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         });
 
         // Initialize empty stats document (FANOUT_V1)
+        // Writes both nested counters.* (legacy read.ts path) and flat *Count fields
+        // (canonical path consumed by syncPostStatsToSearchIndex).
         const statsRef = db.collection('post_stats').doc(postRef.id);
         transaction.set(statsRef, {
             counters: { likes: 0, comments: 0, reposts: 0, bookmarks: 0 },
+            likesCount: 0,
+            commentsCount: 0,
+            repostsCount: 0,
+            bookmarksCount: 0,
             lastUpdatedAt: now
         });
 

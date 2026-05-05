@@ -15,8 +15,10 @@ export async function fetchFromOpenLibrary(query: string): Promise<LibraryEditio
     const response = await fetch(url.toString());
     if (!response.ok) return [];
 
-    const data = await response.json();
-    if (!data.docs) {
+    // ✅ FIX: explicitly type the response
+    const data = (await response.json()) as any;
+
+    if (!data?.docs) {
       logger.info('[SEARCH][OPENLIB][RESULTS]', { count: 0 });
       return [];
     }
@@ -24,21 +26,26 @@ export async function fetchFromOpenLibrary(query: string): Promise<LibraryEditio
     const results = data.docs.map((doc: any) => {
       const workId = doc.key?.replace('/works/', '');
       const coverId = doc.cover_i;
-      const primaryAuthor = Array.isArray(doc.author_name) && doc.author_name.length > 0
-        ? doc.author_name[0]
-        : null;
+
+      const primaryAuthor =
+        Array.isArray(doc.author_name) && doc.author_name.length > 0
+          ? doc.author_name[0]
+          : null;
+
       const canonicalKey = buildCanonicalKey({
         title: doc.title || 'unknown',
         author: primaryAuthor
       });
-      
+
       return {
         bookId: workId || `olw_${Date.now()}`,
         editionId: `ol_${doc.edition_key?.[0] || Date.now()}`,
         title: doc.title,
         authors: doc.author_name || [],
         language: doc.language?.[0] || 'en',
-        coverUrl: coverId ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg` : undefined,
+        coverUrl: coverId
+          ? `https://covers.openlibrary.org/b/id/${coverId}-M.jpg`
+          : undefined,
         ebookAvailable: !!doc.ebook_count_i && doc.ebook_count_i > 0,
         source: 'openLibrary',
         isbn13: doc.isbn?.[0],

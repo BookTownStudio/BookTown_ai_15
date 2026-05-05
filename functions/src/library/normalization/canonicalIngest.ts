@@ -1,4 +1,7 @@
+import { FieldValue } from "firebase-admin/firestore";
+
 import { normalizeSearchText } from "../../search/normalization";
+import { buildBookOntology, normalizeBookForm, type BookForm } from "../ontology/bookOntology";
 
 type SupportedCanonicalIngestSource = "googleBooks" | "openLibrary" | "worldcat";
 
@@ -43,59 +46,6 @@ const REJECTED_TITLE_PATTERNS = [
   /\bcompanion\b/u,
   /\bguide\b/u,
 ];
-
-const KNOWN_CANONICAL_WORK_LITERARY_FORMS = new Map<string, string>([
-  ["william shakespeare::macbeth", "play"],
-  ["william shakespeare::hamlet", "play"],
-  ["simone de beauvoir::the second sex", "nonfiction"],
-  ["simone de beauvoir::le deuxieme sexe", "nonfiction"],
-  ["nguyen du::the tale of kieu", "poetry"],
-  ["nguyen du::truyen kieu", "poetry"],
-]);
-
-const CANONICAL_SEED_TITLE_LITERARY_FORMS = new Map<string, string>([
-  ["the odyssey", "epic"],
-  ["the iliad", "epic"],
-  ["oedipus rex", "play"],
-  ["the aeneid", "epic"],
-  ["the divine comedy", "epic poem"],
-  ["the muqaddimah", "historical philosophy"],
-  ["the bhagavad gita", "philosophy"],
-  ["the mahabharata", "epic"],
-  ["don quixote", "novel"],
-  ["the tale of genji", "novel"],
-  ["candide", "philosophy"],
-  ["the stranger", "novel"],
-  ["the trial", "novel"],
-  ["crime and punishment", "novel"],
-  ["war and peace", "novel"],
-  ["madame bovary", "novel"],
-  ["season of migration to the north", "novel"],
-  ["the aleph", "short stories"],
-  ["the analects", "philosophy"],
-  ["beloved", "novel"],
-  ["pride and prejudice", "novel"],
-  ["faust part two", "drama"],
-  ["the prince", "political philosophy"],
-  ["the waste land", "poetry"],
-  ["divan of hafez", "poetry"],
-  ["the conference of the birds", "poetry"],
-  ["the tale of kieu", "poetry"],
-  ["their eyes were watching god", "novel"],
-  ["the epic of gilgamesh", "epic"],
-  ["hopscotch", "novel"],
-  ["the magic mountain", "novel"],
-  ["dream of the red chamber", "novel"],
-  ["cities of salt", "novel"],
-  ["journey to the west", "novel"],
-  ["the cairo trilogy", "novel"],
-  ["the palm-wine drinkard", "novel"],
-  ["the man without qualities", "novel"],
-  ["the leopard", "novel"],
-  ["independent people", "novel"],
-  ["dead souls", "novel"],
-  ["moby-dick; or, the whale", "novel"],
-]);
 
 const KNOWN_CANONICAL_SEED_AUTHOR_OVERRIDES = new Map<string, string>([
   ["macbeth", "William Shakespeare"],
@@ -188,26 +138,6 @@ export function hasRejectedContributorCandidateSignal(value: string): boolean {
 export function hasRejectedCandidateTitleSignal(value: string): boolean {
   const normalized = normalizeSearchText(value);
   return REJECTED_TITLE_PATTERNS.some((pattern) => pattern.test(normalized));
-}
-
-export function inferKnownCanonicalLiteraryForm(params: {
-  title?: string;
-  author?: string;
-}): string {
-  const titleNorm = normalizeSearchText(params.title || "");
-  const authorNorm = normalizeSearchText(params.author || "");
-  if (!titleNorm || !authorNorm) {
-    return "";
-  }
-  return KNOWN_CANONICAL_WORK_LITERARY_FORMS.get(`${authorNorm}::${titleNorm}`) || "";
-}
-
-function inferCanonicalSeedTitleLiteraryForm(title?: string): string {
-  const titleNorm = normalizeSearchText(title || "");
-  if (!titleNorm) {
-    return "";
-  }
-  return CANONICAL_SEED_TITLE_LITERARY_FORMS.get(titleNorm) || "";
 }
 
 export function resolveCanonicalSeedAuthorityAuthor(params: {
@@ -347,50 +277,6 @@ function stripDecoratedTitle(params: {
   return cleaned || requestedTitle || providerTitle;
 }
 
-function inferLiteraryForm(rawBook: Record<string, unknown>): string {
-  const direct = asNonEmptyString(rawBook.literaryForm).toLowerCase();
-  if (direct) {
-    return direct;
-  }
-
-  const knownWorkForm = inferKnownCanonicalLiteraryForm({
-    title:
-      asNonEmptyString(rawBook.titleEn) ||
-      asNonEmptyString(rawBook.title),
-    author:
-      asNonEmptyString(rawBook.authorEn) ||
-      asNonEmptyString(rawBook.author) ||
-      asStringArray(rawBook.authors)[0],
-  });
-  if (knownWorkForm) {
-    return knownWorkForm;
-  }
-
-  const normalizedSignals = [
-    asNonEmptyString(rawBook.type),
-    asNonEmptyString(rawBook.subtitle),
-    asNonEmptyString(rawBook.description),
-    asNonEmptyString(rawBook.descriptionEn),
-    ...asStringArray(rawBook.subjects),
-    ...asStringArray(rawBook.subject),
-    ...asStringArray(rawBook.subject_facet),
-  ]
-    .map((entry) => normalizeSearchText(entry))
-    .filter(Boolean);
-
-  if (normalizedSignals.some((entry) => /\b(play|plays|drama|dramatic|traged(?:y|ies)|comedy)\b/u.test(entry))) {
-    return "play";
-  }
-  if (normalizedSignals.some((entry) => /\b(poetry|poems?|verse)\b/u.test(entry))) {
-    return "poetry";
-  }
-  if (normalizedSignals.some((entry) => /\b(novel|novels|fiction)\b/u.test(entry))) {
-    return "novel";
-  }
-
-  return "";
-}
-
 function hasTrustedWorkLevelSource(
   source: SupportedCanonicalIngestSource,
   rawBook: Record<string, unknown>
@@ -434,6 +320,33 @@ export function buildAlternateProviderCoverCandidates(params: {
   return buildOpenLibraryIsbnCoverCandidates(params.rawBook);
 }
 
+function mapLegacyLiteraryFormToForm(value: string): BookForm | null {
+  const form = normalizeBookForm(value);
+  return form === "unknown" && value !== "unknown" ? null : form;
+}
+
+function ensureOntologyPayload(params: {
+  normalized: Record<string, unknown>;
+  form: BookForm;
+  source: "seed" | "provider";
+  confidence: "mapped" | "unknown";
+}): void {
+  const ontology = asRecord(params.normalized.ontology);
+  const ontologyForm = asNonEmptyString(ontology?.form);
+  if (ontologyForm) {
+    params.normalized.literaryForm = normalizeBookForm(ontologyForm);
+    return;
+  }
+
+  params.normalized.literaryForm = params.form;
+  params.normalized.ontology = buildBookOntology({
+    literaryForm: params.form,
+    source: params.source,
+    confidence: params.confidence,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+}
+
 export function normalizeCanonicalIngestPayload(params: {
   source: SupportedCanonicalIngestSource;
   rawBook: Record<string, unknown>;
@@ -455,14 +368,12 @@ export function normalizeCanonicalIngestPayload(params: {
     requestedTitle: params.requestedTitle,
     requestedAuthor: primaryAuthor,
   });
-  const directLiteraryForm = asNonEmptyString(normalized.literaryForm).toLowerCase();
   const isCanonicalSeedPayload = Boolean(
     seedAuthorLock || (params.requestedTitle && params.requestedAuthor)
   );
-  const seedTitleLiteraryForm = isCanonicalSeedPayload
-    ? inferCanonicalSeedTitleLiteraryForm(canonicalTitle || params.requestedTitle)
-    : "";
-  const literaryForm = seedTitleLiteraryForm || directLiteraryForm || inferLiteraryForm(normalized);
+  const direct = asNonEmptyString(params.rawBook.literaryForm).toLowerCase();
+  const mapped = direct ? mapLegacyLiteraryFormToForm(direct) : null;
+  const form = mapped || "unknown";
   const description = firstNonEmptyString(
     normalized.descriptionEn,
     normalized.description,
@@ -475,7 +386,7 @@ export function normalizeCanonicalIngestPayload(params: {
   );
   const needsEnrichment =
     !description ||
-    (!literaryForm && !trustedWorkLevelSource);
+    (!direct && !trustedWorkLevelSource);
 
   if (canonicalTitle) {
     const providerTitleNorm = normalizeSearchText(providerTitle);
@@ -507,9 +418,12 @@ export function normalizeCanonicalIngestPayload(params: {
     normalized.editionContributors = contributorNames;
   }
 
-  if (literaryForm) {
-    normalized.literaryForm = literaryForm;
-  }
+  ensureOntologyPayload({
+    normalized,
+    form,
+    source: isCanonicalSeedPayload ? "seed" : "provider",
+    confidence: direct ? "mapped" : "unknown",
+  });
 
   if (description) {
     normalized.description = description;

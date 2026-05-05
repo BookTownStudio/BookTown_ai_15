@@ -6,6 +6,7 @@ import { CONTRACT_VERSION } from "../contracts/shared/version";
 import { generateCorrelationId, getHeaderValue } from "../contracts/correlation";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 import { materializeBookAuthorityInTransaction } from "./materializeBookAuthority";
+import { writeShelfBookInTransaction } from "../shelves/shelfBookEntry";
 
 type UploadUserBookRequest = {
   shelfId: string;
@@ -93,8 +94,7 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
     const derivedTitle = sanitizedFileName.replace(/\.[^.]+$/, "");
     const storagePath = `books/${bookId}/original/${sanitizedFileName}`;
     const shelfRef = db.doc(`shelves/${shelfId}`);
-    const userShelfRef = db.doc(`users/${uid}/shelves/${shelfId}`);
-    const shelfBookRef = db.doc(`users/${uid}/shelves/${shelfId}/books/${bookId}`);
+
     logger.info("[UPLOAD_USER_BOOK][START]", {
       endpointKey: ENDPOINT_KEY,
       contractVersion: CONTRACT_VERSION,
@@ -198,48 +198,18 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
           coverJobMaxAttempts: 3,
         });
 
-        tx.set(
-          userShelfRef,
-          {
-            id: shelfId,
-            ownerId: uid,
-            updatedAt: now,
-          },
-          { merge: true }
-        );
-
-        tx.set(shelfBookRef, {
-          id: bookId,
-          bookId,
+        // Write to shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
+        writeShelfBookInTransaction(tx, db, {
           shelfId,
-          ownerUid: uid,
-          source: "user_upload",
-          fileName: sanitizedFileName,
-          fileType,
-          fileSize,
+          bookId,
+          ownerId: uid,
           addedAt,
-          createdAt: now,
-          updatedAt: now,
-        });
-
-        tx.set(
-          shelfRef,
-          {
-            updatedAt: now,
-            entries: {
-              [bookId]: {
-                bookId,
-                addedAt,
-                snapshot: {
-                  titleEn: derivedTitle,
-                  titleAr: derivedTitle,
-                  coverUrl: "",
-                },
-              },
-            },
+          snapshot: {
+            titleEn: derivedTitle,
+            titleAr: derivedTitle,
+            coverUrl: "",
           },
-          { merge: true }
-        );
+        });
       });
     } catch (error) {
       logger.error("[UPLOAD_USER_BOOK][FIRESTORE_WRITE_FAILED]", {

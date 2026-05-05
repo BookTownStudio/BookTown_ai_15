@@ -223,20 +223,17 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
   });
 
   const bookmarkMutation = useMutation({
-  mutationFn: async (id: string) => {
+  mutationFn: async (variables: { id: string; shouldBookmark: boolean }) => {
     if (!uid || isGuest) throw new Error('AUTH_REQUIRED');
 
-    const current =
-      queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
-
-    if (current.status.bookmark) {
-      await socialActionRepository.unbookmark(id, uid, 'post');
+    if (variables.shouldBookmark) {
+      await socialActionRepository.bookmark(variables.id, uid, 'post');
     } else {
-      await socialActionRepository.bookmark(id, uid, 'post');
+      await socialActionRepository.unbookmark(variables.id, uid, 'post');
     }
   },
 
-  onMutate: async () => {
+  onMutate: async (variables) => {
     if (!uid || isGuest || isDeleted) return;
 
     await queryClient.cancelQueries({ queryKey: interactionKey });
@@ -244,19 +241,17 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     const previousSnapshot =
       queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
 
-    const isNowBookmarked = !previousSnapshot.status.bookmark;
-
     queryClient.setQueryData<PostInteractionSnapshot>(interactionKey, {
       ...previousSnapshot,
       status: {
         ...previousSnapshot.status,
-        bookmark: isNowBookmarked,
+        bookmark: variables.shouldBookmark,
       },
       counts: {
         ...previousSnapshot.counts,
         bookmarksCount: Math.max(
           0,
-          previousSnapshot.counts.bookmarksCount + (isNowBookmarked ? 1 : -1)
+          previousSnapshot.counts.bookmarksCount + (variables.shouldBookmark ? 1 : -1)
         ),
       },
     });
@@ -264,14 +259,14 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     return { previousSnapshot };
   },
 
-  onSuccess: async (_data, id) => {
+  onSuccess: async (_data, variables) => {
     if (uid) {
       await Promise.all([
         queryClient.invalidateQueries({
           queryKey: queryKeys.user.bookmarks(uid) as unknown as any[],
         }),
         queryClient.invalidateQueries({
-          queryKey: queryKeys.user.bookmarkStatus(uid, 'post', id) as unknown as any[],
+          queryKey: queryKeys.user.bookmarkStatus(uid, 'post', variables.id) as unknown as any[],
         }),
         queryClient.invalidateQueries({ queryKey: interactionKey }),
       ]);
@@ -307,7 +302,14 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
       },
       toggleBookmark: () => {
         if (isGuest) return loginPrompt();
-        if (postId) bookmarkMutation.mutate(postId);
+        if (postId) {
+          const current =
+            queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
+          bookmarkMutation.mutate({
+            id: postId,
+            shouldBookmark: !current.status.bookmark,
+          });
+        }
       },
       toggleRepost: () => {
         if (isGuest) return loginPrompt();

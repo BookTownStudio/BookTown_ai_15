@@ -53,10 +53,16 @@ export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
         batch.set(
           db.collection("post_stats").doc(postDoc.id),
           {
-            likes: likes.data().count,
-            bookmarks: bookmarks.data().count,
-            reposts: reposts.data().count,
-            comments: comments.data().count,
+            counters: {
+              likes: likes.data().count,
+              bookmarks: bookmarks.data().count,
+              reposts: reposts.data().count,
+              comments: comments.data().count,
+            },
+            likesCount: likes.data().count,
+            bookmarksCount: bookmarks.data().count,
+            repostsCount: reposts.data().count,
+            commentsCount: comments.data().count,
             lastBackfilledAt: timestamp,
           },
           { merge: true }
@@ -115,32 +121,28 @@ export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
       Map<string, { shelfIds: Set<string>; hasProgress: boolean }>
     >();
 
-    /* ---- 3a. From shelves ---- */
-    const shelfDocs = await db.collection("shelves").get();
-    for (const shelfDoc of shelfDocs.docs) {
-      const data = shelfDoc.data() as any;
+    /* ---- 3a. From shelf_books ---- */
+    const shelfBooksDocs = await db.collection("shelf_books").get();
+    for (const sbDoc of shelfBooksDocs.docs) {
+      const data = sbDoc.data() as any;
       const ownerId = data.ownerId;
-      const shelfId = data.id;
-      const isVirtual = Boolean(data.isVirtual);
+      const shelfId = data.shelfId;
+      const bookId = data.bookId;
 
-      if (!ownerId || !shelfId || isVirtual) continue;
+      if (!ownerId || !shelfId || !bookId) continue;
 
-      const entries = data.entries || {};
       if (!userLibraryMap.has(ownerId)) {
         userLibraryMap.set(ownerId, new Map());
       }
 
       const userMap = userLibraryMap.get(ownerId)!;
-
-      for (const bookId of Object.keys(entries)) {
-        if (!userMap.has(bookId)) {
-          userMap.set(bookId, {
-            shelfIds: new Set(),
-            hasProgress: false,
-          });
-        }
-        userMap.get(bookId)!.shelfIds.add(shelfId);
+      if (!userMap.has(bookId)) {
+        userMap.set(bookId, {
+          shelfIds: new Set(),
+          hasProgress: false,
+        });
       }
+      userMap.get(bookId)!.shelfIds.add(shelfId);
     }
 
     /* ---- 3b. From reading_progress ---- */
@@ -212,7 +214,9 @@ export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
 
     const shelfCountMap = new Map<string, number>();
 
-    for (const shelfDoc of shelfDocs.docs) {
+    const shelfDocs = await db.collection("shelves").get();
+
+for (const shelfDoc of shelfDocs.docs) {
       const data = shelfDoc.data() as any;
       const ownerId = data.ownerId;
       const isVirtual = Boolean(data.isVirtual);

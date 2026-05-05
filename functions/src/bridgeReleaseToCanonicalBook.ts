@@ -8,6 +8,7 @@ import type {
 } from "./publishing/normalizeProjectManuscript";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
+import { materializeBookAuthorityInTransaction } from "./library/materializeBookAuthority";
 import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
 import {
   attachmentVisibilityForPublication,
@@ -259,6 +260,10 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
 
       const existingBook = (bookSnap.data() ?? {}) as Record<string, unknown>;
       const existingEdition = (editionSnap.data() ?? {}) as Record<string, unknown>;
+      const existingOwnerUid = asNonEmptyString(existingBook.ownerUid, 256);
+      if (bookSnap.exists && existingOwnerUid && existingOwnerUid !== release.ownerUid) {
+        throw new HttpsError("failed-precondition", "Canonical book ownership mismatch.");
+      }
       const isNewCanonicalBook = !bookSnap.exists;
       const hasExistingCanonicalPublication = bookSnap.exists || editionSnap.exists;
       const rightsMode = normalizeBookRightsMode(existingBook.rightsMode || existingEdition.rightsMode);
@@ -363,7 +368,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           dateModified: now,
           lastPublishedTarget: "ebook",
           publicationState: "published",
-          canonicalLocked: true,
           rightsMode,
           visibility: effectiveVisibility,
           coverMode: resolvedCover.coverMode,
@@ -380,137 +384,89 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         { merge: true }
       );
 
-      if (!bookSnap.exists) {
-        tx.set(
-          bookRef,
-          {
-            id: bookId,
-            bookId,
-            editionId,
-            projectId: release.projectId,
-            ownerId: release.ownerUid,
-            ownerUid: release.ownerUid,
-            authorId: canonicalAuthor.authorId,
-            authorCanonicalKey: canonicalAuthor.canonicalKey,
-            author: authorName,
-            authorEn: authorName,
-            authorAr: authorName,
-            authors: [authorName],
-            authorDisplayName: authorName,
-            ownerDisplayName: authorName,
-            source: "write_release",
-            sourcePriority: "canonical",
-            bookType: "authored_native",
-            title,
-            titleEn,
-            titleAr,
-            synopsis,
-            description: synopsis,
-            descriptionEn: synopsis,
-            descriptionAr: synopsis,
-            language,
-            ebookAttachmentId: release.attachmentId,
-            currentReleaseId: releaseId,
-            normalizedTitle,
-            authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
-            searchableTitleAuthor: `${normalizedTitle} ${normalizedAuthor}`.trim(),
-            search: {
-              tokens: searchFields.tokens,
-            },
-            hasEbook: true,
-            downloadable: true,
-            isEbookAvailable: true,
-            publicationVersion,
-            datePublished,
-            dateModified: now,
-            lastPublishedTarget: "ebook",
-            publicationState: "published",
-            canonicalLocked: true,
-            rightsMode,
-            visibility: effectiveVisibility,
-            coverMode: resolvedCover.coverMode,
-            createdAt: now,
-            updatedAt: now,
-            ...(coverUrl
-              ? {
-                  coverUrl,
-                  cover: {
-                    original: coverUrl,
-                    medium: coverUrl,
-                    large: coverUrl,
-                    small: coverUrl,
-                  },
-                }
-              : {
-                  fallbackCover: resolvedCover.fallbackCover!,
-                }),
-          },
-          { merge: true }
-        );
-      } else {
-        const existingOwnerUid = asNonEmptyString(existingBook.ownerUid, 256);
-        if (existingOwnerUid && existingOwnerUid !== release.ownerUid) {
-          throw new HttpsError("failed-precondition", "Canonical book ownership mismatch.");
-        }
+      await materializeBookAuthorityInTransaction({
+        tx,
+        source: "write_release",
+        authorityStatus: "provisional",
+        preferredBookId: bookId,
+        allowIdentityReuse: false,
+        createEdition: false,
+        ingestionKey: `write_release:${release.ownerUid}:${release.projectId}`,
+        extraIdentityKeys: [`source:write_release:${release.ownerUid}:${release.projectId}`],
+        coverCandidates: coverUrl ? [coverUrl] : [],
+        literaryAuthorityClass: "standard_work",
+        rawBook: {
+          id: bookId,
+          bookId,
+          title,
+          titleEn,
+          titleAr,
+          author: authorName,
+          authorEn: authorName,
+          authorAr: authorName,
+          authors: [authorName],
+          description: synopsis,
+          descriptionEn: synopsis,
+          descriptionAr: synopsis,
+          language,
+          source: "write_release",
+          ownerId: release.ownerUid,
+          ownerUid: release.ownerUid,
+          projectId: release.projectId,
+          rightsMode,
+          visibility: effectiveVisibility,
+          publicationState: "published",
+          hasEbook: true,
+          downloadable: true,
+          isEbookAvailable: true,
+          coverUrl,
+        },
+      });
 
-        tx.set(
-          bookRef,
-          {
-            editionId,
-            authorId: canonicalAuthor.authorId,
-            authorCanonicalKey: canonicalAuthor.canonicalKey,
-            author: authorName,
-            authorEn: authorName,
-            authorAr: authorName,
-            authors: [authorName],
-            authorDisplayName: authorName,
-            ownerDisplayName: authorName,
-            title,
-            titleEn,
-            titleAr,
-            synopsis,
-            description: synopsis,
-            descriptionEn: synopsis,
-            descriptionAr: synopsis,
-            language,
-            ebookAttachmentId: release.attachmentId,
-            currentReleaseId: releaseId,
-            normalizedTitle,
-            authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
-            searchableTitleAuthor: `${normalizedTitle} ${normalizedAuthor}`.trim(),
-            search: {
-              tokens: searchFields.tokens,
-            },
-            publicationVersion,
-            datePublished,
-            dateModified: now,
-            lastPublishedTarget: "ebook",
-            publicationState: "published",
-            canonicalLocked: true,
-            rightsMode,
-            visibility: effectiveVisibility,
-            coverMode: resolvedCover.coverMode,
-            ...(coverUrl
-              ? {
-                  coverUrl,
-                  cover: {
-                    original: coverUrl,
-                    medium: coverUrl,
-                    large: coverUrl,
-                    small: coverUrl,
-                  },
-                  fallbackCover: FieldValue.delete(),
-                }
-              : {
-                  coverUrl: FieldValue.delete(),
-                  cover: FieldValue.delete(),
-                  fallbackCover: resolvedCover.fallbackCover!,
-                }),
-            updatedAt: now,
-          },
-          { merge: true }
-        );
-      }
+      tx.set(
+        bookRef,
+        {
+          editionId,
+          projectId: release.projectId,
+          ownerId: release.ownerUid,
+          ownerUid: release.ownerUid,
+          authorDisplayName: authorName,
+          ownerDisplayName: authorName,
+          bookType: "authored_native",
+          synopsis,
+          ebookAttachmentId: release.attachmentId,
+          epubStoragePath: release.epubStoragePath,
+          currentReleaseId: releaseId,
+          publicationVersion,
+          datePublished,
+          dateModified: now,
+          lastPublishedTarget: "ebook",
+          publicationState: "published",
+          rightsMode,
+          visibility: effectiveVisibility,
+          coverMode: resolvedCover.coverMode,
+          ...(bookSnap.exists ? {} : { createdAt: now }),
+          ...(coverUrl
+            ? {
+                coverUrl,
+                cover: {
+                  original: coverUrl,
+                  medium: coverUrl,
+                  large: coverUrl,
+                  small: coverUrl,
+                },
+                ...(bookSnap.exists ? { fallbackCover: FieldValue.delete() } : {}),
+              }
+            : {
+                ...(bookSnap.exists
+                  ? { coverUrl: FieldValue.delete(), cover: FieldValue.delete() }
+                  : {}),
+                fallbackCover: resolvedCover.fallbackCover!,
+              }),
+          updatedAt: now,
+        },
+        { merge: true }
+      );
 
       tx.set(
         projectRef,

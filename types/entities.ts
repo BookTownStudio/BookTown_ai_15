@@ -216,6 +216,28 @@ export interface Author {
     requiresCanonicalization?: boolean;
 }
 
+export type BookForm =
+    | 'novel'
+    | 'poetry'
+    | 'drama'
+    | 'essay'
+    | 'philosophy'
+    | 'religious_text'
+    | 'epic'
+    | 'short_story'
+    | 'nonfiction'
+    | 'unknown';
+
+export interface BookOntology {
+    schemaVersion: 1;
+    form: BookForm;
+    subForm: string | null;
+    canonicalTradition: string | null;
+    source: 'seed' | 'admin' | 'provider' | 'migration';
+    confidence: 'verified' | 'mapped' | 'unknown';
+    updatedAt: any;
+}
+
 // Legacy UI-facing book view. Canonical identity remains work/edition based.
 export interface Book {
     id: string;
@@ -233,6 +255,8 @@ export interface Book {
     descriptionEn: string;
     descriptionAr: string;
     description?: string;
+    literaryForm?: BookForm | string;
+    ontology: BookOntology;
     genresEn: string[];
     genresAr: string[];
     rating: number;
@@ -329,7 +353,7 @@ export interface Shelf {
     ownerId: string;
     titleEn: string;
     titleAr: string;
-    entries: { [bookId: string]: ShelfEntry };
+    bookIds: string[];
     orderedBookIds?: string[];
     userCoverUrl?: string;
     visibility?: 'public' | 'unlisted' | 'private';
@@ -340,6 +364,8 @@ export interface Shelf {
     isVirtual?: boolean;
     isDeletable?: boolean;
     isEditable?: boolean;
+    descriptionEn?: string;
+    descriptionAr?: string;
     copiedFrom?: {
         shelfId: string;
         ownerId: string;

@@ -5,8 +5,33 @@ import {
     assertActiveAuthenticatedUser,
     assertRoleFromClaims,
 } from "../shared/auth";
+import { z, parseInput } from "../shared/validation";
 
 const db = admin.firestore();
+
+const VALID_ACTIONS = [
+  "dismiss",
+  "hide",
+  "restrict",
+  "soft_delete",
+  "hard_delete",
+] as const;
+
+const applyModerationActionSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    action: z.enum(VALID_ACTIONS),
+    reportId: z.string().trim().min(1).max(190).optional(),
+    note: z.string().trim().max(1000).optional(),
+  })
+  .strict();
+
+const transitionModerationStageSchema = z
+  .object({
+    reportId: z.string().trim().min(1).max(190),
+    nextStage: z.literal("under_review"),
+  })
+  .strict();
 
 /**
  * applyModerationAction
@@ -17,14 +42,8 @@ export const applyModerationAction = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
     const { uid } = assertRoleFromClaims(caller, ["moderator", "superadmin"]);
 
-    const { postId, action, reportId, note } = request.data;
-    
-    // Actions: dismiss, hide, restrict, soft_delete, hard_delete(compat -> soft_delete)
-    const VALID_ACTIONS = ["dismiss", "hide", "restrict", "soft_delete", "hard_delete"];
-    
-    if (!postId || !VALID_ACTIONS.includes(action)) {
-        throw new HttpsError("invalid-argument", "Invalid postId or moderation action.");
-    }
+    const { postId, action, reportId, note } = parseInput(applyModerationActionSchema, request.data);
+
     if (action === "hard_delete" && !reportId) {
         throw new HttpsError("invalid-argument", "reportId is required for hard delete.");
     }
@@ -127,10 +146,7 @@ export const transitionModerationStage = onCall({ cors: true }, async (request) 
     const caller = await assertActiveAuthenticatedUser(request.auth);
     const { uid } = assertRoleFromClaims(caller, ["moderator", "superadmin"]);
 
-    const { reportId, nextStage } = request.data;
-    if (!reportId || nextStage !== 'under_review') {
-        throw new HttpsError("invalid-argument", "Invalid stage transition.");
-    }
+    const { reportId, nextStage } = parseInput(transitionModerationStageSchema, request.data);
 
     await db.runTransaction(async (transaction) => {
         const reportRef = db.collection('reports').doc(reportId);

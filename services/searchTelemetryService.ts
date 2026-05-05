@@ -1,5 +1,6 @@
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import { SearchResultDTO } from '../types/bookSearch.ts';
+import { normalizeSearchText } from '../lib/books/normalization.ts';
 
 type QueryIntent = 'ISBN' | 'AUTHOR_INTENT' | 'TITLE_INTENT' | 'MIXED_INTENT';
 
@@ -8,17 +9,6 @@ type TrackSearchClickParams = {
   clickedRank: number;
   result: SearchResultDTO;
 };
-
-function normalizeSearchText(value?: string | null): string {
-  if (!value) return '';
-  return value
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^\p{L}\p{N}\s]+/gu, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
 
 function classifyIntent(query: string): QueryIntent {
   const normalized = normalizeSearchText(query);

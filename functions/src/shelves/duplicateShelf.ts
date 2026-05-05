@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import { writeShelfBookInBatch } from "./shelfBookEntry";
 
 type DuplicateShelfRequest = {
   sourceShelfId?: unknown;
@@ -56,6 +57,13 @@ function normalizeOrderedBookIds(value: unknown): string[] | undefined {
     .map((item) => readNonEmptyString(item, 128))
     .filter((item) => item.length > 0);
   return ids.length > 0 ? Array.from(new Set(ids)) : undefined;
+}
+
+function readRecommendationOrigin(value: unknown): Record<string, unknown> | undefined {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as Record<string, unknown>;
+  }
+  return undefined;
 }
 
 export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, async (request) => {
@@ -147,7 +155,38 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     duplicatePayload.userCoverUrl = userCoverUrl;
   }
 
+  // Write the shelf metadata + legacy entries map.
   await duplicateRef.set(duplicatePayload);
+
+  // Write shelf_books docs for every copied entry (SHELF_BOOKS_SCHEMA_V1).
+  // Firestore batches are capped at 500 operations per commit.
+  const BATCH_SIZE = 500;
+  const bookIds = Object.keys(entries);
+  for (let i = 0; i < bookIds.length; i += BATCH_SIZE) {
+    const batch = db.batch();
+    const chunk = bookIds.slice(i, i + BATCH_SIZE);
+    for (const bookId of chunk) {
+      const entry = entries[bookId];
+      const addedAt =
+        typeof entry.addedAt === "string" && entry.addedAt.trim().length > 0
+          ? entry.addedAt
+          : new Date().toISOString();
+      const snapshot =
+        entry.snapshot && typeof entry.snapshot === "object" && !Array.isArray(entry.snapshot)
+          ? (entry.snapshot as Record<string, unknown>)
+          : null;
+      const recommendationOrigin = readRecommendationOrigin(entry.recommendationOrigin);
+      writeShelfBookInBatch(batch, db, {
+        shelfId: duplicateRef.id,
+        bookId,
+        ownerId: uid,
+        addedAt,
+        snapshot,
+        ...(recommendationOrigin ? { recommendationOrigin } : {}),
+      });
+    }
+    await batch.commit();
+  }
 
   try {
     await db.collection("social_metrics").add({
@@ -172,7 +211,7 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     sourceShelfId,
     sourceOwnerId,
     duplicateShelfId: duplicateRef.id,
-    entriesCount: Object.keys(entries).length,
+    entriesCount: bookIds.length,
   });
 
   return {

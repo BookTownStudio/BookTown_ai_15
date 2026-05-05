@@ -1,0 +1,195 @@
+You are performing a Tier-1, end-to-end, deep and wide audit of a production-grade system called BookTown (React + Firebase + Cloud Functions).
+
+This is NOT a shallow scan.  
+This is a full-system audit across architecture, code, data, and runtime risks.
+
+---
+
+## 🔒 HARD CONSTRAINTS
+
+- DO NOT modify any code.
+- DO NOT refactor anything.
+- DO NOT suggest changes inline.
+- DO NOT execute fixes.
+- You are in READ-ONLY AUDIT MODE.
+
+Your only output is structured audit reports saved to disk.
+
+---
+
+## 📁 OUTPUT REQUIREMENTS (MANDATORY)
+
+1. Create a root folder:
+
+/audit
+
+2. Each audit MUST be saved as a separate .md file inside /audit.
+
+3. File naming MUST be explicit and descriptive:
+
+/audit/code_audit.md  
+/audit/firestore_audit.md  
+/audit/search_audit.md  
+/audit/architecture_audit.md  
+/audit/launch_risk_audit.md  
+/audit/canonical_authority_audit.md  
+
+4. Each file must be:
+
+- Structured (clear sections)
+- Deep (not summaries)
+- Actionable (clear findings)
+- Evidence-based (reference files, functions, patterns)
+
+---
+
+## 🧠 AUDIT SCOPE (FULL SYSTEM)
+
+You must scan and analyze:
+
+- Entire codebase (frontend + backend)
+- Firebase Functions
+- Firestore usage patterns
+- Data flow (client → API → database)
+- Search pipeline and ranking logic
+- Canonical data handling
+- State management and caching
+- Interaction flows (likes, bookmarks, posts, etc.)
+
+---
+
+## 🔍 REQUIRED AUDITS
+
+### 1. CODE AUDIT → /audit/code_audit.md
+
+Identify:
+
+- Dead code (unused files, hooks, services)
+- Duplicate logic across modules
+- Violations of separation of concerns
+- Tight coupling between unrelated systems
+- Hidden side effects
+- Inconsistent patterns across features
+
+---
+
+### 2. FIRESTORE AUDIT → /audit/firestore_audit.md
+
+Identify:
+
+- Anti-patterns (fan-out reads, unbounded queries, missing indexes)
+- Multiple write paths to same data
+- Client-side writes where backend should own logic
+- Violations of user namespace (/users/{uid})
+- Inconsistent document shapes
+- Schema drift vs intended model
+
+---
+
+### 3. SEARCH AUDIT → /audit/search_audit.md
+
+Identify:
+
+- Ranking failures (canonical vs edition vs external)
+- Duplicate results / entity collisions
+- Inconsistent normalization (titles, languages)
+- Cases where canonical books are not prioritized
+- Weak fallback logic
+- Missing deduplication rules
+
+---
+
+### 4. ARCHITECTURE AUDIT → /audit/architecture_audit.md
+
+Evaluate against:
+
+- Separation of concerns (UI vs domain vs API vs data vs AI)
+- Layer boundaries
+- Data flow correctness
+- API authority enforcement
+- Coupling between modules
+- Scalability risks
+
+---
+
+### 5. LAUNCH RISK AUDIT → /audit/launch_risk_audit.md
+
+Identify anything that can break at early scale (first 100–1000 users):
+
+- Race conditions
+- Optimistic UI inconsistencies
+- Missing error handling
+- Permission failures
+- Callable timeouts
+- Data inconsistency risks
+- High-cost query patterns
+
+---
+
+### 6. CANONICAL AUTHORITY AUDIT → /audit/canonical_authority_audit.md
+
+CRITICAL for BookTown.
+
+Identify violations of:
+
+- Single canonical book identity
+- Multiple ingestion paths causing duplication
+- Authority conflicts (external vs internal data)
+- Broken book → edition relationships
+- Non-deterministic identity resolution
+
+---
+
+## 🚨 GLOBAL INVARIANTS (MUST BE VERIFIED)
+
+Flag ANY violation of:
+
+- Single canonical write path
+- Backend as source of truth
+- No client mutation of counters
+- No hidden duplicated state
+- User data strictly under /users/{uid}
+- AI never writing authoritative data
+- Deterministic, predictable data flow
+
+---
+
+## 🧾 REPORT FORMAT (STRICT)
+
+Each .md file MUST contain:
+
+### 1. Overview
+What was audited
+
+### 2. Key Findings (High Severity First)
+Bullet list of critical issues
+
+### 3. Detailed Findings
+- Issue
+- Location (file / function / pattern)
+- Why it is a problem
+- Impact (data integrity, performance, security, etc.)
+
+### 4. Risk Level
+High / Medium / Low per issue
+
+### 5. Systemic Patterns
+Repeated issues across codebase
+
+### 6. Hidden Risks
+Non-obvious problems (future failures, scaling issues)
+
+---
+
+## 🎯 FINAL OUTPUT
+
+Do NOT print results in chat.
+
+Only:
+
+- Create /audit folder
+- Generate all .md audit files inside it
+
+No explanations. No summaries.
+
+This is a production audit artifact, not a conversation.

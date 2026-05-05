@@ -570,7 +570,7 @@ const shelfSchema = z
     titleAr: z.string().min(1).max(120),
     descriptionEn: z.string().max(280).optional(),
     descriptionAr: z.string().max(280).optional(),
-    entries: z.record(z.string(), z.record(z.string(), z.unknown())),
+    bookIds: z.array(z.string()),
     orderedBookIds: z.array(z.string().min(1)).optional(),
     userCoverUrl: z.string().min(1).nullable().optional(),
     visibility: shelfVisibilitySchema,
@@ -1147,6 +1147,25 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/firebaseDbService.ts", "lib/hooks/useUserShelves.ts"],
+      }
+    ),
+
+    adminMergeCanonicalBooks: defineContract(
+      z
+        .object({
+          sourceBookId: z.string().min(1),
+          targetBookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+          data: z.any(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
       }
     ),
 

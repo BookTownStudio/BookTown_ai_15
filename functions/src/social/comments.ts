@@ -6,9 +6,34 @@ import {
     getRoleFromClaims,
 } from "../shared/auth";
 import { assertViewerCanInteractWithPost } from "./postAccess";
+import { z, parseInput } from "../shared/validation";
 
 const db = admin.firestore();
 const COMMENT_EDIT_WINDOW_MINUTES = 15;
+const MAX_COMMENT_TEXT_LENGTH = 1000;
+
+const addSocialCommentSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    text: z.string().trim().min(1).max(MAX_COMMENT_TEXT_LENGTH),
+    parentId: z.string().trim().min(1).max(190).optional(),
+  })
+  .strict();
+
+const editSocialCommentSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    commentId: z.string().trim().min(1).max(190),
+    text: z.string().trim().min(1).max(MAX_COMMENT_TEXT_LENGTH),
+  })
+  .strict();
+
+const deleteSocialCommentSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+    commentId: z.string().trim().min(1).max(190),
+  })
+  .strict();
 
 /**
  * addSocialComment
@@ -18,22 +43,12 @@ const COMMENT_EDIT_WINDOW_MINUTES = 15;
 export const addSocialComment = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
     
-    const { postId, text, parentId } = request.data as {
-        postId?: string;
-        text?: string;
-        parentId?: string;
-    };
-    const normalizedParentId =
-        typeof parentId === "string" && parentId.trim().length > 0
-            ? parentId.trim()
-            : null;
+    const { postId, text, parentId } = parseInput(addSocialCommentSchema, request.data);
+    const normalizedParentId = parentId ?? null;
     const uid = caller.uid;
     const email = typeof caller.token.email === "string" ? caller.token.email : "";
 
-    if (!postId || !text || !text.trim()) {
-        throw new HttpsError("invalid-argument", "Missing text.");
-    }
-    if (normalizedParentId && (normalizedParentId.includes("/") || normalizedParentId.length > 128)) {
+    if (normalizedParentId && normalizedParentId.includes("/")) {
         throw new HttpsError("invalid-argument", "INVALID_PARENT_COMMENT_ID");
     }
 
@@ -131,16 +146,8 @@ export const addSocialComment = onCall({ cors: true }, async (request) => {
 export const editSocialComment = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
     
-    const { postId, commentId, text } = request.data as {
-        postId?: string;
-        commentId?: string;
-        text?: string;
-    };
+    const { postId, commentId, text } = parseInput(editSocialCommentSchema, request.data);
     const uid = caller.uid;
-
-    if (!postId || !commentId || !text) {
-        throw new HttpsError("invalid-argument", "Missing required fields.");
-    }
 
     const postRef = db.collection("posts").doc(postId);
     const commentRef = postRef.collection('comments').doc(commentId);
@@ -204,13 +211,7 @@ export const editSocialComment = onCall({ cors: true }, async (request) => {
 export const deleteSocialComment = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
 
-    const { postId, commentId } = request.data as {
-        postId?: string;
-        commentId?: string;
-    };
-    if (!postId || !commentId) {
-        throw new HttpsError("invalid-argument", "postId and commentId are required.");
-    }
+    const { postId, commentId } = parseInput(deleteSocialCommentSchema, request.data);
     const uid = caller.uid;
     const role = getRoleFromClaims(caller);
     const isModerator = role === "moderator" || role === "superadmin";

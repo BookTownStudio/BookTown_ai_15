@@ -5,8 +5,15 @@ import { assertActiveAuthenticatedUser } from "../shared/auth";
 import {
     assertViewerCanInteractWithPost,
 } from "./postAccess";
+import { z, parseInput } from "../shared/validation";
 
 const db = admin.firestore();
+
+const postInteractionSchema = z
+  .object({
+    postId: z.string().trim().min(1).max(190),
+  })
+  .strict();
 
 /**
  * likeSocialPost
@@ -16,11 +23,8 @@ const db = admin.firestore();
  */
 export const likeSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
-
-    const { postId } = request.data;
+    const { postId } = parseInput(postInteractionSchema, request.data);
     const uid = caller.uid;
-
-    if (!postId) throw new HttpsError("invalid-argument", "postId required.");
 
     const likeRef = db.collection('users').doc(uid).collection('likes').doc(postId);
     const postRef = db.collection('posts').doc(postId);
@@ -86,11 +90,8 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
  */
 export const repostSocialPost = onCall({ cors: true }, async (request) => {
     const caller = await assertActiveAuthenticatedUser(request.auth);
-
-    const { postId } = request.data;
+    const { postId } = parseInput(postInteractionSchema, request.data);
     const uid = caller.uid;
-
-    if (!postId) throw new HttpsError("invalid-argument", "postId required.");
 
     const repostRef = db.collection('users').doc(uid).collection('reposts').doc(postId);
     const postRef = db.collection('posts').doc(postId);

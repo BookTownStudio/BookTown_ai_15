@@ -53,12 +53,7 @@ export const useBookSearch = (
           limit: options.limit,
         });
 
-        if (response.results.length < 2) {
-          return response;
-        }
-
-        const { rerankBookSearchResponse } = await import('../books/bookSearchRanking.ts');
-        return rerankBookSearchResponse(normalizedQuery, response);
+        return response;
       },
     enabled: normalizedQuery.length >= 2,
     staleTime: 20_000,

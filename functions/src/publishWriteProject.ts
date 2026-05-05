@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
+import { materializeBookAuthorityInTransaction } from "./library/materializeBookAuthority";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 
@@ -445,8 +446,6 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       const publishedRef = cached
         ? userRef.collection("published_books").doc(cached.id)
         : userRef.collection("published_books").doc();
-      const bookRef = db.collection("books").doc(canonicalBookId);
-
       const titleEn =
         typeof project.titleEn === "string" && project.titleEn.trim().length > 0
           ? project.titleEn.trim().slice(0, 180)
@@ -464,21 +463,23 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         titleAr,
         authorName,
       ]);
-      const normalizedCanonicalTitle = normalizeSearchText(searchableTitle);
-      const normalizedAuthor = normalizeSearchText(authorName);
       const canonicalDescription = synopsis || normalizedDescription;
       const canonicalCoverState = canonicalCoverPath ? "READY" : "FAILED";
 
-      tx.set(
-        bookRef,
-        {
+      await materializeBookAuthorityInTransaction({
+        tx,
+        source: "write_publish",
+        authorityStatus: "provisional",
+        preferredBookId: canonicalBookId,
+        allowIdentityReuse: false,
+        createEdition: false,
+        ingestionKey: `write_publish:${uid}:${canonicalProjectId}`,
+        extraIdentityKeys: [`source:write_publish:${uid}:${canonicalProjectId}`],
+        coverCandidates: canonicalCoverPath ? [canonicalCoverPath] : [],
+        literaryAuthorityClass: "standard_work",
+        rawBook: {
           id: canonicalBookId,
-          ownerId: uid,
-          ownerUid: uid,
-          projectId: canonicalProjectId,
-          source: "write_publish",
-          sourcePriority: "canonical",
-          visibility: "public",
+          bookId: canonicalBookId,
           title: searchableTitle,
           titleEn,
           titleAr,
@@ -486,23 +487,36 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           authorEn: authorName,
           authorAr: authorName,
           authors: [authorName],
-          synopsis: canonicalDescription,
           description: canonicalDescription,
           descriptionEn: canonicalDescription,
           descriptionAr: canonicalDescription,
           language,
-          publishedAt: nowIso,
+          source: "write_publish",
+          ownerId: uid,
+          ownerUid: uid,
+          projectId: canonicalProjectId,
           publishedWorkId,
           publishedEditionId: publishedEditionRef.id,
-          normalizedTitle: normalizedCanonicalTitle,
-          authorNamesNormalized: [normalizedAuthor].filter((entry) => entry.length > 0),
-          searchableTitleAuthor: `${normalizedCanonicalTitle} ${normalizedAuthor}`.trim(),
-          search: {
-            tokens: searchFields.tokens,
-          },
+          visibility: "public",
+          publicationState: "published",
           hasEbook: true,
           downloadable: true,
           isEbookAvailable: true,
+          coverUrl: canonicalCoverPath,
+        },
+      });
+
+      tx.set(
+        db.collection("books").doc(canonicalBookId),
+        {
+          ownerId: uid,
+          ownerUid: uid,
+          projectId: canonicalProjectId,
+          visibility: "public",
+          synopsis: canonicalDescription,
+          publishedAt: nowIso,
+          publishedWorkId,
+          publishedEditionId: publishedEditionRef.id,
           coverState: canonicalCoverState,
           cover: {
             state: canonicalCoverState,
@@ -512,10 +526,7 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
             small: canonicalCoverPath,
           },
           coverUrl: canonicalCoverPath,
-          popularityScore: 0,
-          engagementScore: 0,
           recentActivityAt: now,
-          createdAt: now,
           updatedAt: now,
         },
         { merge: true }

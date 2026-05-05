@@ -46,7 +46,7 @@ const AttachShelfModal: React.FC<AttachShelfModalProps> = ({ isOpen, onClose, on
                                 <div>
                                     <BilingualText className="font-semibold">{lang === 'en' ? shelf.titleEn : shelf.titleAr}</BilingualText>
                                     <BilingualText role="Caption">
-                                        {Object.keys(shelf.entries || {}).length} {lang === 'en' ? 'books' : 'كتب'}
+                                        {shelf.bookCount ?? 0} {lang === 'en' ? 'books' : 'كتب'}
                                     </BilingualText>
                                 </div>
                             </button>

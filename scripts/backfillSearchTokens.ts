@@ -2,6 +2,7 @@ import { createRequire } from "node:module";
 import { promises as fs } from "node:fs";
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { normalizeIsbn } from "../shared/normalization/index";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -156,15 +157,6 @@ function tokenizeSearch(value?: string | null): string[] {
   return normalized
     .split(" ")
     .filter((token) => token.length > 1 && !SEARCH_STOPWORDS.has(token));
-}
-
-function normalizeIsbn(value: unknown, length: 10 | 13): string {
-  if (typeof value !== "string") return "";
-  const digits = value.replace(/[^0-9Xx]/g, "").toUpperCase();
-  if (length === 10) {
-    return /^\d{9}[\dX]$/.test(digits) ? digits : "";
-  }
-  return /^\d{13}$/.test(digits) ? digits : "";
 }
 
 function generateSearchTokens(book: BookDocument): string[] {

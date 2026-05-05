@@ -10,6 +10,9 @@ import type {
   ExternalReadableSourceRecord,
   ProviderLookupContext,
 } from "../providers/types";
+import { normalizeSearchText, normalizeIsbn } from "../normalization/bookSearchNormalization";
+import { buildCanonicalKey } from "../persistence/canonicalKey";
+import { hasTransliteration, lookupPrimary } from "./transliterationMap";
 
 export interface SearchOptions {
   ebookOnly?: boolean;
@@ -17,6 +20,7 @@ export interface SearchOptions {
   language?: string;
   cursor?: string;
   limit?: number;
+  __skipTransliteration?: boolean;
 }
 
 export type SearchResultType = "canonical" | "external";
@@ -108,6 +112,9 @@ type RankedResult = UnifiedSearchResult & {
   languageMatchScore: number;
   canonicalProviderExternalIds: string[];
   literaryAuthorityClass?: LiteraryAuthorityClass | null;
+  seriesName?: string;
+  seriesPosition?: number;
+  publishedYear?: number;
   };
 
 type CursorPayload = {
@@ -298,6 +305,115 @@ function asStringArray(value: unknown): string[] {
     .filter((entry) => entry.length > 0);
 }
 
+function asNumber(value: unknown): number {
+  const num = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(num) ? num : 0;
+}
+
+/**
+ * Detects if a string contains Arabic script characters.
+ * Returns true if any character in the string is from the Arabic Unicode block.
+ */
+function hasArabicScript(text: string): boolean {
+  return /[\u0600-\u06FF]/.test(text);
+}
+
+/**
+ * Detects if a normalized query should trigger transliteration lookup.
+ * Returns true if:
+ *   - Query contains NO Arabic script
+ *   - At least one token in the query has a transliteration mapping
+ */
+function shouldEnableTransliteration(rawQuery: string, normalizedQuery: string): boolean {
+  if (hasArabicScript(rawQuery)) {
+    return false;
+  }
+
+  const tokens = tokenize(normalizedQuery);
+  return tokens.some((token) => hasTransliteration(token));
+}
+
+/**
+ * Builds a single transliteration-expanded query from tokens.
+ * For each token, if a transliteration mapping exists, replaces with primary Arabic form.
+ * Non-mapped tokens are kept unchanged.
+ *
+ * @param tokens — Array of normalized query tokens
+ * @returns Single expanded query string, or empty string if input is empty
+ *
+ * @example
+ * buildTransliterationQuery(["mahfouz", "cairo"]) → "محفوظ cairo"
+ * buildTransliterationQuery(["unknown", "query"]) → "unknown query" (no mappings)
+ * buildTransliterationQuery(["naguib", "mahfouz"]) → "naguib محفوظ"
+ */
+function buildTransliterationQuery(tokens: string[]): string {
+  if (tokens.length === 0) return "";
+
+  const expandedTokens = tokens.map((token) => {
+    const arabicForm = lookupPrimary(token);
+    return arabicForm || token;
+  });
+
+  return expandedTokens.join(" ");
+}
+
+/**
+ * Determines if primary results are below the threshold for transliteration fallback.
+ * Returns true if canonical count is very low (0-2) and external results are minimal.
+ */
+function shouldTriggerTransliterationFallback(
+  visibleCanonicalCount: number,
+  visibleExternalCount: number
+): boolean {
+  return visibleCanonicalCount < 3 && (visibleCanonicalCount + visibleExternalCount) < 5;
+}
+
+/**
+ * Merges transliteration-derived results with primary results using canonicalKey deduplication.
+ * When duplicates are found (same canonicalKey), keeps the canonical result.
+ * Applies a ranking penalty to transliteration-derived results to ensure primary results rank higher.
+ *
+ * @param primaryResults — Original search results
+ * @param translitResults — Results from transliteration fallback search
+ * @returns Merged result list with duplicates removed and ranking penalty applied
+ */
+function mergeTransliterationResults(
+  primaryResults: UnifiedSearchResult[],
+  translitResults: UnifiedSearchResult[]
+): UnifiedSearchResult[] {
+  const primaryByCanonicalKey = new Map<string, UnifiedSearchResult>();
+  const primaryIds = new Set<string>();
+
+  for (const result of primaryResults) {
+    const key = result.canonicalKey || `${result.source}:${result.id}`;
+    primaryByCanonicalKey.set(key, result);
+    primaryIds.add(result.id);
+  }
+
+  const TRANSLITERATION_PENALTY_MULTIPLIER = 0.85;
+  const newResults: UnifiedSearchResult[] = [];
+
+  for (const translitResult of translitResults) {
+    const key = translitResult.canonicalKey || `${translitResult.source}:${translitResult.id}`;
+
+    if (primaryByCanonicalKey.has(key)) {
+      continue;
+    }
+
+    if (!primaryIds.has(translitResult.id)) {
+      const resultWithPenalty = translitResult as any;
+      if (typeof resultWithPenalty.computedScore === "number") {
+        resultWithPenalty.computedScore = Math.round(
+          resultWithPenalty.computedScore * TRANSLITERATION_PENALTY_MULTIPLIER
+        );
+      }
+      newResults.push(resultWithPenalty);
+    }
+  }
+
+  return newResults;
+}
+
 function asExternalReadableSources(
   value: unknown
 ): ExternalReadableSourceRecord[] {
@@ -332,17 +448,6 @@ function asExternalReadableSources(
       } satisfies ExternalReadableSourceRecord;
     })
     .filter((entry): entry is ExternalReadableSourceRecord => entry !== null);
-}
-
-function normalizeSearchText(value?: string | null): string {
-  if (!value) return "";
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 function tokenize(value?: string | null): string[] {
@@ -422,15 +527,6 @@ function boundedEditDistance(a: string, b: string, maxDistance: number): number 
   }
 
   return previous[bLength] <= maxDistance ? previous[bLength] : null;
-}
-
-function normalizeIsbn(value: unknown, length: 10 | 13): string {
-  if (typeof value !== "string") return "";
-  const digits = value.replace(/[^0-9Xx]/g, "").toUpperCase();
-  if (length === 10) {
-    return /^\d{9}[\dX]$/.test(digits) ? digits : "";
-  }
-  return /^\d{13}$/.test(digits) ? digits : "";
 }
 
 function resolveLanguageTruth(
@@ -1008,18 +1104,102 @@ function isAbortError(error: unknown): boolean {
   return withName.name === "AbortError";
 }
 
+// ── Circuit Breaker ────────────────────────────────────────────────────────
+// Module-level state persists across warm Cloud Function invocations within
+// the same container, providing protection without Firestore writes.
+// Cold starts reset state automatically (safe default: CLOSED).
+
+const CIRCUIT_FAILURE_THRESHOLD = 3;
+const CIRCUIT_RESET_WINDOW_MS = 60_000;   // failure counter resets after 1 min
+const CIRCUIT_OPEN_DURATION_MS = 30_000;  // circuit stays open 30 s before probing
+
+type ProviderKey = "googleBooks" | "openLibrary";
+
+type ProviderCircuitState = {
+  failureCount: number;
+  windowStart: number;     // epoch ms when the current failure window began
+  openUntil: number;       // epoch ms until which circuit remains OPEN (0 = CLOSED)
+  halfOpenPending: boolean; // a probe call is already in flight
+};
+
+const circuitState: Record<ProviderKey, ProviderCircuitState> = {
+  googleBooks: { failureCount: 0, windowStart: 0, openUntil: 0, halfOpenPending: false },
+  openLibrary: { failureCount: 0, windowStart: 0, openUntil: 0, halfOpenPending: false },
+};
+
+/**
+ * Returns whether a call to the given provider should be allowed through.
+ *
+ * - "allow"  – circuit is CLOSED; proceed normally.
+ * - "probe"  – circuit is OPEN but the reset window has elapsed; one probe
+ *              call is permitted to test recovery (half-open state).
+ * - "reject" – circuit is OPEN and a probe is already in flight; skip call
+ *              and return empty results immediately.
+ */
+function checkCircuit(provider: ProviderKey): "allow" | "probe" | "reject" {
+  const state = circuitState[provider];
+  const now = Date.now();
+  if (state.openUntil > now) {
+    if (!state.halfOpenPending) {
+      state.halfOpenPending = true;
+      return "probe";
+    }
+    return "reject";
+  }
+  return "allow";
+}
+
+function recordCircuitSuccess(provider: ProviderKey): void {
+  const state = circuitState[provider];
+  state.failureCount = 0;
+  state.openUntil = 0;
+  state.halfOpenPending = false;
+}
+
+function recordCircuitFailure(provider: ProviderKey): void {
+  const state = circuitState[provider];
+  const now = Date.now();
+  // Always clear half-open probe flag so the next window can try again.
+  state.halfOpenPending = false;
+  // Roll the failure window if it has expired.
+  if (now - state.windowStart > CIRCUIT_RESET_WINDOW_MS) {
+    state.failureCount = 0;
+    state.windowStart = now;
+  }
+  state.failureCount += 1;
+  if (state.failureCount >= CIRCUIT_FAILURE_THRESHOLD) {
+    state.openUntil = now + CIRCUIT_OPEN_DURATION_MS;
+    logger.warn("[CIRCUIT_BREAKER][OPEN]", {
+      provider,
+      failureCount: state.failureCount,
+      openUntilMs: state.openUntil,
+    });
+  }
+}
+
 async function fetchJsonWithTimeout(params: {
   url: string;
   provider: "googleBooks" | "openLibrary";
 }): Promise<Record<string, unknown> | null> {
+  const circuitDecision = checkCircuit(params.provider);
+  if (circuitDecision === "reject") {
+    return null;
+  }
+
+  // Timeout behavior is unchanged — circuit breaker wraps it, not replaces it.
   const controller = new AbortController();
   const timeoutHandle = setTimeout(() => controller.abort(), EXTERNAL_PROVIDER_TIMEOUT_MS);
   try {
     const response = await fetch(params.url, { signal: controller.signal });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      recordCircuitFailure(params.provider);
+      return null;
+    }
     const payload = (await response.json()) as Record<string, unknown>;
+    recordCircuitSuccess(params.provider);
     return payload;
   } catch (error) {
+    recordCircuitFailure(params.provider);
     if (isAbortError(error)) {
       logger.warn("[AI][LIBRARIAN][PROVIDER_TIMEOUT]", {
         provider: params.provider,
@@ -1510,9 +1690,7 @@ function canonicalIdentityKey(result: UnifiedSearchResult): string {
     return `canonical:${result.canonicalKey}`;
   }
 
-  const title = normalizeSearchText(result.title);
-  const author = normalizeSearchText(result.authors[0] || result.authorEn || "unknown");
-  return `canonical:${author}::${title}`;
+  return `canonical:${buildCanonicalKey({ title: result.title, author: result.authors[0] || result.authorEn || "unknown" })}`;
 }
 
 function extractCanonicalSeedTexts(doc: CanonicalDoc): Array<string> {
@@ -1774,6 +1952,58 @@ function buildIdentityKeys(result: UnifiedSearchResult): string[] {
   ].filter((entry) => entry.length > 0);
 }
 
+/**
+ * Fuzzy dedup fallback for ISBN-less books.
+ * Returns true if external result appears to be a duplicate of canonical result
+ * based on title and author similarity.
+ *
+ * Conservative: only matches when title tokens are identical and author surnames match.
+ * Avoids false positives for books with similar titles by different authors.
+ */
+function isLikelyFuzzyDuplicate(
+  externalResult: UnifiedSearchResult,
+  canonicalResult: UnifiedSearchResult
+): boolean {
+  const extTitleNorm = normalizeSearchText(externalResult.title);
+  const canTitleNorm = normalizeSearchText(canonicalResult.title);
+
+  if (!extTitleNorm || !canTitleNorm) return false;
+
+  const extTitleTokens = new Set(tokenize(extTitleNorm));
+  const canTitleTokens = new Set(tokenize(canTitleNorm));
+
+  if (extTitleTokens.size === 0 || canTitleTokens.size === 0) return false;
+
+  const sharedTokens = Array.from(extTitleTokens).filter((token) =>
+    canTitleTokens.has(token)
+  ).length;
+  const totalTokens = Math.max(extTitleTokens.size, canTitleTokens.size);
+
+  const titleSimilarity = sharedTokens / totalTokens;
+
+  if (titleSimilarity < 0.8) return false;
+
+  const extAuthors = externalResult.authors
+    .map((author) => normalizeSearchText(author))
+    .filter((author) => author.length > 0);
+  const canAuthors = canonicalResult.authors
+    .map((author) => normalizeSearchText(author))
+    .filter((author) => author.length > 0);
+
+  if (extAuthors.length === 0 || canAuthors.length === 0) return false;
+
+  const extSurname = extAuthors[0]?.split(" ").pop() || "";
+  const canSurname = canAuthors[0]?.split(" ").pop() || "";
+
+  if (!extSurname || !canSurname) return false;
+
+  const surnameMatch =
+    extSurname === canSurname ||
+    boundedEditDistance(extSurname, canSurname, 1) !== null;
+
+  return surnameMatch;
+}
+
 function mapCanonicalBook(
   docId: string,
   data: Record<string, unknown>,
@@ -1869,6 +2099,10 @@ function mapCanonicalBook(
     asNonEmptyString(data.canonicalKey) ||
     `${normalizeSearchText(authors[0] || "unknown")}::${normalizedTitle}`;
 
+  const seriesName = asNonEmptyString(data.seriesName);
+  const seriesPosition = asNumber(data.seriesPosition);
+  const publishedYear = asNumber(data.publishedYear);
+
   return {
     id: docId,
     editionId: asNonEmptyString(data.editionId) || docId,
@@ -1914,6 +2148,9 @@ function mapCanonicalBook(
     isbn10: isbn10 || undefined,
     canonicalKey,
     ...(literaryAuthorityClass ? { literaryAuthorityClass } : {}),
+    ...(seriesName ? { seriesName } : {}),
+    ...(seriesPosition ? { seriesPosition } : {}),
+    ...(publishedYear ? { publishedYear } : {}),
     ...(asExternalReadableSources(data.externalReadableSources).length > 0
       ? { externalReadableSources: asExternalReadableSources(data.externalReadableSources) }
       : {}),
@@ -2762,7 +2999,7 @@ function mapExternalCandidateToRanked(
     languageMatchScore: toLanguageMatchScore(languageTruth),
     isbn13: candidate.isbn13,
     isbn10: candidate.isbn10,
-    canonicalKey: `${normalizeSearchText(authors[0])}::${normalizeSearchText(candidate.title)}`,
+    canonicalKey: buildCanonicalKey({ title: candidate.title, author: authors[0] }),
     canonicalProviderExternalIds: [],
     rawBook: candidate.rawBook,
   };
@@ -2873,8 +3110,22 @@ function compareRanked(a: RankedResult, b: RankedResult): number {
   }
   if (b.popularityScore !== a.popularityScore) return b.popularityScore - a.popularityScore;
   if (b.recentActivityMs !== a.recentActivityMs) return b.recentActivityMs - a.recentActivityMs;
-  if (a.bookId !== b.bookId) return a.bookId.localeCompare(b.bookId);
-  return a.id.localeCompare(b.id);
+
+  const aSeriesName = a.seriesName || "";
+  const bSeriesName = b.seriesName || "";
+  
+  if (aSeriesName && bSeriesName && aSeriesName === bSeriesName) {
+    const aPosition = a.seriesPosition || 0;
+    const bPosition = b.seriesPosition || 0;
+    if (aPosition !== bPosition) {
+      return aPosition - bPosition;
+    }
+  }
+  
+  if ((a.publishedYear || 0) !== (b.publishedYear || 0)) {
+    return (b.publishedYear || 0) - (a.publishedYear || 0);
+  }
+  return a.normalizedTitle.localeCompare(b.normalizedTitle);
 }
 
 async function enrichCanonicalAvailability(
@@ -2961,9 +3212,18 @@ function mergeCanonicalAvailability(
 
   for (const result of rankedExternal.sort(compareRanked)) {
     const identities = buildIdentityKeys(result);
-    const canonicalIndex = identities
+    let canonicalIndex = identities
       .map((entry) => canonicalIdentity.get(entry))
       .find((entry): entry is number => typeof entry === "number");
+
+    if (typeof canonicalIndex !== "number") {
+      for (let i = 0; i < nextCanonical.length; i++) {
+        if (isLikelyFuzzyDuplicate(result, nextCanonical[i])) {
+          canonicalIndex = i;
+          break;
+        }
+      }
+    }
 
     if (typeof canonicalIndex === "number") {
       if (hasTrustedExternalAvailability(result)) {
@@ -3692,6 +3952,11 @@ export async function unifiedSearch(
   const totalStartMs = Date.now();
   const queryNorm = normalizeSearchText(query);
   const phaseOrder: string[] = ["normalize"];
+  const transliterationEnabled =
+    !options.__skipTransliteration && shouldEnableTransliteration(query, queryNorm);
+  if (transliterationEnabled) {
+    phaseOrder.push("transliteration_detected");
+  }
   if (queryNorm.length < 2) {
     logger.info("BOOK_SEARCH_V2_ENGINE_TRACE", {
       query: queryNorm,
@@ -4046,6 +4311,37 @@ export async function unifiedSearch(
   }
   const visibleCanonicalCount = merged.filter((entry) => entry.resultType === "canonical").length;
   const visibleExternalCount = merged.filter((entry) => entry.resultType === "external").length;
+
+  if (
+    transliterationEnabled &&
+    shouldTriggerTransliterationFallback(visibleCanonicalCount, visibleExternalCount)
+  ) {
+    phaseOrder.push("transliteration_fallback");
+    const translitTokens = tokenize(queryNorm);
+    const translitQuery = buildTransliterationQuery(translitTokens);
+    if (translitQuery && translitQuery !== queryNorm) {
+      const translitResults = await unifiedSearch(translitQuery, {
+        ...options,
+        __skipTransliteration: true,
+      });
+
+      const newTranslitResults = mergeTransliterationResults(
+        merged as UnifiedSearchResult[],
+        translitResults.results
+      );
+
+      if (newTranslitResults.length > 0) {
+        merged = [
+          ...merged,
+          ...newTranslitResults.map((result: UnifiedSearchResult) => ({
+            ...(result as any),
+            _transliterationDerived: true,
+          })),
+        ].sort(compareRanked);
+      }
+    }
+  }
+
   phaseOrder.push("merge_sort");
   const totalDurationMs = Date.now() - totalStartMs;
 
@@ -4089,6 +4385,9 @@ export async function unifiedSearch(
         normalizedTitle,
         canonicalProviderExternalIds,
         literaryAuthorityClass,
+        seriesName,
+        seriesPosition,
+        publishedYear,
         ...publicResult
       } = entry;
       void rankTier;
@@ -4100,6 +4399,9 @@ export async function unifiedSearch(
       void normalizedTitle;
       void canonicalProviderExternalIds;
       void literaryAuthorityClass;
+      void seriesName;
+      void seriesPosition;
+      void publishedYear;
       return publicResult;
     }),
     nextCursor,

@@ -18,12 +18,12 @@ export async function fetchFromGoogleBooks(query: string): Promise<LibraryEditio
     logger.info('[SEARCH][GOOGLE][HTTP]', { status: response.status });
     if (!response.ok) return [];
 
-    const data = await response.json();
-    if (!data.items) {
+  const data = (await response.json()) as any;
+
+    if (!data?.items) {
       logger.info('[SEARCH][GOOGLE][RESULTS]', { count: 0 });
       return [];
-    }
-
+  }
     logger.info('[SEARCH][GOOGLE][RESULTS]', { count: data.items.length });
 
     return data.items.map((item: any) => {

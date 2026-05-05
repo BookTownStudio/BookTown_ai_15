@@ -305,7 +305,8 @@ describe("ingestBook v2 smoke", () => {
     expect(book?.canonicalTitle).toBe("Macbeth");
     expect(book?.authors).toEqual(["William Shakespeare"]);
     expect(book?.authorCanonicalKey).toBe("william shakespeare::unknown");
-    expect(book?.literaryForm).toBe("play");
+    expect(book?.literaryForm).toBe("unknown");
+    expect((book?.ontology as Record<string, unknown> | undefined)?.form).toBe("unknown");
     expect(book?.needsEnrichment).toBe(true);
     expect(edition?.editionContributors).toEqual(["Alasdair D. F. Macrae"]);
   });

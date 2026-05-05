@@ -25,7 +25,7 @@ export const useCreateShelf = () => {
             try {
                 const result = await dataService.shelves.createShelf(
                     uid,
-                    { titleEn, titleAr, entries: {} }
+                    { titleEn, titleAr }
                 );
 
                 devLog("[CREATE_SHELF] write success", result);
@@ -55,7 +55,7 @@ export const useCreateShelf = () => {
                         ownerId: uid,
                         titleEn,
                         titleAr,
-                        entries: {},
+                        bookIds: [],
                     };
                     return [...old, optimisticShelf];
                 }
