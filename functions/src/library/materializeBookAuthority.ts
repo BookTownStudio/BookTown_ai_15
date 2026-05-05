@@ -1091,7 +1091,8 @@ function resolveMaterializedOntology(params: {
       normalizeBookOntologyConfidence(rawOntologyRecord?.confidence) ||
       (legacyLiteraryForm ? "mapped" : "unknown"),
     updatedAt: params.updatedAt,
-    canonicalTradition: rawOntologyRecord?.canonicalTradition,
+    canonicalTradition:
+      rawOntologyRecord?.canonicalTradition ?? params.rawBook.canonicalTradition,
   });
 }
 

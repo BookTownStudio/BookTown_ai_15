@@ -1,7 +1,12 @@
 import { FieldValue } from "firebase-admin/firestore";
 
 import { normalizeSearchText } from "../../search/normalization";
-import { buildBookOntology, normalizeBookForm, type BookForm } from "../ontology/bookOntology";
+import {
+  buildBookOntology,
+  normalizeBookForm,
+  normalizeCanonicalTradition,
+  type BookForm,
+} from "../ontology/bookOntology";
 
 type SupportedCanonicalIngestSource = "googleBooks" | "openLibrary" | "worldcat";
 
@@ -330,11 +335,19 @@ function ensureOntologyPayload(params: {
   form: BookForm;
   source: "seed" | "provider";
   confidence: "mapped" | "unknown";
+  canonicalTradition?: unknown;
 }): void {
   const ontology = asRecord(params.normalized.ontology);
   const ontologyForm = asNonEmptyString(ontology?.form);
   if (ontologyForm) {
     params.normalized.literaryForm = normalizeBookForm(ontologyForm);
+    const canonicalTradition = normalizeCanonicalTradition(params.canonicalTradition);
+    if (canonicalTradition && !normalizeCanonicalTradition(ontology?.canonicalTradition)) {
+      params.normalized.ontology = {
+        ...ontology,
+        canonicalTradition,
+      };
+    }
     return;
   }
 
@@ -344,6 +357,7 @@ function ensureOntologyPayload(params: {
     source: params.source,
     confidence: params.confidence,
     updatedAt: FieldValue.serverTimestamp(),
+    canonicalTradition: params.canonicalTradition,
   });
 }
 
@@ -423,6 +437,7 @@ export function normalizeCanonicalIngestPayload(params: {
     form,
     source: isCanonicalSeedPayload ? "seed" : "provider",
     confidence: direct ? "mapped" : "unknown",
+    canonicalTradition: params.rawBook.canonicalTradition,
   });
 
   if (description) {

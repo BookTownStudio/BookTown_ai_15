@@ -228,11 +228,25 @@ export type BookForm =
     | 'nonfiction'
     | 'unknown';
 
+export type CanonicalTradition =
+    | 'greco_roman_classical'
+    | 'arabic_islamic_classical'
+    | 'persian_classical'
+    | 'indian_classical'
+    | 'chinese_classical'
+    | 'japanese_classical'
+    | 'european_enlightenment_modern'
+    | 'russian_literary_tradition'
+    | 'latin_american_literary_tradition'
+    | 'african_oral_literary_tradition'
+    | 'global_modern_postcolonial'
+    | 'unknown';
+
 export interface BookOntology {
     schemaVersion: 1;
     form: BookForm;
     subForm: string | null;
-    canonicalTradition: string | null;
+    canonicalTradition?: CanonicalTradition;
     source: 'seed' | 'admin' | 'provider' | 'migration';
     confidence: 'verified' | 'mapped' | 'unknown';
     updatedAt: any;

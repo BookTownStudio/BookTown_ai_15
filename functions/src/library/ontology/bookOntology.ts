@@ -14,12 +14,25 @@ export type BookForm =
 
 export type BookOntologySource = "seed" | "admin" | "provider" | "migration";
 export type BookOntologyConfidence = "verified" | "mapped" | "unknown";
+export type CanonicalTradition =
+  | "greco_roman_classical"
+  | "arabic_islamic_classical"
+  | "persian_classical"
+  | "indian_classical"
+  | "chinese_classical"
+  | "japanese_classical"
+  | "european_enlightenment_modern"
+  | "russian_literary_tradition"
+  | "latin_american_literary_tradition"
+  | "african_oral_literary_tradition"
+  | "global_modern_postcolonial"
+  | "unknown";
 
 export type BookOntology = {
   schemaVersion: 1;
   form: BookForm;
   subForm: string | null;
-  canonicalTradition: string | null;
+  canonicalTradition?: CanonicalTradition;
   source: BookOntologySource;
   confidence: BookOntologyConfidence;
   updatedAt: Timestamp | FieldValue;
@@ -87,6 +100,26 @@ export function normalizeBookOntologyConfidence(value: unknown): BookOntologyCon
   return null;
 }
 
+export function normalizeCanonicalTradition(value: unknown): CanonicalTradition | null {
+  if (
+    value === "greco_roman_classical" ||
+    value === "arabic_islamic_classical" ||
+    value === "persian_classical" ||
+    value === "indian_classical" ||
+    value === "chinese_classical" ||
+    value === "japanese_classical" ||
+    value === "european_enlightenment_modern" ||
+    value === "russian_literary_tradition" ||
+    value === "latin_american_literary_tradition" ||
+    value === "african_oral_literary_tradition" ||
+    value === "global_modern_postcolonial" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+  return null;
+}
+
 export function readBookOntology(value: unknown): BookOntology | null {
   const record = asRecord(value);
   if (!record || record.schemaVersion !== 1) {
@@ -100,11 +133,12 @@ export function readBookOntology(value: unknown): BookOntology | null {
     return null;
   }
 
+  const canonicalTradition = normalizeCanonicalTradition(record.canonicalTradition);
   return {
     schemaVersion: 1,
     form,
     subForm: asNonEmptyString(record.subForm) || null,
-    canonicalTradition: asNonEmptyString(record.canonicalTradition) || null,
+    ...(canonicalTradition ? { canonicalTradition } : {}),
     source,
     confidence,
     updatedAt: record.updatedAt as Timestamp | FieldValue,
@@ -126,12 +160,13 @@ export function buildBookOntology(params: {
   const rawForm = asNonEmptyString(params.literaryForm);
   const form = normalizeBookForm(rawForm);
   const subForm = rawForm && normalizeKey(rawForm) !== normalizeKey(form) ? rawForm : null;
+  const canonicalTradition = normalizeCanonicalTradition(params.canonicalTradition);
 
   return {
     schemaVersion: 1,
     form,
     subForm,
-    canonicalTradition: asNonEmptyString(params.canonicalTradition) || null,
+    ...(canonicalTradition ? { canonicalTradition } : {}),
     source: params.source,
     confidence: params.confidence,
     updatedAt: params.updatedAt,
