@@ -1,5 +1,6 @@
 
 import { useInfiniteQuery } from '../react-query.ts';
+import type { InfiniteData } from '@tanstack/react-query';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 
@@ -8,6 +9,11 @@ import { useAuth } from '../auth.tsx';
  */
 export type SocialFeedScope = 'explore' | 'following' | 'books' | 'discover';
 export type SocialFeedFilter = 'media' | 'text' | 'book' | 'quote' | 'project';
+
+type SocialFeedPage = {
+    nextCursor?: string;
+    posts?: unknown[];
+};
 
 /**
  * useSocialFeeds
@@ -23,12 +29,21 @@ export const useSocialFeeds = (
     const { user } = useAuth();
     const uid = user?.uid || 'guest';
     
-    return useInfiniteQuery({
+    const queryKey = ['feed', scope, filters, uid] as const;
+
+    return useInfiniteQuery<
+        SocialFeedPage,
+        Error,
+        InfiniteData<SocialFeedPage, string | undefined>,
+        typeof queryKey,
+        string | undefined
+    >({
         // Authoritative Keying Structure: feed:{scope}:{filters}:{uid}
-        queryKey: ['feed', scope, filters, uid],
+        queryKey,
         queryFn: ({ pageParam }) => dataService.social.getFeed(uid, scope, filters, pageParam),
-        getNextPageParam: (lastPage: any) => lastPage.nextCursor,
+        initialPageParam: undefined,
+        getNextPageParam: (lastPage) => lastPage.nextCursor,
         // Caching constraints per V1 Spec: stale_time_ms: 30000
         staleTime: 30000, 
-    } as any);
+    });
 };

@@ -39,7 +39,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
 }) => {
   const { lang } = useI18n();
   const { data: shelves, isLoading } = useUserShelves();
-  const { mutate: toggleBook, isLoading: isToggling } =
+  const { mutate: toggleBook, isPending: isToggling } =
     useToggleBookOnShelf();
 
   // Canonical membership state

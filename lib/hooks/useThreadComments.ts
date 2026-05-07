@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import type { InfiniteData } from '@tanstack/react-query';
 import { ThreadComment } from '../../types/entities.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useInfiniteQuery, useMutation, useQueryClient } from '../react-query.ts';
@@ -130,7 +131,7 @@ const prependCommentToFirstPage = (
 
 const restoreCommentsSnapshot = (
   queryClient: ReturnType<typeof useQueryClient>,
-  queryKey: string[],
+  queryKey: readonly unknown[],
   previousComments: InfiniteCommentsData | undefined
 ) => {
   if (previousComments) {
@@ -138,7 +139,7 @@ const restoreCommentsSnapshot = (
     return;
   }
 
-  queryClient.removeQueries(queryKey);
+  queryClient.removeQueries({ queryKey: queryKey });
 };
 
 const incrementPostCommentCaches = (
@@ -230,7 +231,7 @@ const incrementPostCommentCaches = (
 export const useThreadComments = (postId: string): UseThreadCommentsResult => {
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const queryKey = ['comments', 'byPostId', postId];
+  const queryKey = ['comments', 'byPostId', postId] as const;
 
   const {
     data,
@@ -240,14 +241,25 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     hasNextPage,
     fetchNextPage: fetchNextPageRaw,
     isFetchingNextPage,
-  } = useInfiniteQuery({
+  } = useInfiniteQuery<
+    CommentsPage,
+    Error,
+    InfiniteData<CommentsPage, string | undefined>,
+    typeof queryKey,
+    string | undefined
+  >({
     queryKey,
-    queryFn: ({ pageParam }) => dataService.social.getComments(postId, pageParam),
+    queryFn: ({ pageParam }) =>
+      dataService.social.getComments(
+        postId,
+        typeof pageParam === 'string' ? pageParam : undefined
+      ),
+    initialPageParam: undefined,
     getNextPageParam: (lastPage: CommentsPage) =>
       lastPage.hasMore ? lastPage.nextCursor : undefined,
     staleTime: 30000,
     enabled: !!postId,
-  } as any);
+  });
 
   const comments = flattenPages(data);
 
@@ -267,7 +279,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         throw new Error('AUTH_REQUIRED');
       }
 
-      await queryClient.cancelQueries(queryKey);
+      await queryClient.cancelQueries({ queryKey: queryKey });
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
       const previousInteractionSnapshot = queryClient.getQueryData<InteractionSnapshotData>([
@@ -352,7 +364,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         { success: boolean; liked?: boolean }
       >('likeSocialComment', { postId, commentId }),
     onMutate: async ({ commentId }) => {
-      await queryClient.cancelQueries(queryKey);
+      await queryClient.cancelQueries({ queryKey: queryKey });
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
       queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
@@ -381,7 +393,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         { success: boolean }
       >('deleteSocialComment', { postId, commentId }),
     onMutate: async ({ commentId }) => {
-      await queryClient.cancelQueries(queryKey);
+      await queryClient.cancelQueries({ queryKey: queryKey });
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
       queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
@@ -402,7 +414,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         { success: boolean }
       >('editSocialComment', { postId, commentId, text }),
     onMutate: async ({ commentId, text }) => {
-      await queryClient.cancelQueries(queryKey);
+      await queryClient.cancelQueries({ queryKey: queryKey });
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
       queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
@@ -440,6 +452,6 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     editComment: async (commentId: string, text: string) => {
       await editCommentMutation.mutateAsync({ commentId, text });
     },
-    isSubmitting: addCommentMutation.isLoading,
+    isSubmitting: addCommentMutation.isPending,
   };
 };

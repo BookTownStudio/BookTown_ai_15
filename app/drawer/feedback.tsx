@@ -22,7 +22,7 @@ const FeedbackScreen: React.FC = () => {
     const { lang } = useI18n();
     const { navigate } = useNavigation();
     const { user: authUser } = useAuth();
-    const { mutate: submitFeedback, isLoading: isSubmitting } = useSubmitFeedback();
+    const { mutate: submitFeedback, isPending: isSubmitting } = useSubmitFeedback();
 
     const [feedbackType, setFeedbackType] = useState<FeedbackType>('action-required');
     const [text, setText] = useState('');

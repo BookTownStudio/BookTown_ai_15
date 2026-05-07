@@ -144,7 +144,7 @@ const BookmarkItem: React.FC<{ bookmark: Bookmark }> = ({ bookmark }) => {
     );
     
     // Authoritative Toggle Hook
-    const { mutate: toggleBookmark, isLoading: isToggling } = useBookmarkToggle();
+    const { mutate: toggleBookmark, isPending: isToggling } = useBookmarkToggle();
     
     const handlePress = () => {
         switch(bookmark.type) {

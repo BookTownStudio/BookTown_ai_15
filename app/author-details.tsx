@@ -29,7 +29,7 @@ const AuthorDetailsScreen: React.FC = () => {
     useAuthorFollowStatus(authorId);
 
   const [isBioExpanded, setBioExpanded] = useState(false);
-  const { mutate: followAuthor, isLoading: isFollowing } = useFollowAuthor();
+  const { mutate: followAuthor, isPending: isFollowing } = useFollowAuthor();
 
   const handleBack = () => {
     const fromView = currentView.params?.from;

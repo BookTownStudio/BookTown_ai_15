@@ -164,8 +164,8 @@ const ProjectPublishScreen: React.FC = () => {
     ]);
 
     const handleBack = () => navigate({ type: 'tab', id: 'write' });
-    const isBusy = createReleaseMutation.isLoading || publishReleaseMutation.isLoading;
-    const isCoverMutating = isCoverUploading || updateProjectMutation.isLoading;
+    const isBusy = createReleaseMutation.isPending || publishReleaseMutation.isPending;
+    const isCoverMutating = isCoverUploading || updateProjectMutation.isPending;
     const matchingReleaseId =
         selectedTarget && publishTargetFromRoute === selectedTarget
             ? releaseIdFromRoute

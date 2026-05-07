@@ -27,7 +27,7 @@ const EditPostModal: React.FC<EditPostModalProps> = ({ post, isOpen, onClose }) 
     const [text, setText] = useState(post.content.text || '');
     const [visibility, setVisibility] = useState<PostVisibilityScope>(post.visibility);
     
-    const { mutate: editPost, isLoading } = useEditPost();
+    const { mutate: editPost, isPending: isLoading } = useEditPost();
 
     const isPublished = post.status === 'published';
     const [timeLeft, setTimeLeft] = useState<number | null>(null);

@@ -62,7 +62,7 @@ const DEFAULT_OPENING_SCHEDULE: Record<WeekdayKey, { closed: boolean; open: stri
 const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) => {
     const { lang } = useI18n();
     const [formType, setFormType] = useState<FormType>('location');
-    const { mutate: createVenue, isLoading: isCreating } = useCreateVenue();
+    const { mutate: createVenue, isPending: isCreating } = useCreateVenue();
     const { upload, isUploading } = useMediaUpload();
     const fileInputRef = useRef<HTMLInputElement>(null);
     const { data: locationCandidates = [], isLoading: isLoadingLocations } = useVenuesAndEvents('');

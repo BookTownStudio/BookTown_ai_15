@@ -43,7 +43,7 @@ export const useCreateShelf = () => {
                 { ownerId: uid }
             ] as unknown as any[];
 
-            await queryClient.cancelQueries(shelvesKey);
+            await queryClient.cancelQueries({ queryKey: shelvesKey });
 
             const previousShelves = queryClient.getQueryData(shelvesKey);
 
@@ -82,7 +82,7 @@ export const useCreateShelf = () => {
         onSettled: () => {
             if (uid) {
                 devLog("[CREATE_SHELF] mutation settled → invalidating shelves");
-                queryClient.invalidateQueries(queryKeys.user.shelves(uid) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.shelves(uid) as unknown as any[] });
             }
         },
     });

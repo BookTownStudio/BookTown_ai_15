@@ -19,7 +19,7 @@ interface EditVenueModalProps {
 
 const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue }) => {
     const { lang } = useI18n();
-    const { mutate: updateVenue, isLoading: isUpdating } = useUpdateVenue();
+    const { mutate: updateVenue, isPending: isUpdating } = useUpdateVenue();
     const { upload, isUploading } = useMediaUpload();
     const [formData, setFormData] = useState<Partial<Venue & Event>>({});
     const [imagePreview, setImagePreview] = useState<string | null>(null);

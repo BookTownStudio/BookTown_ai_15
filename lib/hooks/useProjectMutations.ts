@@ -38,7 +38,7 @@ export const useCreateProject = () => {
             if (uid && data.id) {
                 insertProjectIntoProjectsCache(queryClient, uid, data);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.setQueryData(queryKeys.user.project(uid, data.id) as unknown as any[], data);
             }
@@ -61,7 +61,7 @@ export const useDeleteProject = () => {
         onMutate: async (projectId) => {
             if (!uid) return;
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             const previousProjects = queryClient.getQueryData(queryKeys.user.projects(uid) as unknown as any[]);
             
@@ -73,7 +73,7 @@ export const useDeleteProject = () => {
         },
         onSettled: () => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
         },
     });
 };
@@ -93,7 +93,7 @@ export const useDuplicateProject = () => {
                 insertProjectIntoProjectsCache(queryClient, uid, data);
              }
              // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-             queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+             queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
         },
     });
 };
@@ -130,9 +130,9 @@ export const useUpdateProject = () => {
         onMutate: async ({ projectId, updates }) => {
             if (!uid) return;
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(queryKeys.user.project(uid, projectId) as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: queryKeys.user.project(uid, projectId) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
             
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             const previousProject = queryClient.getQueryData(queryKeys.user.project(uid, projectId) as unknown as any[]);
@@ -153,9 +153,9 @@ export const useUpdateProject = () => {
         },
         onSettled: (data, error, { projectId }) => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.project(uid, projectId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.project(uid, projectId) as unknown as any[] });
         },
     });
 };
@@ -198,16 +198,16 @@ export const useConfirmPublish = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useMutation<PublishedBook, ConfirmPublishVariables>({
+    return useMutation<PublishedBook, Error, ConfirmPublishVariables>({
         mutationFn: async ({ projectId, metadata, files }) => {
             if (!uid) throw new Error("Unauthenticated publish attempt blocked.");
             return dataService.projects.publishBook(uid, projectId, metadata, files);
         },
         onSuccess: (data, vars) => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.project(uid, vars.projectId) as unknown as any[] });
         }
     });
 };
@@ -221,7 +221,7 @@ export const useCreateProjectRelease = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useMutation<ProjectReleaseRecord, CreateProjectReleaseVariables>({
+    return useMutation<ProjectReleaseRecord, Error, CreateProjectReleaseVariables>({
         mutationFn: async ({ projectId, publishKind }) => {
             if (!uid) throw new Error("Unauthenticated release creation attempt blocked.");
             return dataService.projects.createProjectRelease(projectId, publishKind);
@@ -245,7 +245,7 @@ export const usePublishProjectRelease = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useMutation<PublishReleaseResult, PublishReleaseVariables>({
+    return useMutation<PublishReleaseResult, Error, PublishReleaseVariables>({
         mutationFn: async ({ releaseId, target, visibility }) => {
             if (!uid) throw new Error("Unauthenticated publish attempt blocked.");
 
@@ -272,14 +272,14 @@ export const usePublishProjectRelease = () => {
         },
         onSuccess: (_data, vars) => {
             if (uid) {
-                queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
-                queryClient.invalidateQueries(queryKeys.user.project(uid, vars.projectId) as unknown as any[]);
-                queryClient.invalidateQueries(
-                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
-                );
-                queryClient.invalidateQueries(queryKeys.user.longformPublications(uid) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.project(uid, vars.projectId) as unknown as any[] });
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.projectPublicationSettings(uid, vars.projectId)
+                });
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.longformPublications(uid) as unknown as any[] });
             }
-            queryClient.invalidateQueries(['catalog', 'publication'] as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: ['catalog', 'publication'] as unknown as any[] });
         },
     });
 };
@@ -306,15 +306,15 @@ export const useUpdateLongformPublicationVisibility = () => {
             if (!uid) {
                 return;
             }
-            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.user.profilePublications(uid, uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.profilePublications(uid, uid) as unknown as any[] });
             if (vars.projectId) {
-                queryClient.invalidateQueries(
-                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
-                );
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.projectPublicationSettings(uid, vars.projectId)
+                });
             }
-            queryClient.invalidateQueries(queryKeys.user.longformPublications(uid) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.catalog.publication(vars.publicationId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.longformPublications(uid) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.catalog.publication(vars.publicationId) as unknown as any[] });
         },
     });
 };
@@ -341,14 +341,14 @@ export const useUpdatePublishedBookVisibility = () => {
             if (!uid) {
                 return;
             }
-            queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.user.profilePublications(uid, uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.profilePublications(uid, uid) as unknown as any[] });
             if (vars.projectId) {
-                queryClient.invalidateQueries(
-                    queryKeys.user.projectPublicationSettings(uid, vars.projectId) as unknown as any[]
-                );
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.projectPublicationSettings(uid, vars.projectId)
+                });
             }
-            queryClient.invalidateQueries(queryKeys.catalog.book(vars.bookId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.catalog.book(vars.bookId) as unknown as any[] });
         },
     });
 };

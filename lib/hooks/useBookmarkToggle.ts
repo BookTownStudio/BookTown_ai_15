@@ -20,7 +20,7 @@ export const useBookmarkToggle = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useMutation<void, BookmarkToggleVariables>({
+    return useMutation<void, Error, BookmarkToggleVariables>({
         mutationFn: async ({ entityId, type, isBookmarked }) => {
             if (!uid) throw new Error("User not authenticated");
             
@@ -38,9 +38,9 @@ export const useBookmarkToggle = () => {
             const statusKey = queryKeys.user.bookmarkStatus(uid, type, entityId);
 
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(bookmarksKey as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: bookmarksKey as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(statusKey as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: statusKey as unknown as any[] });
 
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             const previousBookmarks = queryClient.getQueryData<Bookmark[]>(bookmarksKey as unknown as any[]);
@@ -85,14 +85,14 @@ export const useBookmarkToggle = () => {
             if (!uid) return;
             // Precise invalidations
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.bookmarks(uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.bookmarks(uid) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(queryKeys.user.bookmarkStatus(uid, type, entityId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.bookmarkStatus(uid, type, entityId) as unknown as any[] });
             
             if (type === 'post') {
-                queryClient.invalidateQueries([...queryKeys.social.all, 'stats', entityId]);
+                queryClient.invalidateQueries({ queryKey: [...queryKeys.social.all, 'stats', entityId] });
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.invalidateQueries(queryKeys.social.post(entityId) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.social.post(entityId) as unknown as any[] });
             }
         }
     });

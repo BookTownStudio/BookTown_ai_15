@@ -78,7 +78,7 @@ const HomeScreen: React.FC = () => {
     toggleEbookOnly,
   } = useUnifiedBookSearch(searchQuery);
 
-  const { isLoading: isAnalyzingImage } = useIdentifyBook();
+  const { isPending: isAnalyzingImage } = useIdentifyBook();
   const searchResults = searchResponse?.results || [];
   const searchErrorMessage =
     searchError instanceof Error && searchError.message.trim().length > 0

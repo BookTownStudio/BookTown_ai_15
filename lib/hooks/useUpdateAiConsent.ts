@@ -16,7 +16,7 @@ export const useUpdateAiConsent = () => {
         },
         onSuccess: () => {
             if (!uid) return;
-            queryClient.invalidateQueries(queryKeys.user.profile(uid) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.profile(uid) as unknown as any[] });
         },
     });
 };

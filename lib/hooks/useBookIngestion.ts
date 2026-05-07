@@ -1,6 +1,6 @@
 // lib/hooks/useBookIngestion.ts
 
-import { useMutation } from '@tanstack/react-query';
+import { useMutation } from '../react-query.ts';
 import { ensureCanonicalBook } from '../books/ensureCanonicalBook.ts';
 
 interface IngestionParams {

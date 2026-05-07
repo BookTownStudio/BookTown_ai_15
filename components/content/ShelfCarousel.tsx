@@ -58,7 +58,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
     shelf.ownerId
   );
 
-  const { mutate: removeBook, isLoading: isRemoving } =
+  const { mutate: removeBook, isPending: isRemoving } =
     useRemoveBookFromShelf();
 
   const draggedItemIndex = useRef<number | null>(null);

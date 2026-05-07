@@ -19,7 +19,7 @@ const ReportPostModal: React.FC<ReportPostModalProps> = ({ postId, isOpen, onClo
     const { showToast } = useToast();
     const [reason, setReason] = useState<string | null>(null);
     const [details, setDetails] = useState('');
-    const { mutate: reportPost, isLoading } = useReportPost();
+    const { mutate: reportPost, isPending: isLoading } = useReportPost();
 
     // POST_REPORTING_POLICY_V1: Standardized Canonical Report Reasons
     const reasons = [

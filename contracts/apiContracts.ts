@@ -2374,7 +2374,7 @@ export const apiContracts = {
           status: z.enum(["UPLOADING"]),
           uploadUrl: z.string().url(),
           uploadMethod: z.literal("PUT"),
-          uploadHeaders: z.record(z.string()),
+          uploadHeaders: z.record(z.string(), z.string()),
           expiresAt: z.string().min(1),
           existingSession: z.boolean(),
         })
@@ -3984,7 +3984,7 @@ export const apiContracts = {
                   ]),
                   bookId: z.string().min(1),
                   clientTimestampMs: z.number().int().positive(),
-                  payload: z.record(z.unknown()).optional(),
+                  payload: z.record(z.string(), z.unknown()).optional(),
                 })
                 .strict()
             )

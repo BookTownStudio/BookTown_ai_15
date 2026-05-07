@@ -14,12 +14,12 @@ export const useFollowAuthor = () => {
             return dataService.catalog.followAuthor(uid, authorId);
         },
         onSuccess: (_data, authorId) => {
-            queryClient.invalidateQueries(
-                queryKeys.user.authorFollow(uid, authorId) as unknown as any[]
-            );
-            queryClient.invalidateQueries(
-                queryKeys.catalog.author(authorId) as unknown as any[]
-            );
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.authorFollow(uid, authorId)
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.catalog.author(authorId)
+            });
         },
     });
 };

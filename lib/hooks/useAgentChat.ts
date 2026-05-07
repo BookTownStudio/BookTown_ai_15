@@ -33,8 +33,7 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
         enabled: !!uid && !!sessionId,
     });
 
-    // FIX: Provide explicit string type to useMutation to resolve TVariables inferred as void.
-    const { mutate: sendMessage, isLoading: isSending } = useMutation<any, string>({
+    const { mutate: sendMessage, isPending: isSending } = useMutation<any, Error, string>({
         mutationFn: async (messageText: string) => {
             if (!uid || !sessionId || !agentId) throw new Error("Missing chat parameters");
 
@@ -96,7 +95,7 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
         },
         onMutate: async (messageText: string) => {
             // Cancel any outgoing refetches so they don't overwrite our optimistic update
-            await queryClient.cancelQueries(queryKey);
+            await queryClient.cancelQueries({ queryKey: queryKey });
 
             // Snapshot the previous value
             const previousMessages = queryClient.getQueryData<ChatMessage[]>(queryKey);
@@ -133,9 +132,9 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
             // Only refetch history when the server owns the final visible turn.
             const persistedFailure = readPersistedAgentFailure(error);
             if (!error || persistedFailure?.failurePersisted) {
-                queryClient.invalidateQueries(queryKey);
+                queryClient.invalidateQueries({ queryKey: queryKey });
             }
-            queryClient.invalidateQueries(['agentSessions', uid]);
+            queryClient.invalidateQueries({ queryKey: ['agentSessions', uid] });
         },
     });
 
@@ -157,14 +156,13 @@ export const useTogglePinSession = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    // FIX: Provide explicit type for session pinning mutation.
-    return useMutation<any, { sessionId: string, isPinned: boolean }>({
+    return useMutation<any, Error, { sessionId: string, isPinned: boolean }>({
         mutationFn: async ({ sessionId, isPinned }: { sessionId: string, isPinned: boolean }) => {
             if (!uid) throw new Error("User not authenticated");
             return dataService.users.updateAgentSession(uid, sessionId, { isPinned });
         },
         onSuccess: () => {
-             queryClient.invalidateQueries(['agentSessions', uid]);
+             queryClient.invalidateQueries({ queryKey: ['agentSessions', uid] });
         }
     })
 }

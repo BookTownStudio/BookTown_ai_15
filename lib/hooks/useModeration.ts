@@ -9,7 +9,7 @@ import { callCallableEndpoint } from '../callable.ts';
 export const useTransitionModerationStage = () => {
     const queryClient = useQueryClient();
 
-    return useMutation<any, { reportId: string, nextStage: 'under_review' | 'action_taken' | 'dismissed' }>({
+    return useMutation<any, Error, { reportId: string, nextStage: 'under_review' | 'action_taken' | 'dismissed' }>({
         mutationFn: async (variables) => {
             return callCallableEndpoint<typeof variables, { success: boolean }>(
                 'transitionModerationStage',
@@ -17,7 +17,7 @@ export const useTransitionModerationStage = () => {
             );
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['admin_reports']);
+            queryClient.invalidateQueries({ queryKey: ['admin_reports'] });
         }
     });
 };
@@ -30,7 +30,7 @@ export const useTransitionModerationStage = () => {
 export const useApplyModerationAction = () => {
     const queryClient = useQueryClient();
 
-    return useMutation<any, { postId: string, action: 'dismiss' | 'hide' | 'restrict' | 'soft_delete' | 'hard_delete', reportId?: string, note?: string }>({
+    return useMutation<any, Error, { postId: string, action: 'dismiss' | 'hide' | 'restrict' | 'soft_delete' | 'hard_delete', reportId?: string, note?: string }>({
         mutationFn: async (variables) => {
             return callCallableEndpoint<typeof variables, { success: boolean }>(
                 'applyModerationAction',
@@ -38,8 +38,8 @@ export const useApplyModerationAction = () => {
             );
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['social']);
-            queryClient.invalidateQueries(['admin_reports']);
+            queryClient.invalidateQueries({ queryKey: ['social'] });
+            queryClient.invalidateQueries({ queryKey: ['admin_reports'] });
         }
     });
 };

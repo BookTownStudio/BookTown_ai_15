@@ -120,7 +120,7 @@ const NotificationsFeedScreen: React.FC = () => {
         refetch 
     } = useInfiniteNotifications();
     
-    const { mutate: markAllAsRead, isLoading: isMarking } = useMarkAllAsRead();
+    const { mutate: markAllAsRead, isPending: isMarking } = useMarkAllAsRead();
     const { data: unreadCount } = useUnreadNotificationsCount();
 
     const handleBack = () => navigate(currentView.params?.from || { type: 'tab', id: 'home' });

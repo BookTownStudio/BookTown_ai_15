@@ -31,7 +31,7 @@ const ProjectEditScreen: React.FC = () => {
     const projectId = currentView.type === 'immersive' ? currentView.params?.projectId : undefined;
 
     const { data: project, isLoading } = useProjectDetails(projectId);
-    const { mutate: updateProject, isLoading: isSaving } = useUpdateProject();
+    const { mutate: updateProject, isPending: isSaving } = useUpdateProject();
     const updateLongformVisibility = useUpdateLongformPublicationVisibility();
     const updateBookVisibility = useUpdatePublishedBookVisibility();
     const { upload, isUploading } = useMediaUpload();
@@ -110,7 +110,7 @@ const ProjectEditScreen: React.FC = () => {
     ) => {
         if (target === 'blog') {
             const publicationId = publicationSettings?.blog?.publicationId;
-            if (!publicationId || updateLongformVisibility.isLoading) {
+            if (!publicationId || updateLongformVisibility.isPending) {
                 return;
             }
             updateLongformVisibility.mutate(
@@ -132,7 +132,7 @@ const ProjectEditScreen: React.FC = () => {
         }
 
         const bookId = publicationSettings?.ebook?.bookId;
-        if (!bookId || updateBookVisibility.isLoading) {
+        if (!bookId || updateBookVisibility.isPending) {
             return;
         }
         updateBookVisibility.mutate(
@@ -158,7 +158,7 @@ const ProjectEditScreen: React.FC = () => {
         visibility: PublicationVisibility
     ) => {
         const isUpdating =
-            target === 'blog' ? updateLongformVisibility.isLoading : updateBookVisibility.isLoading;
+            target === 'blog' ? updateLongformVisibility.isPending : updateBookVisibility.isPending;
 
         return (
             <div className="rounded-xl border border-white/10 bg-black/20 p-4">

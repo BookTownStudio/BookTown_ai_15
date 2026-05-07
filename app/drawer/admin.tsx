@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import type { InfiniteData } from '@tanstack/react-query';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -97,8 +98,8 @@ const CONTROL_SECTIONS: ControlSection[] = [
 // --- Moderation Tab ---
 const ModerationTab: React.FC = () => {
   const { lang } = useI18n();
-  const { mutate: transitionStage, isLoading: isTransitioning } = useTransitionModerationStage();
-  const { mutate: applyAction, isLoading: isActing } = useApplyModerationAction();
+  const { mutate: transitionStage, isPending: isTransitioning } = useTransitionModerationStage();
+  const { mutate: applyAction, isPending: isActing } = useApplyModerationAction();
 
   const { data: reports, isLoading, refetch } = useQuery<any[]>({
     queryKey: ['admin_reports'],
@@ -630,7 +631,13 @@ const EventsTab: React.FC = () => {
     hasNextPage,
     fetchNextPage,
     isFetchingNextPage,
-  } = useInfiniteQuery({
+  } = useInfiniteQuery<
+    SystemEventsPage,
+    Error,
+    InfiniteData<SystemEventsPage, string | undefined>,
+    ReturnType<typeof adminServiceQueryKeys.systemEvents>,
+    string | undefined
+  >({
     queryKey: adminServiceQueryKeys.systemEvents(eventsParams),
     queryFn: ({ pageParam }) =>
       adminService.getRecentSystemEvents({
@@ -639,9 +646,9 @@ const EventsTab: React.FC = () => {
       }),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage: SystemEventsPage) => lastPage.nextCursor ?? undefined,
-  } as any);
+  });
 
-  const pages = (data?.pages ?? []) as SystemEventsPage[];
+  const pages = data?.pages ?? [];
   const events = useMemo<AdminSystemEvent[]>(
     () => pages.flatMap((page) => page.events),
     [pages]
@@ -999,7 +1006,7 @@ const ControlCenterScreen: React.FC = () => {
     enabled: isAdmin && canAccessDeletionRequests,
   });
 
-  const createDeletionRequestMutation = useMutation<void, { targetUid: string; reason: string }>({
+  const createDeletionRequestMutation = useMutation<void, Error, { targetUid: string; reason: string }>({
     mutationFn: ({ targetUid, reason }) => adminService.createDeletionRequest(targetUid, reason),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.deletionRequests });
@@ -1008,6 +1015,7 @@ const ControlCenterScreen: React.FC = () => {
 
   const reviewDeletionRequestMutation = useMutation<
     void,
+    Error,
     { requestId: string; decision: DeletionReviewDecision; note?: string }
   >({
     mutationFn: ({ requestId, decision, note }) =>
@@ -1017,7 +1025,7 @@ const ControlCenterScreen: React.FC = () => {
     },
   });
 
-  const executeDeletionMutation = useMutation<void, { requestId: string }>({
+  const executeDeletionMutation = useMutation<void, Error, { requestId: string }>({
     mutationFn: ({ requestId }) => adminService.executeDeletion(requestId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.deletionRequests });
@@ -1220,7 +1228,7 @@ const ControlCenterScreen: React.FC = () => {
               {activeSection === 'users' && (
                 <UsersTab
                   onRaiseDeleteRequest={handleRaiseDeleteRequest}
-                  isSubmitting={createDeletionRequestMutation.isLoading}
+                  isSubmitting={createDeletionRequestMutation.isPending}
                   submissionError={createRequestError}
                 />
               )}
@@ -1232,8 +1240,8 @@ const ControlCenterScreen: React.FC = () => {
                   isLoading={isDeleteRequestsLoading}
                   loadError={deleteRequestLoadError}
                   actionError={reviewOrExecuteError}
-                  isReviewing={reviewDeletionRequestMutation.isLoading}
-                  isExecuting={executeDeletionMutation.isLoading}
+                  isReviewing={reviewDeletionRequestMutation.isPending}
+                  isExecuting={executeDeletionMutation.isPending}
                   onReview={handleReviewDeleteRequest}
                   onExecute={handleExecuteDeleteRequest}
                 />

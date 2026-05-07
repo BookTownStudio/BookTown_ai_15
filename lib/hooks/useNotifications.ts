@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '../react-query.ts';
+import type { InfiniteData } from '@tanstack/react-query';
 import { getFirebaseDb } from '../firebase.ts';
 import {
     collection,
@@ -22,6 +23,11 @@ import { queryKeys } from '../queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
 
 const cursorRegistry = new Map<string, QueryDocumentSnapshot<DocumentData>>();
+
+type NotificationsPage = {
+    notifications: Notification[];
+    nextCursor?: string;
+};
 
 const toIsoDate = (value: any): string => {
     if (typeof value === 'string' && value.trim()) return value;
@@ -110,9 +116,15 @@ export const useInfiniteNotifications = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useInfiniteQuery({
+    return useInfiniteQuery<
+        NotificationsPage,
+        Error,
+        InfiniteData<NotificationsPage, string | undefined>,
+        readonly unknown[],
+        string | undefined
+    >({
         queryKey: [...queryKeys.user.notifications(uid), 'infinite'],
-        queryFn: async ({ pageParam }) => {
+        queryFn: async ({ pageParam }): Promise<NotificationsPage> => {
             if (!uid) return { notifications: [], nextCursor: undefined };
 
             const db = getFirebaseDb();
@@ -158,6 +170,7 @@ export const useInfiniteNotifications = () => {
                 throw error;
             }
         },
+        initialPageParam: undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor,
     });
 };
@@ -224,8 +237,8 @@ export const useToggleNotificationRead = () => {
             const infiniteKey = [...queryKeys.user.notifications(uid), 'infinite'];
             const countKey = [...queryKeys.user.notifications(uid), 'unread-count'];
 
-            await queryClient.cancelQueries(infiniteKey);
-            await queryClient.cancelQueries(countKey);
+            await queryClient.cancelQueries({ queryKey: infiniteKey });
+            await queryClient.cancelQueries({ queryKey: countKey });
 
             const previousInfinite = queryClient.getQueryData<any>(infiniteKey);
             const previousCount = queryClient.getQueryData<number>(countKey);
@@ -263,9 +276,9 @@ export const useToggleNotificationRead = () => {
         },
         onSettled: () => {
             if (uid) {
-                queryClient.invalidateQueries(
-                    queryKeys.user.notifications(uid) as unknown as any[]
-                );
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.notifications(uid)
+                });
             }
         }
     });
@@ -324,8 +337,8 @@ export const useMarkAllAsRead = () => {
             const infiniteKey = [...queryKeys.user.notifications(uid), 'infinite'];
             const countKey = [...queryKeys.user.notifications(uid), 'unread-count'];
 
-            await queryClient.cancelQueries(infiniteKey);
-            await queryClient.cancelQueries(countKey);
+            await queryClient.cancelQueries({ queryKey: infiniteKey });
+            await queryClient.cancelQueries({ queryKey: countKey });
 
             const previousInfinite = queryClient.getQueryData<any>(infiniteKey);
             const previousCount = queryClient.getQueryData<number>(countKey);
@@ -360,9 +373,9 @@ export const useMarkAllAsRead = () => {
         },
         onSettled: () => {
             if (uid) {
-                queryClient.invalidateQueries(
-                    queryKeys.user.notifications(uid) as unknown as any[]
-                );
+                queryClient.invalidateQueries({
+                    queryKey: queryKeys.user.notifications(uid)
+                });
             }
         }
     });

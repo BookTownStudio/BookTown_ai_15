@@ -29,7 +29,7 @@ export const useUpdateProfile = () => {
         onMutate: async (updates) => {
             if (!uid) return;
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            await queryClient.cancelQueries(queryKeys.user.profile(uid) as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: queryKeys.user.profile(uid) as unknown as any[] });
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
             const previousProfile = queryClient.getQueryData(queryKeys.user.profile(uid) as unknown as any[]);
             
@@ -51,7 +51,7 @@ export const useUpdateProfile = () => {
         },
         onSettled: () => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            if (uid) queryClient.invalidateQueries(queryKeys.user.profile(uid) as unknown as any[]);
+            if (uid) queryClient.invalidateQueries({ queryKey: queryKeys.user.profile(uid) as unknown as any[] });
         },
     });
 };

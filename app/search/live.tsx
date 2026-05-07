@@ -55,7 +55,7 @@ const LiveSearchScreen: React.FC = () => {
     const index = validResults.findIndex((entry) => entry.id === id);
     return index >= 0 ? index + 1 : 1;
   };
-  const { mutate: identifyBook, isLoading: isAnalyzingImage } =
+  const { mutate: identifyBook, isPending: isAnalyzingImage } =
     useIdentifyBook();
 
   /**

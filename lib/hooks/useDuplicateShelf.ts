@@ -69,10 +69,9 @@ export const useDuplicateShelf = () => {
           duplicatorUid: uid,
           timestamp: new Date().toISOString(),
         });
-        // Invalidate the authoritative library list
-        queryClient.invalidateQueries(
-          queryKeys.user.shelves(uid) as unknown as any[]
-        );
+        queryClient.invalidateQueries({
+          queryKey: queryKeys.user.shelves(uid)
+        });
         showToast(lang === 'en' ? 'Shelf duplicated' : 'تم تكرار الرف');
       }
     }

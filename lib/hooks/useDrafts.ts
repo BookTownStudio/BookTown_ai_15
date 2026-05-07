@@ -49,8 +49,8 @@ export const useSaveDraft = () => {
         },
         onSuccess: (data) => {
             // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['drafts', uid]);
-            queryClient.invalidateQueries(['draft', uid, data.id]);
+            queryClient.invalidateQueries({ queryKey: ['drafts', uid] });
+            queryClient.invalidateQueries({ queryKey: ['draft', uid, data.id] });
         },
     });
 };
@@ -67,8 +67,8 @@ export const useDeleteDraft = () => {
         },
         onSuccess: (_, draftId) => {
             // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['drafts', uid]);
-            queryClient.invalidateQueries(['draft', uid, draftId]);
+            queryClient.invalidateQueries({ queryKey: ['drafts', uid] });
+            queryClient.invalidateQueries({ queryKey: ['draft', uid, draftId] });
         },
     });
 };

@@ -25,12 +25,10 @@ export const useDeletePost = () => {
             );
         },
         onSuccess: (_, variables) => {
-            // Invalidate strictly
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(
-                queryKeys.social.post(variables.postId) as unknown as any[]
-            );
-            queryClient.invalidateQueries(['social']);
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.social.post(variables.postId)
+            });
+            queryClient.invalidateQueries({ queryKey: ['social'] });
             showPostDeleteUndo(variables.postId);
         }
     });

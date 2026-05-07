@@ -1226,7 +1226,7 @@ const AuthorsPanel: React.FC = () => {
                   variant="ghost"
                   className="!text-red-300"
                   onClick={() => archiveMutation.mutate(draft.authorId!)}
-                  disabled={archiveMutation.isLoading}
+                  disabled={archiveMutation.isPending}
                 >
                   Archive
                 </Button>
@@ -1279,7 +1279,7 @@ const AuthorsPanel: React.FC = () => {
               </div>
             )}
             <div className="flex gap-3">
-              <Button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isLoading}>
+              <Button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending}>
                 {draft.authorId ? 'Save Changes' : 'Create Author'}
               </Button>
               <Button variant="secondary" onClick={() => setDraft(emptyAuthorDraft())}>
@@ -1307,7 +1307,7 @@ const AuthorsPanel: React.FC = () => {
                       <Button
                         variant="secondary"
                         onClick={() => importMutation.mutate(candidate)}
-                        disabled={importMutation.isLoading || !candidate.providerSource || !candidate.providerExternalId}
+                        disabled={importMutation.isPending || !candidate.providerSource || !candidate.providerExternalId}
                       >
                         Import
                       </Button>
@@ -1515,7 +1515,7 @@ const QuotesPanel: React.FC = () => {
                   variant="ghost"
                   className="!text-red-300"
                   onClick={() => archiveMutation.mutate(draft.quoteId!)}
-                  disabled={archiveMutation.isLoading}
+                  disabled={archiveMutation.isPending}
                 >
                   Archive
                 </Button>
@@ -1569,7 +1569,7 @@ const QuotesPanel: React.FC = () => {
               </div>
             )}
             <div className="flex gap-3">
-              <Button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isLoading}>
+              <Button onClick={() => saveMutation.mutate(draft)} disabled={saveMutation.isPending}>
                 {draft.quoteId ? 'Save Changes' : 'Create Quote'}
               </Button>
               <Button variant="secondary" onClick={() => setDraft(emptyQuoteDraft())}>
@@ -1593,7 +1593,7 @@ const QuotesPanel: React.FC = () => {
                 }
                 event.currentTarget.value = '';
               }}
-              disabled={quoteImportMutation.isLoading}
+              disabled={quoteImportMutation.isPending}
               className="block w-full text-sm text-slate-300"
             />
             <p className="text-xs text-slate-500">

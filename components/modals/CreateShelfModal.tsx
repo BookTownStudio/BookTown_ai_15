@@ -22,8 +22,8 @@ const CreateShelfModal: React.FC<CreateShelfModalProps> = ({ isOpen, onClose, du
     const [titleEn, setTitleEn] = useState('');
     const [titleAr, setTitleAr] = useState('');
 
-    const { mutate: createShelf, isLoading: isCreating } = useCreateShelf();
-    const { mutate: duplicateShelf, isLoading: isDuplicating } = useDuplicateShelf();
+    const { mutate: createShelf, isPending: isCreating } = useCreateShelf();
+    const { mutate: duplicateShelf, isPending: isDuplicating } = useDuplicateShelf();
 
     // 🔒 Sync state with duplication source
     useEffect(() => {

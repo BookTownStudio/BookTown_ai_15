@@ -74,7 +74,7 @@ export const useNotificationPreferences = () => {
             return newData;
         },
         onMutate: async (updates) => {
-            await queryClient.cancelQueries(queryKey);
+            await queryClient.cancelQueries({ queryKey: queryKey });
             const previous = queryClient.getQueryData(queryKey);
             
             if (previous) {
@@ -91,7 +91,7 @@ export const useNotificationPreferences = () => {
             }
         },
         onSettled: () => {
-            queryClient.invalidateQueries(queryKey);
+            queryClient.invalidateQueries({ queryKey: queryKey });
         }
     });
 
@@ -99,6 +99,6 @@ export const useNotificationPreferences = () => {
         preferences: query.data,
         isLoading: query.isLoading,
         update: mutation.mutate,
-        isUpdating: mutation.isLoading
+        isUpdating: mutation.isPending
     };
 };

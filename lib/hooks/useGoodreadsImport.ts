@@ -10,14 +10,14 @@ export const useGoodreadsImport = () => {
     const uid = user?.uid;
 
     // FIX: Added generics to useMutation to specify the return type and variables type, resolving 'unknown' property access errors in components.
-    return useMutation<{ booksImported: number; shelvesCreated: number; reviewsImported: number }, File>({
+    return useMutation<{ booksImported: number; shelvesCreated: number; reviewsImported: number }, Error, File>({
         mutationFn: (file: File) => {
             if (!uid) throw new Error("User not authenticated");
             return dataService.users.importGoodreadsData(uid, file);
         },
         onSuccess: () => {
             // FIX: Use invalidateQueries instead of invalidate.
-            queryClient.invalidateQueries(['userShelves', uid]);
+            queryClient.invalidateQueries({ queryKey: ['userShelves', uid] });
             devLog("[GoodreadsImport] Import successful, queries invalidated.");
         }
     });

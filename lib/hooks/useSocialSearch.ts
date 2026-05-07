@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import type { InfiniteData } from "@tanstack/react-query";
 import { useInfiniteQuery } from "../react-query.ts";
 import { dataService } from "../../services/dataService.ts";
 import { Post, User } from "../../types/entities.ts";
@@ -53,8 +54,16 @@ export const useSocialSearch = (query: string) => {
   const { user } = useAuth();
   const normalizedQuery = query.trim().toLowerCase();
 
-  const searchQuery = useInfiniteQuery({
-    queryKey: ["socialSearchV1", user?.uid ?? "anonymous", normalizedQuery],
+  const queryKey = ["socialSearchV1", user?.uid ?? "anonymous", normalizedQuery] as const;
+
+  const searchQuery = useInfiniteQuery<
+    SocialSearchPage,
+    Error,
+    InfiniteData<SocialSearchPage, string | undefined>,
+    typeof queryKey,
+    string | undefined
+  >({
+    queryKey,
     queryFn: ({ pageParam }) =>
       dataService.social.search(
         normalizedQuery,
@@ -66,7 +75,7 @@ export const useSocialSearch = (query: string) => {
     getNextPageParam: (lastPage: SocialSearchPage) =>
       lastPage.hasMore && lastPage.nextCursor ? lastPage.nextCursor : undefined,
     staleTime: 30_000,
-  } as any);
+  });
 
   const aggregated = useMemo<SocialSearchResult>(() => {
     if (normalizedQuery.length < 2 || !user?.uid) {
@@ -80,7 +89,7 @@ export const useSocialSearch = (query: string) => {
       };
     }
 
-    const pages = (searchQuery.data?.pages ?? []) as SocialSearchPage[];
+    const pages = searchQuery.data?.pages ?? [];
     if (pages.length === 0) {
       return {
         posts: [],

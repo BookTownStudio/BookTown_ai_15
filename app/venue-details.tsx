@@ -24,8 +24,8 @@ const VenueDetailsScreen: React.FC = () => {
 
     const { data: venue, isLoading, isError } = useVenueDetails(venueId);
     const { data: reviews, isLoading: isLoadingReviews } = useVenueReviews(venueId);
-    const { mutate: submitReview, isLoading: isSubmittingReview } = useSubmitVenueReview();
-    const { mutate: saveVenue, isLoading: isSaving } = useSaveVenue();
+    const { mutate: submitReview, isPending: isSubmittingReview } = useSubmitVenueReview();
+    const { mutate: saveVenue, isPending: isSaving } = useSaveVenue();
 
     const [isSaved, setIsSaved] = useState(false);
     const [rating, setRating] = useState(0);

@@ -37,7 +37,7 @@ export const useCreateProject = () => {
                 devLog(`[WRITE][PERSISTENT] Materialization confirmed. Canonical ID: ${data.id}`);
                 insertProjectIntoProjectsCache(queryClient, uid, data);
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
                 queryClient.setQueryData(queryKeys.user.project(uid, data.id) as unknown as any[], data);
             }

@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation } from '../react-query.ts';
 import { bookUploadService } from '../../services/bookUploadService.ts';
 
 type UploadBookParams = {

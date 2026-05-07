@@ -26,7 +26,7 @@ export const useDeleteReview = () => {
      */
     onMutate: async ({ bookId }) => {
       const queryKey = ['reviews', bookId];
-      await queryClient.cancelQueries(queryKey as any);
+      await queryClient.cancelQueries({ queryKey: queryKey as any });
 
       const previousReviews = queryClient.getQueryData<Review[]>(queryKey as any);
 
@@ -46,8 +46,8 @@ export const useDeleteReview = () => {
     },
 
     onSettled: (_data, _err, { bookId }) => {
-      queryClient.invalidateQueries(['reviews', bookId] as any);
-      queryClient.invalidateQueries(['catalog', 'book', { id: bookId }] as any);
+      queryClient.invalidateQueries({ queryKey: ['reviews', bookId] as any });
+      queryClient.invalidateQueries({ queryKey: ['catalog', 'book', { id: bookId }] as any });
     },
 
     onSuccess: () => {

@@ -28,7 +28,7 @@ const UserDiscoveryPost: React.FC<UserDiscoveryPostProps> = ({ post, attachment,
     const [bgImageError, setBgImageError] = useState(false);
     const [isFollowed, setIsFollowed] = useState(false); 
     
-    const { mutate: followUser, isLoading: isFollowing } = useFollowUser();
+    const { mutate: followUser, isPending: isFollowing } = useFollowUser();
     
     const handleCardClick = () => {
         navigate({ type: 'immersive', id: 'profile', params: { userId: attachment.userId, from: currentView } });

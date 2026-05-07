@@ -32,16 +32,16 @@ export const useFollowUser = () => {
             return dataService.users.followUser(uid, userIdToFollow);
         },
         onSuccess: (data, userId) => {
-            queryClient.invalidateQueries([...queryKeys.user.all(uid), 'followStatus', uid, userId]);
-            queryClient.invalidateQueries(['suggestedProfiles', uid]);
-            queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
-            queryClient.invalidateQueries(
-                queryKeys.user.followList(uid, userId, 'followers') as unknown as any[]
-            );
-            queryClient.invalidateQueries(
-                queryKeys.user.followList(uid, uid, 'following') as unknown as any[]
-            );
+            queryClient.invalidateQueries({ queryKey: [...queryKeys.user.all(uid), 'followStatus', uid, userId] });
+            queryClient.invalidateQueries({ queryKey: ['suggestedProfiles', uid] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.stats(userId) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.stats(uid) as unknown as any[] });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.followList(uid, userId, 'followers')
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.followList(uid, uid, 'following')
+            });
         },
     });
 };
@@ -57,16 +57,16 @@ export const useUnfollowUser = () => {
             return dataService.users.unfollowUser(uid, userIdToUnfollow);
         },
         onSuccess: (data, userId) => {
-            queryClient.invalidateQueries([...queryKeys.user.all(uid), 'followStatus', uid, userId]);
-            queryClient.invalidateQueries(['suggestedProfiles', uid]);
-            queryClient.invalidateQueries(queryKeys.user.stats(userId) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.user.stats(uid) as unknown as any[]);
-            queryClient.invalidateQueries(
-                queryKeys.user.followList(uid, userId, 'followers') as unknown as any[]
-            );
-            queryClient.invalidateQueries(
-                queryKeys.user.followList(uid, uid, 'following') as unknown as any[]
-            );
+            queryClient.invalidateQueries({ queryKey: [...queryKeys.user.all(uid), 'followStatus', uid, userId] });
+            queryClient.invalidateQueries({ queryKey: ['suggestedProfiles', uid] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.stats(userId) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.user.stats(uid) as unknown as any[] });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.followList(uid, userId, 'followers')
+            });
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.user.followList(uid, uid, 'following')
+            });
         },
     });
 };

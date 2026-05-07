@@ -15,8 +15,8 @@ const UserSearchResultCard: React.FC<UserSearchResultCardProps> = ({ user }) => 
     const { lang, isRTL } = useI18n();
     const { navigate, currentView } = useNavigation();
     const { data: isFollowed } = useFollowStatus(user.uid);
-    const { mutate: followUser, isLoading: isFollowing } = useFollowUser();
-    const { mutate: unfollowUser, isLoading: isUnfollowing } = useUnfollowUser();
+    const { mutate: followUser, isPending: isFollowing } = useFollowUser();
+    const { mutate: unfollowUser, isPending: isUnfollowing } = useUnfollowUser();
 
     const handlePress = () => {
         navigate({ type: 'immersive', id: 'profile', params: { userId: user.uid, from: currentView } });

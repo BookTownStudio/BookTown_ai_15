@@ -305,8 +305,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         return post?.authorAvatar || "https://api.dicebear.com/7.x/initials/svg?seed=U";
     }, [post, isRestricted, isOwner]);
 
-    const { mutate: deletePost, isLoading: isDeleting } = useDeletePost();
-    const { mutate: restorePost, isLoading: isRestoring } = useRestorePost();
+    const { mutate: deletePost, isPending: isDeleting } = useDeletePost();
+    const { mutate: restorePost, isPending: isRestoring } = useRestorePost();
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isEditModalOpen, setEditModalOpen] = useState(false);

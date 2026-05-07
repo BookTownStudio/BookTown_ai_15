@@ -31,7 +31,7 @@ export const useCommentActions = (postId: string) => {
         },
         onSuccess: () => {
             showToast(lang === 'en' ? "Report submitted. Content hidden for you." : "تم إرسال البلاغ. المحتوى مخفي بالنسبة لك.");
-            queryClient.invalidateQueries(['comments', 'byPostId', postId]);
+            queryClient.invalidateQueries({ queryKey: ['comments', 'byPostId', postId] });
         }
     });
 
@@ -42,14 +42,14 @@ export const useCommentActions = (postId: string) => {
         },
         onSuccess: () => {
             showToast(lang === 'en' ? "User blocked." : "تم حظر المستخدم.");
-            queryClient.invalidateQueries(['comments', 'byPostId', postId]);
+            queryClient.invalidateQueries({ queryKey: ['comments', 'byPostId', postId] });
         }
     });
 
     return {
         report: reportMutation.mutate,
-        isReporting: reportMutation.isLoading,
+        isReporting: reportMutation.isPending,
         block: blockMutation.mutate,
-        isBlocking: blockMutation.isLoading
+        isBlocking: blockMutation.isPending
     };
 };

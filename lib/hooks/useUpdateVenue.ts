@@ -21,8 +21,8 @@ export const useUpdateVenue = () => {
             return dataService.venues.updateVenue(uid, venueId, data);
         },
         onSuccess: (data, variables) => {
-            queryClient.invalidateQueries(queryKeys.venues.all as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.venues.detail(variables.venueId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.venues.all as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.venues.detail(variables.venueId) as unknown as any[] });
         },
     });
 };

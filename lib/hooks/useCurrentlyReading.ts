@@ -3,7 +3,7 @@
 import { useMemo } from 'react';
 import { Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 
 /**

@@ -35,7 +35,7 @@ const DraftsScreen: React.FC = () => {
     const { lang } = useI18n();
     const { navigate, currentView } = useNavigation();
     const { data: drafts, isLoading } = useDrafts();
-    const { mutate: deleteDraft, isLoading: isDeleting } = useDeleteDraft();
+    const { mutate: deleteDraft, isPending: isDeleting } = useDeleteDraft();
 
     const handleBack = () => {
         navigate(currentView.params?.from || { type: 'tab', id: 'social' });

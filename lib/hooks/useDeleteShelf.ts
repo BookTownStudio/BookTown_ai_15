@@ -20,7 +20,7 @@ export const useDeleteShelf = () => {
                 ...queryKeys.user.shelves(uid),
                 { ownerId: uid }
             ] as unknown as any[];
-            await queryClient.cancelQueries(queryKeys.user.shelves(uid) as unknown as any[]);
+            await queryClient.cancelQueries({ queryKey: queryKeys.user.shelves(uid) as unknown as any[] });
 
             const previousShelves = queryClient.getQueryData(shelvesKey);
 
@@ -41,7 +41,7 @@ export const useDeleteShelf = () => {
         },
         onSettled: () => {
             // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            if (uid) queryClient.invalidateQueries(queryKeys.user.shelves(uid) as unknown as any[]);
+            if (uid) queryClient.invalidateQueries({ queryKey: queryKeys.user.shelves(uid) as unknown as any[] });
         },
     });
 };

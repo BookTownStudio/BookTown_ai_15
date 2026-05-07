@@ -32,8 +32,8 @@ export const useCreatePost = () => {
             return dataService.social.createPost(uid, postPayload as any);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['feed']);
-            queryClient.invalidateQueries(['social']);
+            queryClient.invalidateQueries({ queryKey: ['feed'] });
+            queryClient.invalidateQueries({ queryKey: ['social'] });
         },
     });
 };

@@ -19,7 +19,7 @@ const EditShelfModal: React.FC<EditShelfModalProps> = ({ isOpen, onClose, shelf 
     const { lang } = useI18n();
     const [titleEn, setTitleEn] = useState('');
     const [coverUrl, setCoverUrl] = useState<string | undefined>(undefined);
-    const { mutate: updateShelf, isLoading: isUpdating } = useUpdateShelf();
+    const { mutate: updateShelf, isPending: isUpdating } = useUpdateShelf();
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {

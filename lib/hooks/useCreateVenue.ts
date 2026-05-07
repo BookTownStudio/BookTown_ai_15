@@ -18,7 +18,7 @@ export const useCreateVenue = () => {
             return dataService.venues.createVenue(uid, data);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(queryKeys.venues.all as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.venues.all as unknown as any[] });
         },
     });
 };

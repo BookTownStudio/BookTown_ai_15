@@ -17,7 +17,7 @@ interface RecommendedShelfCardProps {
 const RecommendedShelfCard: React.FC<RecommendedShelfCardProps> = ({ shelf }) => {
     const { lang } = useI18n();
     const [isFollowed, setIsFollowed] = React.useState(false); 
-    const { mutate: followShelf, isLoading: isFollowing } = useFollowShelf();
+    const { mutate: followShelf, isPending: isFollowing } = useFollowShelf();
 
     const handleFollow = (e: React.MouseEvent) => {
         e.stopPropagation();

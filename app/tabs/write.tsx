@@ -166,7 +166,7 @@ const WriteScreen: React.FC = () => {
     const menuTriggerRefs = useRef<Record<string, HTMLButtonElement | null>>({});
     const importFileInputRef = useRef<HTMLInputElement>(null);
 
-    const { mutate: deleteProject, isLoading: isDeleting } = useDeleteProject();
+    const { mutate: deleteProject, isPending: isDeleting } = useDeleteProject();
     const { mutate: duplicateProject } = useDuplicateProject();
     const { mutate: updateProject } = useUpdateProject();
     const { mutate: createShareLink } = useCreateProjectShareLink();

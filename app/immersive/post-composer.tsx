@@ -71,10 +71,10 @@ const PostComposerScreen: React.FC = () => {
   const previousUidRef = useRef<string | null>(null);
 
   const { upload, isUploading } = useAttachmentUpload();
-  const { mutate: createPost, isLoading: isPosting } = useCreatePost();
+  const { mutate: createPost, isPending: isPosting } = useCreatePost();
   const { data: drafts } = useDrafts();
   const { mutateAsync: saveDraftAsync } = useSaveDraft();
-  const { mutateAsync: deleteDraftAsync, isLoading: isDeletingDraft } = useDeleteDraft();
+  const { mutateAsync: deleteDraftAsync, isPending: isDeletingDraft } = useDeleteDraft();
 
   const [debouncedText] = useDebounce(text, AUTOSAVE_DEBOUNCE);
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);

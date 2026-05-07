@@ -17,11 +17,10 @@ export const useRestorePost = () => {
             );
         },
         onSuccess: (_, postId) => {
-            // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-            queryClient.invalidateQueries(
-                queryKeys.social.post(postId) as unknown as any[]
-            );
-            queryClient.invalidateQueries(['social']);
+            queryClient.invalidateQueries({
+                queryKey: queryKeys.social.post(postId)
+            });
+            queryClient.invalidateQueries({ queryKey: ['social'] });
         }
     });
 };

@@ -200,7 +200,7 @@ const MessengerChatScreen: React.FC = () => {
     const { data: messages, isLoading, isError } = useChatHistory(conversationId);
     const sendMutation = useSendMessage(conversationId);
     const markReadMutation = useMarkConversationRead();
-    const isSending = sendMutation.isLoading;
+    const isSending = sendMutation.isPending;
     const normalizedInput = input.trim();
     const canSend = Boolean(conversationId) && (normalizedInput.length > 0 || attachment) && !isSending;
     const combinedMessages = useMemo(() => {

@@ -1,6 +1,6 @@
 // lib/hooks/useMoveBookBetweenShelves.ts
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { queryKeys } from '../queryKeys.ts';
 import { Shelf, ShelfEntry, Book } from '../../types/entities.ts';

@@ -51,9 +51,9 @@ export const useAutosaveProject = () => {
         onSettled: (_, error, { projectId }) => {
             if (uid && error) {
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.invalidateQueries(queryKeys.user.projects(uid) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
                 // FIX: Cast readonly query key to any[] to satisfy mutable parameter requirement.
-                queryClient.invalidateQueries(queryKeys.user.project(uid, projectId) as unknown as any[]);
+                queryClient.invalidateQueries({ queryKey: queryKeys.user.project(uid, projectId) as unknown as any[] });
             }
             if (error) {
                 console.error(`[WRITE][BLOCKED_AUTOSAVE] Persistence failure for ${projectId}:`, error);

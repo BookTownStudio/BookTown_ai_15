@@ -55,7 +55,7 @@ const ReadScreen: React.FC = () => {
   const [shelfToDuplicate, setShelfToDuplicate] = useState<Shelf | null>(null);
   const [activeMenuShelfId, setActiveMenuShelfId] = useState<string | null>(null);
 
-  const { mutate: deleteShelf, isLoading: isDeleting } = useDeleteShelf();
+  const { mutate: deleteShelf, isPending: isDeleting } = useDeleteShelf();
 
   const [shelfLayouts, setShelfLayouts] = useState<
     Record<string, 'carousel' | 'list'>

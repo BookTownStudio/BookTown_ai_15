@@ -1,7 +1,7 @@
 // lib/hooks/useBookCatalog.ts
 
 import { useEffect, useMemo } from 'react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '../react-query.ts';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { dataService } from '../../services/dataService.ts';
 import { Book } from '../../types/entities.ts';
@@ -26,11 +26,11 @@ export const useBookCatalog = (
       ? options.enabled && !!bookId
       : !!bookId;
 
-  const queryKey = useMemo(
+  const queryKey = useMemo<readonly unknown[]>(
     () =>
       bookId
-        ? (queryKeys.catalog.book(bookId) as unknown as any[])
-        : (['catalog', 'book', { id: 'none' }] as any[]),
+        ? queryKeys.catalog.book(bookId)
+        : ['catalog', 'book', { id: 'none' }] as const,
     [bookId]
   );
 
@@ -81,7 +81,7 @@ export const useBookCatalog = (
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
     refetchOnMount: false,
-    keepPreviousData: true,
+    placeholderData: (previousData) => previousData,
 
     /**
      * 🔁 RETRY STRATEGY
@@ -98,7 +98,7 @@ export const useBookCatalog = (
 
     retryDelay: attempt =>
       Math.min(500 * 2 ** attempt, 2000),
-  } as any);
+  });
 
   useEffect(() => {
     if (!enabled || !bookId) return;

@@ -220,14 +220,14 @@ const ProfileScreen: React.FC = () => {
 
   const profile = isGuestView ? MOCK_GUEST_PROFILE : fetchedProfile;
 
-  const { mutate: updateProfile, isLoading: isUpdating } = useUpdateProfile();
-  const { mutate: startConversation, isLoading: isStartingConversation } =
+  const { mutate: updateProfile, isPending: isUpdating } = useUpdateProfile();
+  const { mutate: startConversation, isPending: isStartingConversation } =
     useStartConversation();
   const updateLongformVisibility = useUpdateLongformPublicationVisibility();
   const updateBookVisibility = useUpdatePublishedBookVisibility();
   const { data: isFollowed } = useFollowStatus(effectiveProfileUserId);
-  const { mutate: followUser, isLoading: isFollowingUser } = useFollowUser();
-  const { mutate: unfollowUser, isLoading: isUnfollowingUser } = useUnfollowUser();
+  const { mutate: followUser, isPending: isFollowingUser } = useFollowUser();
+  const { mutate: unfollowUser, isPending: isUnfollowingUser } = useUnfollowUser();
 
   const [isEditModalOpen, setEditModalOpen] = useState(false);
   const [activeConnectionList, setActiveConnectionList] = useState<'followers' | 'following' | null>(null);
@@ -548,7 +548,7 @@ const ProfileScreen: React.FC = () => {
   };
 
   const isUnpublishing =
-    updateLongformVisibility.isLoading || updateBookVisibility.isLoading;
+    updateLongformVisibility.isPending || updateBookVisibility.isPending;
 
   return (
     <>

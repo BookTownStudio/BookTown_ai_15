@@ -54,8 +54,8 @@ export const useSendMessage = (conversationId: string | undefined) => {
             );
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['messages', uid, conversationId]);
-            queryClient.invalidateQueries(['conversations', uid]);
+            queryClient.invalidateQueries({ queryKey: ['messages', uid, conversationId] });
+            queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
         },
     });
 };
@@ -71,7 +71,7 @@ export const useStartConversation = () => {
             return dataService.messaging.createConversation(uid, peerUid);
         },
         onSuccess: () => {
-            queryClient.invalidateQueries(['conversations', uid]);
+            queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
         },
     });
 };
@@ -87,8 +87,8 @@ export const useMarkConversationRead = () => {
             return dataService.messaging.markConversationRead(uid, conversationId);
         },
         onSuccess: (_, conversationId) => {
-            queryClient.invalidateQueries(['messages', uid, conversationId]);
-            queryClient.invalidateQueries(['conversations', uid]);
+            queryClient.invalidateQueries({ queryKey: ['messages', uid, conversationId] });
+            queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
         },
     });
 };

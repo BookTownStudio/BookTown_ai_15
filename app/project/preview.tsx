@@ -48,7 +48,7 @@ const ProjectPreviewScreen: React.FC = () => {
     const [ebookPreviewError, setEbookPreviewError] = useState<string | null>(null);
 
     const handleBack = () => navigate(from ?? { type: 'tab', id: 'write' });
-    const isPublishing = publishReleaseMutation.isLoading;
+    const isPublishing = publishReleaseMutation.isPending;
 
     const publishedRouteParams = useMemo(
         () => ({

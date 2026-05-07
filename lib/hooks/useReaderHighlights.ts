@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from '../react-query.ts';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useAuth } from '../auth.tsx';
 import type { CanonicalAnchorV1 } from '../reader/runtime/contracts.ts';

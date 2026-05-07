@@ -1,4 +1,4 @@
-import { useQuery } from '@tanstack/react-query';
+import { useQuery } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { Shelf } from '../../types/entities.ts';
 import { useAuth } from '../auth.tsx';
@@ -10,7 +10,7 @@ export const useShelfDetails = (shelfId?: string, ownerId?: string) => {
     const requestUid = finalUid || 'public';
 
     return useQuery<Shelf>({
-        queryKey: queryKeys.user.shelfDetails(finalUid ?? undefined, shelfId) as unknown as any[],
+        queryKey: queryKeys.user.shelfDetails(finalUid ?? undefined, shelfId),
         queryFn: async () => {
             // External shelf deep-links can resolve without an authenticated session.
             return await dataService.shelves.getShelf(requestUid, shelfId!);
@@ -23,6 +23,6 @@ export const useShelfDetails = (shelfId?: string, ownerId?: string) => {
         refetchOnWindowFocus: false,
         refetchOnReconnect: false,
         refetchOnMount: false,
-        keepPreviousData: true,
+        placeholderData: (previousData) => previousData,
     });
 };

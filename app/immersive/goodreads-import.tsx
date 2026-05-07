@@ -15,7 +15,7 @@ const GoodreadsImportScreen: React.FC = () => {
     const [file, setFile] = useState<File | null>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
     
-    const { mutate: startImport, isLoading, isSuccess, error, data: stats } = useGoodreadsImport();
+    const { mutate: startImport, isPending: isLoading, isSuccess, error, data: stats } = useGoodreadsImport();
 
     const handleBack = () => {
         if (currentView.params?.from) {

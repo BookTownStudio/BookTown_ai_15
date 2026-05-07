@@ -40,7 +40,7 @@ const ShelfDetailsScreen: React.FC = () => {
       ? shelf.ownerId
       : ownerId) || undefined;
   const { data: creatorProfile } = useUserProfile(sourceOwnerId);
-  const { mutate: duplicateShelf, isLoading: isDuplicating } = useDuplicateShelf();
+  const { mutate: duplicateShelf, isPending: isDuplicating } = useDuplicateShelf();
 
   const visibilityBadge = useMemo(() => {
     const rawVisibility =

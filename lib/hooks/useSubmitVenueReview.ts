@@ -21,8 +21,8 @@ export const useSubmitVenueReview = () => {
             return dataService.venues.submitVenueReview(uid, venueId, rating, text);
         },
         onSuccess: (data, variables) => {
-            queryClient.invalidateQueries(queryKeys.venues.reviews(variables.venueId) as unknown as any[]);
-            queryClient.invalidateQueries(queryKeys.venues.detail(variables.venueId) as unknown as any[]);
+            queryClient.invalidateQueries({ queryKey: queryKeys.venues.reviews(variables.venueId) as unknown as any[] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.venues.detail(variables.venueId) as unknown as any[] });
         },
     });
 };

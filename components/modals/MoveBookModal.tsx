@@ -34,7 +34,7 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
   const { showToast } = useToast();
 
   const { data: shelves, isLoading } = useUserShelves();
-  const { mutate: moveBook, isLoading: isMoving } =
+  const { mutate: moveBook, isPending: isMoving } =
     useMoveBookBetweenShelves();
   const legalDestinationShelves = React.useMemo(
     () =>
