@@ -38,7 +38,6 @@ import {
 } from '../components/icons';
 
 import { cn } from '../lib/utils.ts';
-import { mockBooks } from '../data/mocks.ts';
 import { SearchResultDTO } from '../types/bookSearch.ts';
 import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
 import { parseExternalRouteBookId, resolveIngestionSource } from '../lib/books/searchNavigation.ts';
@@ -151,15 +150,10 @@ const BookDetailsScreen: React.FC = () => {
   const pendingActionRef = useRef<string>('');
   const autoAcquireStartedRef = useRef<string>('');
 
-  const randomBookId = useMemo(() => {
-    if (originalBookId !== 'surprise') return null;
-    const keys = Object.keys(mockBooks);
-    return keys[Math.floor(Math.random() * keys.length)];
-  }, [originalBookId]);
-
+  const isSurpriseRoute = originalBookId === 'surprise';
   const bookId =
-    originalBookId === 'surprise'
-      ? randomBookId
+    isSurpriseRoute
+      ? undefined
       : resolvedExternalBookId || (hasExternalHydrationCandidate ? undefined : originalBookId);
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
@@ -741,6 +735,22 @@ const BookDetailsScreen: React.FC = () => {
         <BilingualText className="text-white/40 !text-sm">
           {lang === 'en' ? 'Loading book…' : 'جاري تحميل الكتاب…'}
         </BilingualText>
+      </div>
+    );
+  }
+
+  if (isSurpriseRoute && !displayBook) {
+    return (
+      <div className="h-screen w-full flex flex-col items-center justify-center bg-[#0B0F14] gap-4 px-6">
+        <ErrorState
+          title={lang === 'en' ? 'Surprise is unavailable' : 'المفاجأة غير متاحة'}
+          message={
+            lang === 'en'
+              ? 'Surprise recommendations require a catalog-backed service and are not available right now.'
+              : 'تتطلب توصيات المفاجأة خدمة مدعومة بالكتالوج وهي غير متاحة حالياً.'
+          }
+          onRetry={handleBack}
+        />
       </div>
     );
   }

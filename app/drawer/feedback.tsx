@@ -9,7 +9,6 @@ import Button from '../../components/ui/Button.tsx';
 import InputField from '../../components/ui/InputField.tsx';
 import { useSubmitFeedback } from '../../lib/hooks/useSubmitFeedback.ts';
 import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
-import { XIcon } from '../../components/icons/XIcon.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
 import ContentRail from '../../components/layout/ContentRail.tsx';
@@ -18,9 +17,6 @@ const FEEDBACK_TYPES: { id: FeedbackType; en: string; ar: string }[] = [
     { id: 'action-required', en: 'Action Required', ar: 'يتطلب إجراء' },
     { id: 'praise-general', en: 'Praise/General', ar: 'ثناء/عام' },
 ];
-
-const MOCK_IMAGE = 'https://images.unsplash.com/photo-1589998059171-988d887df646?q=80&w=200&auto=format&fit=crop';
-
 
 const FeedbackScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -31,27 +27,14 @@ const FeedbackScreen: React.FC = () => {
     const [feedbackType, setFeedbackType] = useState<FeedbackType>('action-required');
     const [text, setText] = useState('');
     const [email, setEmail] = useState(authUser?.email || '');
-    const [attachments, setAttachments] = useState<string[]>([]);
     const [isSubmitted, setIsSubmitted] = useState(false);
 
     const handleBack = () => navigate({ type: 'tab', id: 'home' });
-
-    const handleAttachImage = () => {
-        if (attachments.length < 3) {
-            // Simulate adding a mock image
-            setAttachments(prev => [...prev, `${MOCK_IMAGE}&t=${Date.now()}`]);
-        }
-    };
-
-    const handleRemoveAttachment = (index: number) => {
-        setAttachments(prev => prev.filter((_, i) => i !== index));
-    };
     
     const resetForm = () => {
         setFeedbackType('action-required');
         setText('');
         setEmail(authUser?.email || '');
-        setAttachments([]);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -62,7 +45,7 @@ const FeedbackScreen: React.FC = () => {
             type: feedbackType,
             text,
             email,
-            attachments,
+            attachments: [],
         }, {
             onSuccess: () => {
                 setIsSubmitted(true);
@@ -136,20 +119,15 @@ const FeedbackScreen: React.FC = () => {
                         </div>
                         
                         <div>
-                            <Button type="button" variant="ghost" onClick={handleAttachImage} disabled={attachments.length >= 3}>
+                            <Button type="button" variant="ghost" disabled>
                                 <MediaIcon className="h-5 w-5 mr-2" />
-                                {lang === 'en' ? 'Attach Image' : 'إرفاق صورة'} ({attachments.length}/3)
+                                {lang === 'en' ? 'Image attachments unavailable' : 'مرفقات الصور غير متاحة'}
                             </Button>
-                            <div className="mt-2 flex items-center gap-2">
-                                {attachments.map((src, index) => (
-                                    <div key={index} className="relative">
-                                        <img src={src} alt="attachment preview" className="h-16 w-16 rounded-md object-cover" />
-                                        <button type="button" onClick={() => handleRemoveAttachment(index)} className="absolute -top-1 -right-1 bg-slate-800 rounded-full p-0.5 text-white">
-                                            <XIcon className="h-3 w-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
+                            <BilingualText role="Caption" className="mt-2 block text-slate-500 dark:text-white/45">
+                                {lang === 'en'
+                                    ? 'Feedback can be submitted as text until the upload pipeline is connected.'
+                                    : 'يمكن إرسال الملاحظات كنص إلى أن يتم توصيل مسار الرفع.'}
+                            </BilingualText>
                         </div>
 
                         <InputField

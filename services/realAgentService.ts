@@ -209,7 +209,7 @@ export class RealAgentService implements AgentService {
         const normalizedMessages = messages
             .filter((row) => row && typeof row.content === 'string' && row.content.trim().length > 0)
             .map((row) => ({
-                role: row.role === 'model' ? 'model' : 'user',
+                role: row.role === 'model' ? 'model' as const : 'user' as const,
                 content: row.content.trim().slice(0, 2000),
             }))
             .filter((row) => row.content.length > 0)
@@ -249,17 +249,11 @@ export class RealAgentService implements AgentService {
     }
 
     async chat(agentId: string, messages: AgentMessage[], systemInstruction?: string, jsonSchema?: any): Promise<string> {
-        // Map to backend ChatRequest structure
-        const response = await this.callEndpoint('/api/ai/chat', {
-            model: agentId === 'librarian' ? 'gemini-2.5-flash' : 'gemini-2.5-flash', 
-            messages,
-            systemInstruction,
-            config: jsonSchema ? {
-                responseMimeType: 'application/json',
-                responseSchema: jsonSchema
-            } : undefined
-        });
-        return response.text;
+        void agentId;
+        void messages;
+        void systemInstruction;
+        void jsonSchema;
+        throw new Error('AI_CHAT_UNAVAILABLE');
     }
 
     async summarize(text: string, format?: 'short' | 'bullets' | 'detailed'): Promise<string> {
@@ -465,55 +459,17 @@ export class RealAgentService implements AgentService {
     }
 
     async identifyBook(base64Image: string): Promise<string | null> {
-        try {
-            // Construct a multimodal message for the backend
-            const messages = [{
-                role: 'user',
-                parts: [
-                    { text: "Identify this book from the cover image. Return ONLY the title and author, like 'Title by Author'." },
-                    { 
-                        inlineData: {
-                            mimeType: "image/jpeg",
-                            data: base64Image
-                        }
-                    }
-                ]
-            }];
-
-            const response = await this.callEndpoint('/api/ai/chat', {
-                model: 'gemini-2.5-flash', // Flash supports multimodal
-                messages: messages
-            });
-
-            return response.text;
-        } catch (error) {
-            console.error("Failed to identify book via backend", error);
-            return null;
-        }
+        void base64Image;
+        throw new Error('AI_IMAGE_IDENTIFICATION_UNAVAILABLE');
     }
 
     async analyzeShelfVibe(bookTitles: string[]): Promise<ShelfVibe | null> {
-        const prompt = `Analyze the 'vibe' of a bookshelf containing these books: ${bookTitles.join(', ')}. Provide a short description and 3 recommendations.`;
-        const vibeSchema = {
-            type: "OBJECT",
-            properties: {
-                vibe: { type: "STRING" },
-                suggestions: { type: "ARRAY", items: { type: "STRING" } }
-            },
-            required: ["vibe", "suggestions"]
-        };
-
-        const resultText = await this.chat('librarian', [{ role: 'user', content: prompt }], undefined, vibeSchema);
-        try {
-            return JSON.parse(resultText);
-        } catch (e) {
-            console.error("Failed to parse vibe JSON", e);
-            return null;
-        }
+        if (bookTitles.length === 0) return null;
+        throw new Error('AI_SHELF_ANALYSIS_UNAVAILABLE');
     }
 
     async generateSpeech(text: string): Promise<Uint8Array | null> {
-        console.warn("[RealAgentService] Speech generation requires a dedicated audio endpoint (Coming V2).");
-        return null;
+        void text;
+        throw new Error('AI_SPEECH_UNAVAILABLE');
     }
 }

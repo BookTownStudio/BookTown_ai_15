@@ -224,7 +224,14 @@ const LiveSearchScreen: React.FC = () => {
           onClose={() => setIsCameraOpen(false)}
           onCapture={img =>
             identifyBook(img, {
-              onSuccess: text => text && setQuery(text)
+              onSuccess: text => text && setQuery(text),
+              onError: () => {
+                showToast(
+                  lang === 'en'
+                    ? 'Image-based book identification is unavailable.'
+                    : 'التعرف على الكتاب من الصورة غير متاح.'
+                );
+              },
             })
           }
         />

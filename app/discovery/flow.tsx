@@ -4,12 +4,6 @@ import { useI18n } from '../../store/i18n.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { XIcon } from '../../components/icons/XIcon.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
-import { ForYouFlowItem, Quote, Venue, Event, BookFair } from '../../types/entities.ts';
-import { mockBookFlowData, mockForYouFlowData } from '../../data/mocks.ts';
-import BookFlowActions from '../../components/content/BookFlowActions.tsx';
-
-// Content for Books (from bookflow/feed.tsx)
-import BookFlowPage from '../../components/content/BookFlowPage.tsx';
 
 // Content for People (from immersive/people-flow.tsx)
 import { useSuggestedProfiles } from '../../lib/hooks/useSuggestedProfiles.ts';
@@ -18,12 +12,34 @@ import UserFlowCard from '../../components/content/UserFlowCard.tsx';
 
 type Segment = 'books' | 'people' | 'for-you';
 
+const UnavailableSegment: React.FC<{ titleEn: string; titleAr: string; messageEn: string; messageAr: string }> = ({
+    titleEn,
+    titleAr,
+    messageEn,
+    messageAr,
+}) => {
+    const { lang } = useI18n();
+    return (
+        <div className="h-full w-full flex items-center justify-center bg-slate-900 px-6 text-center">
+            <div className="max-w-sm space-y-3">
+                <BilingualText role="H1" className="!text-2xl !text-white">
+                    {lang === 'en' ? titleEn : titleAr}
+                </BilingualText>
+                <BilingualText role="Body" className="text-white/65">
+                    {lang === 'en' ? messageEn : messageAr}
+                </BilingualText>
+            </div>
+        </div>
+    );
+};
+
 const BooksSegment: React.FC = () => (
-    <div className="h-full w-full bg-black overflow-y-scroll snap-y snap-mandatory scrollbar-hide">
-        {mockBookFlowData.map((item, index) => (
-            <BookFlowPage key={`${item.bookId}-${index}`} item={item} />
-        ))}
-    </div>
+    <UnavailableSegment
+        titleEn="Book flow unavailable"
+        titleAr="تدفق الكتب غير متاح"
+        messageEn="Book flow requires a backend-authored feed and is not available right now."
+        messageAr="يتطلب تدفق الكتب موجزاً موثقاً من الخادم وهو غير متاح حالياً."
+    />
 );
 
 const PeopleSegment: React.FC = () => {
@@ -57,141 +73,14 @@ const PeopleSegment: React.FC = () => {
     );
 };
 
-// Inlined component for displaying quotes in the "For You" feed
-const QuoteFlowCard: React.FC<{ quote: Quote }> = ({ quote }) => {
-    const { navigate, currentView } = useNavigation();
-    const { lang } = useI18n();
-
-    const handleNavigateToDetails = () => {
-        navigate({ type: 'immersive', id: 'quoteDetails', params: { quoteId: quote.id, from: currentView } });
-    };
-
-    return (
-        <div 
-            className="relative h-screen w-full flex-shrink-0 scroll-snap-align-start cursor-pointer bg-gradient-to-br from-slate-800 to-slate-900"
-            onClick={handleNavigateToDetails}
-            aria-label={`View details for quote`}
-        >
-            <div className="relative z-10 flex flex-col h-full justify-center items-center p-8 text-center text-white">
-                <BilingualText role="Quote" className="!text-3xl !text-white !border-white/50 drop-shadow-lg">
-                    {lang === 'en' ? quote.textEn : quote.textAr}
-                </BilingualText>
-                <BilingualText role="Caption" className="mt-4 text-white/80 drop-shadow-md">
-                    — {lang === 'en' ? quote.sourceEn : quote.sourceAr}
-                </BilingualText>
-            </div>
-            <BookFlowActions entityType="quote" entityId={quote.id} />
-        </div>
-    );
-};
-
-const VenueFlowCard: React.FC<{ venue: Venue }> = ({ venue }) => {
-    const { lang } = useI18n();
-
-    return (
-        <div 
-            className="relative h-screen w-full flex-shrink-0 scroll-snap-align-start cursor-pointer group overflow-hidden"
-            onClick={() => alert(`Navigating to details for venue: ${venue.name}`)}
-        >
-            <img src={venue.imageUrl} alt={venue.name} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/50 to-transparent" />
-            
-            <div className="relative z-10 flex flex-col h-full justify-end p-8 text-white">
-                <BilingualText role="Caption" className="!text-accent uppercase tracking-widest">{venue.type}</BilingualText>
-                <BilingualText role="H1" className="!text-4xl mt-1 !text-white drop-shadow-lg">{venue.name}</BilingualText>
-                <BilingualText role="Body" className="mt-2 text-white/80">{venue.address}</BilingualText>
-                <BilingualText role="Body" className="mt-4 text-white/90 max-w-lg">
-                    {lang === 'en' ? venue.descriptionEn : venue.descriptionAr}
-                </BilingualText>
-            </div>
-            <BookFlowActions entityType="venue" entityId={venue.id} />
-        </div>
-    );
-};
-
-const EventFlowCard: React.FC<{ event: Event }> = ({ event }) => {
-    const { lang } = useI18n();
-    const eventDate = new Date(event.dateTime).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-    const eventTime = new Date(event.dateTime).toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' });
-
-    return (
-        <div 
-            className="relative h-screen w-full flex-shrink-0 scroll-snap-align-start cursor-pointer group overflow-hidden"
-            onClick={() => alert(`Navigating to details for event: ${event.titleEn}`)}
-        >
-            <img src={event.imageUrl} alt={lang === 'en' ? event.titleEn : event.titleAr} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-black/70" />
-            
-            <div className="relative z-10 flex flex-col h-full justify-center items-center p-8 text-center text-white">
-                <BilingualText role="Caption" className="!text-accent uppercase tracking-widest">{event.type}</BilingualText>
-                <BilingualText role="H1" className="!text-5xl mt-2 !text-white drop-shadow-lg">{lang === 'en' ? event.titleEn : event.titleAr}</BilingualText>
-                <div className="mt-6 p-4 border-2 border-dashed border-white/50 rounded-lg">
-                    <BilingualText role="Body" className="!text-xl text-white/90">{eventDate}</BilingualText>
-                    <BilingualText role="Body" className="!text-xl text-white/90">{eventTime}</BilingualText>
-                    <BilingualText role="Body" className="mt-2 text-white/80">@ {event.venueName}</BilingualText>
-                </div>
-            </div>
-            <BookFlowActions entityType="event" entityId={event.id} />
-        </div>
-    );
-};
-
-const BookFairFlowCard: React.FC<{ bookfair: BookFair }> = ({ bookfair }) => {
-    const { lang } = useI18n();
-    
-    return (
-        <div 
-            className="relative h-screen w-full flex-shrink-0 scroll-snap-align-start cursor-pointer group overflow-hidden"
-            onClick={() => alert(`Navigating to details for fair: ${bookfair.nameEn}`)}
-        >
-            <img src={bookfair.imageUrl} alt={lang === 'en' ? bookfair.nameEn : bookfair.nameAr} className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-tr from-primary/80 via-accent/50 to-transparent opacity-80" />
-            
-            <div className="relative z-10 flex flex-col h-full justify-between p-8 text-white">
-                <div>
-                    <BilingualText role="H1" className="!text-5xl !text-white drop-shadow-lg leading-tight">
-                        {lang === 'en' ? bookfair.nameEn : bookfair.nameAr}
-                    </BilingualText>
-                    <BilingualText role="Body" className="!text-xl mt-2 text-white/90 drop-shadow-md">
-                        {lang === 'en' ? bookfair.taglineEn : bookfair.taglineAr}
-                    </BilingualText>
-                </div>
-
-                <div className="bg-black/30 backdrop-blur-md p-4 rounded-lg border border-white/20">
-                    <BilingualText role="Body" className="!text-2xl text-white font-bold">{bookfair.dates}</BilingualText>
-                    <BilingualText role="Body" className="mt-1 text-white/80">{bookfair.location}</BilingualText>
-                </div>
-            </div>
-            <BookFlowActions entityType="bookfair" entityId={bookfair.id} />
-        </div>
-    );
-};
-
-
-const ForYouSegment: React.FC = () => {
-    return (
-        <div className="h-full w-full bg-slate-900 overflow-y-scroll snap-y snap-mandatory scrollbar-hide">
-            {mockForYouFlowData.map((item, index) => {
-                switch (item.type) {
-                    case 'book':
-                        return <BookFlowPage key={`foryou-book-${index}`} item={item.data} />;
-                    case 'user':
-                        return <UserFlowCard key={`foryou-user-${index}`} user={item.data} />;
-                    case 'quote':
-                        return <QuoteFlowCard key={`foryou-quote-${index}`} quote={item.data} />;
-                    case 'venue':
-                        return <VenueFlowCard key={`foryou-venue-${index}`} venue={item.data} />;
-                    case 'event':
-                        return <EventFlowCard key={`foryou-event-${index}`} event={item.data} />;
-                    case 'bookfair':
-                        return <BookFairFlowCard key={`foryou-bookfair-${index}`} bookfair={item.data} />;
-                    default:
-                        return null;
-                }
-            })}
-        </div>
-    );
-};
+const ForYouSegment: React.FC = () => (
+    <UnavailableSegment
+        titleEn="For You unavailable"
+        titleAr="قسم لك غير متاح"
+        messageEn="Personalized discovery requires a backend-authored feed and is not available right now."
+        messageAr="يتطلب الاكتشاف المخصص موجزاً موثقاً من الخادم وهو غير متاح حالياً."
+    />
+);
 
 
 const DiscoveryFlowScreen: React.FC = () => {

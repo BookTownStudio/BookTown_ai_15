@@ -42,7 +42,11 @@ const HomeScreen: React.FC = () => {
   const { navigate, currentView, resetTokens } = useNavigation();
   const { showToast } = useToast();
   const { items: continueReadingItems, isLoading: isContinueLoading } = useContinueReading(8);
-  const { bookIds: recommendedBookIds, isLoading: isRecommendationsLoading } = useQuickRecs();
+  const {
+    bookIds: recommendedBookIds,
+    isLoading: isRecommendationsLoading,
+    isError: isRecommendationsError,
+  } = useQuickRecs();
   const { addToHistory } = useSearchHistory();
 
   const [isSearching, setIsSearching] = useState(false);
@@ -326,6 +330,14 @@ const HomeScreen: React.FC = () => {
                     {isRecommendationsLoading ? (
                       <div className="flex gap-4 py-4 overflow-hidden">
                         {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
+                      </div>
+                    ) : isRecommendationsError ? (
+                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-red-500/20 rounded-2xl">
+                        <span className="text-sm italic text-red-500 text-center">
+                          {lang === 'en'
+                            ? 'Recommendations are temporarily unavailable.'
+                            : 'التوصيات غير متاحة مؤقتاً.'}
+                        </span>
                       </div>
                     ) : recommendedBookIds.length > 0 ? (
                       <motion.div

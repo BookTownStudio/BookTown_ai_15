@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "production-truth:check": "node scripts/enforceProductionTruth.mjs",
+    "build": "npm run production-truth:check && vite build && node scripts/verifyProductionBundleTruth.mjs",
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
@@ -15,7 +16,8 @@
     "e2e:reader:highlight": "node scripts/readerHighlightLifecycleE2E.mjs",
     "ci:reader:perf": "npm run fixtures:reader-bench && npm run build && npm run perf:reader:gate",
     "ci:reader:browser-perf": "npm run fixtures:reader-bench && npm run build && npm run perf:reader:browser-gate",
-    "ci:reader:highlight-e2e": "npm run fixtures:reader-bench && npm run build && npm run e2e:reader:highlight"
+    "ci:reader:highlight-e2e": "npm run fixtures:reader-bench && npm run build && npm run e2e:reader:highlight",
+    "ci:production-truth": "npm run build"
   },
   "dependencies": {
     "@google-cloud/vertexai": "^1.12.0",

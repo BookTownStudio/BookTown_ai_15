@@ -6,10 +6,7 @@ import { unifiedSearch } from "./library/search/searchEngine";
 import crypto from "crypto";
 import { admin } from "./firebaseAdmin";
 import { getSignedUrl } from "./attachments/storageSignedUrl";
-import {
-  buildAgentContextSnapshot,
-  getOrCreateAgentContextSnapshot,
-} from "./intelligence/agentContextBuilder";
+import { getOrCreateAgentContextSnapshot } from "./intelligence/agentContextBuilder";
 import { runLibrarianRecommendation } from "./ai/librarian";
 import { enforceSearchRequestQuota } from "./utils/searchRequestQuota";
 import { normalizeSearchText } from "./library/normalization/bookSearchNormalization";
@@ -1014,7 +1011,7 @@ apiRouter.post("/ai/librarian", async (req: any, res: any) => {
 
 /**
  * POST /api/ai/chat
- * Deterministic stub with server-side intelligence context binding.
+ * Explicitly unavailable until this route has a production AI implementation.
  */
 apiRouter.post("/ai/chat", async (req: any, res: any) => {
   const auth = await resolveAuthenticatedUid(req);
@@ -1025,30 +1022,13 @@ apiRouter.post("/ai/chat", async (req: any, res: any) => {
     });
   }
 
-  let agentContext = null;
-  try {
-    agentContext = await buildAgentContextSnapshot(auth.uid);
-  } catch (error) {
-    logger.warn("[AI][CHAT][CONTEXT_LOAD_FAILED]", {
-      uid: auth.uid,
-      error: String(error),
-    });
-    agentContext = null;
-  }
-  const dominantGenre = agentContext?.genres?.dominantGenre || "";
-
-  logger.info("[AI][CHAT][CONTEXT_BOUND]", {
+  logger.warn("[AI][CHAT][UNAVAILABLE]", {
     uid: auth.uid,
-    hasContext: Boolean(agentContext),
-    profileVersion: agentContext?.profileVersion ?? null,
-    schemaVersion: agentContext?.schemaVersion ?? null,
-    dominantGenre: dominantGenre || null,
   });
 
-  return res.status(200).json({
-    text: dominantGenre
-      ? `The librarian is getting ready. Your current exploration anchor is ${dominantGenre}. Recommendations will appear here soon.`
-      : "The librarian is getting ready. Book recommendations will appear here soon.",
+  return res.status(503).json({
+    error: "AI_CHAT_UNAVAILABLE",
+    message: "AI chat is not available on this route.",
   });
 });
 

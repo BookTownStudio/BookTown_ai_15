@@ -2,7 +2,6 @@
 import { useQuery } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { dataService } from '../../services/dataService.ts';
-import { mockFallbackBookIds } from '../../data/mocks.ts';
 
 export const useQuickRecs = () => {
     const { user, isGuest } = useAuth();
@@ -14,12 +13,9 @@ export const useQuickRecs = () => {
         enabled: !!user || isGuest, 
     });
 
-    const isFallback = isError && !isLoading;
-    const finalBookIds = isFallback || !bookIds ? mockFallbackBookIds : bookIds;
-
     return {
-        bookIds: finalBookIds,
+        bookIds: Array.isArray(bookIds) ? bookIds : [],
         isLoading,
-        isFallback,
+        isError,
     };
 };

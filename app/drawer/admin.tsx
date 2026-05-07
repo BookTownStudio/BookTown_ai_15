@@ -37,7 +37,6 @@ import {
   type AdminUserSearchResult,
   type DeletionRequest,
   type DeletionReviewDecision,
-  type FeedbackPipelineStub,
   type RecentSystemEventsParams,
   type SystemEventsPage,
   type SystemHealthSnapshot,
@@ -813,29 +812,6 @@ const HealthTab: React.FC = () => {
 // --- Feedback Tab ---
 const FeedbackTab: React.FC = () => {
   const { lang } = useI18n();
-  const { data, isLoading, isError, error } = useQuery<FeedbackPipelineStub>({
-    queryKey: adminServiceQueryKeys.feedbackPipelineStub,
-    queryFn: () => adminService.getFeedbackPipelineStub(),
-  });
-
-  if (isLoading) {
-    return (
-      <div className="flex justify-center p-12">
-        <LoadingSpinner />
-      </div>
-    );
-  }
-
-  if (isError) {
-    return (
-      <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300">
-        {toErrorMessage(
-          error,
-          lang === 'en' ? 'Failed to load feedback status.' : 'تعذر تحميل حالة الملاحظات.'
-        )}
-      </GlassCard>
-    );
-  }
 
   return (
     <div className="space-y-4">
@@ -843,7 +819,9 @@ const FeedbackTab: React.FC = () => {
         {lang === 'en' ? 'User Feedback' : 'ملاحظات المستخدمين'}
       </BilingualText>
       <GlassCard className="!p-6 text-slate-400">
-        {data?.message ?? (lang === 'en' ? 'Feedback pipeline not connected yet.' : 'قناة الملاحظات غير متصلة بعد.')}
+        {lang === 'en'
+          ? 'Feedback pipeline is not available in this build.'
+          : 'قناة الملاحظات غير متاحة في هذا الإصدار.'}
       </GlassCard>
     </div>
   );

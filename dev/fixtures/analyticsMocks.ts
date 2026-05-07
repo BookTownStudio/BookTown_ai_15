@@ -1,5 +1,5 @@
 
-import { ChartDataPoint } from '../components/ui/Charts.tsx';
+import { ChartDataPoint } from '../../components/ui/Charts.tsx';
 
 // Helper to generate dates
 const getLast7Days = () => {

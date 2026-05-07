@@ -24,7 +24,6 @@ import TiptapEditor, { EditorChangePayload } from '../../components/editor/Tipta
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
-import { mockAgents } from '../../data/mocks.ts';
 import { cn } from '../../lib/utils.ts';
 import { countWordsScriptAware } from '../../lib/editor/writeDocument.ts';
 import {
@@ -58,6 +57,7 @@ import {
 } from '../../lib/speech/browserSpeechDictation.ts';
 import { createBlankProjectSeed, createProjectSeedFromTemplate, getWriteTemplate } from '../../lib/templates/writeTemplates.ts';
 import { getChapterBlockParagraphSelectionOffset } from '../../lib/editor/chapterNodes.ts';
+import { findProductionAgent } from '../../lib/agents/agentRegistry.tsx';
 
 type EditorSnapshot = WriteDraftSnapshot;
 type HistoryState = { present: EditorSnapshot };
@@ -369,7 +369,7 @@ const EditorScreen: React.FC = () => {
     const [dictationElapsedMs, setDictationElapsedMs] = useState(0);
     const [dictationSessionLanguage, setDictationSessionLanguage] = useState<string | null>(null);
 
-    const mentor = mockAgents.find(a => a.id === 'mentor');
+    const mentor = findProductionAgent('mentor');
     const manuscriptLaneClassName = 'max-w-[780px]';
 
     const [state, dispatch] = useReducer(historyReducer, { present: EMPTY_SNAPSHOT });

@@ -35,29 +35,14 @@ export const fetchBookRecommendations = async (query: string): Promise<Book[]> =
 };
 
 export const identifyBookFromImage = async (base64Image: string): Promise<string | null> => {
-    try {
-        return await agentService.identifyBook(base64Image);
-    } catch (error) {
-        console.error("Error identifying book:", error);
-        return null;
-    }
+    return agentService.identifyBook(base64Image);
 };
 
 export const analyzeShelfVibe = async (bookTitles: string[]): Promise<{ vibe: string, suggestions: string[] } | null> => {
     if (bookTitles.length === 0) return null;
-    try {
-        return await agentService.analyzeShelfVibe(bookTitles);
-    } catch (error) {
-        console.error("Error analyzing shelf vibe:", error);
-        return null;
-    }
+    return agentService.analyzeShelfVibe(bookTitles);
 };
 
 export const generateSpeech = async (text: string): Promise<Uint8Array | null> => {
-    try {
-        return await agentService.generateSpeech(text);
-    } catch (error) {
-        console.error("Error generating speech:", error);
-        return null;
-    }
+    return agentService.generateSpeech(text);
 };

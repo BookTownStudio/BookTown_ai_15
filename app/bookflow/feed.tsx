@@ -1,11 +1,9 @@
 import React from 'react';
-import BookFlowPage from '../../components/content/BookFlowPage.tsx';
-// FIX: Replace mockBookFlowIds with the new mockBookFlowData
-import { mockBookFlowData } from '../../data/mocks.ts';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
+import BilingualText from '../../components/ui/BilingualText.tsx';
 
 const BookFlowFeedScreen: React.FC = () => {
     const { navigate } = useNavigation();
@@ -29,10 +27,17 @@ const BookFlowFeedScreen: React.FC = () => {
                     </Button>
                 </div>
             </header>
-            <div className="h-screen w-screen bg-black overflow-y-auto scroll-snap-type-y-mandatory">
-                {mockBookFlowData.map((item, index) => (
-                    <BookFlowPage key={`${item.bookId}-${index}`} item={item} />
-                ))}
+            <div className="h-screen w-screen bg-black flex items-center justify-center px-6 text-center">
+                <div className="max-w-sm space-y-3">
+                    <BilingualText role="H1" className="!text-2xl !text-white">
+                        {lang === 'en' ? 'Book flow unavailable' : 'تدفق الكتب غير متاح'}
+                    </BilingualText>
+                    <BilingualText role="Body" className="text-white/65">
+                        {lang === 'en'
+                            ? 'Book flow requires a backend-authored feed and is not available right now.'
+                            : 'يتطلب تدفق الكتب موجزاً موثقاً من الخادم وهو غير متاح حالياً.'}
+                    </BilingualText>
+                </div>
             </div>
         </>
     );

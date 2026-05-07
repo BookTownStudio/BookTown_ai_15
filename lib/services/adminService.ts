@@ -61,11 +61,6 @@ export type SystemHealthSnapshot = {
   lastPostCreatedAt: string | null;
 };
 
-export type FeedbackPipelineStub = {
-  connected: false;
-  message: string;
-};
-
 export type AdminUserSearchResult = {
   uid: string;
   email: string;
@@ -345,7 +340,6 @@ export const adminServiceQueryKeys = {
   systemEvents: (params: RecentSystemEventsParams = {}) =>
     ['admin', 'events', 'recent', params.limit ?? 50] as const,
   systemHealthSnapshot: ['admin', 'health', 'snapshot'] as const,
-  feedbackPipelineStub: ['admin', 'feedback', 'pipelineStub'] as const,
 };
 
 type DeletionRequestDoc = {
@@ -1888,10 +1882,4 @@ export const adminService = {
     return parseSystemHealthSnapshotResponse(result.data);
   },
 
-  async getFeedbackPipelineStub(): Promise<FeedbackPipelineStub> {
-    return {
-      connected: false,
-      message: 'Feedback pipeline not connected yet.',
-    };
-  },
 };

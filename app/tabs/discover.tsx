@@ -3,7 +3,6 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { mockAgents } from '../../data/mocks.ts';
 import { Agent, AgentSession } from '../../types/entities.ts';
 import AgentGridCard from '../../components/content/AgentGridCard.tsx';
 import Button from '../../components/ui/Button.tsx';
@@ -22,6 +21,7 @@ import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import MiniBookCard from '../../components/books/MiniBookCard.tsx';
 import { cn } from '../../lib/utils.ts';
+import { findProductionAgent, productionAgents } from '../../lib/agents/agentRegistry.tsx';
 
 // --- Icons ---
 // If PinIcon doesn't exist, create a simple inline one or import if available.
@@ -448,7 +448,7 @@ const HistoryView: React.FC<{ onClose: () => void, onSelectSession: (sessionId: 
     }
 
     const renderSessionItem = (session: AgentSession) => {
-        const agent = mockAgents.find(a => a.id === session.agentId);
+        const agent = findProductionAgent(session.agentId);
         if (!agent) return null;
 
         return (
@@ -580,7 +580,7 @@ const AgentInteractionShell = ({ agent, sessionId, onBack, onSelectAgent }: { ag
             >
                 <div className={cn(DISCOVER_CONVERSATION_RAIL_CLASS, 'py-2')}>
                     <div className="grid grid-cols-4 gap-2">
-                        {mockAgents.map(a => {
+                        {productionAgents.map(a => {
                             const isActive = agent.id === a.id;
                             return (
                                 <button
@@ -645,7 +645,7 @@ const DiscoverScreen: React.FC = () => {
     }, [resetTokens.discover, selectedAgentId]);
 
     const handleSelectAgent = (agentId: Agent['id']) => {
-        const agent = mockAgents.find(a => a.id === agentId);
+        const agent = findProductionAgent(agentId);
         if (agent) {
             if (agent.isPremium) {
                 showToast(lang === 'en' ? "Requires Premium Subscription" : "يتطلب اشتراكًا مميزًا");
@@ -658,7 +658,7 @@ const DiscoverScreen: React.FC = () => {
     }
 
     const handleResumeSession = (sessId: string, agentId: string) => {
-        const agent = mockAgents.find(a => a.id === agentId);
+        const agent = findProductionAgent(agentId);
         if (agent) {
             setSelectedAgentId(agentId);
             setSessionId(sessId);
@@ -666,7 +666,7 @@ const DiscoverScreen: React.FC = () => {
         }
     }
     
-    const selectedAgent = mockAgents.find(a => a.id === selectedAgentId);
+    const selectedAgent = findProductionAgent(selectedAgentId || undefined);
 
     if (selectedAgent && sessionId) {
         return <AgentInteractionShell 
@@ -702,7 +702,7 @@ const DiscoverScreen: React.FC = () => {
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
-                        {mockAgents.map(agent => (
+                        {productionAgents.map(agent => (
                             <AgentGridCard
                                 key={agent.id}
                                 agent={agent}

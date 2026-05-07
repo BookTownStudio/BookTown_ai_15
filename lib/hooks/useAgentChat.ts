@@ -7,11 +7,11 @@ import { callAgent } from '../agents-service.ts';
 import { dataService } from '../../services/dataService.ts';
 
 const AGENT_FAILURE_MESSAGE =
-    "I'm having trouble connecting to the library archives right now. Please try again in a moment.";
+    "Agent response is unavailable. Please try again later.";
 
 type PersistedAgentFailure = Error & {
-    fallbackPersisted?: boolean;
-    fallbackMessage?: string;
+    failurePersisted?: boolean;
+    failureMessage?: string;
 };
 
 const readPersistedAgentFailure = (error: unknown): PersistedAgentFailure | null => {
@@ -89,8 +89,8 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
                 });
                 const persistedFailure: PersistedAgentFailure =
                     error instanceof Error ? (error as PersistedAgentFailure) : new Error("Agent response failed");
-                persistedFailure.fallbackPersisted = true;
-                persistedFailure.fallbackMessage = errorMessage.text;
+                persistedFailure.failurePersisted = true;
+                persistedFailure.failureMessage = errorMessage.text;
                 throw persistedFailure;
             }
         },
@@ -115,10 +115,10 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
             return { previousMessages };
         },
         onError: (err) => {
-             // Keep exactly one visible failure message aligned with the persisted turn when available.
-             const persistedFailure = readPersistedAgentFailure(err);
-             const failureText =
-                persistedFailure?.fallbackMessage || AGENT_FAILURE_MESSAGE;
+	             // Keep exactly one visible failure message aligned with the persisted turn when available.
+	             const persistedFailure = readPersistedAgentFailure(err);
+	             const failureText =
+	                persistedFailure?.failureMessage || AGENT_FAILURE_MESSAGE;
              queryClient.setQueryData<ChatMessage[]>(queryKey, (old) => {
                 const errorMsg: ChatMessage = {
                     id: `error-${Date.now()}`,
@@ -130,9 +130,9 @@ export const useAgentChat = (agentId?: string, sessionId?: string) => {
             });
         },
         onSettled: (_data, error) => {
-            // Only refetch history when the server owns the final turn to avoid erasing the live fallback path.
+            // Only refetch history when the server owns the final visible turn.
             const persistedFailure = readPersistedAgentFailure(error);
-            if (!error || persistedFailure?.fallbackPersisted) {
+            if (!error || persistedFailure?.failurePersisted) {
                 queryClient.invalidateQueries(queryKey);
             }
             queryClient.invalidateQueries(['agentSessions', uid]);

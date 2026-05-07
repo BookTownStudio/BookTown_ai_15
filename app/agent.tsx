@@ -8,9 +8,9 @@ import BilingualText from '../components/ui/BilingualText.tsx';
 import { ChevronLeftIcon } from '../components/icons/ChevronLeftIcon.tsx';
 import { SendIcon } from '../components/icons/SendIcon.tsx';
 import { useAgentChat } from '../lib/hooks/useAgentChat.ts';
-import { mockAgents } from '../data/mocks.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import { useAuth } from '../lib/auth.tsx';
+import { findProductionAgent } from '../lib/agents/agentRegistry.tsx';
 
 const AgentChatScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
@@ -24,7 +24,7 @@ const AgentChatScreen: React.FC = () => {
     const fromView = currentView.type === 'immersive' ? currentView.params?.from : undefined;
     
     const { messages, isLoading, isError, sendMessage, isSending } = useAgentChat(agentId, sessionId);
-    const agent = mockAgents.find(a => a.id === agentId);
+    const agent = findProductionAgent(agentId);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
