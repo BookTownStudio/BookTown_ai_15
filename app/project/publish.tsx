@@ -207,7 +207,7 @@ const ProjectPublishScreen: React.FC = () => {
         }
 
         const preflight = validateReleasePreflight(project.contentDoc);
-        if (!preflight.ok) {
+        if (preflight.ok === false) {
             const message = buildPreflightErrorMessage(preflight.chapterNumber);
             setPreflightError(message);
             throw new Error(message);

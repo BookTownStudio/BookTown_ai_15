@@ -22,16 +22,7 @@ import {
   clearOfflineEbook,
   isOfflineValid,
 } from "./offlineManager";
-
-/**
- * OfflineEbookRecord (authoritative shape)
- * Defined implicitly by offlineManager.ts
- */
-interface OfflineEbookRecord {
-  bookId: string;
-  expiresAt: number;
-  storedAt: number;
-}
+import type { OfflineReaderRecordDTO } from "../../../types/readerRuntime.ts";
 
 /**
  * enforceOfflineExpiry
@@ -47,7 +38,7 @@ interface OfflineEbookRecord {
 export async function enforceOfflineExpiry(): Promise<void> {
   try {
     for (const bookId of getAllOfflineBookIds()) {
-      const record = getOfflineRecord(bookId) as OfflineEbookRecord | null;
+      const record = getOfflineRecord(bookId) as OfflineReaderRecordDTO | null;
 
       if (!record) continue;
 

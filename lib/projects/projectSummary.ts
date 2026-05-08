@@ -1,4 +1,4 @@
-import { WriteContentDoc } from '../../types/entities.ts';
+import { WriteContentDoc, WriteContentNode } from '../../types/entities.ts';
 
 const MAX_SYNOPSIS_LENGTH = 180;
 
@@ -20,14 +20,13 @@ function truncateCleanly(value: string, maxLength = MAX_SYNOPSIS_LENGTH): string
     return `${clipped}...`;
 }
 
-function collectNodeText(node: unknown): string {
+function collectNodeText(node: WriteContentNode): string {
     if (!node || typeof node !== 'object') {
         return '';
     }
 
-    const record = node as Record<string, unknown>;
-    const text = typeof record.text === 'string' ? record.text : '';
-    const children = Array.isArray(record.content) ? record.content : [];
+    const text = typeof node.text === 'string' ? node.text : '';
+    const children = Array.isArray(node.content) ? node.content : [];
     return normalizeWhitespace([text, ...children.map(collectNodeText)].join(' '));
 }
 
@@ -39,18 +38,15 @@ function extractFromContentDoc(contentDoc?: WriteContentDoc): string {
             continue;
         }
 
-        const record = block as Record<string, unknown>;
-        const type = typeof record.type === 'string' ? record.type : '';
-
-        if (type === 'heading' || type === 'horizontalRule') {
+        if (block.type === 'heading' || block.type === 'horizontalRule') {
             continue;
         }
 
-        if (type !== 'paragraph') {
+        if (block.type !== 'paragraph') {
             continue;
         }
 
-        const text = collectNodeText(record);
+        const text = collectNodeText(block);
         if (text) {
             return truncateCleanly(text);
         }
@@ -98,4 +94,3 @@ export function extractProjectSynopsis(params: {
 
     return extractFromHtml(params.html);
 }
-

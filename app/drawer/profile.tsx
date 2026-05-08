@@ -13,6 +13,7 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
+import { useToast } from '../../store/toast.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { EditIcon } from '../../components/icons/EditIcon.tsx';
 import { CalendarIcon } from '../../components/icons/CalendarIcon.tsx';
@@ -152,6 +153,7 @@ const ScreenHeader: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 const ProfileScreen: React.FC = () => {
   const { lang } = useI18n();
   const { user: authUser, isGuest } = useAuth();
+  const { showToast } = useToast();
   const { currentView, navigate, navigateToSocialPostEntry } = useNavigation();
   const paramUserId =
     currentView.type === 'immersive'

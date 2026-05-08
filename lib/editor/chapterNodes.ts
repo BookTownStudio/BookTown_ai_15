@@ -32,7 +32,7 @@ function escapeHtml(value: string): string {
     .replace(/'/g, '&#39;');
 }
 
-function createTextNode(text: string) {
+function createTextNode(text: string): WriteContentNode {
   return { type: 'text', text };
 }
 
@@ -97,7 +97,7 @@ function getWriteContentNodeSize(node: WriteContentNode): number {
   }
 
   const childSize = Array.isArray(node.content)
-    ? node.content.reduce((total, child) => total + getWriteContentNodeSize(child as WriteContentNode), 0)
+    ? node.content.reduce((total, child) => total + getWriteContentNodeSize(child), 0)
     : 0;
 
   if (node.type === 'horizontalRule') {

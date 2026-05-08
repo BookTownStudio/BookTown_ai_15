@@ -5,6 +5,7 @@ import { Timestamp } from 'firebase/firestore';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import { useQuery } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
+import type { ReaderContinuityDTO, ReaderInsightsDTO } from '../../types/readerRuntime.ts';
 
 /**
  * Currently Reading (Home Projection)
@@ -18,11 +19,7 @@ import { useAuth } from '../auth.tsx';
  * - getReaderInsights -> reading_progress
  */
 
-export interface CurrentlyReadingItem {
-  bookId: string;
-  progress: number; // 0.0 → 1.0 (defaults to 0)
-  updatedAt: Timestamp | null;
-}
+export type CurrentlyReadingItem = ReaderContinuityDTO;
 
 interface UseCurrentlyReadingResult {
   items: CurrentlyReadingItem[];
@@ -91,16 +88,7 @@ export function useCurrentlyReading(
     enabled,
     queryFn: async () => {
       if (!user?.uid) return [];
-      const fn = httpsCallable<
-        void,
-        {
-          currentlyReading?: Array<{
-            bookId?: unknown;
-            progress?: unknown;
-            lastActiveAt?: unknown;
-          }>;
-        }
-      >(getFunctions(), 'getReaderInsights');
+      const fn = httpsCallable<void, ReaderInsightsDTO>(getFunctions(), 'getReaderInsights');
       const res = await fn();
       const envelope = res.data as any;
       if (envelope?.success === false) {
@@ -113,13 +101,7 @@ export function useCurrentlyReading(
         throw new Error(`[${code}] ${message}`);
       }
 
-      const payload = (envelope?.success === true ? envelope.data : envelope) as {
-        currentlyReading?: Array<{
-          bookId?: unknown;
-          progress?: unknown;
-          lastActiveAt?: unknown;
-        }>;
-      };
+      const payload = (envelope?.success === true ? envelope.data : envelope) as ReaderInsightsDTO;
 
       const rows = Array.isArray(payload?.currentlyReading)
         ? payload.currentlyReading
@@ -141,7 +123,7 @@ export function useCurrentlyReading(
     },
     staleTime: 1000 * 60 * 2, // 2 minutes
     gcTime: 1000 * 60 * 10,   // 10 minutes
-  } as any);
+  });
 
   const items = useMemo(
     () => (queryResult.data ?? []).slice(0, Math.max(1, maxItems)),

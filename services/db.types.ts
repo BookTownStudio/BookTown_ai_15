@@ -471,14 +471,17 @@ export interface ProjectDataService {
 /* =========================
    SHELVES
    ========================= */
+export interface ShelfCreateDTO {
+  titleEn: string;
+  titleAr: string;
+  visibility?: Shelf['visibility'];
+}
+
 export interface ShelfDataService {
   getUserShelves(uid: string): Promise<Shelf[]>;
   getShelf(ownerId: string, shelfId: string): Promise<Shelf>;
 
-  createShelf(
-    uid: string,
-    shelf: Omit<Shelf, 'id' | 'ownerId'> & { id?: string }
-  ): Promise<Shelf>;
+  createShelf(uid: string, shelf: ShelfCreateDTO): Promise<Shelf>;
   duplicateShelf(
     uid: string,
     sourceShelfId: string,

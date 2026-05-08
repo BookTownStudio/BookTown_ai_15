@@ -49,6 +49,14 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
     e.stopPropagation();
     
     if (!bookId || toShelfId === fromShelfId || isMoving) return;
+    if (!book) {
+      showToast(
+        lang === 'en'
+          ? 'Book details are unavailable. Please refresh and try again.'
+          : 'تفاصيل الكتاب غير متاحة. يرجى التحديث والمحاولة مرة أخرى.'
+      );
+      return;
+    }
 
     // Find target shelf for toast message
     const targetShelf = shelves?.find(s => s.id === toShelfId);
@@ -60,7 +68,6 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
       {
         fromShelfId,
         toShelfId,
-        bookId,
         book
       },
       {

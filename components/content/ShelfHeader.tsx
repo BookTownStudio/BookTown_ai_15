@@ -29,10 +29,10 @@ interface ShelfHeaderProps {
 
   onAddBookRequest?: () => void;
   onEditRequest?: () => void;
-  onShareRequest: () => void;
+  onShareRequest?: () => void;
   onDeleteRequest?: () => void;
   onDuplicateRequest?: (shelf: Shelf) => void;
-  onToggleLayout: () => void;
+  onToggleLayout?: () => void;
 
   isDeletable: boolean;
   isLoading: boolean;
@@ -98,22 +98,21 @@ const ShelfHeader: React.FC<ShelfHeaderProps> = ({
       action: onEditRequest,
     },
 
-    // ✅ Duplicate — emits intent upward (NO side effects here)
-    {
+    onDuplicateRequest && {
       labelEn: 'Duplicate',
       labelAr: 'تكرار',
       icon: DuplicateIcon,
       action: () => onDuplicateRequest?.(shelf),
     },
 
-    {
+    onToggleLayout && {
       labelEn: 'Toggle Layout',
       labelAr: 'تبديل التخطيط',
       icon: ViewListIcon,
       action: onToggleLayout,
     },
 
-    {
+    onShareRequest && {
       labelEn: 'Share',
       labelAr: 'مشاركة',
       icon: ShareIcon,
@@ -193,16 +192,18 @@ const ShelfHeader: React.FC<ShelfHeaderProps> = ({
               )}
             />
 
-            <button
-              onClick={(e) => {
-                e.stopPropagation();
-                onToggleMenu();
-              }}
-              className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
-              aria-label="Shelf options"
-            >
-              <VerticalEllipsisIcon className="h-5 w-5 text-slate-400" />
-            </button>
+            {menuItems.length > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleMenu();
+                }}
+                className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                aria-label="Shelf options"
+              >
+                <VerticalEllipsisIcon className="h-5 w-5 text-slate-400" />
+              </button>
+            )}
           </div>
         </div>
       </GlassCard>

@@ -21,6 +21,20 @@ export interface GroupedNotification extends Omit<Notification, 'id'> {
     items: Notification[];
 }
 
+const readViewerJoinDateMs = (viewer: unknown): number | null => {
+    if (!viewer || typeof viewer !== 'object') return null;
+    const rawJoinDate = (viewer as { joinDate?: unknown }).joinDate;
+    if (
+        typeof rawJoinDate !== 'string' &&
+        typeof rawJoinDate !== 'number' &&
+        !(rawJoinDate instanceof Date)
+    ) {
+        return null;
+    }
+    const joinedAtMs = new Date(rawJoinDate).getTime();
+    return Number.isFinite(joinedAtMs) ? joinedAtMs : null;
+};
+
 /**
  * EmptyState View
  * Implementation of NOTIFICATION_EMPTY_STATES_V1 (LOCKED).
@@ -164,8 +178,9 @@ const NotificationsFeedScreen: React.FC = () => {
     const emptyStateType = useMemo(() => {
         if (isLoading || visibleNotifications.length > 0) return null;
         if (rawNotifications.length === 0) {
-            const isNewUser = user?.joinDate 
-                ? (Date.now() - new Date(user.joinDate).getTime()) < (24 * 60 * 60 * 1000)
+            const joinedAtMs = readViewerJoinDateMs(user);
+            const isNewUser = joinedAtMs
+                ? Date.now() - joinedAtMs < 24 * 60 * 60 * 1000
                 : true;
             return isNewUser ? 'first_time_user' : 'no_notifications_yet';
         }

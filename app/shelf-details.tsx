@@ -14,6 +14,20 @@ import { useShelfEntries } from '../lib/hooks/useUserShelves.ts';
 import { useDuplicateShelf } from '../lib/hooks/useDuplicateShelf.ts';
 import { useUserProfile } from '../lib/hooks/useUserProfile.ts';
 
+type ShelfDescriptionRuntimeFields = {
+  description?: unknown;
+  descriptionEn?: unknown;
+  descriptionAr?: unknown;
+};
+
+const readShelfDescriptionField = (
+  shelf: ShelfDescriptionRuntimeFields,
+  field: keyof ShelfDescriptionRuntimeFields
+): string => {
+  const value = shelf[field];
+  return typeof value === 'string' ? value : '';
+};
+
 const ShelfDetailsScreen: React.FC = () => {
   const { currentView, navigate, navigateToSocialAndHighlight } = useNavigation();
   const { lang } = useI18n();
@@ -177,18 +191,12 @@ const ShelfDetailsScreen: React.FC = () => {
     `https://api.dicebear.com/8.x/lorelei/svg?seed=${sourceOwnerId || 'shelf'}`;
   const shelfDescription = useMemo(() => {
     if (!shelf) return '';
+    const descriptionFields = shelf as ShelfDescriptionRuntimeFields;
     const localized =
       lang === 'en'
-        ? (typeof (shelf as { descriptionEn?: unknown }).descriptionEn === 'string'
-            ? (shelf as { descriptionEn: string }).descriptionEn
-            : '')
-        : (typeof (shelf as { descriptionAr?: unknown }).descriptionAr === 'string'
-            ? (shelf as { descriptionAr: string }).descriptionAr
-            : '');
-    const fallback =
-      typeof (shelf as { description?: unknown }).description === 'string'
-        ? (shelf as { description: string }).description
-        : '';
+        ? readShelfDescriptionField(descriptionFields, 'descriptionEn')
+        : readShelfDescriptionField(descriptionFields, 'descriptionAr');
+    const fallback = readShelfDescriptionField(descriptionFields, 'description');
     return (localized || fallback).trim();
   }, [shelf, lang]);
 

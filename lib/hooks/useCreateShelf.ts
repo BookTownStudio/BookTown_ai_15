@@ -4,11 +4,9 @@ import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 import { queryKeys } from '../queryKeys.ts';
 import { Shelf } from '../../types/entities.ts';
+import type { ShelfCreateDTO } from '../../services/db.types.ts';
 
-interface CreateShelfVariables {
-    titleEn: string;
-    titleAr: string;
-}
+type CreateShelfVariables = Pick<ShelfCreateDTO, 'titleEn' | 'titleAr'>;
 
 export const useCreateShelf = () => {
     const queryClient = useQueryClient();

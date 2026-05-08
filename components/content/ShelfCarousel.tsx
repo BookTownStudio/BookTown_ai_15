@@ -15,36 +15,38 @@ import { TrashIcon } from '../icons/TrashIcon.tsx';
 interface ShelfCarouselProps {
   shelf: Shelf;
   id?: string;
-  isMenuOpen: boolean;
-  onToggleMenu: () => void;
+  isMenuOpen?: boolean;
+  onToggleMenu?: () => void;
   onAddBookRequest?: (shelfId: string) => void;
   onEditRequest?: (shelf: Shelf) => void;
-  onShareRequest: (shelf: Shelf) => void;
+  onShareRequest?: (shelf: Shelf) => void;
   onDeleteRequest?: (shelf: Shelf) => void;
-  onDuplicateRequest?: (shelf: Shelf) => void; // ✅ REQUIRED
+  onDuplicateRequest?: (shelf: Shelf) => void;
   isOpen: boolean;
-  onToggle: () => void;
-  onToggleLayout: () => void;
+  onToggle?: () => void;
+  onToggleLayout?: () => void;
   layout: 'carousel' | 'list';
-  isDeletable: boolean;
+  isDeletable?: boolean;
   ebookOnly?: boolean;
 }
+
+const noop = () => {};
 
 const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   shelf,
   id,
-  isMenuOpen,
-  onToggleMenu,
+  isMenuOpen = false,
+  onToggleMenu = noop,
   onAddBookRequest,
   onEditRequest,
   onShareRequest,
   onDeleteRequest,
-  onDuplicateRequest, // ✅ RECEIVE
+  onDuplicateRequest,
   isOpen,
-  onToggle,
+  onToggle = noop,
   onToggleLayout,
   layout,
-  isDeletable,
+  isDeletable = false,
   ebookOnly = false
 }) => {
   const { lang } = useI18n();
@@ -265,7 +267,9 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
           onAddBookRequest ? () => onAddBookRequest(shelf.id) : undefined
         }
         onEditRequest={onEditRequest ? () => onEditRequest(shelf) : undefined}
-        onShareRequest={() => onShareRequest(shelf)}
+        onShareRequest={
+          onShareRequest ? () => onShareRequest(shelf) : undefined
+        }
         onDeleteRequest={
           onDeleteRequest ? () => onDeleteRequest(shelf) : undefined
         }

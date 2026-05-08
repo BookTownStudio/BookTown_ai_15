@@ -1,6 +1,10 @@
 import type { NarrationProviderKind } from '../runtime/contracts.ts';
 import type { SpeechProvider, SpeechProviderSpeakRequest } from './speechProvider.ts';
 
+type SpeechSynthesisRuntimeWindow = Window & {
+  SpeechSynthesisUtterance?: typeof SpeechSynthesisUtterance;
+};
+
 function toNarrationError(error: string | undefined): Error {
   return new Error(error && error.length > 0 ? error : 'Speech synthesis failed.');
 }
@@ -24,11 +28,11 @@ function selectVoice(
 export class BrowserSpeechSynthesisProvider implements SpeechProvider {
   readonly kind: NarrationProviderKind = 'browser_speech_synthesis';
 
-  private readonly win: Window;
+  private readonly win: SpeechSynthesisRuntimeWindow;
   private sequence = 0;
 
   constructor(win: Window) {
-    this.win = win;
+    this.win = win as SpeechSynthesisRuntimeWindow;
   }
 
   isSupported(): boolean {
@@ -47,7 +51,11 @@ export class BrowserSpeechSynthesisProvider implements SpeechProvider {
     this.stop();
 
     const synthesis = this.win.speechSynthesis;
-    const utterance = new this.win.SpeechSynthesisUtterance(request.text);
+    const Utterance = this.win.SpeechSynthesisUtterance;
+    if (!Utterance) {
+      throw new Error('Speech synthesis utterance is not supported in this browser.');
+    }
+    const utterance = new Utterance(request.text);
     const token = ++this.sequence;
 
     utterance.lang = request.lang;

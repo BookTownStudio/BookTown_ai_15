@@ -51,7 +51,10 @@ type EpubRendition = {
     prev: () => Promise<void>;
     next: () => Promise<void>;
     resize?: (width?: number, height?: number) => void;
-    on: (event: string, callback: (payload: any) => void) => void;
+    on: {
+      (event: 'selected', callback: (cfiRange: string, contents: any) => void): void;
+      (event: string, callback: (payload: any) => void): void;
+    };
     destroy: () => void;
     annotations?: {
       highlight: (
@@ -68,6 +71,16 @@ type EpubRendition = {
       select: (name: string) => void;
     };
   };
+
+type EpubFactory = (src: string | ArrayBuffer) => EpubBook;
+
+function resolveEpubFactory(epubModule: typeof import('epubjs')): EpubFactory {
+  const candidate = epubModule.default ?? epubModule;
+  if (typeof candidate !== 'function') {
+    throw new Error('EPUB runtime factory unavailable.');
+  }
+  return candidate as unknown as EpubFactory;
+}
 
 async function loadEpubBinary(url: string, signal: AbortSignal): Promise<ArrayBuffer> {
   const response = await fetch(url, {
@@ -454,9 +467,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
 
       try {
         const epubModule = await import('epubjs');
-        const createBook = (epubModule.default ?? epubModule) as (
-          src: string | ArrayBuffer
-        ) => EpubBook;
+        const createBook = resolveEpubFactory(epubModule);
 
         const epubBinary = await loadEpubBinary(url, abortController.signal);
         const book = createBook(epubBinary);

@@ -1,4 +1,4 @@
-import type { Project, Template, WriteContentDoc, WriteDirection } from '../../types/entities.ts';
+import type { Project, Template, WriteContentDoc, WriteContentNode, WriteDirection } from '../../types/entities.ts';
 import { countWordsScriptAware } from '../editor/writeDocument.ts';
 import { BlogPostIcon } from '../../components/icons/BlogPostIcon.tsx';
 import { NovelIcon } from '../../components/icons/NovelIcon.tsx';
@@ -84,11 +84,11 @@ function escapeHtml(value: string): string {
     return value.replace(/[&<>"']/g, (character) => htmlEscapeMap[character]);
 }
 
-function createTextNode(text: string) {
+function createTextNode(text: string): WriteContentNode {
     return { type: 'text', text };
 }
 
-function createParagraphNode(text: string, lang: Locale, dir: WriteDirection) {
+function createParagraphNode(text: string, lang: Locale, dir: WriteDirection): WriteContentNode {
     return {
         type: 'paragraph',
         attrs: {
@@ -99,7 +99,7 @@ function createParagraphNode(text: string, lang: Locale, dir: WriteDirection) {
     };
 }
 
-function createHeadingNode(text: string, lang: Locale, dir: WriteDirection) {
+function createHeadingNode(text: string, lang: Locale, dir: WriteDirection): WriteContentNode {
     return {
         type: 'heading',
         attrs: {
