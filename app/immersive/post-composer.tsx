@@ -24,6 +24,15 @@ import AttachShelfModal from '../../components/modals/AttachShelfModal.tsx';
 import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
 
 import { PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
+import type { View } from '../../types/navigation.ts';
+import {
+  buildAuthorPostAttachment,
+  buildBookPostAttachment,
+  buildPublicationPostAttachment,
+  buildQuotePostAttachment,
+  buildShelfPostAttachment,
+  toPostCreateAttachmentDTO,
+} from '../../types/socialAttachments.ts';
 import { AttachmentListV1 } from '../../components/content/AttachmentRendererV1.tsx';
 import { useAttachmentUpload } from '../../lib/hooks/useAttachmentUpload.ts';
 import { useCreatePost } from '../../lib/hooks/useCreatePost.ts';
@@ -93,7 +102,7 @@ const PostComposerScreen: React.FC = () => {
     isError: isRouteDraftError,
   } = useDraft(routeDraftId || undefined);
 
-  const cancelTarget =
+  const cancelTarget: View =
     currentView.type === 'immersive' &&
     currentView.id === 'postComposer' &&
     currentView.params?.from?.type === 'immersive' &&
@@ -199,11 +208,14 @@ const PostComposerScreen: React.FC = () => {
     if (!attachedBookId || attachedBookRef.current === attachedBookId) return;
 
     attachedBookRef.current = attachedBookId;
-    setAttachment({
-      type: 'book',
-      entityId: attachedBookId,
+    setAttachment(buildBookPostAttachment({
       bookId: attachedBookId,
-    } as PostAttachment);
+      titleEn: attachedBook.titleEn,
+      titleAr: attachedBook.titleAr,
+      authorEn: attachedBook.authorEn,
+      authorAr: attachedBook.authorAr,
+      coverUrl: attachedBook.coverUrl,
+    }));
     showToast(lang === 'en' ? 'Book attached.' : 'تم إرفاق الكتاب.');
   }, [currentView, lang, routeDraftId, showToast]);
 
@@ -226,20 +238,12 @@ const PostComposerScreen: React.FC = () => {
     if (!attachedPublicationId || attachedPublicationRef.current === attachedPublicationId) return;
 
     attachedPublicationRef.current = attachedPublicationId;
-    setAttachment({
-      type: 'publication',
-      entityId: attachedPublicationId,
+    setAttachment(buildPublicationPostAttachment({
       publicationId: attachedPublicationId,
-      ...(typeof attachedPublication.title === 'string' && attachedPublication.title.trim()
-        ? { title: attachedPublication.title.trim() }
-        : {}),
-      ...(typeof attachedPublication.coverUrl === 'string' && attachedPublication.coverUrl.trim()
-        ? { coverUrl: attachedPublication.coverUrl.trim() }
-        : {}),
-      ...(typeof attachedPublication.canonicalSlug === 'string' && attachedPublication.canonicalSlug.trim()
-        ? { canonicalSlug: attachedPublication.canonicalSlug.trim() }
-        : {}),
-    } as PostAttachment);
+      title: attachedPublication.title,
+      coverUrl: attachedPublication.coverUrl,
+      canonicalSlug: attachedPublication.canonicalSlug,
+    }));
     showToast(lang === 'en' ? 'Publication attached.' : 'تم إرفاق المنشور.');
   }, [currentView, lang, routeDraftId, showToast]);
 
@@ -407,31 +411,31 @@ const PostComposerScreen: React.FC = () => {
       return;
     }
 
+    let createAttachments;
+    try {
+      createAttachments = attachment ? [toPostCreateAttachmentDTO(attachment)] : [];
+    } catch (error) {
+      console.error('[POST_COMPOSER][ATTACHMENT_CREATE_DTO_FAILED]', {
+        error: String(error),
+        attachment,
+      });
+      showToast(lang === 'en' ? 'Invalid attachment' : 'مرفق غير صالح');
+      return;
+    }
+
     const structuredTypes = new Set(['book', 'author', 'quote', 'shelf', 'venue', 'publication']);
     const structuredAttachment =
-      attachment &&
-      typeof (attachment as { type?: unknown }).type === 'string' &&
-      structuredTypes.has(String((attachment as { type?: unknown }).type).toLowerCase())
-        ? (attachment as {
+      createAttachments.length > 0 &&
+      typeof createAttachments[0].type === 'string' &&
+      structuredTypes.has(createAttachments[0].type.toLowerCase()) &&
+      'entityId' in createAttachments[0]
+        ? (createAttachments[0] as {
             type: string;
             entityId?: string;
-            bookId?: string;
-            authorId?: string;
-            quoteId?: string;
-            shelfId?: string;
-            venueId?: string;
-            publicationId?: string;
           })
         : null;
     const structuredEntityId = structuredAttachment
-      ? (typeof structuredAttachment.entityId === 'string' && structuredAttachment.entityId.trim()) ||
-        (typeof structuredAttachment.bookId === 'string' && structuredAttachment.bookId.trim()) ||
-        (typeof structuredAttachment.authorId === 'string' && structuredAttachment.authorId.trim()) ||
-        (typeof structuredAttachment.quoteId === 'string' && structuredAttachment.quoteId.trim()) ||
-        (typeof structuredAttachment.shelfId === 'string' && structuredAttachment.shelfId.trim()) ||
-        (typeof structuredAttachment.venueId === 'string' && structuredAttachment.venueId.trim()) ||
-        (typeof structuredAttachment.publicationId === 'string' && structuredAttachment.publicationId.trim()) ||
-        ''
+      ? (typeof structuredAttachment.entityId === 'string' && structuredAttachment.entityId.trim()) || ''
       : '';
 
     if (structuredAttachment && !structuredEntityId) {
@@ -446,7 +450,7 @@ const PostComposerScreen: React.FC = () => {
     createPost(
       {
         content: { text: text.trim() },
-        attachments: attachment ? [attachment] : [],
+        attachments: createAttachments,
         visibility,
         publishToken: crypto.randomUUID(),
       },
@@ -606,21 +610,43 @@ const PostComposerScreen: React.FC = () => {
         isOpen={modals.book}
         onClose={() => setModals((current) => ({ ...current, book: false }))}
         onBookSelect={(book) =>
-          setAttachment({ type: 'book', entityId: book.id, bookId: book.id } as PostAttachment)
+          setAttachment(buildBookPostAttachment({
+            bookId: book.id,
+            titleEn: book.titleEn,
+            titleAr: book.titleAr,
+            authorEn: book.authorEn,
+            authorAr: book.authorAr,
+            coverUrl: book.coverUrl,
+            rating: book.rating,
+          }))
         }
       />
       <AttachAuthorModal
         isOpen={modals.author}
         onClose={() => setModals((current) => ({ ...current, author: false }))}
         onSelect={(author) =>
-          setAttachment({ type: 'author', entityId: author.id, authorId: author.id } as PostAttachment)
+          setAttachment(buildAuthorPostAttachment({
+            authorId: author.id,
+            nameEn: author.nameEn,
+            nameAr: author.nameAr,
+            avatarUrl: author.avatarUrl,
+            countryEn: author.countryEn,
+            countryAr: author.countryAr,
+            signatureQuote: author.signatureQuoteEn || author.signatureQuoteAr,
+          }))
         }
       />
       <AttachShelfModal
         isOpen={modals.shelf}
         onClose={() => setModals((current) => ({ ...current, shelf: false }))}
         onSelect={(shelf) =>
-          setAttachment({ type: 'shelf', entityId: shelf.id, shelfId: shelf.id } as PostAttachment)
+          setAttachment(buildShelfPostAttachment({
+            shelfId: shelf.id,
+            ownerId: shelf.ownerId,
+            titleEn: shelf.titleEn,
+            titleAr: shelf.titleAr,
+            bookCount: Array.isArray(shelf.bookIds) ? shelf.bookIds.length : 0,
+          }))
         }
       />
       <AttachQuoteModal
@@ -628,12 +654,11 @@ const PostComposerScreen: React.FC = () => {
         onClose={() => setModals((current) => ({ ...current, quote: false }))}
         onSelect={(quote) => {
           const canonicalQuoteId = quote.canonicalQuoteId || quote.id;
-          setAttachment({
-            type: 'quote',
-            entityId: canonicalQuoteId,
+          setAttachment(buildQuotePostAttachment({
             quoteId: canonicalQuoteId,
             quoteOwnerId: quote.ownerId,
-          } as PostAttachment);
+            quoteText: quote.textEn || quote.textAr,
+          }));
         }}
       />
 

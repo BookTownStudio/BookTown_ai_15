@@ -1,11 +1,12 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
-import { PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
+import { PostVisibilityScope } from '../../types/entities.ts';
+import type { PostCreateAttachmentDTO } from '../../types/socialAttachments.ts';
 
 interface CreatePostVariables {
     content: string | { text: string };
-    attachments?: PostAttachment[];
+    attachments?: PostCreateAttachmentDTO[];
     visibility?: PostVisibilityScope;
     publishToken: string;
 }

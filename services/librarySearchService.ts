@@ -67,9 +67,9 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
     async getEdition(editionId: string): Promise<BookEdition | null> {
         const db = this.getDb();
-        if (!db?.raw) return null;
+        if (!db) return null;
 
-        const snap = await getDoc(doc(db.raw, 'editions', editionId));
+        const snap = await getDoc(doc(db, 'editions', editionId));
         return snap.exists()
             ? ({ ...snap.data(), editionId: snap.id } as BookEdition)
             : null;
@@ -77,9 +77,9 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
     async getWork(workId: string): Promise<BibliographicWork | null> {
         const db = this.getDb();
-        if (!db?.raw) return null;
+        if (!db) return null;
 
-        const snap = await getDoc(doc(db.raw, 'books', workId));
+        const snap = await getDoc(doc(db, 'books', workId));
         return snap.exists()
             ? ({ ...snap.data(), bookId: snap.id } as BibliographicWork)
             : null;
@@ -87,9 +87,9 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
     async getEbook(ebookId: string): Promise<Ebook | null> {
         const db = this.getDb();
-        if (!db?.raw) return null;
+        if (!db) return null;
 
-        const snap = await getDoc(doc(db.raw, 'ebooks', ebookId));
+        const snap = await getDoc(doc(db, 'ebooks', ebookId));
         return snap.exists()
             ? ({ ...snap.data(), ebookId: snap.id } as Ebook)
             : null;
@@ -97,10 +97,10 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
     async getEbookByEdition(editionId: string): Promise<Ebook | null> {
         const db = this.getDb();
-        if (!db?.raw) return null;
+        if (!db) return null;
 
         const q = query(
-            collection(db.raw, 'ebooks'),
+            collection(db, 'ebooks'),
             where('editionId', '==', editionId),
             limit(1)
         );
@@ -116,10 +116,10 @@ export class LibrarySearchService implements LibrarySearchDataService {
         editionId: string
     ): Promise<EditionReadingState | null> {
         const db = this.getDb();
-        if (!db?.raw) return null;
+        if (!db) return null;
 
         const snap = await getDoc(
-            doc(db.raw, 'edition_reading_state', `${uid}_${editionId}`)
+            doc(db, 'edition_reading_state', `${uid}_${editionId}`)
         );
         return snap.exists()
             ? (snap.data() as EditionReadingState)
@@ -132,10 +132,10 @@ export class LibrarySearchService implements LibrarySearchDataService {
         state: Partial<EditionReadingState>
     ): Promise<void> {
         const db = this.getDb();
-        if (!db?.raw) return;
+        if (!db) return;
 
         const ref = doc(
-            db.raw,
+            db,
             'edition_reading_state',
             `${uid}_${editionId}`
         );
@@ -154,9 +154,9 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
     async logExternalSource(source: ExternalSource): Promise<void> {
         const db = this.getDb();
-        if (!db?.raw) return;
+        if (!db) return;
 
-        const ref = doc(collection(db.raw, 'external_sources'));
+        const ref = doc(collection(db, 'external_sources'));
         await setDoc(ref, {
             ...source,
             fetchedAt: serverTimestamp()

@@ -38,6 +38,8 @@ type FailureEnvelope = {
   };
 };
 
+type CallableEnvelope<T> = SuccessEnvelope<T> | FailureEnvelope;
+
 function isIngestionParams(value: EnsureCanonicalBookParams): value is EnsureCanonicalBookIngestionParams {
   const record = value as Record<string, unknown>;
   return (
@@ -122,10 +124,10 @@ export async function ensureCanonicalBook(
     const payload = result?.data as unknown;
     const envelope =
       payload && typeof payload === 'object'
-        ? (payload as Partial<SuccessEnvelope<EnsureCanonicalBookResult>> & FailureEnvelope)
+        ? (payload as CallableEnvelope<EnsureCanonicalBookResult>)
         : null;
     const data =
-      envelope?.success === true && envelope.data
+      envelope?.success === true
         ? envelope.data
         : (payload as Partial<EnsureCanonicalBookResult> | null);
 

@@ -39,6 +39,11 @@ import {
 
 import { cn } from '../lib/utils.ts';
 import { SearchResultDTO } from '../types/bookSearch.ts';
+import {
+  buildPendingSearchBookView,
+  toBookDetailsRuntimeDTO,
+  type BookDetailsRuntimeDTO,
+} from '../types/bookRuntime.ts';
 import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
 import { parseExternalRouteBookId, resolveIngestionSource } from '../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
@@ -53,22 +58,18 @@ const ACQUISITION_CONFIRM_DELAY_MS = 500;
 type AcquisitionState = 'idle' | 'pending' | 'success' | 'failed';
 
 function getCanonicalEbookAttachmentId(
-  value: unknown
+  value: Pick<BookDetailsRuntimeDTO, 'ebookAttachmentId'> | null | undefined
 ): string | null {
-  const raw =
-    value && typeof value === 'object'
-      ? (value as Record<string, unknown>).ebookAttachmentId
-      : undefined;
+  const raw = value?.ebookAttachmentId;
   return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
 }
 
-function hasReadableCopy(value: unknown): boolean {
-  if (!value || typeof value !== 'object') return false;
-  const record = value as Record<string, unknown>;
+function hasReadableCopy(value: BookDetailsRuntimeDTO | null | undefined): boolean {
+  if (!value) return false;
   return Boolean(
-    getCanonicalEbookAttachmentId(record) ||
-      (typeof record.ebookStoragePath === 'string' && record.ebookStoragePath.trim().length > 0) ||
-      record.downloadable
+    getCanonicalEbookAttachmentId(value) ||
+      (typeof value.ebookStoragePath === 'string' && value.ebookStoragePath.trim().length > 0) ||
+      value.downloadable
   );
 }
 
@@ -467,22 +468,15 @@ const BookDetailsScreen: React.FC = () => {
     setIsEditingReview(true);
   }, [reviewAction, existingUserReview]);
 
-  const bookSearchTruth = book as
-    | (Record<string, unknown> & {
-        ebookAttachmentId?: unknown;
-        ebookStoragePath?: unknown;
-        downloadable?: unknown;
-      })
-    | null;
-  const liveReadableAttachmentId = getCanonicalEbookAttachmentId(bookSearchTruth);
+  const bookDetails = useMemo(
+    () => (book ? toBookDetailsRuntimeDTO(book) : null),
+    [book]
+  );
+  const liveReadableAttachmentId = getCanonicalEbookAttachmentId(bookDetails);
   const hasReadableEbook =
-    hasReadableCopy(bookSearchTruth) || Boolean(confirmedReadableAttachmentId);
-  const providerExternalIds = Array.isArray((book as Record<string, unknown> | null)?.providerExternalIds)
-    ? ((book as Record<string, unknown>).providerExternalIds as unknown[])
-    : [];
-  const externalReadableSources = Array.isArray((book as Record<string, unknown> | null)?.externalReadableSources)
-    ? ((book as Record<string, unknown>).externalReadableSources as unknown[])
-    : [];
+    hasReadableCopy(bookDetails) || Boolean(confirmedReadableAttachmentId);
+  const providerExternalIds = bookDetails?.providerExternalIds ?? [];
+  const externalReadableSources = bookDetails?.externalReadableSources ?? [];
   const canPrepareReadableCopy =
     !hasReadableEbook &&
     (pendingSearchResult?.available === true ||
@@ -499,28 +493,15 @@ const BookDetailsScreen: React.FC = () => {
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
-    console.log('DETAIL BOOK PROVIDERS', (book as Record<string, unknown> | null)?.externalReadableSources);
-  }, [book]);
+    console.log('DETAIL BOOK PROVIDERS', bookDetails?.externalReadableSources);
+  }, [bookDetails?.externalReadableSources]);
 
   const displayBook = useMemo(() => {
-    if (book) return book;
+    if (bookDetails) return bookDetails;
     if (!pendingSearchResult) return null;
 
-    return {
-      id: bookId || pendingSearchResult.bookId || pendingSearchResult.id,
-      titleEn: pendingSearchResult.titleEn || pendingSearchResult.title,
-      titleAr: pendingSearchResult.titleAr || '',
-      authorEn: pendingSearchResult.authorEn || pendingSearchResult.authors?.[0] || 'Unknown',
-      authorAr: pendingSearchResult.authorAr || '',
-      coverUrl: pendingSearchResult.coverUrl || '',
-      coverMode: 'image',
-      fallbackCover: null,
-      rating: 0,
-      ratingsCount: 0,
-      descriptionEn: pendingSearchResult.descriptionEn || pendingSearchResult.description || '',
-      descriptionAr: pendingSearchResult.descriptionAr || '',
-    } as any;
-  }, [book, bookId, pendingSearchResult]);
+    return buildPendingSearchBookView(pendingSearchResult, bookId);
+  }, [bookDetails, bookId, pendingSearchResult]);
 
   useEffect(() => {
     if (!liveReadableAttachmentId) return;
@@ -579,7 +560,7 @@ const BookDetailsScreen: React.FC = () => {
 
     try {
       if (import.meta.env.DEV) {
-        console.log('ACQUIRE INPUT PROVIDERS', (book as Record<string, unknown> | null)?.externalReadableSources);
+        console.log('ACQUIRE INPUT PROVIDERS', bookDetails?.externalReadableSources);
       }
       setAcquisitionState('pending');
       setAcquisitionErrorMessage(null);

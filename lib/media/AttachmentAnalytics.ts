@@ -82,15 +82,8 @@ export const AttachmentAnalytics = {
         // 2. Data Resolution
         const isV1 = 'attachmentId' in attachment;
         const v1 = isV1 ? (attachment as AttachmentV1) : null;
-        const metadata =
-            isV1 && v1?.metadata && typeof v1.metadata === 'object'
-                ? (v1.metadata as Record<string, unknown>)
-                : {};
-        const uploaderRaw = metadata.uploader;
-        const uploader =
-            uploaderRaw && typeof uploaderRaw === 'object'
-                ? (uploaderRaw as Record<string, unknown>)
-                : {};
+        const metadata = isV1 ? v1?.metadata : undefined;
+        const uploader = metadata?.uploader;
 
         const payload: EventPayload = {
             event,
@@ -102,8 +95,8 @@ export const AttachmentAnalytics = {
                 ? (typeof v1?.type === 'string' && v1.type.trim().length > 0 ? v1.type : 'UNKNOWN')
                 : (attachment as any).type?.toUpperCase() || 'UNKNOWN',
             surface,
-            ownerUid: isV1 ? (readNonEmptyString(uploader.uid) || undefined) : undefined,
-            fileSizeBytes: isV1 ? (readFiniteNumber(metadata.size) ?? 0) : 0,
+            ownerUid: isV1 ? (readNonEmptyString(uploader?.uid) || undefined) : undefined,
+            fileSizeBytes: isV1 ? (readFiniteNumber(metadata?.size) ?? 0) : 0,
             renderMode: options.renderMode
         };
 

@@ -2,6 +2,7 @@ import React from 'react';
 import { ThreadPost, PostAttachment } from '../../types/entities.ts';
 import { AttachmentListV1 } from './AttachmentRendererV1.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
+import { buildRuntimeAttachmentFromRef } from '../../types/socialAttachments.ts';
 
 interface ThreadBodyProps {
     readonly post: ThreadPost;
@@ -13,12 +14,15 @@ const ThreadBody: React.FC<ThreadBodyProps> = ({ post }) => {
         const refs = post.content?.attachments || [];
         if (refs.length === 0) return [];
         
-        return refs.map(ref => {
+        return refs.map((ref): PostAttachment | null => {
             const hydrated = post.attachments?.find(a => 
                 ('attachmentId' in a ? a.attachmentId : 'legacy') === ref.attachmentId
             );
-            return hydrated || { type: ref.type, attachmentId: ref.attachmentId };
-        }) as PostAttachment[];
+            return hydrated || buildRuntimeAttachmentFromRef(ref, {
+                createdAt: post.createdAt,
+                uploaderUid: post.authorId,
+            });
+        }).filter((attachment): attachment is PostAttachment => attachment !== null);
     }, [post]);
 
     return (

@@ -5,7 +5,7 @@ const repoRoot = path.resolve(__dirname, '..', '..');
 const sourceDir = path.join(repoRoot, 'contracts');
 const targetDir = path.join(repoRoot, 'functions', 'src', 'contracts', 'shared');
 
-const files = ['apiContracts.ts', 'errorCodes.ts', 'version.ts'];
+const files = ['apiContracts.ts', 'bookSearch.ts', 'errorCodes.ts', 'version.ts'];
 
 fs.mkdirSync(targetDir, { recursive: true });
 

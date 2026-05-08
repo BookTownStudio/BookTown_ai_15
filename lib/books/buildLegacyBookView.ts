@@ -1,4 +1,5 @@
 import type { Book } from "../../types/entities.ts";
+import { BOOK_VIEW_DEFAULT_ONTOLOGY } from "../../types/bookRuntime.ts";
 
 type LegacyBookSeed = Partial<Book> & {
   id?: unknown;
@@ -142,6 +143,7 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     titleAr,
     authorEn,
     authorAr,
+    ontology: seed.ontology || BOOK_VIEW_DEFAULT_ONTOLOGY,
     coverUrl:
       readString(seed.coverUrl)
         || readString(coverRecord?.medium)

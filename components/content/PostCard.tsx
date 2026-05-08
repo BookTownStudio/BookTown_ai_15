@@ -24,6 +24,10 @@ import { UsersIcon } from '../icons/UsersIcon.tsx';
 import { FlagIcon } from '../icons/FlagIcon.tsx';
 import { QuoteIcon } from '../icons/QuoteIcon.tsx';
 import { callCallableEndpoint } from '../../lib/callable.ts';
+import {
+    buildAttachmentV1RuntimeRef,
+    buildQuotePostAttachment,
+} from '../../types/socialAttachments.ts';
 
 interface PostCardProps {
     post: Post;
@@ -199,12 +203,11 @@ const resolveAttachmentFromHydratedEntity = (
                     ? data.textAr
                     : '';
 
-        return ({
-            type: 'quote',
+        return buildQuotePostAttachment({
             quoteId: refId,
-            ...(ownerIdFromEntity ? { quoteOwnerId: ownerIdFromEntity } : {}),
+            quoteOwnerId: ownerIdFromEntity,
             quoteText,
-        } as unknown) as PostAttachment;
+        });
     }
 
     if (refType === 'author') {
@@ -436,7 +439,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 ? ((post as unknown as { primaryEntityId: string }).primaryEntityId || '').trim()
                 : '';
 
-        return refs.map(ref => {
+        return refs.map((ref): PostAttachment | null => {
+            const refExtras = ref as typeof ref & {
+                quoteOwnerId?: unknown;
+                ownerId?: unknown;
+            };
             const refAttachmentId =
                 typeof ref.attachmentId === 'string' ? ref.attachmentId.trim() : '';
             const refType = normalizeStructuredType(ref.type);
@@ -494,16 +501,15 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         (typeof (ref as { entityOwnerId?: unknown }).entityOwnerId === 'string'
                             ? (ref as { entityOwnerId: string }).entityOwnerId.trim()
                             : '') ||
-                        (typeof (ref as { quoteOwnerId?: unknown }).quoteOwnerId === 'string'
-                            ? (ref as { quoteOwnerId: string }).quoteOwnerId.trim()
+                        (typeof refExtras.quoteOwnerId === 'string'
+                            ? refExtras.quoteOwnerId.trim()
                             : '') ||
                         (typeof hydratedEntity?.ownerId === 'string' ? hydratedEntity.ownerId.trim() : '') ||
                         (post?.authorId || '');
-                    return ({
-                        type: 'quote',
+                    return buildQuotePostAttachment({
                         quoteId: resolvedEntityId,
-                        ...(ownerId ? { quoteOwnerId: ownerId } : {}),
-                    } as unknown) as PostAttachment;
+                        quoteOwnerId: ownerId,
+                    });
                 }
 
                 if (refType === 'author') {
@@ -531,8 +537,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     const hydratedBookCount = resolveShelfBookCount(hydratedData);
                     const hydratedCovers = resolveShelfCovers(hydratedData);
                     const ownerId =
-                        (typeof (ref as { ownerId?: unknown }).ownerId === 'string'
-                            ? (ref as { ownerId: string }).ownerId.trim()
+                        (typeof refExtras.ownerId === 'string'
+                            ? refExtras.ownerId.trim()
                             : '') ||
                         (hydratedData && typeof hydratedData.ownerId === 'string'
                             ? hydratedData.ownerId
@@ -582,8 +588,18 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                 }
             }
 
-            return { type: ref.type, attachmentId: refAttachmentId || resolvedEntityId };
-        }) as PostAttachment[];
+            const fallbackAttachmentId = refAttachmentId || resolvedEntityId;
+            if (!fallbackAttachmentId) {
+                return null;
+            }
+
+            return buildAttachmentV1RuntimeRef({
+                attachmentId: fallbackAttachmentId,
+                type: ref.type,
+                createdAt: post.timestamps?.createdAt,
+                uploaderUid: post.authorId,
+            });
+        }).filter((attachment): attachment is PostAttachment => attachment !== null);
     }, [post]);
 
     const quoteAttachments = useMemo(

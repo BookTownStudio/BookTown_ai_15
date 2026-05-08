@@ -7,6 +7,7 @@ import { useReadingPreferences } from '../../../store/reading-prefs.tsx';
 import { resolveReaderEngine } from '../../../lib/reader/runtime/engineSelection.ts';
 import type { ReaderFormat } from '../../../lib/reader/runtime/contracts.ts';
 import type { Book } from '../../../types/entities.ts';
+import { BOOK_VIEW_DEFAULT_ONTOLOGY } from '../../../types/bookRuntime.ts';
 
 type ReleaseEbookPreviewReaderProps = {
     title: string;
@@ -45,6 +46,7 @@ const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
             authorEn: author,
             authorAr: author,
             authors: [author],
+            ontology: BOOK_VIEW_DEFAULT_ONTOLOGY,
             coverUrl: '',
             descriptionEn: '',
             descriptionAr: '',

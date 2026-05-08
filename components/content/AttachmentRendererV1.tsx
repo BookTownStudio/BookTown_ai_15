@@ -430,16 +430,12 @@ const HookedBookReferenceView: React.FC<{ id: string; surface: RenderSurface }> 
     const { data: book, isLoading } = useBookCatalog(id);
     if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
     if (!book) return null;
-    const rating =
-        typeof (book as Record<string, unknown>).rating === 'number'
-            ? ((book as Record<string, unknown>).rating as number)
-            : 0;
     return (
         <BookReferenceCard
             title={book.titleEn}
             author={book.authorEn}
             coverUrl={book.coverUrl}
-            rating={rating}
+            rating={book.rating}
             surface={surface}
         />
     );
@@ -682,10 +678,10 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         v1?.payload && typeof v1.payload === 'object'
             ? (v1.payload as Record<string, unknown>)
             : {};
-    const v1Metadata: Record<string, unknown> =
-        v1?.metadata && typeof v1.metadata === 'object'
-            ? (v1.metadata as Record<string, unknown>)
-            : {};
+    const v1Metadata = v1?.metadata ?? null;
+    const v1MetadataExtension = v1Metadata as
+        | (typeof v1Metadata & { url?: unknown; signedUrl?: unknown })
+        | null;
     const resolveMediaSrc = (resolvedSignedUrl: string): string =>
         firstNonEmpty(
             resolvedSignedUrl,
@@ -694,9 +690,9 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
             v1Payload.imageUrl,
             (v1Payload as Record<string, unknown>).downloadURL,
             (v1Payload as Record<string, unknown>).downloadUrl,
-            v1Metadata.previewUrl,
-            (v1Metadata as Record<string, unknown>).url,
-            (v1Metadata as Record<string, unknown>).signedUrl
+            v1Metadata?.previewUrl,
+            v1MetadataExtension?.url,
+            v1MetadataExtension?.signedUrl
         );
 
     const isReferenceV1 =

@@ -38,7 +38,15 @@ const normalizeViewerAttachment = (attachment: PostAttachment): PostAttachment =
         return attachment;
     }
 
-    const source = attachment as Partial<AttachmentV1> & Record<string, unknown>;
+    const source = attachment as Partial<AttachmentV1> & {
+        timestamps?: unknown;
+        createdAt?: unknown;
+        mimeType?: unknown;
+        size?: unknown;
+        storagePath?: unknown;
+        parentId?: unknown;
+        parentType?: unknown;
+    };
     const attachmentId = readNonEmptyString(source.attachmentId);
     if (!attachmentId) {
         return attachment;
@@ -47,11 +55,10 @@ const normalizeViewerAttachment = (attachment: PostAttachment): PostAttachment =
     const typeRaw = readNonEmptyString(source.type);
     const type: AttachmentTypeV1 = isAttachmentTypeV1(typeRaw) ? typeRaw : 'DOCUMENT';
 
-    const sourceMetadataRaw = source.metadata;
-    const sourceMetadata =
-        sourceMetadataRaw && typeof sourceMetadataRaw === 'object'
-            ? (sourceMetadataRaw as Record<string, unknown>)
-            : {};
+    const sourceMetadata = source.metadata;
+    const sourceMetadataExtension = sourceMetadata as
+        | (AttachmentMetadataV1 & { uploadedAt?: unknown })
+        | undefined;
 
     const sourceTimestampsRaw = source.timestamps;
     const sourceTimestamps =
@@ -59,15 +66,11 @@ const normalizeViewerAttachment = (attachment: PostAttachment): PostAttachment =
             ? (sourceTimestampsRaw as Record<string, unknown>)
             : {};
 
-    const uploaderRaw = sourceMetadata.uploader;
-    const uploader =
-        uploaderRaw && typeof uploaderRaw === 'object'
-            ? (uploaderRaw as Record<string, unknown>)
-            : {};
+    const uploader = sourceMetadata?.uploader;
 
     const createdAt =
-        readNonEmptyString(sourceMetadata.createdAt) ||
-        readNonEmptyString(sourceMetadata.uploadedAt) ||
+        readNonEmptyString(sourceMetadata?.createdAt) ||
+        readNonEmptyString(sourceMetadataExtension?.uploadedAt) ||
         readNonEmptyString(sourceTimestamps.createdAt) ||
         readNonEmptyString(source.createdAt);
 
@@ -75,27 +78,27 @@ const normalizeViewerAttachment = (attachment: PostAttachment): PostAttachment =
         attachmentId,
         type,
         mimeType:
-            readNonEmptyString(sourceMetadata.mimeType) ||
+            readNonEmptyString(sourceMetadata?.mimeType) ||
             readNonEmptyString(source.mimeType) ||
             'application/octet-stream',
         size:
-            readFiniteNumber(sourceMetadata.size) ??
+            readFiniteNumber(sourceMetadata?.size) ??
             readFiniteNumber(source.size) ??
             0,
         createdAt,
         uploader: {
-            uid: readNonEmptyString(uploader.uid),
+            uid: readNonEmptyString(uploader?.uid),
         },
         storagePath:
-            readNonEmptyString(sourceMetadata.storagePath) ||
+            readNonEmptyString(sourceMetadata?.storagePath) ||
             readNonEmptyString(source.storagePath),
         parentId:
-            readNonEmptyString(sourceMetadata.parentId) ||
+            readNonEmptyString(sourceMetadata?.parentId) ||
             readNonEmptyString(source.parentId),
         parentType:
-            readNonEmptyString(sourceMetadata.parentType) ||
+            readNonEmptyString(sourceMetadata?.parentType) ||
             readNonEmptyString(source.parentType),
-        previewUrl: readNonEmptyString(sourceMetadata.previewUrl),
+        previewUrl: readNonEmptyString(sourceMetadata?.previewUrl),
     };
 
     return {

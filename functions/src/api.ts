@@ -10,49 +10,7 @@ import { getOrCreateAgentContextSnapshot } from "./intelligence/agentContextBuil
 import { runLibrarianRecommendation } from "./ai/librarian";
 import { enforceSearchRequestQuota } from "./utils/searchRequestQuota";
 import { normalizeSearchText } from "./library/normalization/bookSearchNormalization";
-
-type SearchBookResponse = {
-  id: string;
-  editionId: string;
-  bookId: string;
-  workId: string | null;
-  externalId: string;
-  source: "booktown" | "googleBooks" | "openLibrary";
-  resultType: "canonical" | "external";
-  workType: "work" | "edition";
-  editionPresence: "single" | "grouped" | "edition";
-  ebookClass: "in_app" | "external_link" | "unavailable";
-  sourceClass: "canonical_catalog" | "external_provider";
-  languageTruth: "match" | "mismatch" | "unknown";
-  title: string;
-  titleEn: string;
-  titleAr: string;
-  authors: string[];
-  authorEn: string;
-  authorAr: string;
-  description: string;
-  descriptionEn: string;
-  descriptionAr: string;
-  coverUrl: string;
-  language: string;
-  available: boolean;
-  acquired: boolean;
-  readAccess: "none" | "in_app" | "trusted_external";
-  readProvider: "booktown" | "openLibrary" | "gutenberg" | "hindawi" | "gallica" | null;
-  hasEbook: boolean;
-  downloadable: boolean;
-  isEbookAvailable: boolean;
-  confidence: number;
-  rank: number;
-  externalReadableSources?: Array<{
-    provider: "openLibrary" | "gutenberg" | "hindawi" | "gallica";
-    providerExternalId: string;
-    lendingEditionId?: string;
-    lendingIdentifier?: string;
-    trust: "trusted";
-  }>;
-  rawBook?: Record<string, unknown>;
-};
+import type { ExternalReadableSourceDTO, SearchResultDTO } from "./contracts/shared/bookSearch";
 
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
@@ -332,7 +290,7 @@ async function ensureAiConsent(uid: string): Promise<boolean> {
   return userSnap.get("aiConsent") === true;
 }
 
-function toSearchBookResponse(raw: any): SearchBookResponse | null {
+function toSearchResultDTO(raw: any): SearchResultDTO | null {
   const sourceRaw = String(raw?.source || "").trim();
   const source =
     sourceRaw === "booktown"
@@ -426,8 +384,8 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
         .map((entry: unknown) => toExternalReadableSource(entry))
         .filter(
           (
-            entry: NonNullable<SearchBookResponse["externalReadableSources"]>[number] | null
-          ): entry is NonNullable<SearchBookResponse["externalReadableSources"]>[number] =>
+            entry: ExternalReadableSourceDTO | null
+          ): entry is ExternalReadableSourceDTO =>
             Boolean(entry)
         )
     : [];
@@ -475,7 +433,7 @@ function toSearchBookResponse(raw: any): SearchBookResponse | null {
 
 function toExternalReadableSource(
   raw: unknown
-): NonNullable<SearchBookResponse["externalReadableSources"]>[number] | null {
+): ExternalReadableSourceDTO | null {
   const record =
     raw && typeof raw === "object" && !Array.isArray(raw)
       ? (raw as Record<string, unknown>)
@@ -699,8 +657,8 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       limit,
     });
     const parsedResults = searchResponse.results
-      .map((row: any) => toSearchBookResponse(row))
-      .filter((row: SearchBookResponse | null): row is SearchBookResponse => row !== null);
+      .map((row: any) => toSearchResultDTO(row))
+      .filter((row: SearchResultDTO | null): row is SearchResultDTO => row !== null);
     const signedCoverByBookId = new Map<string, string>();
     const results = await Promise.all(
       parsedResults.map(async (row) => {

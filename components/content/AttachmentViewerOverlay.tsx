@@ -17,10 +17,8 @@ const readNonEmptyString = (value: unknown): string =>
 const resolveCreatedAtLabel = (attachment: AttachmentV1 | null): string => {
     if (!attachment) return '-';
 
-    const metadata =
-        attachment.metadata && typeof attachment.metadata === 'object'
-            ? (attachment.metadata as Record<string, unknown>)
-            : {};
+    const metadata = attachment.metadata;
+    const metadataExtension = metadata as typeof metadata & { uploadedAt?: unknown };
     const timestampsRaw = (attachment as unknown as { timestamps?: unknown }).timestamps;
     const timestamps =
         timestampsRaw && typeof timestampsRaw === 'object'
@@ -29,7 +27,7 @@ const resolveCreatedAtLabel = (attachment: AttachmentV1 | null): string => {
 
     const createdAtValue =
         readNonEmptyString(metadata.createdAt) ||
-        readNonEmptyString(metadata.uploadedAt) ||
+        readNonEmptyString(metadataExtension.uploadedAt) ||
         readNonEmptyString(timestamps.createdAt) ||
         readNonEmptyString((attachment as unknown as { createdAt?: unknown }).createdAt);
     if (!createdAtValue) return '-';
