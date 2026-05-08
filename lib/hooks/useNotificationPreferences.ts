@@ -4,10 +4,39 @@ import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { useAuth } from '../auth.tsx';
 import { queryKeys } from '../queryKeys.ts';
 
+type NotificationPreferenceChannels = {
+    in_app: boolean;
+    email: boolean;
+    push: boolean;
+};
+
+type NotificationPreferenceCategories = {
+    likes: boolean;
+    comments: boolean;
+    reposts: boolean;
+    follows: boolean;
+    mentions: boolean;
+    quotes: boolean;
+    system: boolean;
+    messages: boolean;
+};
+
+type NotificationPreferences = {
+    uid?: string;
+    channels: NotificationPreferenceChannels;
+    categories: NotificationPreferenceCategories;
+    createdAt?: unknown;
+    updatedAt?: unknown;
+};
+
+type NotificationPreferenceUpdate = Partial<
+    Pick<NotificationPreferences, 'channels' | 'categories'>
+>;
+
 /**
  * Canonical Defaults per NOTIFICATION_PREFERENCES_V1
  */
-const CANONICAL_DEFAULTS = {
+const CANONICAL_DEFAULTS: Pick<NotificationPreferences, 'channels' | 'categories'> = {
     channels: {
         in_app: true,
         email: false,
@@ -37,7 +66,7 @@ export const useNotificationPreferences = () => {
 
     const queryKey = [...queryKeys.user.all(uid), 'notification_preferences', uid];
 
-    const query = useQuery({
+    const query = useQuery<NotificationPreferences>({
         queryKey,
         queryFn: async () => {
             if (!uid) throw new Error("Unauthenticated");
@@ -45,7 +74,7 @@ export const useNotificationPreferences = () => {
             const snap = await getDoc(ref);
             
             if (snap.exists()) {
-                return snap.data();
+                return snap.data() as NotificationPreferences;
             }
             
             return {
@@ -59,11 +88,14 @@ export const useNotificationPreferences = () => {
     });
 
     const mutation = useMutation({
-        mutationFn: async (updates: any) => {
+        mutationFn: async (updates: NotificationPreferenceUpdate) => {
             if (!uid) throw new Error("Unauthenticated");
             const ref = doc(db.raw, 'notification_preferences', uid);
             
-            const existing = (query.data as any) || CANONICAL_DEFAULTS;
+            const existing: NotificationPreferences = query.data || {
+                ...CANONICAL_DEFAULTS,
+                uid,
+            };
             const newData = {
                 ...existing,
                 ...updates,
@@ -75,7 +107,7 @@ export const useNotificationPreferences = () => {
         },
         onMutate: async (updates) => {
             await queryClient.cancelQueries({ queryKey: queryKey });
-            const previous = queryClient.getQueryData(queryKey);
+            const previous = queryClient.getQueryData<NotificationPreferences>(queryKey);
             
             if (previous) {
                 queryClient.setQueryData(queryKey, {

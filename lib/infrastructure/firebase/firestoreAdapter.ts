@@ -10,6 +10,7 @@ import {
   deleteDoc,
   serverTimestamp,
   type Firestore,
+  type DocumentReference,
   type DocumentData
 } from 'firebase/firestore';
 
@@ -23,9 +24,13 @@ function requireDb(): Firestore {
   return db;
 }
 
-function resolvePath(path: string) {
+function resolvePath(path: string): DocumentReference<DocumentData> {
   const segments = path.split('/').filter(Boolean);
-  return doc(requireDb(), ...segments);
+  const [rootSegment, ...nestedSegments] = segments;
+  if (!rootSegment) {
+    throw new Error('[FirestoreAdapter] Document path must not be empty');
+  }
+  return doc(requireDb(), rootSegment, ...nestedSegments);
 }
 
 export const firestoreAdapter = {

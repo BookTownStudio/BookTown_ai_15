@@ -41,6 +41,14 @@ type FailureEnvelope = {
   };
 };
 
+type CallableEnvelope<T> = SuccessEnvelope<T> | FailureEnvelope;
+
+function isCallableEnvelope<T>(value: unknown): value is CallableEnvelope<T> {
+  if (!value || typeof value !== "object") return false;
+  const success = (value as { success?: unknown }).success;
+  return success === true || success === false;
+}
+
 function isIngestionParams(
   value: EnsureCanonicalAuthorParams
 ): value is EnsureCanonicalAuthorIngestionParams {
@@ -136,17 +144,18 @@ export async function ensureCanonicalAuthor(
     });
 
     const payload = result?.data as unknown;
-    const envelope =
-      payload && typeof payload === "object"
-        ? (payload as Partial<SuccessEnvelope<EnsureCanonicalAuthorResult>> & FailureEnvelope)
-        : null;
-    const data =
-      envelope?.success === true && envelope.data
-        ? envelope.data
-        : (payload as Partial<EnsureCanonicalAuthorResult> | null);
+    let data: Partial<EnsureCanonicalAuthorResult> | null = null;
+    if (isCallableEnvelope<EnsureCanonicalAuthorResult>(payload)) {
+      if (payload.success === false) {
+        console.warn("[ensureCanonicalAuthor][BACKEND_FAILURE]", payload.error);
+        return null;
+      }
+      data = payload.data;
+    } else {
+      data = payload as Partial<EnsureCanonicalAuthorResult> | null;
+    }
 
-    if (envelope?.success === false) {
-      console.warn("[ensureCanonicalAuthor][BACKEND_FAILURE]", envelope.error);
+    if (!data || typeof data !== "object") {
       return null;
     }
 

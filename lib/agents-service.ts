@@ -1,5 +1,6 @@
 
 import { agentService } from '../services/agentService.ts';
+import type { LibrarianMemoryMessage } from '../services/agents.types.ts';
 
 const AGENT_PERSONAS: Record<string, string> = {
     librarian: "You are a knowledgeable and helpful Librarian. You specialize in book recommendations, literary history, and helping users find their next great read. IMPORTANT: When recommending books, you must respond in JSON format containing a 'reason' (string) and 'recommendations' (array of objects with title, author).",
@@ -34,13 +35,13 @@ export const callAgent = async (agentId: string, contextMessages: { role: string
                     .reverse()
                     .find((msg) => msg.role === 'user' && typeof msg.text === 'string' && msg.text.trim().length > 0)
                     ?.text || '';
-            const memoryMessages = normalizedContextMessages
+            const memoryMessages: LibrarianMemoryMessage[] = normalizedContextMessages
                 .slice(-6)
                 .map((msg) => ({
-                    role: msg.role === 'user' ? 'user' : 'assistant',
+                    role: msg.role === 'user' ? 'user' as const : 'assistant' as const,
                     content: String(msg.text || '').replace(/\s+/g, ' ').trim(),
                 }))
-                .filter((msg) => msg.content.length > 0);
+                .filter((msg): msg is LibrarianMemoryMessage => msg.content.length > 0);
 
             const envelope = await agentService.librarianRecommend(latestUserMessage, undefined, memoryMessages);
             const formatted = {

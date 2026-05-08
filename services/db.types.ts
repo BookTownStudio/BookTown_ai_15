@@ -670,7 +670,8 @@ export interface MessagingDataService {
     uid: string,
     conversationId: string,
     text: string,
-    idempotencyKey: string
+    idempotencyKey: string,
+    attachment?: { type: 'book' | 'publication' | 'quote'; entityId: string }
   ): Promise<{ conversationId: string; messageId: string }>;
   markConversationRead(uid: string, conversationId: string): Promise<void>;
 }

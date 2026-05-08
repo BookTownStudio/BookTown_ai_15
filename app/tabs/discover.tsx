@@ -14,7 +14,6 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { useAgentChat, useAgentSessions, useTogglePinSession } from '../../lib/hooks/useAgentChat.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
-import { PinIcon } from '../../components/icons/PinIcon.tsx'; // You might need to create this or reuse an icon
 import PageShell from '../../components/layout/PageShell.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';

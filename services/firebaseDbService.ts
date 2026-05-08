@@ -1307,10 +1307,10 @@ class FirebaseUserService {
     const snap = await getDocs(sessionsQuery);
 
     return snap.docs
-      .map((sessionDoc) => {
+      .map((sessionDoc): AgentSession | null => {
         const data = sessionDoc.data() as Record<string, unknown>;
         if (typeof data.agentId !== "string" || !data.agentId.trim()) return null;
-        return {
+        const session: AgentSession = {
           id: sessionDoc.id,
           agentId: data.agentId.trim(),
           title:
@@ -1320,8 +1320,9 @@ class FirebaseUserService {
           lastMessage:
             typeof data.lastMessage === "string" ? data.lastMessage : "",
           timestamp: toIsoString(data.timestamp),
-          ...(data.isPinned === true ? { isPinned: true } : {}),
-        } satisfies AgentSession;
+          isPinned: data.isPinned === true,
+        };
+        return session;
       })
       .filter((session): session is AgentSession => session !== null);
   }

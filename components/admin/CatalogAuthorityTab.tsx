@@ -1398,11 +1398,7 @@ const QuotesPanel: React.FC = () => {
 
   const saveMutation = useMutation({
     mutationFn: async (nextDraft: QuoteDraft) => {
-      const payload = {
-        ...(nextDraft.textEn ? { textEn: nextDraft.textEn } : {}),
-        ...(nextDraft.textAr ? { textAr: nextDraft.textAr } : {}),
-        ...(nextDraft.sourceEn ? { sourceEn: nextDraft.sourceEn } : {}),
-        ...(nextDraft.sourceAr ? { sourceAr: nextDraft.sourceAr } : {}),
+      const optionalPayload = {
         ...(nextDraft.authorId ? { authorId: nextDraft.authorId } : {}),
         ...(nextDraft.bookId ? { bookId: nextDraft.bookId } : {}),
         ...(nextDraft.chapter ? { chapter: nextDraft.chapter } : {}),
@@ -1421,16 +1417,33 @@ const QuotesPanel: React.FC = () => {
         ...(nextDraft.sourceType ? { sourceType: nextDraft.sourceType } : {}),
         ...(nextDraft.sourceReference ? { sourceReference: nextDraft.sourceReference } : {}),
         isPublic: nextDraft.isPublic,
-        status: nextDraft.status,
       };
 
       if (nextDraft.quoteId) {
         return adminService.updateQuote({
           quoteId: nextDraft.quoteId,
-          ...payload,
+          ...(nextDraft.textEn ? { textEn: nextDraft.textEn } : {}),
+          ...(nextDraft.textAr ? { textAr: nextDraft.textAr } : {}),
+          ...(nextDraft.sourceEn ? { sourceEn: nextDraft.sourceEn } : {}),
+          ...(nextDraft.sourceAr ? { sourceAr: nextDraft.sourceAr } : {}),
+          ...optionalPayload,
+          status: nextDraft.status,
         });
       }
-      const result = await adminService.createQuote(payload);
+      const textEn = nextDraft.textEn.trim();
+      const textAr = nextDraft.textAr.trim();
+      const sourceEn = nextDraft.sourceEn.trim();
+      const sourceAr = nextDraft.sourceAr.trim();
+      if (!textEn || !textAr || !sourceEn || !sourceAr) {
+        throw new Error('Quote text and source are required in both languages.');
+      }
+      const result = await adminService.createQuote({
+        textEn,
+        textAr,
+        sourceEn,
+        sourceAr,
+        ...optionalPayload,
+      });
       return result.quote;
     },
     onSuccess: (quote) => {

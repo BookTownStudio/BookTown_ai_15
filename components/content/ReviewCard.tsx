@@ -49,7 +49,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
   const authorAvatar = review.authorAvatar || '/avatar.png';
   const bookTitle =
     lang === 'ar'
-      ? (review.bookTitleAr || review.bookTitleEn || (lang === 'en' ? 'Unknown book' : 'كتاب غير معروف'))
+      ? (review.bookTitleAr || review.bookTitleEn || 'كتاب غير معروف')
       : (review.bookTitleEn || review.bookTitleAr || 'Unknown book');
   const bookAuthor =
     lang === 'ar'

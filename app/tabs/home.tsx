@@ -316,9 +316,7 @@ const HomeScreen: React.FC = () => {
                   )}
                 </CollapsibleSection>
 
-                <DiscoveryEntryCard
-                  onClick={() => navigate({ type: 'stack', id: 'discovery' })}
-                />
+                <DiscoveryEntryCard />
 
                 <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
                   <CollapsibleSection
