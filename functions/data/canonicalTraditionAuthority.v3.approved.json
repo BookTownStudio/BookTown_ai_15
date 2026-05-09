@@ -1,0 +1,203 @@
+[
+  {
+    "canonicalTitle": "The Odyssey",
+    "canonicalAuthor": "Homer",
+    "approvedCanonicalTradition": "greco_roman_classical"
+  },
+  {
+    "canonicalTitle": "The Iliad",
+    "canonicalAuthor": "Homer",
+    "approvedCanonicalTradition": "greco_roman_classical"
+  },
+  {
+    "canonicalTitle": "The Aeneid",
+    "canonicalAuthor": "Virgil",
+    "approvedCanonicalTradition": "greco_roman_classical"
+  },
+  {
+    "canonicalTitle": "The Republic",
+    "canonicalAuthor": "Plato",
+    "approvedCanonicalTradition": "greco_roman_classical"
+  },
+  {
+    "canonicalTitle": "The Oresteia",
+    "canonicalAuthor": "Aeschylus",
+    "approvedCanonicalTradition": "greco_roman_classical"
+  },
+  {
+    "canonicalTitle": "The Bhagavad Gita",
+    "canonicalAuthor": "Anonymous",
+    "approvedCanonicalTradition": "indian_classical"
+  },
+  {
+    "canonicalTitle": "The Mahabharata",
+    "canonicalAuthor": "Vyasa",
+    "approvedCanonicalTradition": "indian_classical"
+  },
+  {
+    "canonicalTitle": "Divan of Hafez",
+    "canonicalAuthor": "Hafez",
+    "approvedCanonicalTradition": "persian_classical"
+  },
+  {
+    "canonicalTitle": "The Conference of the Birds",
+    "canonicalAuthor": "Farid ud-Din Attar",
+    "approvedCanonicalTradition": "persian_classical"
+  },
+  {
+    "canonicalTitle": "The Shahnameh",
+    "canonicalAuthor": "Ferdowsi",
+    "approvedCanonicalTradition": "persian_classical"
+  },
+  {
+    "canonicalTitle": "The Muqaddimah",
+    "canonicalAuthor": "Ibn Khaldun",
+    "approvedCanonicalTradition": "arabic_islamic_classical"
+  },
+  {
+    "canonicalTitle": "The Analects",
+    "canonicalAuthor": "Confucius",
+    "approvedCanonicalTradition": "chinese_classical"
+  },
+  {
+    "canonicalTitle": "The Tale of Genji",
+    "canonicalAuthor": "Murasaki Shikibu",
+    "approvedCanonicalTradition": "japanese_classical"
+  },
+  {
+    "canonicalTitle": "Dream of the Red Chamber",
+    "canonicalAuthor": "Cao Xueqin",
+    "approvedCanonicalTradition": "chinese_classical"
+  },
+  {
+    "canonicalTitle": "The Story of the Stone",
+    "canonicalAuthor": "Cao Xueqin",
+    "approvedCanonicalTradition": "chinese_classical"
+  },
+  {
+
+    "canonicalTitle": "The Quran",
+
+    "canonicalAuthor": "Various",
+
+    "approvedCanonicalTradition": "sacred_scriptural_traditions"
+
+  },
+
+  {
+
+    "canonicalTitle": "The Bible",
+
+    "canonicalAuthor": "Various",
+
+    "approvedCanonicalTradition": "sacred_scriptural_traditions"
+
+  },
+
+  {
+
+    "canonicalTitle": "Tanakh",
+
+    "canonicalAuthor": "Various",
+
+    "approvedCanonicalTradition": "sacred_scriptural_traditions"
+
+  },
+
+  {
+
+    "canonicalTitle": "The Canterbury Tales",
+
+    "canonicalAuthor": "Geoffrey Chaucer",
+
+    "approvedCanonicalTradition": "western_medieval"
+
+  },
+
+  {
+
+    "canonicalTitle": "Leaves of Grass",
+
+    "canonicalAuthor": "Walt Whitman",
+
+    "approvedCanonicalTradition": "american_transcendentalist"
+
+  },
+  [
+  {
+    "canonicalTitle": "The Epic of Gilgamesh",
+    "canonicalAuthor": "Anonymous",
+    "approvedCanonicalTradition": "mesopotamian_classical"
+  },
+  {
+    "canonicalTitle": "The Shahnameh",
+    "canonicalAuthor": "Ferdowsi",
+    "approvedCanonicalTradition": "persian_classical"
+  },
+  {
+    "canonicalTitle": "The Conference of the Birds",
+    "canonicalAuthor": "Farid ud-Din Attar",
+    "approvedCanonicalTradition": "persian_classical"
+  },
+  {
+    "canonicalTitle": "Leaves of Grass",
+    "canonicalAuthor": "Walt Whitman",
+    "approvedCanonicalTradition": "american_transcendentalist"
+  },
+  {
+    "canonicalTitle": "The Book of Disquiet",
+    "canonicalAuthor": "Fernando Pessoa",
+    "approvedCanonicalTradition": "portuguese_modernism"
+  },
+  {
+    "canonicalTitle": "Madame Bovary",
+    "canonicalAuthor": "Gustave Flaubert",
+    "approvedCanonicalTradition": "french_realism"
+  },
+  {
+    "canonicalTitle": "The Magic Mountain",
+    "canonicalAuthor": "Thomas Mann",
+    "approvedCanonicalTradition": "german_modernism"
+  },
+  {
+    "canonicalTitle": "The Master and Margarita",
+    "canonicalAuthor": "Mikhail Bulgakov",
+    "approvedCanonicalTradition": "russian_modernism"
+  },
+  {
+    "canonicalTitle": "Moby-Dick; or, The Whale",
+    "canonicalAuthor": "Herman Melville",
+    "approvedCanonicalTradition": "american_renaissance"
+  },
+  {
+    "canonicalTitle": "Heart of Darkness",
+    "canonicalAuthor": "Joseph Conrad",
+    "approvedCanonicalTradition": "colonial_modernism"
+  },
+  {
+    "canonicalTitle": "The Waste Land",
+    "canonicalAuthor": "T. S. Eliot",
+    "approvedCanonicalTradition": "high_modernism"
+  },
+  {
+    "canonicalTitle": "The Sound and the Fury",
+    "canonicalAuthor": "William Faulkner",
+    "approvedCanonicalTradition": "southern_gothic"
+  },
+  {
+    "canonicalTitle": "Hopscotch",
+    "canonicalAuthor": "Julio Cortázar",
+    "approvedCanonicalTradition": "latin_american_boom"
+  },
+  {
+    "canonicalTitle": "The Savage Detectives",
+    "canonicalAuthor": "Roberto Bolaño",
+    "approvedCanonicalTradition": "post_boom_latin_american"
+  },
+  {
+    "canonicalTitle": "The Book of Chameleons",
+    "canonicalAuthor": "José Eduardo Agualusa",
+    "approvedCanonicalTradition": "lusophone_african"
+  }
+]
+]

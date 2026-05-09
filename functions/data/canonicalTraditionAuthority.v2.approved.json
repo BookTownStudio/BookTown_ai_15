@@ -1,0 +1,162 @@
+[
+  {
+    "canonicalTitle": "Hamlet",
+    "canonicalAuthor": "William Shakespeare",
+    "approvedCanonicalTradition": "western_early_modern"
+  },
+  {
+    "canonicalTitle": "Macbeth",
+    "canonicalAuthor": "William Shakespeare",
+    "approvedCanonicalTradition": "western_early_modern"
+  },
+  {
+    "canonicalTitle": "The Divine Comedy",
+    "canonicalAuthor": "Dante Alighieri",
+    "approvedCanonicalTradition": "medieval_european"
+  },
+  {
+    "canonicalTitle": "Don Quixote",
+    "canonicalAuthor": "Miguel de Cervantes",
+    "approvedCanonicalTradition": "western_early_modern"
+  },
+  {
+    "canonicalTitle": "Pride and Prejudice",
+    "canonicalAuthor": "Jane Austen",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Mrs Dalloway",
+    "canonicalAuthor": "Virginia Woolf",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "To the Lighthouse",
+    "canonicalAuthor": "Virginia Woolf",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Middlemarch",
+    "canonicalAuthor": "George Eliot",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "The Stranger",
+    "canonicalAuthor": "Albert Camus",
+    "approvedCanonicalTradition": "existential_modernism"
+  },
+  {
+    "canonicalTitle": "The Plague",
+    "canonicalAuthor": "Albert Camus",
+    "approvedCanonicalTradition": "existential_modernism"
+  },
+  {
+    "canonicalTitle": "The Trial",
+    "canonicalAuthor": "Franz Kafka",
+    "approvedCanonicalTradition": "existential_modernism"
+  },
+  {
+    "canonicalTitle": "The Metamorphosis",
+    "canonicalAuthor": "Franz Kafka",
+    "approvedCanonicalTradition": "existential_modernism"
+  },
+  {
+    "canonicalTitle": "Waiting for Godot",
+    "canonicalAuthor": "Samuel Beckett",
+    "approvedCanonicalTradition": "existential_modernism"
+  },
+  {
+    "canonicalTitle": "The Brothers Karamazov",
+    "canonicalAuthor": "Fyodor Dostoevsky",
+    "approvedCanonicalTradition": "russian_literary_tradition"
+  },
+  {
+    "canonicalTitle": "Anna Karenina",
+    "canonicalAuthor": "Leo Tolstoy",
+    "approvedCanonicalTradition": "russian_literary_tradition"
+  },
+  {
+    "canonicalTitle": "War and Peace",
+    "canonicalAuthor": "Leo Tolstoy",
+    "approvedCanonicalTradition": "russian_literary_tradition"
+  },
+  {
+    "canonicalTitle": "The Tale of Kieu",
+    "canonicalAuthor": "Nguyễn Du",
+    "approvedCanonicalTradition": "east_asian_classical"
+  },
+  {
+    "canonicalTitle": "Journey to the West",
+    "canonicalAuthor": "Wu Cheng'en",
+    "approvedCanonicalTradition": "chinese_classical"
+  },
+  {
+    "canonicalTitle": "Kokoro",
+    "canonicalAuthor": "Natsume Sōseki",
+    "approvedCanonicalTradition": "japanese_modern"
+  },
+  {
+    "canonicalTitle": "Snow Country",
+    "canonicalAuthor": "Yasunari Kawabata",
+    "approvedCanonicalTradition": "japanese_modern"
+  },
+  {
+    "canonicalTitle": "The Woman in the Dunes",
+    "canonicalAuthor": "Kōbō Abe",
+    "approvedCanonicalTradition": "japanese_modern"
+  },
+  {
+    "canonicalTitle": "One Hundred Years of Solitude",
+    "canonicalAuthor": "Gabriel Garcia Marquez",
+    "approvedCanonicalTradition": "latin_american_magical_realism"
+  },
+  {
+    "canonicalTitle": "The Autumn of the Patriarch",
+    "canonicalAuthor": "Gabriel García Márquez",
+    "approvedCanonicalTradition": "latin_american_magical_realism"
+  },
+  {
+    "canonicalTitle": "Pedro Páramo",
+    "canonicalAuthor": "Juan Rulfo",
+    "approvedCanonicalTradition": "latin_american_magical_realism"
+  },
+  {
+    "canonicalTitle": "The Aleph",
+    "canonicalAuthor": "Jorge Luis Borges",
+    "approvedCanonicalTradition": "latin_american_literary_tradition"
+  },
+  {
+    "canonicalTitle": "Things Fall Apart",
+    "canonicalAuthor": "Chinua Achebe",
+    "approvedCanonicalTradition": "african_postcolonial"
+  },
+  {
+    "canonicalTitle": "Beloved",
+    "canonicalAuthor": "Toni Morrison",
+    "approvedCanonicalTradition": "african_american_literary_tradition"
+  },
+  {
+    "canonicalTitle": "Invisible Man",
+    "canonicalAuthor": "Ralph Ellison",
+    "approvedCanonicalTradition": "african_american_literary_tradition"
+  },
+  {
+    "canonicalTitle": "Season of Migration to the North",
+    "canonicalAuthor": "Tayeb Salih",
+    "approvedCanonicalTradition": "arabic_modern"
+  },
+  {
+    "canonicalTitle": "Cities of Salt",
+    "canonicalAuthor": "Abdelrahman Munif",
+    "approvedCanonicalTradition": "arabic_modern"
+  },
+  {
+    "canonicalTitle": "Men in the Sun",
+    "canonicalAuthor": "Ghassan Kanafani",
+    "approvedCanonicalTradition": "arabic_modern"
+  },
+  {
+    "canonicalTitle": "The Cairo Trilogy",
+    "canonicalAuthor": "Naguib Mahfouz",
+    "approvedCanonicalTradition": "arabic_modern"
+  }
+]

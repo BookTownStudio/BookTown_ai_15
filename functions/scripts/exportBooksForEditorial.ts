@@ -8,7 +8,12 @@ type Row = {
   title: string;
   author: string;
   form: string;
+  canonicalTradition: string;
 };
+
+function asString(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
 
 async function run() {
   const snapshot = await db.collection("books").get();
@@ -33,11 +38,14 @@ async function run() {
       data?.literaryForm ||
       "";
 
+    const canonicalTradition = asString(data?.ontology?.canonicalTradition);
+
     rows.push({
       bookId: doc.id,
       title,
       author,
       form,
+      canonicalTradition,
     });
   });
 
@@ -49,7 +57,7 @@ async function run() {
 
   rows.forEach((r) => {
     console.log(
-      `${r.bookId} | ${r.title} | ${r.author} | ${r.form}`
+      `${r.bookId} | ${r.title} | ${r.author} | ${r.form} | ${r.canonicalTradition}`
     );
   });
 

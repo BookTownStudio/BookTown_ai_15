@@ -1,0 +1,1202 @@
+[
+  {
+    "bookId": "0038bc08-3757-45bd-81a9-5c4689141093",
+    "canonicalTitle": "The Man Without Qualities",
+    "canonicalAuthor": "Robert Musil",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "02b213b5-b866-4805-b414-eea965f9f75e",
+    "canonicalTitle": "The Pillow Book",
+    "canonicalAuthor": "Sei Shōnagon",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "03a256da-e661-4ad7-97ca-01aa28578799",
+    "canonicalTitle": "A General Theory of Oblivion",
+    "canonicalAuthor": "José Eduardo Agualusa",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "045decf8-c059-4d41-88bc-71a95350f11d",
+    "canonicalTitle": "Train to Pakistan",
+    "canonicalAuthor": "Khushwant Singh",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "04ecc5cf-d220-4601-bf90-1c82d7c73dac",
+    "canonicalTitle": "The Trial",
+    "canonicalAuthor": "Franz Kafka",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "052f247b-35fd-4b7b-8a47-4b72e5e9cb81",
+    "canonicalTitle": "Rawāʾiʻ Jubrān Khalīl Jubrān",
+    "canonicalAuthor": "Kahlil Gibran",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "059064a4-bc23-4783-b67f-9dcad07f69a3",
+    "canonicalTitle": "The Book of Disquiet",
+    "canonicalAuthor": "Fernando Pessoa",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "08ff3b30-b749-4234-b1b2-3d49042dcd96",
+    "canonicalTitle": "Madame Bovary",
+    "canonicalAuthor": "Gustave Flaubert",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "0bd04333-9e8d-4ffd-b2b0-3d72ac2da573",
+    "canonicalTitle": "The Savage Detectives",
+    "canonicalAuthor": "Roberto Bolaño",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "156762aa-8364-4b4e-b460-68fcf3bf029b",
+    "canonicalTitle": "Siddhartha",
+    "canonicalAuthor": "Hermann Hesse",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "1f751273-b3ff-4541-a7c2-380c8fce4d52",
+    "canonicalTitle": "The Muqaddimah",
+    "canonicalAuthor": "Ibn Khaldun",
+    "proposedCanonicalTradition": "arabic_islamic_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Ibn Khaldun",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "20a93426-4113-48ef-bb0b-0287a4f40426",
+    "canonicalTitle": "Dead Souls",
+    "canonicalAuthor": "Nikolai Gogol",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Nikolai Gogol",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "25efbe24-1d5b-4988-b328-6d8811c0e9fc",
+    "canonicalTitle": "Life and Fate",
+    "canonicalAuthor": "Vasily Grossman",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Vasily Grossman",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "26dab3eb-a667-455e-86d3-041544fcc357",
+    "canonicalTitle": "Midnight's Children",
+    "canonicalAuthor": "Salman Rushdie",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "271aafd9-771c-479e-bce6-983937543356",
+    "canonicalTitle": "The Tale of Genji",
+    "canonicalAuthor": "Murasaki Shikibu",
+    "proposedCanonicalTradition": "japanese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Murasaki Shikibu",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "273cf7b8-aea6-4d64-8d42-0aeb3bb49327",
+    "canonicalTitle": "Waiting for Godot",
+    "canonicalAuthor": "Samuel Beckett",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "28047180-afaf-4c6e-a4f0-0e88d424469e",
+    "canonicalTitle": "The Tale of Kieu",
+    "canonicalAuthor": "Nguyễn Du",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "2989dcc1-99ce-4702-a238-3a5d41dec210",
+    "canonicalTitle": "The Radetzky March",
+    "canonicalAuthor": "Joseph Roth",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "2a251222-19d3-4031-a329-3b4bad26b357",
+    "canonicalTitle": "Woman at Point Zero",
+    "canonicalAuthor": "Nawal El Saadawi",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "2bafd4ce-80d1-42f2-90bc-a0fd1e58793d",
+    "canonicalTitle": "The Palm-Wine Drinkard",
+    "canonicalAuthor": "Amos Tutuola",
+    "proposedCanonicalTradition": "african_oral_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Amos Tutuola",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "2e08cf55-aecc-4c25-9564-3d0983ac560a",
+    "canonicalTitle": "The Open Veins of Latin America",
+    "canonicalAuthor": "Eduardo Galeano",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "326de499-8a8a-48ae-9223-0fcc23fe7975",
+    "canonicalTitle": "The Trial of Dedan Kimathi",
+    "canonicalAuthor": "Ngũgĩ wa Thiong’o",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+    "canonicalTitle": "The Cairo Trilogy",
+    "canonicalAuthor": "Naguib Mahfouz",
+    "proposedCanonicalTradition": "global_modern_postcolonial",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Naguib Mahfouz",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "3444f6de-6e39-404d-9a9c-8f1a86723e19",
+    "canonicalTitle": "The Book of Chameleons",
+    "canonicalAuthor": "José Eduardo Agualusa",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "34e49911-e45f-4841-a540-834a22583331",
+    "canonicalTitle": "السباخون",
+    "canonicalAuthor": "Abdelrahman Munif",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "3532003b-5d2c-4944-b3ce-8f8ad685b0e7",
+    "canonicalTitle": "Anna Karenina",
+    "canonicalAuthor": "Leo Tolstoy",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Leo Tolstoy",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "373186af-b617-4449-a04a-7cddfe856003",
+    "canonicalTitle": "Socrates",
+    "canonicalAuthor": "A. E. Taylor",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "3bcb4de1-5684-4c61-b8cb-9b493b629a43",
+    "canonicalTitle": "Hopscotch",
+    "canonicalAuthor": "Julio Cortázar",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "3c68768c-5a86-4424-8e94-ee605be2773c",
+    "canonicalTitle": "The Forty Rules of Love",
+    "canonicalAuthor": "Elif Shafak",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+    "canonicalTitle": "The Republic",
+    "canonicalAuthor": "Plato",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Plato",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "409b3c63-89f6-46af-a2ff-3b067cbc021a",
+    "canonicalTitle": "Macbeth",
+    "canonicalAuthor": "William Shakespeare",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "40db8b73-7699-4da8-862d-200b0daa8b84",
+    "canonicalTitle": "The Odyssey",
+    "canonicalAuthor": "Homer",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Homer",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "40ed7b8c-f279-469b-86d3-05d3596a4c17",
+    "canonicalTitle": "Crime and Punishment",
+    "canonicalAuthor": "Fyodor Dostoevsky",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Fyodor Dostoevsky",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "43490e37-3cfe-459c-b8ba-e85965d0ab9d",
+    "canonicalTitle": "The Plague",
+    "canonicalAuthor": "Albert Camus",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "4931ef97-f5e3-47ac-b5eb-2b85f67b1318",
+    "canonicalTitle": "Independent People",
+    "canonicalAuthor": "Halldór Laxness",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "4b2dea64-c327-4ca9-8686-17440a1053fb",
+    "canonicalTitle": "The Shahnameh",
+    "canonicalAuthor": "Ferdowsi",
+    "proposedCanonicalTradition": "persian_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Ferdowsi",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "50da169f-00de-40fb-9973-162636299bd7",
+    "canonicalTitle": "The Divine Comedy",
+    "canonicalAuthor": "Dante Alighieri",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "53a28011-1bf3-4da7-8222-f82fe64894da",
+    "canonicalTitle": "The Invention of Morel",
+    "canonicalAuthor": "Adolfo Bioy Casares",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "56a58050-187f-45d2-af40-dafa734b4b2a",
+    "canonicalTitle": "Moby-Dick; or, The Whale",
+    "canonicalAuthor": "Herman Melville",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "56b329cc-ca17-452d-bb29-a8a0350ce3dc",
+    "canonicalTitle": "Hamlet",
+    "canonicalAuthor": "William Shakespeare",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "582fdf41-88e6-45ba-b527-652993da488a",
+    "canonicalTitle": "The Silent Cry",
+    "canonicalAuthor": "Kenzaburō Ōe",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "58363dd9-935d-4fab-acbf-8662f2604feb",
+    "canonicalTitle": "The Aleph",
+    "canonicalAuthor": "Jorge Luis Borges",
+    "proposedCanonicalTradition": "latin_american_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Jorge Luis Borges",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "592fa538-ff2a-4c62-b8a4-14e00f128839",
+    "canonicalTitle": "Their Eyes Were Watching God",
+    "canonicalAuthor": "Zora Neale Hurston",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "5b3a87c8-e32d-417a-90a8-d30a413d61e6",
+    "canonicalTitle": "Journey to the West",
+    "canonicalAuthor": "Wu Cheng'en",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "5c753c8a-8af2-42af-bd9c-83899f1b2f4e",
+    "canonicalTitle": "The Tunnel",
+    "canonicalAuthor": "Ernesto Sabato",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "5dfdf572-5634-4cca-a3eb-cad2c073650c",
+    "canonicalTitle": "The Waste Land",
+    "canonicalAuthor": "T. S. Eliot",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "5ed5a4b3-6788-413b-923b-db7047f3c4f1",
+    "canonicalTitle": "The Story of the Stone",
+    "canonicalAuthor": "Cao Xueqin",
+    "proposedCanonicalTradition": "chinese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Cao Xueqin",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "636484f3-379e-465f-9970-e1be77491e78",
+    "canonicalTitle": "The Leopard",
+    "canonicalAuthor": "Giuseppe Tomasi di Lampedusa",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "639be911-6d91-4ba8-9067-ab076691d62f",
+    "canonicalTitle": "Dream of the Red Chamber",
+    "canonicalAuthor": "Cao Xueqin",
+    "proposedCanonicalTradition": "chinese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Cao Xueqin",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "664a89e5-6188-4fb8-bb11-ce039b37d8fc",
+    "canonicalTitle": "Auto-da-Fé",
+    "canonicalAuthor": "Elias Canetti",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "67568dec-fd96-4a8a-94df-d7db07f73bb3",
+    "canonicalTitle": "Memory for Forgetfulness",
+    "canonicalAuthor": "Mahmoud Darwish",
+    "proposedCanonicalTradition": "global_modern_postcolonial",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Mahmoud Darwish",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "678c1ca9-f025-45b4-89c4-08254e41cfdd",
+    "canonicalTitle": "The Woman in the Dunes",
+    "canonicalAuthor": "Kōbō Abe",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "6c837a7a-1d00-4d29-b661-dbffbdb6f29c",
+    "canonicalTitle": "The Three-Arched Bridge",
+    "canonicalAuthor": "Ismail Kadare",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "6ea2f723-1683-4284-b1f4-c5eb908c2614",
+    "canonicalTitle": "God's Bits of Wood",
+    "canonicalAuthor": "Ousmane Sembène",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "6ee3d13c-4c08-40df-8ece-cde62c6b2780",
+    "canonicalTitle": "Leaves of Grass",
+    "canonicalAuthor": "Walt Whitman",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+    "canonicalTitle": "The Brothers Karamazov",
+    "canonicalAuthor": "Fyodor Dostoevsky",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Fyodor Dostoevsky",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "70643325-3c02-4fb6-8c05-816a5a6b76c7",
+    "canonicalTitle": "The Second Sex",
+    "canonicalAuthor": "Simone de Beauvoir",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+    "canonicalTitle": "The Autumn of the Patriarch",
+    "canonicalAuthor": "Gabriel García Márquez",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "7ceecdb2-7aac-4bb6-90da-6747b410c8dc",
+    "canonicalTitle": "So Long a Letter",
+    "canonicalAuthor": "Mariama Bâ",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "7e855873-c53b-4b41-8fa2-0d52d944ba2f",
+    "canonicalTitle": "The Name of the Rose",
+    "canonicalAuthor": "Umberto Eco",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "812ea7ac-7ba7-410b-b1b4-6eec796de59f",
+    "canonicalTitle": "The Mahabharata",
+    "canonicalAuthor": "Vyasa",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.7,
+    "reasoning": "Epic literary form heuristic",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "84073272-f022-40c3-b588-e317cb3dd21e",
+    "canonicalTitle": "Cities of Salt",
+    "canonicalAuthor": "Abdelrahman Munif",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "857877bf-8861-4eca-b357-776fcb765720",
+    "canonicalTitle": "The Yacoubian Building",
+    "canonicalAuthor": "Alaa Al Aswany",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8637179c-dacf-4ec9-aaf6-7a1bd7eeb384",
+    "canonicalTitle": "Invisible Man",
+    "canonicalAuthor": "Ralph Ellison",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8902b2c0-cc5a-42ba-83d5-10de1f283064",
+    "canonicalTitle": "The Analects",
+    "canonicalAuthor": "Confucius",
+    "proposedCanonicalTradition": "chinese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Confucius",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "89b769a8-d615-4bd8-b482-fb92f64cca76",
+    "canonicalTitle": "The Master and Margarita",
+    "canonicalAuthor": "Mikhail Bulgakov",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Mikhail Bulgakov",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8a3674ed-9fd0-469e-a838-bdd6fad0a75c",
+    "canonicalTitle": "The Canterbury Tales",
+    "canonicalAuthor": "Geoffrey Chaucer",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8a9f4ad6-f2e6-44be-a12f-707533ff6f2a",
+    "canonicalTitle": "The Death of Virgil",
+    "canonicalAuthor": "Hermann Broch",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8c359464-f886-44cd-8572-cf71c841c728",
+    "canonicalTitle": "The Hour of the Star",
+    "canonicalAuthor": "Clarice Lispector",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8e00a00d-b3b0-4d9c-a8d4-c74adaf56302",
+    "canonicalTitle": "A Passage to India",
+    "canonicalAuthor": "E. M. Forster",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "8ef754da-3904-408b-94f3-3fd2d4b92da5",
+    "canonicalTitle": "The Golden Notebook",
+    "canonicalAuthor": "Doris Lessing",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "93381e16-160e-484a-bdc5-22ed437ae4ea",
+    "canonicalTitle": "Things Fall Apart",
+    "canonicalAuthor": "Chinua Achebe",
+    "proposedCanonicalTradition": "african_oral_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Chinua Achebe",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "9441ba0f-2390-4785-a59c-891bc5e49025",
+    "canonicalTitle": "The Bhagavad Gita",
+    "canonicalAuthor": "Anonymous",
+    "proposedCanonicalTradition": "ancient_near_eastern",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Anonymous",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "9654574b-7cfa-46ea-87b7-2daf9c759f1c",
+    "canonicalTitle": "Pride and Prejudice",
+    "canonicalAuthor": "Jane Austen",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "9670409b-808a-4d83-8535-8cf0511669df",
+    "canonicalTitle": "Miramar",
+    "canonicalAuthor": "Naguib Mahfouz",
+    "proposedCanonicalTradition": "global_modern_postcolonial",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Naguib Mahfouz",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "99302220-847a-438d-9eb0-6ae5d501dd3b",
+    "canonicalTitle": "Chronicle in Stone",
+    "canonicalAuthor": "Ismail Kadare",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "9b434a46-0a94-456d-884b-aa30359d85f3",
+    "canonicalTitle": "Berlin Alexanderplatz",
+    "canonicalAuthor": "Alfred Döblin",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "PfZamcIUBh96aqRGbZO3",
+    "canonicalTitle": "The Quran",
+    "canonicalAuthor": "Various",
+    "proposedCanonicalTradition": "sacred_scriptural_traditions",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Various",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "TSfcfrLRAPJabl8FhdcW",
+    "canonicalTitle": "Tanakh",
+    "canonicalAuthor": "Various",
+    "proposedCanonicalTradition": "sacred_scriptural_traditions",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Various",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a021c1d5-d2f8-47ec-af5e-12aeab6c79c4",
+    "canonicalTitle": "The Metamorphosis",
+    "canonicalAuthor": "Franz Kafka",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a1dee313-9051-4db4-b40b-ba0fed112ee0",
+    "canonicalTitle": "Heart of Darkness",
+    "canonicalAuthor": "Joseph Conrad",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+    "canonicalTitle": "The House of the Spirits",
+    "canonicalAuthor": "Isabel Allende",
+    "proposedCanonicalTradition": "latin_american_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Isabel Allende",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a243eff8-2c3a-4c60-b7a0-40df6486295e",
+    "canonicalTitle": "Thus Spoke Zarathustra",
+    "canonicalAuthor": "Friedrich Nietzsche",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a31a74a4-ac9a-4146-b495-57bdfb76f402",
+    "canonicalTitle": "The Aeneid",
+    "canonicalAuthor": "Virgil",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Virgil",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a4949829-0465-4a30-ae80-c149da94a846",
+    "canonicalTitle": "Don Quixote",
+    "canonicalAuthor": "Miguel de Cervantes",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a4f04259-e013-4a2e-a971-bf3055ace663",
+    "canonicalTitle": "The Stranger",
+    "canonicalAuthor": "Albert Camus",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a74352ae-1647-4af7-8fb6-0a84ee051c30",
+    "canonicalTitle": "Kokoro",
+    "canonicalAuthor": "Natsume Sōseki",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "a7ec1e1b-a115-4e34-9c64-24363d0cfe41",
+    "canonicalTitle": "Season of Migration to the North",
+    "canonicalAuthor": "Tayeb Salih",
+    "proposedCanonicalTradition": "global_modern_postcolonial",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Tayeb Salih",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "aca5d678-f2cc-49f8-899b-615ca2b085c5",
+    "canonicalTitle": "The Prince",
+    "canonicalAuthor": "Niccolò Machiavelli",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "af2fb049-d684-4f43-bbdd-cbddee5b7f69",
+    "canonicalTitle": "The Melancholy of Resistance",
+    "canonicalAuthor": "László Krasznahorkai",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "b008baa8-0229-4deb-9ad5-8fe6af07641f",
+    "canonicalTitle": "Blindness",
+    "canonicalAuthor": "José Saramago",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "b69373f0-de13-4bd0-9563-333523c916a4",
+    "canonicalTitle": "The Makioka Sisters",
+    "canonicalAuthor": "Junichiro Tanizaki",
+    "proposedCanonicalTradition": "japanese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Junichiro Tanizaki",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "b899a99e-f28d-4730-b579-94610ef327f2",
+    "canonicalTitle": "Faust",
+    "canonicalAuthor": "Johann Wolfgang von Goethe",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "bab07a3c-8dab-4e6a-a024-9805e5aaf3ae",
+    "canonicalTitle": "The Iliad",
+    "canonicalAuthor": "Homer",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Homer",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+    "canonicalTitle": "One Hundred Years of Solitude",
+    "canonicalAuthor": "Gabriel Garcia Marquez",
+    "proposedCanonicalTradition": "latin_american_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Gabriel Garcia Marquez",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+    "canonicalTitle": "War and Peace",
+    "canonicalAuthor": "Leo Tolstoy",
+    "proposedCanonicalTradition": "russian_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Leo Tolstoy",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "c590aa23-1f0c-4247-85d5-12df5e5698af",
+    "canonicalTitle": "Men in the Sun",
+    "canonicalAuthor": "Ghassan Kanafani",
+    "proposedCanonicalTradition": "global_modern_postcolonial",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Ghassan Kanafani",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "c5eed057-eeee-432c-b1b9-831b962194d8",
+    "canonicalTitle": "Dictionary of the Khazars",
+    "canonicalAuthor": "Milorad Pavić",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "c6e1c711-9a84-4068-9482-0e2517cae7dc",
+    "canonicalTitle": "The Longing of the Dervish",
+    "canonicalAuthor": "Hammour Ziada",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "cc345b68-0d72-4cd6-a5b0-09f070ca96ca",
+    "canonicalTitle": "To the Lighthouse",
+    "canonicalAuthor": "Virginia Woolf",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "cd051225-2bee-47ba-be42-73c0ba0295fc",
+    "canonicalTitle": "Pedro Páramo",
+    "canonicalAuthor": "Juan Rulfo",
+    "proposedCanonicalTradition": "latin_american_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Juan Rulfo",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "d875966b-6d4e-4d34-85cd-40a8c5b427f2",
+    "canonicalTitle": "The Sound and the Fury",
+    "canonicalAuthor": "William Faulkner",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "dc1944ab-7164-4beb-85d3-4823b79a3d7d",
+    "canonicalTitle": "eBook publishing for beginners",
+    "canonicalAuthor": "Learn2succeed.com Inc",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "dd5c24f3-f17a-404e-be23-9642fd8d8d3d",
+    "canonicalTitle": "Divan of Hafez",
+    "canonicalAuthor": "Hafez",
+    "proposedCanonicalTradition": "persian_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Hafez",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "ddf4ca6d-4a3f-4a57-9b1e-5edcd3a5627c",
+    "canonicalTitle": "The Conference of the Birds",
+    "canonicalAuthor": "Farid ud-Din Attar",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "e15330b2-effd-49c8-8793-72b438e50a28",
+    "canonicalTitle": "Socrates",
+    "canonicalAuthor": "Sarah Kofman",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+    "canonicalTitle": "The Magic Mountain",
+    "canonicalAuthor": "Thomas Mann",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "e760b97f-4a81-4aad-ba29-30ffe10a9a63",
+    "canonicalTitle": "The Epic of Gilgamesh",
+    "canonicalAuthor": "Anonymous",
+    "proposedCanonicalTradition": "ancient_near_eastern",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Anonymous",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "edb03891-e4d2-481f-a55d-5fe32c755571",
+    "canonicalTitle": "The Oresteia",
+    "canonicalAuthor": "Aeschylus",
+    "proposedCanonicalTradition": "greco_roman_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Aeschylus",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "eeee733b-9faa-4530-a07f-18e6a4b1d919",
+    "canonicalTitle": "Beloved",
+    "canonicalAuthor": "Toni Morrison",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f1c82d98-7ec0-46c6-9432-576c5299645a",
+    "canonicalTitle": "Faust Part Two",
+    "canonicalAuthor": "Johann Wolfgang von Goethe",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f1d9dbac-bc90-43d3-b3ae-8494aa357481",
+    "canonicalTitle": "Six Characters in Search of an Author",
+    "canonicalAuthor": "Luigi Pirandello",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f3b9498f-0127-4337-a240-3d234f025fd0",
+    "canonicalTitle": "Snow Country",
+    "canonicalAuthor": "Yasunari Kawabata",
+    "proposedCanonicalTradition": "japanese_classical",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Yasunari Kawabata",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f4cab4e7-f2f3-461c-863a-ba2a81571851",
+    "canonicalTitle": "The Vegetarian",
+    "canonicalAuthor": "Han Kang",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f585b6f0-e56e-4647-ae19-8d63cd620cfb",
+    "canonicalTitle": "The Bridge on the Drina",
+    "canonicalAuthor": "Ivo Andrić",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "f8f29be6-0b69-444d-bc86-f9daa44c0972",
+    "canonicalTitle": "A Bend in the River",
+    "canonicalAuthor": "V. S. Naipaul",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "faed574e-1f7c-4975-bc5b-ffaebd84b26d",
+    "canonicalTitle": "The Famished Road",
+    "canonicalAuthor": "Ben Okri",
+    "proposedCanonicalTradition": "african_oral_literary_tradition",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Ben Okri",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "fde855e8-bcb1-40d9-92a8-eed4a0aa0360",
+    "canonicalTitle": "Mrs Dalloway",
+    "canonicalAuthor": "Virginia Woolf",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "fed28166-054f-42e3-a07a-c0a1d9b8bd89",
+    "canonicalTitle": "Middlemarch",
+    "canonicalAuthor": "George Eliot",
+    "proposedCanonicalTradition": "unknown",
+    "confidence": 0.2,
+    "reasoning": "No deterministic classification found",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  },
+  {
+    "bookId": "hy93saMLVEoTGuNo5dOY",
+    "canonicalTitle": "The Bible",
+    "canonicalAuthor": "Various",
+    "proposedCanonicalTradition": "sacred_scriptural_traditions",
+    "confidence": 0.95,
+    "reasoning": "Matched author authority map for Various",
+    "proposalSource": "generateCanonicalTraditionProposals.v1",
+    "reviewStatus": "pending"
+  }
+]

@@ -1,6 +1,7 @@
 
 import React from 'react';
 
+import type { CanonicalTraditionRegistryKey } from '../functions/src/library/ontology/canonicalTraditionRegistry';
 /**
  * Defines the standardized user roles across the application.
  */
@@ -229,17 +230,7 @@ export type BookForm =
     | 'unknown';
 
 export type CanonicalTradition =
-    | 'greco_roman_classical'
-    | 'arabic_islamic_classical'
-    | 'persian_classical'
-    | 'indian_classical'
-    | 'chinese_classical'
-    | 'japanese_classical'
-    | 'european_enlightenment_modern'
-    | 'russian_literary_tradition'
-    | 'latin_american_literary_tradition'
-    | 'african_oral_literary_tradition'
-    | 'global_modern_postcolonial'
+    | CanonicalTraditionRegistryKey
     | 'unknown';
 
 export interface BookOntology {
