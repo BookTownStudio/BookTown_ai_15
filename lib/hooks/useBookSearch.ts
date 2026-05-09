@@ -11,22 +11,28 @@ type UseBookSearchOptions = {
   limit?: number;
 };
 
+export const buildBookSearchQueryKey = (
+  query: string,
+  options: UseBookSearchOptions = {}
+) => [
+  'bookSearchV2',
+  query.trim(),
+  Boolean(options.ebookOnly),
+  Boolean(options.availabilityOnly),
+  options.lang || '',
+  typeof options.limit === 'number' ? options.limit : 15,
+] as const;
+
 export const useBookSearch = (
   query: string,
   options: UseBookSearchOptions = {}
 ) => {
   const [debouncedQuery] = useDebounce(query, 450);
-  const normalizedQuery = debouncedQuery.trim();
+  const normalizedQuery = query.trim();
+  const debouncedNormalizedQuery = debouncedQuery.trim();
 
   return useQuery<SearchResponseDTO>({
-    queryKey: [
-      'bookSearchV2',
-      normalizedQuery,
-      Boolean(options.ebookOnly),
-      Boolean(options.availabilityOnly),
-      options.lang || '',
-      typeof options.limit === 'number' ? options.limit : 15,
-    ],
+    queryKey: buildBookSearchQueryKey(normalizedQuery, options),
     queryFn: async () => {
         logBookEngineV2('BOOK_SEARCH_V2_CLIENT_QUERY', {
           query: normalizedQuery.slice(0, 80),
@@ -55,7 +61,7 @@ export const useBookSearch = (
 
         return response;
       },
-    enabled: normalizedQuery.length >= 2,
+    enabled: normalizedQuery.length >= 2 && normalizedQuery === debouncedNormalizedQuery,
     staleTime: 20_000,
     retry: false,
   });

@@ -81,6 +81,23 @@ function resolveViewFromPath(pathname: string, search = ''): View {
     if (normalizedPath === '/read') return { type: 'tab', id: 'read' };
     if (normalizedPath === '/discover') return { type: 'tab', id: 'discover' };
     if (normalizedPath === '/discover/explore') return { type: 'stack', id: 'discovery' };
+    if (
+        segments.length >= 3 &&
+        segments[0] === 'discover' &&
+        (segments[1] === 'tradition' || segments[1] === 'form' || segments[1] === 'subform')
+    ) {
+        const semanticId = decodePathSegment(segments[2]);
+        if (semanticId.length > 0) {
+            return {
+                type: 'stack',
+                id: 'semanticCollection',
+                params: {
+                    kind: segments[1],
+                    id: semanticId,
+                },
+            };
+        }
+    }
     if (normalizedPath === '/write') return { type: 'tab', id: 'write' };
     if (normalizedPath === '/social') return { type: 'tab', id: 'social' };
 
@@ -295,6 +312,18 @@ function resolvePathFromView(view: View): string | null {
         return '/discover/explore';
     }
 
+    if (view.type === 'stack' && view.id === 'semanticCollection') {
+        const kindRaw = typeof view.params?.kind === 'string' ? view.params.kind.trim() : '';
+        const kind =
+            kindRaw === 'tradition' || kindRaw === 'form' || kindRaw === 'subform'
+                ? kindRaw
+                : '';
+        const semanticId = typeof view.params?.id === 'string' ? view.params.id.trim() : '';
+        return kind && semanticId
+            ? `/discover/${kind}/${encodePathSegment(semanticId)}`
+            : '/discover/explore';
+    }
+
     if (view.type === 'immersive') {
         switch (view.id) {
             case 'adminDashboard':
@@ -478,6 +507,9 @@ function isRouteBackedPath(pathname: string): boolean {
         || normalizedPath === '/read'
         || normalizedPath === '/discover'
         || normalizedPath === '/discover/explore'
+        || normalizedPath.startsWith('/discover/tradition/')
+        || normalizedPath.startsWith('/discover/form/')
+        || normalizedPath.startsWith('/discover/subform/')
         || normalizedPath === '/write'
         || normalizedPath === '/social'
         || normalizedPath.startsWith('/books/')
@@ -717,6 +749,17 @@ function sanitizeViewForHistory(view: View): View {
     }
 
     if (view.type === 'stack') {
+        if (view.id === 'semanticCollection') {
+            const kindRaw = typeof view.params?.kind === 'string' ? view.params.kind.trim() : '';
+            const kind =
+                kindRaw === 'tradition' || kindRaw === 'form' || kindRaw === 'subform'
+                    ? kindRaw
+                    : '';
+            const semanticId = typeof view.params?.id === 'string' ? view.params.id.trim() : '';
+            return kind && semanticId
+                ? { type: 'stack', id: 'semanticCollection', params: { kind, id: semanticId } }
+                : { type: 'stack', id: 'discovery' };
+        }
         return { type: 'stack', id: view.id };
     }
 

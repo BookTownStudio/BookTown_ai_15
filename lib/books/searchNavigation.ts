@@ -80,7 +80,6 @@ export function buildBookDetailsParams(
     return {
       bookId: result.bookId,
       from,
-      searchResult: result,
       ...extra,
     };
   }

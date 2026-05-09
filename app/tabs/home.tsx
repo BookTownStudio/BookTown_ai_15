@@ -1,6 +1,6 @@
 // app/tabs/home.tsx
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -29,6 +29,7 @@ import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
 import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
+import { useHomeSearchState } from '../../store/home-search.tsx';
 import {
   acquireExternalEbookForRead,
   buildAcquireExternalReadParams,
@@ -47,10 +48,24 @@ const HomeScreen: React.FC = () => {
     isLoading: isRecommendationsLoading,
     isError: isRecommendationsError,
   } = useQuickRecs();
-  const { addToHistory } = useSearchHistory();
+  const { history: recentSearches, addToHistory, removeFromHistory } = useSearchHistory();
+  const {
+    query: searchQuery,
+    isSearchActive,
+    scrollTop,
+    setQuery: setSearchQuery,
+    setSearchActive,
+    setScrollTop,
+    clearSearch,
+  } = useHomeSearchState();
+  const shellRef = useRef<HTMLDivElement | null>(null);
+  const blurTimerRef = useRef<number | null>(null);
+  const scrollWriteRafRef = useRef<number | null>(null);
+  const pendingScrollTopRef = useRef(scrollTop);
+  const hasRestoredScrollRef = useRef(false);
+  const previousHomeResetTokenRef = useRef(resetTokens.home);
+  const lastCommittedSearchExecutionRef = useRef('');
 
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -65,10 +80,33 @@ const HomeScreen: React.FC = () => {
      🔒 HOME RESET CONTRACT
   -------------------------------- */
   useEffect(() => {
-    setSearchQuery('');
-    setIsSearching(false);
+    if (previousHomeResetTokenRef.current === resetTokens.home) return;
+    previousHomeResetTokenRef.current = resetTokens.home;
+    clearSearch();
     setBusyId(null);
-  }, [resetTokens.home]);
+  }, [clearSearch, resetTokens.home]);
+
+  useEffect(() => {
+    return () => {
+      if (blurTimerRef.current !== null) {
+        window.clearTimeout(blurTimerRef.current);
+      }
+      if (scrollWriteRafRef.current !== null) {
+        window.cancelAnimationFrame(scrollWriteRafRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (hasRestoredScrollRef.current) return;
+    const shell = shellRef.current;
+    if (!shell || scrollTop <= 0) return;
+
+    hasRestoredScrollRef.current = true;
+    window.requestAnimationFrame(() => {
+      shell.scrollTop = scrollTop;
+    });
+  }, [scrollTop]);
 
   const {
     data: searchResponse,
@@ -76,6 +114,7 @@ const HomeScreen: React.FC = () => {
     error: searchError,
     ebookOnly,
     toggleEbookOnly,
+    dataUpdatedAt: searchDataUpdatedAt,
   } = useUnifiedBookSearch(searchQuery);
 
   const { isPending: isAnalyzingImage } = useIdentifyBook();
@@ -101,6 +140,26 @@ const HomeScreen: React.FC = () => {
     });
   }, [ebookOnly, isSearchingBooks, searchQuery, searchResponse?.results?.length]);
 
+  useEffect(() => {
+    const normalizedQuery = searchQuery.trim();
+    if (normalizedQuery.length < 2) return;
+    if (isSearchingBooks || isAnalyzingImage || searchError || !searchResponse) return;
+
+    const executionKey = `${normalizedQuery.toLocaleLowerCase()}:${searchDataUpdatedAt || 0}`;
+    if (lastCommittedSearchExecutionRef.current === executionKey) return;
+
+    lastCommittedSearchExecutionRef.current = executionKey;
+    addToHistory(normalizedQuery);
+  }, [
+    addToHistory,
+    isAnalyzingImage,
+    isSearchingBooks,
+    searchDataUpdatedAt,
+    searchError,
+    searchQuery,
+    searchResponse,
+  ]);
+
   /* -------------------------------
      Open Search Result
   -------------------------------- */
@@ -117,8 +176,6 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
-
-      setIsSearching(false);
 
       navigate({
         type: 'immersive',
@@ -179,6 +236,36 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const handleSelectRecentSearch = (query: string) => {
+    setSearchQuery(query);
+    setSearchActive(true);
+  };
+
+  const handleHomeScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    pendingScrollTopRef.current = event.currentTarget.scrollTop;
+    if (scrollWriteRafRef.current !== null) return;
+
+    scrollWriteRafRef.current = window.requestAnimationFrame(() => {
+      scrollWriteRafRef.current = null;
+      setScrollTop(pendingScrollTopRef.current);
+    });
+  };
+
+  const handleSemanticChipClick = (chip: {
+    kind: 'tradition' | 'form' | 'subform';
+    value: string;
+  }) => {
+    navigate({
+      type: 'stack',
+      id: 'semanticCollection',
+      params: {
+        kind: chip.kind,
+        id: chip.value,
+        from: currentView,
+      },
+    });
+  };
+
   /* -------------------------------
      Render Search Results
   -------------------------------- */
@@ -214,6 +301,7 @@ const HomeScreen: React.FC = () => {
                 isBusy={busyId === result.id}
                 onOpen={handleOpenResult}
                 onRead={handleReadResult}
+                onSemanticChipClick={handleSemanticChipClick}
               />
             ))}
           </div>
@@ -229,7 +317,11 @@ const HomeScreen: React.FC = () => {
   };
 
   return (
-    <PageShell scrollable>
+    <PageShell
+      ref={shellRef}
+      scrollable
+      onScroll={handleHomeScroll}
+    >
       <AppNav titleEn="BookTown" titleAr="بوكتاون" />
 
       <main className="flex-grow pt-24 pb-20">
@@ -239,18 +331,34 @@ const HomeScreen: React.FC = () => {
               value={searchQuery}
               onChange={val => {
                 setSearchQuery(val);
-                setIsSearching(val.length > 0);
+                setSearchActive(val.trim().length > 0);
               }}
-              onFocus={() => setIsSearching(true)}
+              onFocus={() => {
+                if (blurTimerRef.current !== null) {
+                  window.clearTimeout(blurTimerRef.current);
+                  blurTimerRef.current = null;
+                }
+                setSearchActive(true);
+              }}
+              onBlur={() => {
+                blurTimerRef.current = window.setTimeout(() => {
+                  if (searchQuery.trim().length === 0) {
+                    setSearchActive(false);
+                  }
+                }, 120);
+              }}
               onClear={() => {
-                setSearchQuery('');
-                setIsSearching(false);
+                clearSearch();
               }}
               onMicClick={() => setIsMicModalOpen(true)}
               onCameraClick={() => setIsCameraOpen(true)}
+              recentSearches={recentSearches}
+              showRecentSearches={isSearchActive}
+              onSelectRecentSearch={handleSelectRecentSearch}
+              onRemoveRecentSearch={removeFromHistory}
             />
 
-            {isSearching ? (
+            {isSearchActive ? (
               <div className="animate-fade-in">
                 <div className="mt-4 flex items-center justify-start">
                   <UnifiedSearchFilterToggle
@@ -389,7 +497,7 @@ const HomeScreen: React.FC = () => {
           onClose={() => setIsMicModalOpen(false)}
           onResult={text => {
             setSearchQuery(text);
-            setIsSearching(text.length > 0);
+            setSearchActive(text.trim().length > 0);
             addToHistory(text);
             setIsMicModalOpen(false);
           }}

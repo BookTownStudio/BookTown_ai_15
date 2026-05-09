@@ -137,6 +137,21 @@ const LiveSearchScreen: React.FC = () => {
     }
   };
 
+  const handleSemanticChipClick = (chip: {
+    kind: 'tradition' | 'form' | 'subform';
+    value: string;
+  }) => {
+    navigate({
+      type: 'stack',
+      id: 'semanticCollection',
+      params: {
+        kind: chip.kind,
+        id: chip.value,
+        from: currentView,
+      },
+    });
+  };
+
   useEffect(() => {
     if (query.trim().length < 2) return;
     logBookEngineV2('BOOK_SEARCH_V2_SURFACE_LIVE', {
@@ -205,6 +220,7 @@ const LiveSearchScreen: React.FC = () => {
                 isBusy={busyId === r.id}
                 onOpen={handleOpenResult}
                 onRead={handleReadResult}
+                onSemanticChipClick={handleSemanticChipClick}
               />
             ))}
           </div>

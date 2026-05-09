@@ -379,6 +379,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
       : "unknown";
   const confidenceRaw = Number(raw?.confidence);
   const rankRaw = Number(raw?.rank);
+  const canonicalTradition = String(raw?.canonicalTradition || "").trim();
+  const form = String(raw?.form || "").trim();
+  const subForm = String(raw?.subForm || "").trim();
   const externalReadableSources = Array.isArray(raw?.externalReadableSources)
     ? raw.externalReadableSources
         .map((entry: unknown) => toExternalReadableSource(entry))
@@ -423,6 +426,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
     isEbookAvailable: ebookAvailable,
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? rankRaw : 999,
+    ...(canonicalTradition ? { canonicalTradition } : {}),
+    ...(form ? { form } : {}),
+    ...(subForm ? { subForm } : {}),
     ...(externalReadableSources.length > 0 ? { externalReadableSources } : {}),
     rawBook:
       raw?.rawBook && typeof raw.rawBook === "object"

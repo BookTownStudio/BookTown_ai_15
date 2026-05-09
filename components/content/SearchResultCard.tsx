@@ -15,6 +15,8 @@ type SemanticChip = {
   key: string;
   label: string;
   className: string;
+  kind?: 'tradition' | 'form' | 'subform';
+  value?: string;
 };
 
 interface SearchResultCardProps {
@@ -25,6 +27,11 @@ interface SearchResultCardProps {
   onAdd?: (result: SearchResultDTO) => void;
   onOpen?: (result: SearchResultDTO) => void;
   onRead?: (result: SearchResultDTO) => void;
+  onSemanticChipClick?: (chip: {
+    kind: 'tradition' | 'form' | 'subform';
+    value: string;
+    result: SearchResultDTO;
+  }) => void;
 
   /** UX mode */
   mode?: 'discovery' | 'insertion';
@@ -57,6 +64,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   onAdd,
   onOpen,
   onRead,
+  onSemanticChipClick,
   mode = 'discovery',
   isBusy = false,
   className = ''
@@ -152,6 +160,49 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     });
   }
 
+  const formatSemanticLabel = (value: string): string =>
+    value
+      .split('_')
+      .filter(Boolean)
+      .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+      .join(' ');
+
+  const semanticDiscoveryChipCandidates: Array<SemanticChip | null> = [
+    result.canonicalTradition
+      ? {
+          key: 'semantic-tradition',
+          label: formatSemanticLabel(result.canonicalTradition),
+          className: 'border-amber-300/25 bg-amber-300/10 text-amber-100',
+          kind: 'tradition' as const,
+          value: result.canonicalTradition,
+        }
+      : null,
+    result.form && result.form !== 'unknown'
+      ? {
+          key: 'semantic-form',
+          label: formatSemanticLabel(result.form),
+          className: 'border-cyan-300/25 bg-cyan-300/10 text-cyan-100',
+          kind: 'form' as const,
+          value: result.form,
+        }
+      : null,
+    result.subForm && result.subForm !== result.form
+      ? {
+          key: 'semantic-subform',
+          label: formatSemanticLabel(result.subForm),
+          className: 'border-emerald-300/25 bg-emerald-300/10 text-emerald-100',
+          kind: 'subform' as const,
+          value: result.subForm,
+        }
+      : null,
+  ];
+
+  const semanticDiscoveryChips = semanticDiscoveryChipCandidates
+    .filter((chip): chip is SemanticChip => chip !== null)
+    .slice(0, 2);
+
+  const visibleChips = [...semanticDiscoveryChips, ...semanticChips];
+
   const handlePrimaryAction = () => {
     if (isBusy) return;
 
@@ -222,21 +273,39 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
           </BilingualText>
         )}
 
-        {(semanticChips.length > 0 || groupedEditionText) && (
+        {(visibleChips.length > 0 || groupedEditionText) && (
           <div className="mt-2 space-y-1.5">
-            {semanticChips.length > 0 && (
+            {visibleChips.length > 0 && (
               <div className="flex flex-wrap gap-1.5">
-                {semanticChips.map((chip) => (
-                  <span
-                    key={chip.key}
-                    className={cn(
-                      'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
-                      chip.className
-                    )}
-                  >
-                    {chip.label}
-                  </span>
-                ))}
+                {visibleChips.map((chip) => {
+                  const chipClassName = cn(
+                    'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                    chip.kind && onSemanticChipClick && 'cursor-pointer hover:bg-white/10',
+                    chip.className
+                  );
+
+                  return chip.kind && chip.value && onSemanticChipClick ? (
+                    <button
+                      key={chip.key}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSemanticChipClick({
+                          kind: chip.kind,
+                          value: chip.value,
+                          result,
+                        });
+                      }}
+                      className={chipClassName}
+                    >
+                      {chip.label}
+                    </button>
+                  ) : (
+                    <span key={chip.key} className={chipClassName}>
+                      {chip.label}
+                    </span>
+                  );
+                })}
               </div>
             )}
 

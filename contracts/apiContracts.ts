@@ -241,6 +241,9 @@ const searchBookSchema = z
     isEbookAvailable: z.boolean(),
     confidence: z.number().min(0).max(1),
     rank: z.number().int().nonnegative(),
+    canonicalTradition: z.string().max(120).optional(),
+    form: z.string().max(80).optional(),
+    subForm: z.string().max(120).optional(),
     externalReadableSources: z
       .array(
         z

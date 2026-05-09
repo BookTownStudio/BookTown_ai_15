@@ -13,6 +13,7 @@ import type {
 import { normalizeSearchText, normalizeIsbn } from "../normalization/bookSearchNormalization";
 import { buildCanonicalKey } from "../persistence/canonicalKey";
 import { hasTransliteration, lookupPrimary } from "./transliterationMap";
+import { readBookOntology, resolveBookOntologyForm } from "../ontology/bookOntology";
 
 export interface SearchOptions {
   ebookOnly?: boolean;
@@ -74,6 +75,9 @@ export interface UnifiedSearchResult {
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
+  canonicalTradition?: string;
+  form?: string;
+  subForm?: string;
   externalReadableSources?: ExternalReadableSourceRecord[];
   isbn13?: string;
   isbn10?: string;
@@ -290,6 +294,26 @@ const AUTHOR_ANTHOLOGY_PATTERNS = [
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
+}
+
+function readSearchOntologyMetadata(data: Record<string, unknown>): {
+  canonicalTradition?: string;
+  form?: string;
+  subForm?: string;
+} {
+  const ontology = readBookOntology(data.ontology);
+  const rawOntology = asRecord(data.ontology);
+  const form = resolveBookOntologyForm(data);
+  const subForm = asNonEmptyString(ontology?.subForm || rawOntology?.subForm);
+  const canonicalTradition = asNonEmptyString(
+    ontology?.canonicalTradition || rawOntology?.canonicalTradition
+  );
+
+  return {
+    ...(canonicalTradition ? { canonicalTradition } : {}),
+    ...(form ? { form } : {}),
+    ...(subForm ? { subForm } : {}),
+  };
 }
 
 function asNonEmptyString(value: unknown): string {
@@ -2136,6 +2160,7 @@ function mapCanonicalBook(
     isEbookAvailable: ownedReadSignals.isEbookAvailable,
     confidence: rank.confidence,
     rank: rank.rankTier,
+    ...readSearchOntologyMetadata(data),
     rankTier: rank.rankTier,
     computedScore: rank.computedScore,
     tokenCoverageRatio: rank.tokenCoverageRatio,

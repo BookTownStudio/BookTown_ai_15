@@ -55,6 +55,9 @@ export interface SearchResultDTO {
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
+  canonicalTradition?: string;
+  form?: string;
+  subForm?: string;
   isbn13?: string;
   isbn10?: string;
   canonicalKey?: string;

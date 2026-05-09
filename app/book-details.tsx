@@ -27,7 +27,6 @@ import GlassCard from '../components/ui/GlassCard.tsx';
 import CanonicalCoverArtwork from '../components/content/CanonicalCoverArtwork.tsx';
 
 import {
-  XIcon,
   ShareIcon,
   EyeIcon,
   StarIcon,
@@ -36,7 +35,8 @@ import {
   ShelvesIcon,
   SendIcon,
   EditIcon,
-  BookIcon
+  BookIcon,
+  ChevronLeftIcon
 } from '../components/icons';
 
 import { cn } from '../lib/utils.ts';
@@ -556,7 +556,10 @@ const BookDetailsScreen: React.FC = () => {
 
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;
-    navigate(from || { type: 'tab', id: 'home' });
+    navigate(
+      from && typeof from === 'object' ? (from as any) : { type: 'tab', id: 'home' },
+      { replace: true }
+    );
   };
 
   const handleShare = () => {
@@ -851,8 +854,13 @@ const BookDetailsScreen: React.FC = () => {
       <header className="sticky top-0 z-50 bg-gradient-to-b from-black via-black/90 to-transparent">
         <div className="app-frame__inner px-4 md:px-0">
           <div className="app-rail app-rail--default flex h-20 items-center justify-between">
-            <Button variant="icon" onClick={handleBack} className="!bg-white/10 backdrop-blur-md !p-3">
-              <XIcon className="h-6 w-6" />
+            <Button
+              variant="icon"
+              aria-label={lang === 'en' ? 'Back' : 'رجوع'}
+              onClick={handleBack}
+              className="!bg-white/10 backdrop-blur-md !p-3"
+            >
+              <ChevronLeftIcon className="h-6 w-6" />
             </Button>
             <Button variant="icon" className="!bg-white/10 backdrop-blur-md !p-3">
               <EllipsisIcon className="h-6 w-6" />

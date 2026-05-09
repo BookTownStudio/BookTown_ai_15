@@ -15,6 +15,7 @@ import { AttachmentViewerProvider } from './store/attachment-viewer.tsx';
 import AttachmentViewerOverlay from './components/content/AttachmentViewerOverlay.tsx';
 import { cn } from './lib/utils.ts';
 import AppFrame from './components/layout/AppFrame.tsx';
+import { HomeSearchProvider } from './store/home-search.tsx';
 
 // Lazy Load Major Screens
 const HomeScreen = lazy(() => import('./app/tabs/home.tsx'));
@@ -23,6 +24,7 @@ const DiscoverScreen = lazy(() => import('./app/tabs/discover.tsx'));
 const WriteScreen = lazy(() => import('./app/tabs/write.tsx'));
 const SocialScreen = lazy(() => import('./app/tabs/social.tsx'));
 const DiscoveryStackScreen = lazy(() => import('./app/discovery/index.tsx'));
+const SemanticCollectionScreen = lazy(() => import('./app/discovery/semantic-collection.tsx'));
 
 // Immersive Screens
 const BookDetailsScreen = lazy(() => import('./app/book-details.tsx'));
@@ -77,7 +79,13 @@ const PageLoader = () => (
 
 const TabScreens: React.FC = () => {
     const { currentView } = useNavigation();
-    const activeTab = currentView.type === 'tab' ? currentView.id : null;
+    const fromView = currentView.type !== 'tab' ? currentView.params?.from : null;
+    const activeTab =
+        currentView.type === 'tab'
+            ? currentView.id
+            : fromView && typeof fromView === 'object' && fromView.type === 'tab'
+                ? fromView.id
+                : null;
 
     const renderActiveTab = () => {
         switch (activeTab) {
@@ -161,6 +169,7 @@ const StackScreens: React.FC = () => {
 
     switch (currentView.id) {
         case 'discovery': return <DiscoveryStackScreen />;
+        case 'semanticCollection': return <SemanticCollectionScreen />;
         default: return <PageLoader />;
     }
 };
@@ -257,15 +266,17 @@ const App: React.FC = () => {
                 <ThemeProvider>
                     <ReadingPreferencesProvider>
                         <NavigationProvider>
-                            <AuthProvider>
-                                <ToastProvider>
-                                    <OfflineProvider>
-                                        <AttachmentViewerProvider>
-                                            <AppContent />
-                                        </AttachmentViewerProvider>
-                                    </OfflineProvider>
-                                </ToastProvider>
-                            </AuthProvider>
+                            <HomeSearchProvider>
+                                <AuthProvider>
+                                    <ToastProvider>
+                                        <OfflineProvider>
+                                            <AttachmentViewerProvider>
+                                                <AppContent />
+                                            </AttachmentViewerProvider>
+                                        </OfflineProvider>
+                                    </ToastProvider>
+                                </AuthProvider>
+                            </HomeSearchProvider>
                         </NavigationProvider>
                     </ReadingPreferencesProvider>
                 </ThemeProvider>

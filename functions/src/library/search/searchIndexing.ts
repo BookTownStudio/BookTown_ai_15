@@ -1,6 +1,6 @@
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "../../search/normalization";
 import { normalizeIsbn } from "../normalization/bookSearchNormalization";
-import { resolveBookOntologyForm } from "../ontology/bookOntology";
+import { readBookOntology, resolveBookOntologyForm } from "../ontology/bookOntology";
 
 function asNonEmptyString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -111,6 +111,12 @@ export function buildBookSearchPatch(data: Record<string, unknown>): Record<stri
     titleAuthorities.map((entry) => normalizeSearchText(entry))
   );
   const form = resolveBookOntologyForm(data);
+  const ontology = readBookOntology(data.ontology);
+  const rawOntology = asRecord(data.ontology);
+  const subForm = asNonEmptyString(ontology?.subForm || rawOntology?.subForm);
+  const canonicalTradition = asNonEmptyString(
+    ontology?.canonicalTradition || rawOntology?.canonicalTradition
+  );
 
   return {
     normalizedTitle,
@@ -121,6 +127,11 @@ export function buildBookSearchPatch(data: Record<string, unknown>): Record<stri
     search: {
       tokens,
       form,
+      ontology: {
+        form,
+        subForm,
+        canonicalTradition,
+      },
     },
     downloadable,
     hasEbook: downloadable,
@@ -157,6 +168,8 @@ export function bookSearchPatchNeedsUpdate(
   const nextTokens = asStringArray((patch.search as Record<string, unknown> | undefined)?.tokens);
   const currentSearch = asRecord(data.search);
   const nextSearch = asRecord(patch.search);
+  const currentSearchOntology = asRecord(currentSearch?.ontology);
+  const nextSearchOntology = asRecord(nextSearch?.ontology);
   const currentAuthorNames = asStringArray(data.authorNamesNormalized);
   const nextAuthorNames = asStringArray(patch.authorNamesNormalized);
   const currentCanonicalTitleAuthorities = asStringArray(data.canonicalTitleAuthorities);
@@ -168,6 +181,11 @@ export function bookSearchPatchNeedsUpdate(
     !stringArrayEquals(currentCanonicalTitleAuthorities, nextCanonicalTitleAuthorities) ||
     asNonEmptyString(data.searchableTitleAuthor) !== asNonEmptyString(patch.searchableTitleAuthor) ||
     asNonEmptyString(currentSearch?.form) !== asNonEmptyString(nextSearch?.form) ||
+    asNonEmptyString(currentSearchOntology?.form) !== asNonEmptyString(nextSearchOntology?.form) ||
+    asNonEmptyString(currentSearchOntology?.subForm) !==
+      asNonEmptyString(nextSearchOntology?.subForm) ||
+    asNonEmptyString(currentSearchOntology?.canonicalTradition) !==
+      asNonEmptyString(nextSearchOntology?.canonicalTradition) ||
     !stringArrayEquals(currentAuthorNames, nextAuthorNames) ||
     !stringArrayEquals(currentTokens, nextTokens) ||
     Boolean(data.downloadable) !== Boolean(patch.downloadable) ||
