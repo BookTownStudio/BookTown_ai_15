@@ -38,10 +38,10 @@ const AUTHOR_TRADITIONS: Record<string, CanonicalTradition> = {
   "isabel allende": "latin_american_literary_tradition",
 
   "ibn khaldun": "arabic_islamic_classical",
-  "naguib mahfouz": "global_modern_postcolonial",
-  "tayeb salih": "global_modern_postcolonial",
-  "ghassan kanafani": "global_modern_postcolonial",
-  "mahmoud darwish": "global_modern_postcolonial",
+  "naguib mahfouz": "arabic_modern",
+  "tayeb salih": "arabic_modern",
+  "ghassan kanafani": "arabic_modern",
+  "mahmoud darwish": "arabic_modern",
 
   "hafez": "persian_classical",
   "ferdowsi": "persian_classical",
@@ -56,11 +56,11 @@ const AUTHOR_TRADITIONS: Record<string, CanonicalTradition> = {
   "junichiro tanizaki": "japanese_classical",
   "yasunari kawabata": "japanese_classical",
 
-  "chinua achebe": "african_oral_literary_tradition",
-  "ben okri": "african_oral_literary_tradition",
-  "amos tutuola": "african_oral_literary_tradition",
+  "chinua achebe": "african_postcolonial",
+  "ben okri": "african_postcolonial",
+  "amos tutuola": "african_postcolonial",
 
-  "anonymous": "ancient_near_eastern",
+  "anonymous": "greco_roman_classical",
   "various": "sacred_scriptural_traditions",
 };
 
