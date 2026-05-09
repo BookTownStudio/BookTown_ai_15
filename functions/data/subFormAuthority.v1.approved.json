@@ -1,0 +1,52 @@
+[
+  {
+    "canonicalTitle": "Heart of Darkness",
+    "canonicalAuthor": "Joseph Conrad",
+    "approvedSubForm": "novella"
+  },
+  {
+    "canonicalTitle": "The Metamorphosis",
+    "canonicalAuthor": "Franz Kafka",
+    "approvedSubForm": "novella"
+  },
+  {
+    "canonicalTitle": "The Canterbury Tales",
+    "canonicalAuthor": "Geoffrey Chaucer",
+    "approvedSubForm": "narrative_poem"
+  },
+  {
+    "canonicalTitle": "The Republic",
+    "canonicalAuthor": "Plato",
+    "approvedSubForm": "political_philosophy"
+  },
+  {
+    "canonicalTitle": "Thus Spoke Zarathustra",
+    "canonicalAuthor": "Friedrich Nietzsche",
+    "approvedSubForm": "philosophical_prose"
+  },
+  {
+    "canonicalTitle": "Waiting for Godot",
+    "canonicalAuthor": "Samuel Beckett",
+    "approvedSubForm": "absurdist_drama"
+  },
+  {
+    "canonicalTitle": "The Oresteia",
+    "canonicalAuthor": "Aeschylus",
+    "approvedSubForm": "tragedy"
+  },
+  {
+    "canonicalTitle": "Hamlet",
+    "canonicalAuthor": "William Shakespeare",
+    "approvedSubForm": "tragedy"
+  },
+  {
+    "canonicalTitle": "Macbeth",
+    "canonicalAuthor": "William Shakespeare",
+    "approvedSubForm": "tragedy"
+  },
+  {
+    "canonicalTitle": "One Hundred Years of Solitude",
+    "canonicalAuthor": "Gabriel Garcia Marquez",
+    "approvedSubForm": "magical_realism"
+  }
+]

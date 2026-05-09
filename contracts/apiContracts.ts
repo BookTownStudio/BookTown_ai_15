@@ -778,6 +778,82 @@ const catalogBookSchema = z
   })
   .strict();
 
+const literaryRelationshipTypeSchema = z.enum([
+  "influenced_by",
+  "influenced",
+  "same_tradition",
+  "same_movement",
+  "same_period",
+  "responds_to",
+  "similar_theme",
+  "philosophical_relation",
+  "historical_relation",
+  "thematic_affinity",
+  "same_cycle",
+  "literary_response_to",
+  "contemporary_of",
+]);
+
+const graphRelationshipTypeSchema = z.union([
+  literaryRelationshipTypeSchema,
+  z.enum(["same_form", "same_subform"]),
+]);
+
+const bookSemanticGraphSchema = z
+  .object({
+    bookId: z.string().min(1),
+    ontology: z
+      .object({
+        form: z.string().max(80),
+        subForm: z.string().max(120),
+        canonicalTradition: z.string().max(120),
+      })
+      .strict(),
+    semanticRefs: z
+      .object({
+        schemaVersion: z.literal(1),
+        traditionEntityId: z.string().min(1).optional(),
+        movementEntityIds: z.array(z.string().min(1)).max(32).optional(),
+        philosophyEntityIds: z.array(z.string().min(1)).max(32).optional(),
+        civilizationEntityIds: z.array(z.string().min(1)).max(32).optional(),
+        historicalPeriodEntityIds: z.array(z.string().min(1)).max(32).optional(),
+      })
+      .strict()
+      .nullable(),
+    relatedWorks: z
+      .array(
+        z
+          .object({
+            bookId: z.string().min(1),
+            relationshipType: graphRelationshipTypeSchema,
+            direction: z.enum(["outgoing", "incoming", "undirected"]),
+            source: z.enum([
+              "explicit_relationship",
+              "same_tradition",
+              "same_form",
+              "same_subform",
+              "same_movement",
+            ]),
+            confidence: z.number().min(0).max(1),
+            relationshipId: z.string().min(1).optional(),
+            book: catalogBookSchema,
+          })
+          .strict()
+      )
+      .max(24),
+    groups: z
+      .object({
+        explicitRelationshipCount: z.number().int().nonnegative(),
+        relationshipCounts: z.record(z.string(), z.number().int().nonnegative()),
+        sameTraditionCount: z.number().int().nonnegative(),
+        sameFormCount: z.number().int().nonnegative(),
+        sameSubformCount: z.number().int().nonnegative(),
+        sameMovementCount: z.number().int().nonnegative(),
+      })
+      .strict(),
+  })
+  .strict();
+
 const profilePublicationSchema = z
   .object({
     id: z.string().min(1),
@@ -1479,6 +1555,24 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/services/firebaseCatalogService.ts"],
+      }
+    ),
+
+    getBookSemanticGraph: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          limit: z.number().int().min(1).max(24).optional(),
+        })
+        .strict(),
+      bookSemanticGraphSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useBookSemanticGraph.ts",
+          "app/book-details.tsx",
+        ],
       }
     ),
 

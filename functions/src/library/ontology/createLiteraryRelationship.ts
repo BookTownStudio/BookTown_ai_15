@@ -5,6 +5,7 @@ import type { LiteraryRelationship } from "./literaryRelationship";
 import { validateLiteraryRelationship } from "./validateLiteraryRelationship";
 
 import { buildLiteraryRelationshipId } from "./buildLiteraryRelationshipId";
+import { buildCanonicalLiteraryRelationshipIdentity } from "./literaryRelationshipIdentity";
 
 import { LITERARY_RELATIONSHIP_COLLECTIONS } from "./literaryRelationshipCollections";
 
@@ -28,6 +29,8 @@ export async function createLiteraryRelationship(
 
   const relationshipId =
     buildLiteraryRelationshipId(relationship);
+  const identity =
+    buildCanonicalLiteraryRelationshipIdentity(relationship);
 
   const ref = db
     .collection(
@@ -46,6 +49,13 @@ export async function createLiteraryRelationship(
 
   await ref.set({
     ...relationship,
+    canonicalRelationshipId: relationshipId,
+    canonicalFromEntityType: identity.fromEntityType,
+    canonicalFromEntityId: identity.fromEntityId,
+    canonicalRelationshipType: identity.relationshipType,
+    canonicalToEntityType: identity.toEntityType,
+    canonicalToEntityId: identity.toEntityId,
+    directional: identity.directional,
     relationshipId,
     createdAt:
       relationship.createdAt ||

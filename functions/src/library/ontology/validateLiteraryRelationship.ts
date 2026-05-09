@@ -1,5 +1,5 @@
 import {
-  LITERARY_RELATIONSHIP_TYPES,
+  isLiteraryRelationshipType,
 } from "./literaryRelationshipTypes";
 
 import type {
@@ -41,11 +41,7 @@ export function validateLiteraryRelationship(
     errors.push("Missing toEntityId");
   }
 
-  if (
-    !LITERARY_RELATIONSHIP_TYPES.includes(
-      relationship.relationshipType
-    )
-  ) {
+  if (!isLiteraryRelationshipType(relationship.relationshipType)) {
     errors.push("Invalid relationshipType");
   }
 

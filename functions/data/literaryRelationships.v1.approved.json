@@ -1,0 +1,58 @@
+[
+  {
+    "sourceTitle": "The Odyssey",
+    "sourceAuthor": "Homer",
+    "targetTitle": "The Aeneid",
+    "targetAuthor": "Virgil",
+    "relationshipType": "influenced"
+  },
+  {
+    "sourceTitle": "Don Quixote",
+    "sourceAuthor": "Miguel de Cervantes",
+    "targetTitle": "Madame Bovary",
+    "targetAuthor": "Gustave Flaubert",
+    "relationshipType": "influenced"
+  },
+  {
+    "sourceTitle": "Pedro Páramo",
+    "sourceAuthor": "Juan Rulfo",
+    "targetTitle": "One Hundred Years of Solitude",
+    "targetAuthor": "Gabriel Garcia Marquez",
+    "relationshipType": "influenced"
+  },
+  {
+    "sourceTitle": "The Trial",
+    "sourceAuthor": "Franz Kafka",
+    "targetTitle": "The Stranger",
+    "targetAuthor": "Albert Camus",
+    "relationshipType": "thematic_affinity"
+  },
+  {
+    "sourceTitle": "Hamlet",
+    "sourceAuthor": "William Shakespeare",
+    "targetTitle": "Waiting for Godot",
+    "targetAuthor": "Samuel Beckett",
+    "relationshipType": "influenced"
+  },
+  {
+    "sourceTitle": "The Iliad",
+    "sourceAuthor": "Homer",
+    "targetTitle": "The Odyssey",
+    "targetAuthor": "Homer",
+    "relationshipType": "same_cycle"
+  },
+  {
+    "sourceTitle": "The Brothers Karamazov",
+    "sourceAuthor": "Fyodor Dostoevsky",
+    "targetTitle": "The Master and Margarita",
+    "targetAuthor": "Mikhail Bulgakov",
+    "relationshipType": "influenced"
+  },
+  {
+    "sourceTitle": "The Sound and the Fury",
+    "sourceAuthor": "William Faulkner",
+    "targetTitle": "One Hundred Years of Solitude",
+    "targetAuthor": "Gabriel Garcia Marquez",
+    "relationshipType": "influenced"
+  }
+]

@@ -10,6 +10,7 @@ import { useI18n } from '../store/i18n.tsx';
 import { useToast } from '../store/toast.tsx';
 
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
+import { useBookSemanticGraph } from '../lib/hooks/useBookSemanticGraph.ts';
 import { useBookReviews } from '../lib/hooks/useBookReviews.ts';
 import { useBookShelfStatus } from '../lib/hooks/useBookShelfStatus.ts';
 import { useRelatedBooks } from '../lib/hooks/useRelatedBooks.ts';
@@ -34,7 +35,8 @@ import {
   EllipsisIcon,
   ShelvesIcon,
   SendIcon,
-  EditIcon
+  EditIcon,
+  BookIcon
 } from '../components/icons';
 
 import { cn } from '../lib/utils.ts';
@@ -49,6 +51,7 @@ import { parseExternalRouteBookId, resolveIngestionSource } from '../lib/books/s
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import { acquireExternalEbookForRead } from '../lib/books/acquireExternalEbookForRead.ts';
+import type { GraphRelationshipType } from '../types/literaryGraph.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
@@ -113,6 +116,32 @@ function parseRecommendationContext(
   };
 }
 
+const RELATIONSHIP_LABELS: Record<GraphRelationshipType, { en: string; ar: string }> = {
+  influenced_by: { en: 'Influenced by', ar: 'متأثر بـ' },
+  influenced: { en: 'Influenced', ar: 'أثّر في' },
+  same_tradition: { en: 'Same tradition', ar: 'التقليد نفسه' },
+  same_movement: { en: 'Same movement', ar: 'الحركة نفسها' },
+  same_period: { en: 'Same period', ar: 'الفترة نفسها' },
+  responds_to: { en: 'Responds to', ar: 'يرد على' },
+  similar_theme: { en: 'Similar theme', ar: 'ثيمة مشابهة' },
+  philosophical_relation: { en: 'Philosophical relation', ar: 'صلة فلسفية' },
+  historical_relation: { en: 'Historical relation', ar: 'صلة تاريخية' },
+  thematic_affinity: { en: 'Thematic affinity', ar: 'تقارب موضوعي' },
+  same_cycle: { en: 'Same cycle', ar: 'الدورة نفسها' },
+  literary_response_to: { en: 'Literary response', ar: 'استجابة أدبية' },
+  contemporary_of: { en: 'Contemporary of', ar: 'معاصر لـ' },
+  same_form: { en: 'Same form', ar: 'الشكل نفسه' },
+  same_subform: { en: 'Same subform', ar: 'الشكل الفرعي نفسه' },
+};
+
+function formatOntologyLabel(value: string): string {
+  return value
+    .split('_')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
 const BookDetailsScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang, isRTL } = useI18n();
@@ -160,6 +189,10 @@ const BookDetailsScreen: React.FC = () => {
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
   const { isSavedOnPhysicalShelf = false } = useBookShelfStatus(bookId);
+  const { data: semanticGraph } = useBookSemanticGraph(bookId, {
+    enabled: Boolean(bookId && book),
+    limit: 12,
+  });
   
   useRelatedBooks(book || undefined);
   const submitReview = useSubmitReview();
@@ -807,6 +840,11 @@ const BookDetailsScreen: React.FC = () => {
   }
 
   const showComposer = isAddingReview || isEditingReview;
+  const semanticRelatedWorks = semanticGraph?.relatedWorks ?? [];
+  const hasSemanticGraph =
+    Boolean(semanticGraph?.ontology.canonicalTradition) ||
+    Boolean(semanticGraph?.ontology.form) ||
+    semanticRelatedWorks.length > 0;
 
   return (
     <PageTransition className="h-screen w-full overflow-y-auto bg-black text-white">
@@ -962,6 +1000,78 @@ const BookDetailsScreen: React.FC = () => {
             <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Summary' : 'الملخص'}</BilingualText>
             <p className="text-base leading-relaxed text-white/80 font-serif">{lang === 'en' ? displayBook?.descriptionEn : displayBook?.descriptionAr || displayBook?.descriptionEn}</p>
           </section>
+
+          {hasSemanticGraph && (
+            <section className="space-y-4">
+              <div className={cn('flex items-center justify-between gap-4', isRTL && 'flex-row-reverse text-right')}>
+                <BilingualText role="H2" className="!text-xl !font-bold">
+                  {lang === 'en' ? 'Literary Graph' : 'الرسم الأدبي'}
+                </BilingualText>
+                {semanticGraph?.groups.explicitRelationshipCount ? (
+                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/50">
+                    {semanticGraph.groups.explicitRelationshipCount}
+                  </span>
+                ) : null}
+              </div>
+
+              <div className={cn('flex flex-wrap gap-2', isRTL && 'justify-end')}>
+                {semanticGraph?.ontology.canonicalTradition ? (
+                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+                    {formatOntologyLabel(semanticGraph.ontology.canonicalTradition)}
+                  </span>
+                ) : null}
+                {semanticGraph?.ontology.form ? (
+                  <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">
+                    {formatOntologyLabel(semanticGraph.ontology.form)}
+                  </span>
+                ) : null}
+                {semanticGraph?.ontology.subForm ? (
+                  <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
+                    {formatOntologyLabel(semanticGraph.ontology.subForm)}
+                  </span>
+                ) : null}
+              </div>
+
+              {semanticRelatedWorks.length > 0 && (
+                <div className="grid gap-3 md:grid-cols-2">
+                  {semanticRelatedWorks.slice(0, 6).map((item) => (
+                    <button
+                      key={`${item.relationshipType}:${item.bookId}`}
+                      type="button"
+                      onClick={() =>
+                        navigate({
+                          type: 'immersive',
+                          id: 'bookDetails',
+                          params: { bookId: item.bookId, from: currentView },
+                        })
+                      }
+                      className={cn(
+                        'flex min-h-[84px] items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10',
+                        isRTL && 'flex-row-reverse text-right'
+                      )}
+                    >
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/30">
+                        <BookIcon className="h-5 w-5 text-white/70" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {lang === 'en' ? item.book.titleEn : item.book.titleAr || item.book.titleEn}
+                        </p>
+                        <p className="truncate text-xs text-white/50">
+                          {lang === 'en' ? item.book.authorEn : item.book.authorAr || item.book.authorEn}
+                        </p>
+                        <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/35">
+                          {RELATIONSHIP_LABELS[item.relationshipType]?.[lang] ||
+                            RELATIONSHIP_LABELS[item.relationshipType]?.en ||
+                            formatOntologyLabel(item.relationshipType)}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </section>
+          )}
 
           {/* Reviews */}
           <section className="space-y-6">

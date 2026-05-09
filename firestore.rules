@@ -580,6 +580,13 @@ service cloud.firestore {
     }
 
     /* =========================
+       LITERARY RELATIONSHIPS (SERVER AUTHORITY)
+       ========================= */
+    match /literary_relationships/{relationshipId} {
+      allow read, write: if false;
+    }
+
+    /* =========================
        EDITIONS
        ========================= */
     match /editions/{editionId} {

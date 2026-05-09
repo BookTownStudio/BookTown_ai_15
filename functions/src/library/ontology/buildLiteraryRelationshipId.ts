@@ -1,12 +1,5 @@
 import type { LiteraryRelationship } from "./literaryRelationship";
-
-function normalize(value: string): string {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/gu, "_")
-    .replace(/[^\p{L}\p{N}_]/gu, "");
-}
+import { buildCanonicalLiteraryRelationshipId } from "./literaryRelationshipIdentity";
 
 export function buildLiteraryRelationshipId(
   relationship: Pick<
@@ -18,11 +11,5 @@ export function buildLiteraryRelationshipId(
     | "toEntityId"
   >
 ): string {
-  return [
-    normalize(relationship.fromEntityType),
-    normalize(relationship.fromEntityId),
-    normalize(relationship.relationshipType),
-    normalize(relationship.toEntityType),
-    normalize(relationship.toEntityId),
-  ].join("__");
+  return buildCanonicalLiteraryRelationshipId(relationship);
 }

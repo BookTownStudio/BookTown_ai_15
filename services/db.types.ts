@@ -36,6 +36,7 @@ import type {
   CanonicalFallbackCover,
 } from '../types/entities.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
+import type { BookSemanticGraph } from '../types/literaryGraph.ts';
 
 /* =========================
    UPLOADS
@@ -542,6 +543,7 @@ export interface CatalogDataService {
 
   searchBooks(query: string): Promise<Book[]>;
   getRelatedBooks(bookId: string): Promise<Book[]>;
+  getBookSemanticGraph(params: { bookId: string; limit?: number }): Promise<BookSemanticGraph>;
   getTrendingBooks(): Promise<Book[]>;
   getBooksByAuthor(authorId: string): Promise<Book[]>;
   getBookStats(bookId: string): Promise<BookStats>;

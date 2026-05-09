@@ -17,9 +17,26 @@ export type BookForm =
   | "nonfiction"
   | "unknown";
 
-export type BookOntologySource = "seed" | "admin" | "provider" | "migration";
+export type BookSubForm =
+  | "novella"
+  | "narrative_poem"
+  | "political_philosophy"
+  | "philosophical_prose"
+  | "absurdist_drama"
+  | "tragedy"
+  | "magical_realism"
+  | "unknown";
 
-export type BookOntologyConfidence = "verified" | "mapped" | "unknown";
+export type BookOntologySource =
+  | "seed"
+  | "admin"
+  | "provider"
+  | "migration";
+
+export type BookOntologyConfidence =
+  | "verified"
+  | "mapped"
+  | "unknown";
 
 export type CanonicalTradition =
   | CanonicalTraditionRegistryKey
@@ -28,7 +45,7 @@ export type CanonicalTradition =
 export type BookOntology = {
   schemaVersion: 1;
   form: BookForm;
-  subForm: string | null;
+  subForm: BookSubForm | null;
   canonicalTradition?: CanonicalTradition;
   source: BookOntologySource;
   confidence: BookOntologyConfidence;
@@ -86,7 +103,9 @@ export function normalizeBookForm(value: unknown): BookForm {
     return "nonfiction";
   }
 
-  if (key.includes("epic")) return "epic";
+  if (key.includes("epic")) {
+    return "epic";
+  }
 
   if (
     key === "play" ||
@@ -97,7 +116,9 @@ export function normalizeBookForm(value: unknown): BookForm {
     return "drama";
   }
 
-  if (key.includes("drama")) return "drama";
+  if (key.includes("drama")) {
+    return "drama";
+  }
 
   if (
     key.includes("poetry") ||
@@ -108,9 +129,13 @@ export function normalizeBookForm(value: unknown): BookForm {
     return "poetry";
   }
 
-  if (key.includes("philosophy")) return "philosophy";
+  if (key.includes("philosophy")) {
+    return "philosophy";
+  }
 
-  if (key === "essay" || key === "essays") return "essay";
+  if (key === "essay" || key === "essays") {
+    return "essay";
+  }
 
   if (
     key === "novel" ||
@@ -120,7 +145,26 @@ export function normalizeBookForm(value: unknown): BookForm {
     return "novel";
   }
 
-  return key === "unknown" ? "unknown" : "unknown";
+  return "unknown";
+}
+
+export function normalizeSubForm(
+  value: unknown
+): BookSubForm | null {
+  if (
+    value === "novella" ||
+    value === "narrative_poem" ||
+    value === "political_philosophy" ||
+    value === "philosophical_prose" ||
+    value === "absurdist_drama" ||
+    value === "tragedy" ||
+    value === "magical_realism" ||
+    value === "unknown"
+  ) {
+    return value;
+  }
+
+  return null;
 }
 
 export function normalizeBookOntologySource(
@@ -169,7 +213,9 @@ export function normalizeCanonicalTradition(
   return null;
 }
 
-export function readBookOntology(value: unknown): BookOntology | null {
+export function readBookOntology(
+  value: unknown
+): BookOntology | null {
   const record = asRecord(value);
 
   if (!record || record.schemaVersion !== 1) {
@@ -178,7 +224,9 @@ export function readBookOntology(value: unknown): BookOntology | null {
 
   const form = normalizeBookForm(record.form);
 
-  const source = normalizeBookOntologySource(record.source);
+  const source = normalizeBookOntologySource(
+    record.source
+  );
 
   const confidence = normalizeBookOntologyConfidence(
     record.confidence
@@ -192,14 +240,19 @@ export function readBookOntology(value: unknown): BookOntology | null {
     record.canonicalTradition
   );
 
+  const subForm = normalizeSubForm(record.subForm);
+
   return {
     schemaVersion: 1,
     form,
-    subForm: asNonEmptyString(record.subForm) || null,
-    ...(canonicalTradition ? { canonicalTradition } : {}),
+    subForm,
+    ...(canonicalTradition
+      ? { canonicalTradition }
+      : {}),
     source,
     confidence,
-    updatedAt: record.updatedAt as Timestamp | FieldValue,
+    updatedAt:
+      record.updatedAt as Timestamp | FieldValue,
   };
 }
 
@@ -208,7 +261,10 @@ export function resolveBookOntologyForm(
 ): BookForm {
   const ontology = readBookOntology(data.ontology);
 
-  return ontology?.form || normalizeBookForm(data.literaryForm);
+  return (
+    ontology?.form ||
+    normalizeBookForm(data.literaryForm)
+  );
 }
 
 export function buildBookOntology(params: {
@@ -217,25 +273,30 @@ export function buildBookOntology(params: {
   confidence: BookOntologyConfidence;
   updatedAt: Timestamp | FieldValue;
   canonicalTradition?: unknown;
+  subForm?: unknown;
 }): BookOntology {
-  const rawForm = asNonEmptyString(params.literaryForm);
+  const rawForm = asNonEmptyString(
+    params.literaryForm
+  );
 
   const form = normalizeBookForm(rawForm);
 
-  const subForm =
-    rawForm && normalizeKey(rawForm) !== normalizeKey(form)
-      ? rawForm
-      : null;
-
-  const canonicalTradition = normalizeCanonicalTradition(
-    params.canonicalTradition
+  const subForm = normalizeSubForm(
+    params.subForm
   );
+
+  const canonicalTradition =
+    normalizeCanonicalTradition(
+      params.canonicalTradition
+    );
 
   return {
     schemaVersion: 1,
     form,
     subForm,
-    ...(canonicalTradition ? { canonicalTradition } : {}),
+    ...(canonicalTradition
+      ? { canonicalTradition }
+      : {}),
     source: params.source,
     confidence: params.confidence,
     updatedAt: params.updatedAt,

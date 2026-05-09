@@ -907,6 +907,34 @@
           "order": "ASCENDING"
         }
       ]
+    },
+    {
+      "collectionGroup": "literary_relationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "fromEntityType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "fromEntityId",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "literary_relationships",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "toEntityType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "toEntityId",
+          "order": "ASCENDING"
+        }
+      ]
     }
   ],
   "fieldOverrides": [

@@ -125,6 +125,9 @@ export const queryKeys = {
     book: (id: string | undefined) =>
       ['catalog', 'book', safe({ id })] as const,
 
+    semanticGraph: (bookId: string | undefined, limit: number) =>
+      ['catalog', 'bookSemanticGraph', safe({ bookId, limit })] as const,
+
     publication: (publicationId: string | undefined) =>
       ['catalog', 'publication', safe({ publicationId })] as const,
 

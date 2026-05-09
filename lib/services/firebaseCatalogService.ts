@@ -35,6 +35,7 @@ import type {
   OwnedLongformPublicationRecord,
 } from "../../services/db.types.ts";
 import type { LibrarianRecommendationContext } from "../../types/librarian.ts";
+import type { BookSemanticGraph } from "../../types/literaryGraph.ts";
 
 const AUTHOR_SEARCH_LIMIT = 24;
 const AUTHOR_BOOKS_LIMIT = 60;
@@ -654,6 +655,24 @@ export const firebaseCatalogService = {
       { bookId }
     );
     return Array.isArray(response.books) ? response.books : [];
+  },
+
+  async getBookSemanticGraph(params: {
+    bookId: string;
+    limit?: number;
+  }): Promise<BookSemanticGraph> {
+    const bookId = typeof params.bookId === "string" ? params.bookId.trim() : "";
+    if (!bookId) {
+      throw new Error("BOOK_ID_MISSING");
+    }
+
+    return callEndpoint<
+      { bookId: string; limit?: number },
+      BookSemanticGraph
+    >("getBookSemanticGraph", {
+      bookId,
+      ...(typeof params.limit === "number" ? { limit: params.limit } : {}),
+    });
   },
 
   async getTrendingBooks(): Promise<Book[]> {

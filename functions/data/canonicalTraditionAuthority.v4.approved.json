@@ -1,0 +1,52 @@
+[
+  {
+    "canonicalTitle": "Blindness",
+    "canonicalAuthor": "José Saramago",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Chronicle in Stone",
+    "canonicalAuthor": "Ismail Kadare",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Life and Fate",
+    "canonicalAuthor": "Vasily Grossman",
+    "approvedCanonicalTradition": "russian_literary_tradition"
+  },
+  {
+    "canonicalTitle": "Madame Bovary",
+    "canonicalAuthor": "Gustave Flaubert",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Midnight's Children",
+    "canonicalAuthor": "Salman Rushdie",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "The Bridge on the Drina",
+    "canonicalAuthor": "Ivo Andrić",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "The House of the Spirits",
+    "canonicalAuthor": "Isabel Allende",
+    "approvedCanonicalTradition": "latin_american_literary_tradition"
+  },
+  {
+    "canonicalTitle": "The Vegetarian",
+    "canonicalAuthor": "Han Kang",
+    "approvedCanonicalTradition": "western_modern"
+  },
+  {
+    "canonicalTitle": "Woman at Point Zero",
+    "canonicalAuthor": "Nawal El Saadawi",
+    "approvedCanonicalTradition": "arabic_modern"
+  },
+  {
+    "canonicalTitle": "The Yacoubian Building",
+    "canonicalAuthor": "Alaa Al Aswany",
+    "approvedCanonicalTradition": "arabic_modern"
+  }
+]

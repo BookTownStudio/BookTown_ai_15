@@ -53,3 +53,4 @@ export const createShelf = wrapCallableV2("createShelf", createShelfRaw);
 export const updateShelf = wrapCallableV2("updateShelf", updateShelfRaw);
 export const deleteShelf = wrapCallableV2("deleteShelf", deleteShelfRaw);
 export { syncBookSearchIndex } from "../library/search/syncBookSearchIndex";
+export { getBookSemanticGraph } from "../catalog/bookSemanticGraph";
