@@ -1,3 +1,8 @@
+import {
+  normalizeSearchText,
+  tokenizeSearchText,
+} from "../../../shared/normalization";
+
 type LocalEditionFixture = {
   id: string;
   editionId: string;
@@ -29,6 +34,9 @@ type LocalEditionFixture = {
   canonicalKey: string;
   providerExternalIds?: string[];
   literaryAuthorityClass?: "classic_work";
+  seriesName?: string;
+  seriesPosition?: number;
+  publishedYear?: number;
 };
 
 const base = (
@@ -77,6 +85,9 @@ const base = (
   };
 };
 
+const normalize = normalizeSearchText;
+const tokenize = tokenizeSearchText;
+
 export const LOCAL_EDITIONS: LocalEditionFixture[] = [
   base(
     "e1",
@@ -88,6 +99,9 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
       isbn13: "9780747532743",
       isbn10: "0747532745",
       providerExternalIds: ["googleBooks:hp1", "openLibrary:hp1"],
+      seriesName: "Harry Potter",
+      seriesPosition: 1,
+      publishedYear: 1997,
     }
   ),
   base(
@@ -95,14 +109,24 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
     "booktown",
     "Harry Potter and the Chamber of Secrets",
     ["J. K. Rowling"],
-    true
+    true,
+    {
+      seriesName: "Harry Potter",
+      seriesPosition: 2,
+      publishedYear: 1998,
+    }
   ),
   base(
     "e3",
     "booktown",
     "Harry Potter and the Prisoner of Azkaban",
     ["J. K. Rowling"],
-    false
+    false,
+    {
+      seriesName: "Harry Potter",
+      seriesPosition: 3,
+      publishedYear: 1999,
+    }
   ),
   base(
     "e4",
@@ -436,20 +460,3 @@ export const LOCAL_EDITIONS: LocalEditionFixture[] = [
     false
   ),
 ];
-
-function normalize(value: string): string {
-  return value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function tokenize(value: string): string[] {
-  const stopwords = new Set(["a", "an", "and", "at", "by", "for", "from", "in", "of", "on", "or", "the", "to", "with"]);
-  return value
-    .split(" ")
-    .filter((token) => token.length > 1 && !stopwords.has(token));
-}

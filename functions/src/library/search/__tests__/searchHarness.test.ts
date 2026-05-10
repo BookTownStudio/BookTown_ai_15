@@ -1,4 +1,8 @@
 import { afterEach, describe, it, expect, vi } from "vitest";
+import {
+  normalizeSearchText,
+  tokenizeSearchText,
+} from "../../../shared/normalization";
 import { LOCAL_EDITIONS } from "./fixtures";
 
 type WhereClause = {
@@ -159,16 +163,8 @@ vi.mock("firebase-admin/firestore", () => {
 
 import { unifiedSearch } from "../searchEngine";
 
-const normalize = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const tokenize = (value: string) => normalize(value).split(/\s+/).filter(Boolean);
+const normalize = normalizeSearchText;
+const tokenize = tokenizeSearchText;
 
 const buildAliasOnlyEdition = (
   existing: Record<string, any>,
@@ -248,6 +244,32 @@ describe("Search Harness — Canonical Local Engine", () => {
 
     const topThreeAuthors = results.slice(0, 3).map((entry: any) => entry.authorEn || entry.authors?.[0] || "");
     expect(topThreeAuthors.every((author) => normalize(author).includes("rowling"))).toBe(true);
+  });
+
+  it("exposes opt-in cognition diagnostics without changing result ordering", async () => {
+    const baseline = await unifiedSearch("Kafka", {});
+    const observed = await unifiedSearch("Kafka", {
+      __includeCognitionDiagnostics: true,
+    });
+
+    expect((baseline as any).cognitionDiagnostics).toBeUndefined();
+    expect(observed.results.map((entry: any) => entry.id)).toEqual(
+      baseline.results.map((entry: any) => entry.id)
+    );
+    expect(observed.results.map((entry: any) => entry.rank)).toEqual(
+      baseline.results.map((entry: any) => entry.rank)
+    );
+
+    const diagnostics = observed.cognitionDiagnostics;
+    expect(diagnostics?.schemaVersion).toBe(1);
+    expect(diagnostics?.behaviorImpact).toBe("none");
+    expect(diagnostics?.canonicalPrioritization.comparator).toContain("resultType");
+    expect(diagnostics?.resultTraces).toHaveLength(observed.results.length);
+    expect(diagnostics?.resultTraces[0]?.provisionalRole).toBe("primary_work");
+    expect(diagnostics?.resultTraces[0]?.humanSummary).toContain("canonical catalog result");
+    expect(diagnostics?.resultTraces[0]?.heuristics.derivativeSignals).toContain(
+      "classic_work_authority"
+    );
   });
 
   it("does not surface merged canonical tombstones as independent canonical results", async () => {
@@ -493,6 +515,70 @@ describe("Search Harness — Canonical Local Engine", () => {
       LOCAL_EDITIONS[strangerIndex] = originalStranger as any;
       LOCAL_EDITIONS[plagueIndex] = originalPlague as any;
     }
+  });
+
+  it("reports provider suppression reasoning in cognition diagnostics without surfacing contaminants", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: string | URL) => {
+        const url = String(input);
+        if (url.includes("googleapis")) {
+          return {
+            ok: true,
+            json: async () => ({
+              items: [
+                {
+                  id: "gb-trial-contam",
+                  volumeInfo: {
+                    title: "Clinical Trial Methodology",
+                    authors: ["Research Author"],
+                    printType: "BOOK",
+                  },
+                },
+              ],
+            }),
+          } as any;
+        }
+
+        return {
+          ok: true,
+          json: async () => ({
+            docs: [
+              {
+                key: "/works/OLTRIAL1W",
+                title: "Complete Collection of State Trials",
+                author_name: ["Editor"],
+                type: "book",
+              },
+            ],
+          }),
+        } as any;
+      }) as any
+    );
+
+    const response = await unifiedSearch("The Plague", {
+      __includeCognitionDiagnostics: true,
+    });
+
+    const visiblePlagueRows = response.results.filter(
+      (entry: any) => normalize(entry.title || "") === normalize("The Plague")
+    );
+    expect(visiblePlagueRows).toHaveLength(1);
+    expect(visiblePlagueRows[0]?.resultType).toBe("canonical");
+    expect(response.cognitionDiagnostics?.providerBlending.externalFallbackTriggered).toBe(true);
+    expect(
+      Array.isArray(response.cognitionDiagnostics?.providerBlending.suppressionEvents)
+    ).toBe(true);
+    expect(response.cognitionDiagnostics?.providerBlending.suppressionEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          title: "Clinical Trial Methodology",
+          reason: "rank_confidence_filtered",
+        }),
+      ])
+    );
+    expect(response.cognitionDiagnostics?.providerBlending.visibleExternalCount).toBe(0);
   });
 
   it("preserves generic one-token lexical fallback behavior for love", async () => {
@@ -1380,7 +1466,7 @@ describe("Search Harness — Canonical Local Engine", () => {
       (entry: any) => entry.resultType === "canonical" && entry.titleAr === "رجال في الشمس"
     );
     expect(canonicalMen).toBeDefined();
-    expect(canonicalMen?.languageTruth).toBe("mismatch");
+    expect(canonicalMen?.languageTruth).toBe("match");
   });
 
   it("deduplicates ISBN-less external duplicates using fuzzy title+author matching", async () => {
@@ -1416,7 +1502,18 @@ describe("Search Harness — Canonical Local Engine", () => {
         }
         return {
           ok: true,
-          json: async () => ({ docs: [] }),
+          json: async () => ({
+            docs: [
+              {
+                key: "/works/OLMEN1W",
+                title: "Men in the Sun",
+                author_name: ["Ghassan Kanafani"],
+                type: "book",
+                has_fulltext: true,
+                lending_edition_s: "OLMEN1M",
+              },
+            ],
+          }),
         } as any;
       }) as any
     );
@@ -1431,7 +1528,7 @@ describe("Search Harness — Canonical Local Engine", () => {
 
       expect(menResults.length).toBe(1);
       expect(menResults[0]?.resultType).toBe("canonical");
-      expect(menResults[0]?.externalReadableSources?.length).toBeGreaterThanOrEqual(0);
+      expect(menResults[0]?.externalReadableSources?.length).toBeGreaterThanOrEqual(1);
     } finally {
       if (LOCAL_EDITIONS[mmenIndex]) {
         (LOCAL_EDITIONS[mmenIndex] as any) = originalMmen;
@@ -1447,16 +1544,11 @@ describe("Search Harness — Canonical Local Engine", () => {
 
     expect(hpBooks.length).toBeGreaterThanOrEqual(2);
 
-    for (let i = 1; i < hpBooks.length; i++) {
-      const prevTitle = normalize(hpBooks[i - 1]?.title || "");
-      const currTitle = normalize(hpBooks[i]?.title || "");
-
-      expect(prevTitle).toBeTruthy();
-      expect(currTitle).toBeTruthy();
-
-      const alphabeticalOrder = prevTitle.localeCompare(currTitle);
-      expect(alphabeticalOrder).toBeLessThanOrEqual(0);
-    }
+    expect(hpBooks.slice(0, 3).map((entry: any) => normalize(entry.title || ""))).toEqual([
+      normalize("Harry Potter and the Philosopher Stone"),
+      normalize("Harry Potter and the Chamber of Secrets"),
+      normalize("Harry Potter and the Prisoner of Azkaban"),
+    ]);
   });
 
   it("normalizes Arabic letter variants: أ إ آ → ا, ى → ي, ة → ه, ؤ → و, ئ → ي", async () => {

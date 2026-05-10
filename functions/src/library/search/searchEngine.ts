@@ -10,7 +10,12 @@ import type {
   ExternalReadableSourceRecord,
   ProviderLookupContext,
 } from "../providers/types";
-import { normalizeSearchText, normalizeIsbn } from "../normalization/bookSearchNormalization";
+import {
+  SEARCH_STOPWORDS,
+  normalizeSearchText,
+  normalizeIsbn,
+  tokenizeSearchText,
+} from "../normalization/bookSearchNormalization";
 import { buildCanonicalKey } from "../persistence/canonicalKey";
 import { hasTransliteration, lookupPrimary } from "./transliterationMap";
 import { readBookOntology, resolveBookOntologyForm } from "../ontology/bookOntology";
@@ -22,6 +27,8 @@ export interface SearchOptions {
   cursor?: string;
   limit?: number;
   __skipTransliteration?: boolean;
+  __includeCognitionDiagnostics?: boolean;
+  __includeInternalRankFields?: boolean;
 }
 
 export type SearchResultType = "canonical" | "external";
@@ -41,6 +48,105 @@ export type SearchReadProvider =
   | null;
 
 type LiteraryAuthorityClass = "classic_work";
+
+export type ProvisionalSearchRoleCategory =
+  | "primary_work"
+  | "secondary_literature"
+  | "edition_variant"
+  | "anthology_collection"
+  | "study_guide"
+  | "biography"
+  | "external_manifestation"
+  | "provider_noise"
+  | "unknown";
+
+export type SearchCognitionSuppressionReason =
+  | "intent_gate_filtered"
+  | "rank_confidence_filtered"
+  | "canonical_identity_merge"
+  | "fuzzy_canonical_duplicate"
+  | "duplicate_external_identity"
+  | "short_canonical_visible_authority"
+  | "none";
+
+export interface SearchResultCognitionTrace {
+  resultId: string;
+  resultType: SearchResultType;
+  source: SearchSource;
+  title: string;
+  author: string;
+  provisionalRole: ProvisionalSearchRoleCategory;
+  humanSummary: string;
+  ranking: {
+    rankTier: number;
+    confidence: number;
+    computedScore: number;
+    tokenCoverageRatio: number;
+    languageMatchScore: number;
+    popularityScore: number;
+    recentActivityMs: number;
+    workTypePriority: number;
+  };
+  canonical: {
+    resultTypePriority: "canonical_first" | "external_after_canonical";
+    workType: SearchWorkType;
+    editionPresence: SearchEditionPresence;
+    canonicalKeyPresent: boolean;
+    literaryAuthorityClass: LiteraryAuthorityClass | null;
+  };
+  heuristics: {
+    canonicalTitleAdjustment: number;
+    literaryCorrection: number;
+    derivativeSignals: string[];
+    exactClassicAuthority: boolean;
+    likelySecondaryTitle: boolean;
+  };
+  provider: {
+    sourceClass: SearchSourceClass;
+    readProvider: SearchReadProvider;
+    availabilityMergedFromProvider: boolean;
+    suppressionReason: SearchCognitionSuppressionReason;
+  };
+  manifestation: {
+    collapseModel: "canonical_work_row" | "external_provider_manifestation";
+    groupedCanonicalEditions: boolean;
+    editionId: string;
+    workId: string | null;
+  };
+}
+
+export interface SearchCognitionDiagnostics {
+  schemaVersion: 1;
+  mode: "read_only_observability";
+  behaviorImpact: "none";
+  normalizedQuery: string;
+  queryIntent: QueryIntent;
+  phaseOrder: string[];
+  provisionalRoleCategories: ProvisionalSearchRoleCategory[];
+  canonicalPrioritization: {
+    comparator: "resultType -> workType -> rankTier -> computedScore -> language -> popularity -> recency -> series -> year -> title";
+    canonicalCount: number;
+    externalCount: number;
+  };
+  providerBlending: {
+    externalFallbackTriggered: boolean;
+    googleBooksAcceptedCount: number;
+    openLibraryAcceptedCount: number;
+    visibleExternalCount: number;
+    suppressedExternalCount: number;
+    suppressionEvents: Array<{
+      resultId: string;
+      source: SearchSource;
+      title: string;
+      reason: SearchCognitionSuppressionReason;
+    }>;
+  };
+  dominantFamily: {
+    kind: "author" | "title" | null;
+    confirmed: boolean;
+  };
+  resultTraces: SearchResultCognitionTrace[];
+}
 
 export interface UnifiedSearchResult {
   id: string;
@@ -103,6 +209,7 @@ export interface UnifiedSearchResponse {
     lowConfidenceTopThree: boolean;
     timestamp: string;
   };
+  cognitionDiagnostics?: SearchCognitionDiagnostics;
 }
 
 type RankedResult = UnifiedSearchResult & {
@@ -214,30 +321,6 @@ const EXACT_TITLE_FAMILY_VARIANT_PATTERNS = [
 ];
 const EXCLUDED_TYPE_PATTERN =
   /\b(academic journal|research paper|conference proceedings?|technical manual|whitepaper|government report|report|reports|thesis|magazine issue|in re|\bvs\b|hearing|hearings)\b/i;
-
-const SEARCH_STOPWORDS = new Set([
-  "a",
-  "an",
-  "and",
-  "at",
-  "by",
-  "for",
-  "from",
-  "in",
-  "of",
-  "on",
-  "or",
-  "the",
-  "to",
-  "with",
-  "في",
-  "من",
-  "على",
-  "الى",
-  "إلى",
-  "عن",
-  "مع",
-]);
 
 const DERIVATIVE_TITLE_KEYWORDS = new Set([
   "coloring",
@@ -402,10 +485,10 @@ function shouldTriggerTransliterationFallback(
  * @returns Merged result list with duplicates removed and ranking penalty applied
  */
 function mergeTransliterationResults(
-  primaryResults: UnifiedSearchResult[],
-  translitResults: UnifiedSearchResult[]
-): UnifiedSearchResult[] {
-  const primaryByCanonicalKey = new Map<string, UnifiedSearchResult>();
+  primaryResults: RankedResult[],
+  translitResults: RankedResult[]
+): RankedResult[] {
+  const primaryByCanonicalKey = new Map<string, RankedResult>();
   const primaryIds = new Set<string>();
 
   for (const result of primaryResults) {
@@ -415,7 +498,7 @@ function mergeTransliterationResults(
   }
 
   const TRANSLITERATION_PENALTY_MULTIPLIER = 0.85;
-  const newResults: UnifiedSearchResult[] = [];
+  const newResults: RankedResult[] = [];
 
   for (const translitResult of translitResults) {
     const key = translitResult.canonicalKey || `${translitResult.source}:${translitResult.id}`;
@@ -425,7 +508,7 @@ function mergeTransliterationResults(
     }
 
     if (!primaryIds.has(translitResult.id)) {
-      const resultWithPenalty = translitResult as any;
+      const resultWithPenalty = translitResult as RankedResult;
       if (typeof resultWithPenalty.computedScore === "number") {
         resultWithPenalty.computedScore = Math.round(
           resultWithPenalty.computedScore * TRANSLITERATION_PENALTY_MULTIPLIER
@@ -475,11 +558,7 @@ function asExternalReadableSources(
 }
 
 function tokenize(value?: string | null): string[] {
-  const normalized = normalizeSearchText(value);
-  if (!normalized) return [];
-  return normalized
-    .split(" ")
-    .filter((token) => token.length > 1 && !SEARCH_STOPWORDS.has(token));
+  return tokenizeSearchText(value);
 }
 
 function toQueryCandidate(
@@ -3153,6 +3232,344 @@ function compareRanked(a: RankedResult, b: RankedResult): number {
   return a.normalizedTitle.localeCompare(b.normalizedTitle);
 }
 
+const PROVISIONAL_ROLE_CATEGORIES: ProvisionalSearchRoleCategory[] = [
+  "primary_work",
+  "secondary_literature",
+  "edition_variant",
+  "anthology_collection",
+  "study_guide",
+  "biography",
+  "external_manifestation",
+  "provider_noise",
+  "unknown",
+];
+
+function collectDerivativeSignals(result: RankedResult): string[] {
+  const titleNorm = normalizeSearchText(result.title);
+  const signals: string[] = [];
+
+  if (!titleNorm) {
+    return signals;
+  }
+
+  if (hasBiographyCriticismPattern(titleNorm)) {
+    signals.push("biography_or_criticism_pattern");
+  }
+  if (hasAnthologyPattern(titleNorm)) {
+    signals.push("anthology_or_collection_pattern");
+  }
+  if (splitNormalizedWords(titleNorm).some((word) => DERIVATIVE_TITLE_KEYWORDS.has(word))) {
+    signals.push("derivative_title_keyword");
+  }
+  if (EXACT_TITLE_FAMILY_VARIANT_PATTERNS.some((pattern) => pattern.test(titleNorm))) {
+    signals.push("edition_or_commentary_variant_pattern");
+  }
+  if (isIntentGateSecondaryTitle(titleNorm)) {
+    signals.push("intent_gate_secondary_title");
+  }
+  if (result.resultType === "external") {
+    signals.push("external_provider_manifestation");
+  }
+  if (result.literaryAuthorityClass === "classic_work") {
+    signals.push("classic_work_authority");
+  }
+
+  return signals;
+}
+
+function classifyProvisionalSearchRole(result: RankedResult): ProvisionalSearchRoleCategory {
+  const titleNorm = normalizeSearchText(result.title);
+  const titleWords = splitNormalizedWords(titleNorm);
+
+  if (result.resultType === "external") {
+    return isLikelyBook(result.title, result.description || "")
+      ? "external_manifestation"
+      : "provider_noise";
+  }
+
+  if (!titleNorm) {
+    return "unknown";
+  }
+
+  if (hasAnthologyPattern(titleNorm)) {
+    return "anthology_collection";
+  }
+
+  if (/\bbiography\b/u.test(titleNorm) || /\blife\b/u.test(titleNorm)) {
+    return "biography";
+  }
+
+  if (/\b(study|guide|summary|analysis)\b/u.test(titleNorm)) {
+    return "study_guide";
+  }
+
+  if (hasBiographyCriticismPattern(titleNorm) || isIntentGateSecondaryTitle(titleNorm)) {
+    return "secondary_literature";
+  }
+
+  if (
+    result.workType === "edition" ||
+    result.editionPresence === "edition" ||
+    EXACT_TITLE_FAMILY_VARIANT_PATTERNS.some((pattern) => pattern.test(titleNorm))
+  ) {
+    return "edition_variant";
+  }
+
+  if (
+    result.resultType === "canonical" &&
+    result.workType === "work" &&
+    titleWords.length > 0
+  ) {
+    return "primary_work";
+  }
+
+  return "unknown";
+}
+
+function isExactClassicAuthorityResult(
+  result: RankedResult,
+  queryCandidates: QueryCandidate[]
+): boolean {
+  if (result.literaryAuthorityClass !== "classic_work") {
+    return false;
+  }
+  const titleVariants = resolveIntentGateTitleVariants(result);
+  return queryCandidates.some((query) => titleVariants.includes(query.normalized));
+}
+
+function summarizeCognitionTrace(params: {
+  result: RankedResult;
+  role: ProvisionalSearchRoleCategory;
+  literaryCorrection: number;
+  canonicalTitleAdjustment: number;
+  suppressionReason: SearchCognitionSuppressionReason;
+}): string {
+  const result = params.result;
+  const priority =
+    result.resultType === "canonical"
+      ? "canonical catalog result"
+      : "external provider manifestation";
+  const roleText = params.role.replace(/_/gu, " ");
+  const correctionParts = [
+    params.canonicalTitleAdjustment !== 0
+      ? `canonical title adjustment ${params.canonicalTitleAdjustment}`
+      : "",
+    params.literaryCorrection !== 0
+      ? `literary correction ${params.literaryCorrection}`
+      : "",
+    params.suppressionReason !== "none"
+      ? `provider handling ${params.suppressionReason}`
+      : "",
+  ].filter(Boolean);
+  const correctionText =
+    correctionParts.length > 0 ? ` Signals: ${correctionParts.join(", ")}.` : "";
+
+  return `${priority}; inferred role ${roleText}; rank tier ${result.rankTier}; score ${result.computedScore}.${correctionText}`;
+}
+
+function buildProviderSuppressionEvents(params: {
+  beforeMerge: RankedResult[];
+  afterMerge: RankedResult[];
+  canonicalResults: RankedResult[];
+  visibleExternalResults: RankedResult[];
+}): Array<{
+  resultId: string;
+  source: SearchSource;
+  title: string;
+  reason: SearchCognitionSuppressionReason;
+}> {
+  const events: Array<{
+    resultId: string;
+    source: SearchSource;
+    title: string;
+    reason: SearchCognitionSuppressionReason;
+  }> = [];
+  const afterMergeIds = new Set(params.afterMerge.map((entry) => entry.id));
+  const visibleIds = new Set(params.visibleExternalResults.map((entry) => entry.id));
+  const seen = new Set<string>();
+
+  for (const result of params.beforeMerge) {
+    if (afterMergeIds.has(result.id)) {
+      continue;
+    }
+
+    let reason: SearchCognitionSuppressionReason = "duplicate_external_identity";
+    if (
+      params.canonicalResults.some((canonical) =>
+        buildIdentityKeys(result).some((identity) => buildIdentityKeys(canonical).includes(identity))
+      )
+    ) {
+      reason = "canonical_identity_merge";
+    } else if (params.canonicalResults.some((canonical) => isLikelyFuzzyDuplicate(result, canonical))) {
+      reason = "fuzzy_canonical_duplicate";
+    }
+
+    if (!seen.has(result.id)) {
+      events.push({
+        resultId: result.id,
+        source: result.source,
+        title: result.title,
+        reason,
+      });
+      seen.add(result.id);
+    }
+  }
+
+  for (const result of params.afterMerge) {
+    if (visibleIds.has(result.id) || seen.has(result.id)) {
+      continue;
+    }
+    events.push({
+      resultId: result.id,
+      source: result.source,
+      title: result.title,
+      reason: "short_canonical_visible_authority",
+    });
+    seen.add(result.id);
+  }
+
+  return events;
+}
+
+function buildSearchCognitionDiagnostics(params: {
+  normalizedQuery: string;
+  queryCandidates: QueryCandidate[];
+  queryIntent: QueryIntent;
+  phaseOrder: string[];
+  results: RankedResult[];
+  canonicalCount: number;
+  externalCount: number;
+  externalFallbackTriggered: boolean;
+  googleCount: number;
+  openLibraryCount: number;
+  externalCandidatesBeforeAvailabilityMerge: RankedResult[];
+  externalCandidatesAfterAvailabilityMerge: RankedResult[];
+  canonicalResultsForResponse: RankedResult[];
+  visibleExternalCandidates: RankedResult[];
+  dominantFamily: DominantEntityFamily;
+  providerSuppressionEvents?: Array<{
+    resultId: string;
+    source: SearchSource;
+    title: string;
+    reason: SearchCognitionSuppressionReason;
+  }>;
+}): SearchCognitionDiagnostics {
+  const queryForCorrection = params.queryCandidates[0];
+  const suppressionEvents =
+    params.providerSuppressionEvents ||
+    buildProviderSuppressionEvents({
+      beforeMerge: params.externalCandidatesBeforeAvailabilityMerge,
+      afterMerge: params.externalCandidatesAfterAvailabilityMerge,
+      canonicalResults: params.canonicalResultsForResponse,
+      visibleExternalResults: params.visibleExternalCandidates,
+    });
+  const suppressionReasonById = new Map<string, SearchCognitionSuppressionReason>();
+  suppressionEvents.forEach((event) => {
+    suppressionReasonById.set(event.resultId, event.reason);
+  });
+
+  return {
+    schemaVersion: 1,
+    mode: "read_only_observability",
+    behaviorImpact: "none",
+    normalizedQuery: params.normalizedQuery,
+    queryIntent: params.queryIntent,
+    phaseOrder: params.phaseOrder.slice(),
+    provisionalRoleCategories: PROVISIONAL_ROLE_CATEGORIES.slice(),
+    canonicalPrioritization: {
+      comparator:
+        "resultType -> workType -> rankTier -> computedScore -> language -> popularity -> recency -> series -> year -> title",
+      canonicalCount: params.canonicalCount,
+      externalCount: params.externalCount,
+    },
+    providerBlending: {
+      externalFallbackTriggered: params.externalFallbackTriggered,
+      googleBooksAcceptedCount: params.googleCount,
+      openLibraryAcceptedCount: params.openLibraryCount,
+      visibleExternalCount: params.visibleExternalCandidates.length,
+      suppressedExternalCount: suppressionEvents.length,
+      suppressionEvents,
+    },
+    dominantFamily: {
+      kind: params.dominantFamily?.kind || null,
+      confirmed: Boolean(params.dominantFamily),
+    },
+    resultTraces: params.results.map((result) => {
+      const role = classifyProvisionalSearchRole(result);
+      const correctionQuery = queryForCorrection || toQueryCandidate(params.normalizedQuery, "original");
+      const literaryCorrection = correctionQuery
+        ? computeLiteraryCorrection({
+            result,
+            query: correctionQuery,
+            queryIntent: params.queryIntent,
+          })
+        : 0;
+      const canonicalTitleAdjustment = correctionQuery
+        ? computeCanonicalTitleAdjustment(correctionQuery.normalized, result.title)
+        : 0;
+      const suppressionReason = suppressionReasonById.get(result.id) || "none";
+
+      return {
+        resultId: result.id,
+        resultType: result.resultType,
+        source: result.source,
+        title: result.title,
+        author: result.authors[0] || result.authorEn || "Unknown",
+        provisionalRole: role,
+        humanSummary: summarizeCognitionTrace({
+          result,
+          role,
+          literaryCorrection,
+          canonicalTitleAdjustment,
+          suppressionReason,
+        }),
+        ranking: {
+          rankTier: result.rankTier,
+          confidence: result.confidence,
+          computedScore: result.computedScore,
+          tokenCoverageRatio: result.tokenCoverageRatio,
+          languageMatchScore: result.languageMatchScore,
+          popularityScore: result.popularityScore,
+          recentActivityMs: result.recentActivityMs,
+          workTypePriority: toWorkTypePriority(result.workType),
+        },
+        canonical: {
+          resultTypePriority:
+            result.resultType === "canonical"
+              ? "canonical_first"
+              : "external_after_canonical",
+          workType: result.workType,
+          editionPresence: result.editionPresence,
+          canonicalKeyPresent: Boolean(result.canonicalKey),
+          literaryAuthorityClass: result.literaryAuthorityClass || null,
+        },
+        heuristics: {
+          canonicalTitleAdjustment,
+          literaryCorrection,
+          derivativeSignals: collectDerivativeSignals(result),
+          exactClassicAuthority: isExactClassicAuthorityResult(result, params.queryCandidates),
+          likelySecondaryTitle: isIntentGateSecondaryTitle(normalizeSearchText(result.title)),
+        },
+        provider: {
+          sourceClass: result.sourceClass,
+          readProvider: result.readProvider,
+          availabilityMergedFromProvider: hasTrustedExternalAvailability(result),
+          suppressionReason,
+        },
+        manifestation: {
+          collapseModel:
+            result.resultType === "canonical"
+              ? "canonical_work_row"
+              : "external_provider_manifestation",
+          groupedCanonicalEditions: result.editionPresence === "grouped",
+          editionId: result.editionId,
+          workId: result.workId,
+        },
+      };
+    }),
+  };
+}
+
 async function enrichCanonicalAvailability(
   canonicalResults: RankedResult[],
   requestedCount: number
@@ -4067,6 +4484,7 @@ export async function unifiedSearch(
     queryCandidates,
     queryIntent,
   });
+  let activeDominantFamily: DominantEntityFamily = initialDominantFamily;
   if (initialDominantFamily) {
     canonicalArtifacts = {
       ...canonicalArtifacts,
@@ -4101,6 +4519,14 @@ export async function unifiedSearch(
   let openLibraryCount = 0;
   let rawExternalPrimary: ExternalSeedCandidate[] = [];
   let rawExternalSecondary: ExternalSeedCandidate[] = [];
+  let externalCandidatesBeforeAvailabilityMerge: RankedResult[] = [];
+  let externalCandidatesAfterAvailabilityMerge: RankedResult[] = [];
+  let providerSuppressionEvents: Array<{
+    resultId: string;
+    source: SearchSource;
+    title: string;
+    reason: SearchCognitionSuppressionReason;
+  }> = [];
 
   const isbnQuery = parseIsbnQuery(queryNorm);
   const isIsbnLookup = Boolean(isbnQuery.isbn13 || isbnQuery.isbn10);
@@ -4167,6 +4593,7 @@ export async function unifiedSearch(
         queryCandidates,
         queryIntent,
       });
+      activeDominantFamily = correctedDominantFamily;
       if (correctedDominantFamily) {
         canonicalArtifacts = {
           ...canonicalArtifacts,
@@ -4249,6 +4676,7 @@ export async function unifiedSearch(
       queryCandidates,
       queryIntent,
     });
+    activeDominantFamily = mergedDominantFamily;
     if (mergedDominantFamily) {
       canonicalArtifacts = {
         ...canonicalArtifacts,
@@ -4281,6 +4709,22 @@ export async function unifiedSearch(
       queryIntent,
       authorityEntries: combinedIntentCandidates,
     });
+    if (options.__includeCognitionDiagnostics) {
+      const gatedSeedKeys = new Set(
+        gatedExternalSeeds.map((entry) => `${entry.source}:${entry.externalId}`)
+      );
+      for (const seed of mergedExternalSeeds) {
+        const seedKey = `${seed.source}:${seed.externalId}`;
+        if (!gatedSeedKeys.has(seedKey)) {
+          providerSuppressionEvents.push({
+            resultId: `${seed.source === "googleBooks" ? "gb" : "ol"}_${seed.externalId}`,
+            source: seed.source,
+            title: seed.title,
+            reason: "intent_gate_filtered",
+          });
+        }
+      }
+    }
     const dominantExternalSeeds = mergedDominantFamily
       ? applyDominantFamilyToExternalSeeds({
           seeds: gatedExternalSeeds,
@@ -4288,10 +4732,24 @@ export async function unifiedSearch(
           dominantFamily: mergedDominantFamily,
         })
       : gatedExternalSeeds;
-    externalCandidates = dominantExternalSeeds
-      .map((entry) =>
-        mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, options.language)
-      )
+    const mappedExternalCandidates = dominantExternalSeeds.map((entry) => ({
+      seed: entry,
+      ranked: mapExternalCandidateToRanked(entry, queryCandidates, queryIntent, options.language),
+    }));
+    if (options.__includeCognitionDiagnostics) {
+      for (const mapped of mappedExternalCandidates) {
+        if (!mapped.ranked) {
+          providerSuppressionEvents.push({
+            resultId: `${mapped.seed.source === "googleBooks" ? "gb" : "ol"}_${mapped.seed.externalId}`,
+            source: mapped.seed.source,
+            title: mapped.seed.title,
+            reason: "rank_confidence_filtered",
+          });
+        }
+      }
+    }
+    externalCandidates = mappedExternalCandidates
+      .map((entry) => entry.ranked)
       .filter((entry): entry is RankedResult => Boolean(entry));
     if (mergedDominantFamily) {
       externalCandidates = applyDominantFamilyOrderingToRanked({
@@ -4301,12 +4759,14 @@ export async function unifiedSearch(
       });
     }
 
+    externalCandidatesBeforeAvailabilityMerge = externalCandidates.slice();
     const mergedAvailability = mergeCanonicalAvailability(
       externalCandidates,
       canonicalAvailability
     );
     canonicalAvailability = mergedAvailability.canonicalResults;
     externalCandidates = mergedAvailability.externalResults;
+    externalCandidatesAfterAvailabilityMerge = externalCandidates.slice();
     googleCount = externalCandidates.filter((entry) => entry.source === "googleBooks").length;
     openLibraryCount = externalCandidates.filter((entry) => entry.source === "openLibrary").length;
   }
@@ -4348,11 +4808,13 @@ export async function unifiedSearch(
       const translitResults = await unifiedSearch(translitQuery, {
         ...options,
         __skipTransliteration: true,
+        __includeCognitionDiagnostics: false,
+        __includeInternalRankFields: true,
       });
 
       const newTranslitResults = mergeTransliterationResults(
-        merged as UnifiedSearchResult[],
-        translitResults.results
+        merged as RankedResult[],
+        translitResults.results as RankedResult[]
       );
 
       if (newTranslitResults.length > 0) {
@@ -4381,6 +4843,35 @@ export async function unifiedSearch(
     : null;
   const mergedTopCoverageScores = topCoverageScores(merged as RankedResult[]);
   const topCoverageScore = mergedTopCoverageScores[0] ?? 0;
+  const mergeSuppressionEvents = options.__includeCognitionDiagnostics
+    ? buildProviderSuppressionEvents({
+        beforeMerge: externalCandidatesBeforeAvailabilityMerge,
+        afterMerge: externalCandidatesAfterAvailabilityMerge,
+        canonicalResults: canonicalResultsForResponse,
+        visibleExternalResults: visibleExternalCandidates,
+      })
+    : [];
+  providerSuppressionEvents = [...providerSuppressionEvents, ...mergeSuppressionEvents];
+  const cognitionDiagnostics = options.__includeCognitionDiagnostics
+    ? buildSearchCognitionDiagnostics({
+        normalizedQuery: queryNorm,
+        queryCandidates,
+        queryIntent,
+        phaseOrder,
+        results: paginated as RankedResult[],
+        canonicalCount: visibleCanonicalCount,
+        externalCount: visibleExternalCount,
+        externalFallbackTriggered: shouldUseExternalFallback,
+        googleCount,
+        openLibraryCount,
+        externalCandidatesBeforeAvailabilityMerge,
+        externalCandidatesAfterAvailabilityMerge,
+        canonicalResultsForResponse,
+        visibleExternalCandidates,
+        dominantFamily: activeDominantFamily,
+        providerSuppressionEvents,
+      })
+    : undefined;
 
   logger.info("BOOK_SEARCH_V2_ENGINE_TRACE", {
     query: queryNorm.slice(0, 80),
@@ -4398,8 +4889,25 @@ export async function unifiedSearch(
     },
   });
 
+  if (cognitionDiagnostics) {
+    logger.info("BOOK_SEARCH_V2_COGNITION_TRACE", {
+      query: queryNorm.slice(0, 80),
+      queryIntent,
+      resultCount: cognitionDiagnostics.resultTraces.length,
+      roleCounts: cognitionDiagnostics.resultTraces.reduce<Record<string, number>>((acc, trace) => {
+        acc[trace.provisionalRole] = (acc[trace.provisionalRole] || 0) + 1;
+        return acc;
+      }, {}),
+      suppressedExternalCount: cognitionDiagnostics.providerBlending.suppressedExternalCount,
+      dominantFamily: cognitionDiagnostics.dominantFamily,
+    });
+  }
+
   return {
     results: paginated.map((entry) => {
+      if (options.__includeInternalRankFields) {
+        return entry;
+      }
       const {
         rankTier,
         computedScore,
@@ -4445,5 +4953,6 @@ export async function unifiedSearch(
       lowConfidenceTopThree,
       timestamp: new Date().toISOString(),
     },
+    ...(cognitionDiagnostics ? { cognitionDiagnostics } : {}),
   };
 }

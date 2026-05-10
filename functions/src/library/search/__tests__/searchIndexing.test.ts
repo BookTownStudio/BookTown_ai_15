@@ -3,15 +3,9 @@ import {
   buildBookSearchPatch,
   bookSearchPatchNeedsUpdate,
 } from "../searchIndexing";
+import { normalizeSearchText } from "../../../shared/normalization";
 
-const normalize = (value: string) =>
-  value
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+const normalize = normalizeSearchText;
 
 describe("searchIndexing", () => {
   it("prefers English alias authority for canonical retrieval while preserving alias tokens", () => {

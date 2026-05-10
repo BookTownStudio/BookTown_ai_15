@@ -6,6 +6,18 @@
  * imports.
  */
 
-import { normalizeSearchText, normalizeIsbn } from "../../shared/normalization";
+import {
+  SEARCH_STOPWORDS,
+  buildSearchFieldsFromTextParts,
+  normalizeIsbn,
+  normalizeSearchText,
+  tokenizeSearchText,
+} from "../../shared/normalization";
 
-export { normalizeSearchText, normalizeIsbn };
+export {
+  SEARCH_STOPWORDS,
+  buildSearchFieldsFromTextParts,
+  normalizeSearchText,
+  normalizeIsbn,
+  tokenizeSearchText,
+};
