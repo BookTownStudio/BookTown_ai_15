@@ -6,6 +6,7 @@ import GlassCard from '../ui/GlassCard.tsx';
 import { CalendarIcon } from '../icons/CalendarIcon.tsx';
 import { GlobeIcon } from '../icons/GlobeIcon.tsx';
 import { LockIcon } from '../icons/LockIcon.tsx';
+import { getSpaceAuthoritySignal, getSpaceSubtypeLabel } from '../../lib/spaces/domain.ts';
 
 interface EventCardProps {
     event: Event;
@@ -16,6 +17,9 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
     const { lang } = useI18n();
     const eventDate = new Date(event.dateTime).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { month: 'short', day: 'numeric' });
     const eventTime = new Date(event.dateTime).toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' });
+    const authoritySignal = getSpaceAuthoritySignal(event.authorityProfile, event.governanceStatus);
+    const typeLabel = getSpaceSubtypeLabel('event', event.spaceSubtype || event.type, lang);
+    const isHistorical = event.eventState === 'completed' || event.continuity?.historicalRecord === true;
 
     return (
         <button onClick={onClick} className="w-full text-left group">
@@ -30,7 +34,19 @@ const EventCard: React.FC<EventCardProps> = ({ event, onClick }) => {
                             <LockIcon className="h-4 w-4 text-slate-500 flex-shrink-0 ml-2 mt-1" />
                         )}
                     </div>
-                    <BilingualText role="Caption" className="!text-accent">{event.type}</BilingualText>
+                    <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <BilingualText role="Caption" className="!text-accent">{typeLabel}</BilingualText>
+                        {authoritySignal && (
+                            <span className="rounded-sm border border-accent/40 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-accent">
+                                {authoritySignal}
+                            </span>
+                        )}
+                        {isHistorical && (
+                            <span className="rounded-sm border border-white/15 px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-white/55">
+                                {lang === 'en' ? 'Archive' : 'أرشيف'}
+                            </span>
+                        )}
+                    </div>
                     <div className="flex items-center gap-1.5 mt-2 text-slate-500 dark:text-white/60">
                         {event.isOnline ? (
                             <><GlobeIcon className="h-4 w-4 flex-shrink-0" /><BilingualText role="Caption">Online Event</BilingualText></>

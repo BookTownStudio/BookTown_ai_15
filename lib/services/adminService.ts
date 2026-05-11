@@ -304,6 +304,53 @@ export type AdminAuthorImportCandidate = {
   requiresCanonicalization?: boolean;
 };
 
+export type AdminSpaceRecord = {
+  id: string;
+  spaceType: 'venue' | 'event';
+  displayName: string;
+  spaceSubtype: string;
+  governanceStatus: string;
+  claimState: string;
+  stewardshipState: string;
+  managedByUid: string | null;
+  routePath: string | null;
+};
+
+export type AdminSeedSpaceInput = {
+  spaceType: 'venue' | 'event';
+  spaceSubtype: string;
+  displayName: string;
+  imageUrl: string;
+  address?: string;
+  openingHours?: string;
+  descriptionEn?: string;
+  websiteUrl?: string;
+  phone?: string;
+  dateTime?: string;
+  privacy?: 'public' | 'private';
+  isOnline?: boolean;
+  link?: string;
+  venueName?: string;
+  managedByUid?: string;
+  institutionId?: string;
+};
+
+export type AdminSeedSpaceResult = {
+  spaceId: string;
+  spaceType: 'venue' | 'event';
+  collectionName: 'venues' | 'events';
+  identity: {
+    canonicalId: string;
+    slug: string;
+    displayName: string;
+    normalizedName: string;
+    routePath: string;
+    schemaVersion: 1;
+  };
+  authorityProfile: Record<string, unknown>;
+  managedByUid: string | null;
+};
+
 export const adminServiceQueryKeys = {
   deletionRequests: ['admin', 'deletionRequests'] as const,
   authors: (params: { query?: string | null; status?: string | null; limit?: number | null } = {}) =>
@@ -340,6 +387,7 @@ export const adminServiceQueryKeys = {
   systemEvents: (params: RecentSystemEventsParams = {}) =>
     ['admin', 'events', 'recent', params.limit ?? 50] as const,
   systemHealthSnapshot: ['admin', 'health', 'snapshot'] as const,
+  spaces: (query: string) => ['admin', 'spaces', query.trim().toLowerCase()] as const,
 };
 
 type DeletionRequestDoc = {
@@ -1316,6 +1364,38 @@ export const adminService = {
     });
 
     return parseSearchUsersResponse(result.data);
+  },
+
+  async searchSpaces(query: string): Promise<AdminSpaceRecord[]> {
+    const normalized = query.trim();
+    if (!normalized) return [];
+    const data = await callCallableEndpoint<
+      { query: string; limit: number },
+      { spaces: AdminSpaceRecord[] }
+    >('adminSearchSpaces', {
+      query: normalized,
+      limit: 12,
+    });
+    return Array.isArray(data.spaces) ? data.spaces : [];
+  },
+
+  async seedSpace(input: AdminSeedSpaceInput): Promise<AdminSeedSpaceResult> {
+    return callCallableEndpoint<AdminSeedSpaceInput, AdminSeedSpaceResult>(
+      'adminSeedSpace',
+      input
+    );
+  },
+
+  async assignSpaceStewardship(params: {
+    spaceId: string;
+    spaceType: 'venue' | 'event';
+    managedByUid: string;
+    institutionId?: string;
+  }): Promise<{ spaceId: string; spaceType: 'venue' | 'event'; managedByUid: string }> {
+    return callCallableEndpoint<typeof params, { spaceId: string; spaceType: 'venue' | 'event'; managedByUid: string }>(
+      'adminAssignSpaceStewardship',
+      params
+    );
   },
 
   async discoverAuthorCandidates(query: string, limit = 12): Promise<AdminAuthorImportCandidate[]> {

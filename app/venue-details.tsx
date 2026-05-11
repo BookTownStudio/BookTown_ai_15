@@ -16,6 +16,7 @@ import { useSubmitVenueReview } from '../lib/hooks/useSubmitVenueReview.ts';
 import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import VenueReviewCard from '../components/content/VenueReviewCard.tsx';
 import { GlobeIcon } from '../components/icons/GlobeIcon.tsx';
+import { getSpaceAuthoritySignal, getSpaceSubtypeLabel } from '../lib/spaces/domain.ts';
 
 const VenueDetailsScreen: React.FC = () => {
     const { currentView, navigate, navigateToSocialAndHighlight } = useNavigation();
@@ -77,6 +78,10 @@ const VenueDetailsScreen: React.FC = () => {
 
     const isEvent = 'dateTime' in venue;
     const name = isEvent ? (lang === 'en' ? venue.titleEn : venue.titleAr) : venue.name;
+    const spaceType = isEvent ? 'event' : 'venue';
+    const authoritySignal = getSpaceAuthoritySignal(venue.authorityProfile, venue.governanceStatus);
+    const typeLabel = getSpaceSubtypeLabel(spaceType, venue.spaceSubtype || venue.type, lang);
+    const isHistoricalEvent = isEvent && (venue.eventState === 'completed' || venue.continuity?.historicalRecord === true);
     const saveButtonText = isEvent ? (lang === 'en' ? 'RSVP' : 'تسجيل الحضور') : (lang === 'en' ? 'Save Venue' : 'حفظ المكان');
     const savedButtonText = isEvent ? (lang === 'en' ? 'Attending' : 'ستحضر') : (lang === 'en' ? 'Saved' : 'محفوظ');
     
@@ -100,8 +105,19 @@ const VenueDetailsScreen: React.FC = () => {
 
                 <div className="app-rail app-rail--default -mt-16 relative z-10">
                     <BilingualText role="H1" className="!text-4xl text-white drop-shadow-lg">{name}</BilingualText>
-                    <BilingualText role="Body" className="!text-lg !text-accent mt-1">{venue.type}</BilingualText>
-
+                    <div className="mt-1 flex flex-wrap items-center gap-2">
+                        <BilingualText role="Body" className="!text-lg !text-accent">{typeLabel}</BilingualText>
+                        {authoritySignal && (
+                            <span className="rounded-sm border border-accent/40 px-2 py-1 text-xs uppercase tracking-wide text-accent">
+                                {authoritySignal}
+                            </span>
+                        )}
+                        {isHistoricalEvent && (
+                            <span className="rounded-sm border border-white/15 px-2 py-1 text-xs uppercase tracking-wide text-white/60">
+                                {lang === 'en' ? 'Historical record' : 'سجل تاريخي'}
+                            </span>
+                        )}
+                    </div>
                     <div className="mt-6 space-y-3 text-white/80">
                         {isEvent ? (
                             <>

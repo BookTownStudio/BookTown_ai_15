@@ -132,6 +132,244 @@ service cloud.firestore {
         && value.size() <= maxLen;
     }
 
+    function hasField(data, fieldName) {
+      return data.keys().hasAny([fieldName]);
+    }
+
+    function isVenueSpaceSubtype(value) {
+      return value in [
+        "bookstore",
+        "library",
+        "reading_cafe",
+        "community_space",
+        "cultural_center",
+        "university_space",
+        "publisher",
+        "archive",
+        "other"
+      ];
+    }
+
+    function isEventSpaceSubtype(value) {
+      return value in [
+        "reading_session",
+        "author_signing",
+        "book_club",
+        "launch",
+        "workshop",
+        "lecture",
+        "discussion",
+        "festival_session",
+        "exhibition",
+        "online_session",
+        "other"
+      ];
+    }
+
+    function isSpaceGovernanceState(value) {
+      return value in [
+        "draft",
+        "pending_review",
+        "published",
+        "verified",
+        "claimed",
+        "archived"
+      ];
+    }
+
+    function isSpaceEventState(value) {
+      return value in [
+        "draft",
+        "scheduled",
+        "live",
+        "completed",
+        "cancelled",
+        "archived"
+      ];
+    }
+
+    function isSpaceClaimState(value) {
+      return value in [
+        "unclaimed",
+        "claimed",
+        "verified",
+        "institutional"
+      ];
+    }
+
+    function isSpaceStewardshipState(value) {
+      return value in [
+        "community_created",
+        "system_seeded",
+        "institutional"
+      ];
+    }
+
+    function isSpaceProvenanceSource(value) {
+      return value in [
+        "user_created",
+        "system_seeded",
+        "legacy_import"
+      ];
+    }
+
+    function isSpaceRelationshipVisibility(value) {
+      return value in ["public", "private", "hidden"];
+    }
+
+    function isSpaceContinuityVisibility(value) {
+      return value in ["public_history", "private_record"];
+    }
+
+    function isValidSpaceIdentity(data, spaceType) {
+      return hasField(data, "identity")
+        && data.identity is map
+        && isBoundedString(data.identity.canonicalId, 160)
+        && isBoundedString(data.identity.slug, 160)
+        && isBoundedString(data.identity.displayName, 160)
+        && isBoundedString(data.identity.normalizedName, 160)
+        && isBoundedString(data.identity.routePath, 220)
+        && (
+          (spaceType == "venue" && data.identity.canonicalId.matches("venue_.*"))
+          || (spaceType == "event" && data.identity.canonicalId.matches("event_.*"))
+        )
+        && data.identity.routePath.matches("^/spaces/.+");
+    }
+
+    function isValidSpaceAuthorityProfile(data) {
+      return hasField(data, "authorityProfile")
+        && data.authorityProfile is map
+        && isSpaceClaimState(data.authorityProfile.claimState)
+        && isSpaceStewardshipState(data.authorityProfile.stewardshipState);
+    }
+
+    function isValidSpaceProvenance(data) {
+      return hasField(data, "provenance")
+        && data.provenance is map
+        && isSpaceProvenanceSource(data.provenance.source)
+        && data.provenance.canonicalAuthority in ["user_submitted", "system"];
+    }
+
+    function isValidSpaceCommunication(data, ownerId) {
+      return hasField(data, "communication")
+        && data.communication is map
+        && data.communication.inboxKind == "space"
+        && isBoundedString(data.communication.inboxId, 190)
+        && data.communication.inboxStatus in ["disabled", "available"]
+        && data.communication.ownerUid == ownerId
+        && data.communication.participantModel == "space_admins_only";
+    }
+
+    function isValidSpaceStewardship(data) {
+      return hasField(data, "stewardship")
+        && data.stewardship is map
+        && data.stewardship.canonicalOwnerId == "booktown"
+        && isBoundedString(data.stewardship.createdByUid, 128)
+        && data.stewardship.adminUids is list;
+    }
+
+    function isValidSpaceManagedBy(data) {
+      return !hasField(data, "managedBy")
+        || (
+          data.managedBy is map
+          && data.managedBy.adminUids is list
+        );
+    }
+
+    function isSpaceSteward(data) {
+      return isSignedIn()
+        && (
+          data.ownerId == request.auth.uid
+          || (
+            hasField(data, "stewardship")
+            && data.stewardship is map
+            && data.stewardship.managedByUid == request.auth.uid
+          )
+          || (
+            hasField(data, "stewardship")
+            && data.stewardship is map
+            && data.stewardship.adminUids is list
+            && data.stewardship.adminUids.hasAny([request.auth.uid])
+          )
+        );
+    }
+
+    function preservesSpaceAuthorityFields() {
+      return isAdminUser()
+        || (
+          (
+            !hasField(resource.data, "identity")
+            || request.resource.data.identity == resource.data.identity
+          )
+          && (
+            !hasField(resource.data, "authorityProfile")
+            || request.resource.data.authorityProfile == resource.data.authorityProfile
+          )
+          && (
+            !hasField(resource.data, "provenance")
+            || request.resource.data.provenance == resource.data.provenance
+          )
+          && (
+            !hasField(resource.data, "stewardship")
+            || request.resource.data.stewardship == resource.data.stewardship
+          )
+          && (
+            !hasField(resource.data, "managedBy")
+            || request.resource.data.managedBy == resource.data.managedBy
+          )
+          && (
+            !hasField(resource.data, "canonicalOwnerId")
+            || request.resource.data.canonicalOwnerId == resource.data.canonicalOwnerId
+          )
+        );
+    }
+
+    function isValidSpaceRelationshipVisibilityProfile(data) {
+      return hasField(data, "relationshipVisibility")
+        && data.relationshipVisibility is map
+        && isSpaceRelationshipVisibility(data.relationshipVisibility.venue)
+        && isSpaceRelationshipVisibility(data.relationshipVisibility.organization)
+        && isSpaceRelationshipVisibility(data.relationshipVisibility.books)
+        && isSpaceRelationshipVisibility(data.relationshipVisibility.authors)
+        && isSpaceRelationshipVisibility(data.relationshipVisibility.series);
+    }
+
+    function isValidEventContinuity(data) {
+      return hasField(data, "continuity")
+        && data.continuity is map
+        && data.continuity.historicalRecord == true
+        && isSpaceContinuityVisibility(data.continuity.visibility)
+        && data.continuity.lineageKind in ["single_event", "series_occurrence"];
+    }
+
+    function isValidVenueSpaceFields(data) {
+      return (!hasField(data, "spaceType") || data.spaceType == "venue")
+        && (!hasField(data, "spaceSubtype") || isVenueSpaceSubtype(data.spaceSubtype))
+        && (!hasField(data, "governanceStatus") || isSpaceGovernanceState(data.governanceStatus))
+        && (!hasField(data, "identity") || isValidSpaceIdentity(data, "venue"))
+        && (!hasField(data, "authorityProfile") || isValidSpaceAuthorityProfile(data))
+        && (!hasField(data, "provenance") || isValidSpaceProvenance(data))
+        && (!hasField(data, "stewardship") || isValidSpaceStewardship(data))
+        && isValidSpaceManagedBy(data)
+        && (!hasField(data, "communication") || isValidSpaceCommunication(data, data.ownerId))
+        && (!hasField(data, "relationshipVisibility") || isValidSpaceRelationshipVisibilityProfile(data));
+    }
+
+    function isValidEventSpaceFields(data) {
+      return (!hasField(data, "spaceType") || data.spaceType == "event")
+        && (!hasField(data, "spaceSubtype") || isEventSpaceSubtype(data.spaceSubtype))
+        && (!hasField(data, "governanceStatus") || isSpaceGovernanceState(data.governanceStatus))
+        && (!hasField(data, "eventState") || isSpaceEventState(data.eventState))
+        && (!hasField(data, "identity") || isValidSpaceIdentity(data, "event"))
+        && (!hasField(data, "authorityProfile") || isValidSpaceAuthorityProfile(data))
+        && (!hasField(data, "provenance") || isValidSpaceProvenance(data))
+        && (!hasField(data, "stewardship") || isValidSpaceStewardship(data))
+        && isValidSpaceManagedBy(data)
+        && (!hasField(data, "communication") || isValidSpaceCommunication(data, data.ownerId))
+        && (!hasField(data, "relationshipVisibility") || isValidSpaceRelationshipVisibilityProfile(data))
+        && (!hasField(data, "continuity") || isValidEventContinuity(data));
+    }
+
     function isAllowedUserProfilePatch() {
       return request.resource.data.diff(resource.data).changedKeys().hasOnly([
           "name",
@@ -632,24 +870,7 @@ service cloud.firestore {
     match /venues/{venueId} {
       allow get, list: if true;
 
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid
-        && isBoundedString(request.resource.data.name, 120)
-        && isBoundedString(request.resource.data.type, 80)
-        && isBoundedString(request.resource.data.address, 240)
-        && isBoundedString(request.resource.data.imageUrl, 1024)
-        && isBoundedString(request.resource.data.descriptionEn, 2000)
-        && isBoundedString(request.resource.data.descriptionAr, 2000);
-
-      allow update: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == resource.data.ownerId
-        && isBoundedString(request.resource.data.name, 120)
-        && isBoundedString(request.resource.data.type, 80)
-        && isBoundedString(request.resource.data.address, 240)
-        && isBoundedString(request.resource.data.imageUrl, 1024)
-        && isBoundedString(request.resource.data.descriptionEn, 2000)
-        && isBoundedString(request.resource.data.descriptionAr, 2000);
+      allow create, update: if false;
 
       allow delete: if false;
 
@@ -684,51 +905,28 @@ service cloud.firestore {
        EVENTS
        ========================= */
     match /events/{eventId} {
-      allow get, list: if true;
+      allow get: if resource.data.privacy == "public"
+        || (isSignedIn() && resource.data.ownerId == request.auth.uid)
+        || isAdminUser();
 
-      allow create: if isSignedIn()
-        && request.resource.data.ownerId == request.auth.uid
-        && isBoundedString(request.resource.data.titleEn, 120)
-        && isBoundedString(request.resource.data.titleAr, 120)
-        && isBoundedString(request.resource.data.type, 80)
-        && isBoundedString(request.resource.data.dateTime, 64)
-        && isBoundedString(request.resource.data.imageUrl, 1024)
-        && request.resource.data.privacy in ['public', 'private']
-        && request.resource.data.isOnline is bool
-        && (
-          (request.resource.data.isOnline == true
-            && isBoundedString(request.resource.data.link, 1024))
-          ||
-          (request.resource.data.isOnline == false
-            && isBoundedString(request.resource.data.venueName, 120))
-        );
+      allow list: if resource.data.privacy == "public";
 
-      allow update: if isSignedIn()
-        && resource.data.ownerId == request.auth.uid
-        && request.resource.data.ownerId == resource.data.ownerId
-        && isBoundedString(request.resource.data.titleEn, 120)
-        && isBoundedString(request.resource.data.titleAr, 120)
-        && isBoundedString(request.resource.data.type, 80)
-        && isBoundedString(request.resource.data.dateTime, 64)
-        && isBoundedString(request.resource.data.imageUrl, 1024)
-        && request.resource.data.privacy in ['public', 'private']
-        && request.resource.data.isOnline is bool
-        && (
-          (request.resource.data.isOnline == true
-            && isBoundedString(request.resource.data.link, 1024))
-          ||
-          (request.resource.data.isOnline == false
-            && isBoundedString(request.resource.data.venueName, 120))
-        );
+      allow create, update: if false;
 
       allow delete: if false;
 
       match /reviews/{reviewId} {
-        allow get, list: if true;
+        allow get, list: if get(/databases/$(database)/documents/events/$(eventId)).data.privacy == "public"
+          || (
+            isSignedIn()
+            && get(/databases/$(database)/documents/events/$(eventId)).data.ownerId == request.auth.uid
+          )
+          || isAdminUser();
 
         allow create: if isSignedIn()
           && request.resource.data.userId == request.auth.uid
           && request.resource.data.eventId == eventId
+          && request.resource.data.venueId == eventId
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1
           && request.resource.data.rating <= 5
@@ -739,6 +937,7 @@ service cloud.firestore {
           && resource.data.userId == request.auth.uid
           && request.resource.data.userId == resource.data.userId
           && request.resource.data.eventId == resource.data.eventId
+          && request.resource.data.venueId == resource.data.venueId
           && request.resource.data.rating is int
           && request.resource.data.rating >= 1
           && request.resource.data.rating <= 5
@@ -832,6 +1031,37 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow get, list: if isSignedIn()
           && get(/databases/$(database)/documents/conversations/$(conversationId)).data.participantSet[request.auth.uid] == true;
+        allow create, update, delete: if false;
+      }
+
+      match /idempotency/{idempotencyId} {
+        allow read, write: if false;
+      }
+    }
+
+    /* =========================
+       SPACE INBOXES (SERVER WRITE, SPACE ADMIN READ)
+       ========================= */
+    match /space_inboxes/{inboxId} {
+      allow get, list: if isSignedIn()
+        && (
+          resource.data.ownerUid == request.auth.uid
+          || (resource.data.adminUids is list && resource.data.adminUids.hasAny([request.auth.uid]))
+          || isAdminUser()
+        );
+
+      allow create, update, delete: if false;
+
+      match /messages/{messageId} {
+        allow get, list: if isSignedIn()
+          && (
+            get(/databases/$(database)/documents/space_inboxes/$(inboxId)).data.ownerUid == request.auth.uid
+            || (
+              get(/databases/$(database)/documents/space_inboxes/$(inboxId)).data.adminUids is list
+              && get(/databases/$(database)/documents/space_inboxes/$(inboxId)).data.adminUids.hasAny([request.auth.uid])
+            )
+            || isAdminUser()
+          );
         allow create, update, delete: if false;
       }
 

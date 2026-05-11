@@ -11,6 +11,12 @@ import { Venue, Event } from '../../types/entities.ts';
 import { useMediaUpload } from '../../lib/hooks/useMediaUpload.ts';
 import { UploadIcon } from '../icons/UploadIcon.tsx';
 import { useVenuesAndEvents } from '../../lib/hooks/useVenuesAndEvents.ts';
+import {
+    EVENT_SPACE_SUBTYPE_OPTIONS,
+    EventSpaceSubtype,
+    VENUE_SPACE_SUBTYPE_OPTIONS,
+    VenueSpaceSubtype,
+} from '../../lib/spaces/domain.ts';
 
 interface CreateVenueModalProps {
     isOpen: boolean;
@@ -20,24 +26,6 @@ interface CreateVenueModalProps {
 type FormType = 'location' | 'event';
 type EventLocationMode = 'existing' | 'new';
 type WeekdayKey = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
-
-const TYPE_OTHER = '__other__';
-
-const LOCATION_TYPE_OPTIONS = [
-    { value: 'bookstore', labelEn: 'Bookstore', labelAr: 'متجر كتب' },
-    { value: 'library', labelEn: 'Library', labelAr: 'مكتبة' },
-    { value: 'reading-cafe', labelEn: 'Reading Cafe', labelAr: 'مقهى قراءة' },
-    { value: 'community-space', labelEn: 'Community Space', labelAr: 'مساحة مجتمعية' },
-    { value: TYPE_OTHER, labelEn: 'Other', labelAr: 'أخرى' },
-];
-
-const EVENT_TYPE_OPTIONS = [
-    { value: 'author-signing', labelEn: 'Author Signing', labelAr: 'توقيع مؤلف' },
-    { value: 'book-club', labelEn: 'Book Club', labelAr: 'نادي كتاب' },
-    { value: 'reading-session', labelEn: 'Reading Session', labelAr: 'جلسة قراءة' },
-    { value: 'talk', labelEn: 'Talk', labelAr: 'ندوة' },
-    { value: TYPE_OTHER, labelEn: 'Other', labelAr: 'أخرى' },
-];
 
 const WEEKDAY_ORDER: { key: WeekdayKey; labelEn: string; labelAr: string }[] = [
     { key: 'mon', labelEn: 'Mon', labelAr: 'الإثنين' },
@@ -72,8 +60,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
     const [imageUrl, setImageUrl] = useState('');
 
     // Location fields
-    const [locationType, setLocationType] = useState(LOCATION_TYPE_OPTIONS[0].value);
-    const [customLocationType, setCustomLocationType] = useState('');
+    const [locationType, setLocationType] = useState<VenueSpaceSubtype>(VENUE_SPACE_SUBTYPE_OPTIONS[0].value);
     const [address, setAddress] = useState('');
     const [openingSchedule, setOpeningSchedule] = useState(DEFAULT_OPENING_SCHEDULE);
     const [descriptionEn, setDescriptionEn] = useState('');
@@ -86,8 +73,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
     const [locationError, setLocationError] = useState('');
 
     // Event fields
-    const [eventType, setEventType] = useState(EVENT_TYPE_OPTIONS[0].value);
-    const [customEventType, setCustomEventType] = useState('');
+    const [eventType, setEventType] = useState<EventSpaceSubtype>(EVENT_SPACE_SUBTYPE_OPTIONS[0].value);
     const [dateTime, setDateTime] = useState('');
     const [duration, setDuration] = useState('');
     const [isOnline, setIsOnline] = useState(false);
@@ -105,11 +91,6 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
         [existingLocations, selectedLocationId]
     );
 
-    const resolveType = (selectedType: string, customType: string): string =>
-        selectedType === TYPE_OTHER ? customType.trim() : selectedType;
-
-    const resolvedLocationType = resolveType(locationType, customLocationType);
-    const resolvedEventType = resolveType(eventType, customEventType);
     const hasAtLeastOneOpenDay = Object.values(openingSchedule).some((day) => !day.closed);
 
     const openingHoursSummary = useMemo(() => {
@@ -124,8 +105,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
     const resetForm = () => {
         setNameEn('');
         setImageUrl('');
-        setLocationType(LOCATION_TYPE_OPTIONS[0].value);
-        setCustomLocationType('');
+        setLocationType(VENUE_SPACE_SUBTYPE_OPTIONS[0].value);
         setAddress('');
         setOpeningSchedule(DEFAULT_OPENING_SCHEDULE);
         setDescriptionEn('');
@@ -135,8 +115,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
         setCountry('');
         setPlaceId('');
         setLocationError('');
-        setEventType(EVENT_TYPE_OPTIONS[0].value);
-        setCustomEventType('');
+        setEventType(EVENT_SPACE_SUBTYPE_OPTIONS[0].value);
         setDateTime('');
         setDuration('');
         setIsOnline(false);
@@ -217,7 +196,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
 
     const isLocationFormValid =
         nameEn.trim().length > 0 &&
-        resolvedLocationType.length > 0 &&
+        locationType.length > 0 &&
         address.trim().length > 0 &&
         imageUrl.trim().length > 0 &&
         hasAtLeastOneOpenDay;
@@ -230,7 +209,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
 
     const isEventFormValid =
         nameEn.trim().length > 0 &&
-        resolvedEventType.length > 0 &&
+        eventType.length > 0 &&
         dateTime.trim().length > 0 &&
         imageUrl.trim().length > 0 &&
         isEventVenueValid;
@@ -239,7 +218,9 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
         if (formType === 'location' && isLocationFormValid) {
             const newLocation: Omit<Venue, 'id' | 'ownerId'> = {
                 name: nameEn.trim(),
-                type: resolvedLocationType,
+                type: locationType,
+                spaceType: 'venue',
+                spaceSubtype: locationType,
                 address: address.trim(),
                 imageUrl,
                 openingHours: openingHoursSummary,
@@ -276,7 +257,9 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
             const newEvent: Omit<Event, 'id' | 'ownerId'> = {
                 titleEn: nameEn.trim(),
                 titleAr: `${nameEn.trim()} (AR)`,
-                type: resolvedEventType,
+                type: eventType,
+                spaceType: 'event',
+                spaceSubtype: isOnline ? 'online_session' : eventType,
                 dateTime,
                 imageUrl,
                 duration: duration.trim() || undefined,
@@ -330,25 +313,16 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
                                 <select
                                     id="loc-type"
                                     value={locationType}
-                                    onChange={(event) => setLocationType(event.target.value)}
+                                    onChange={(event) => setLocationType(event.target.value as VenueSpaceSubtype)}
                                     className="h-12 w-full rounded-md border border-slate-600 bg-slate-800 px-3 text-white focus:outline-none focus:ring-2 focus:ring-accent"
                                 >
-                                    {LOCATION_TYPE_OPTIONS.map((option) => (
+                                    {VENUE_SPACE_SUBTYPE_OPTIONS.map((option) => (
                                         <option key={option.value} value={option.value}>
                                             {lang === 'en' ? option.labelEn : option.labelAr}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                            {locationType === TYPE_OTHER && (
-                                <InputField
-                                    id="loc-type-other"
-                                    label={lang === 'en' ? 'Specify Type' : 'حدد النوع'}
-                                    value={customLocationType}
-                                    onChange={e => setCustomLocationType(e.target.value)}
-                                    required
-                                />
-                            )}
                             <InputField id="loc-address" label={lang === 'en' ? 'Address' : 'العنوان'} value={address} onChange={e => setAddress(e.target.value)} required />
                             <div className="flex items-center gap-2">
                                 <Button type="button" variant="ghost" onClick={applyCurrentLocation} disabled={isLocating}>
@@ -415,25 +389,16 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
                                 <select
                                     id="evt-type"
                                     value={eventType}
-                                    onChange={(event) => setEventType(event.target.value)}
+                                    onChange={(event) => setEventType(event.target.value as EventSpaceSubtype)}
                                     className="h-12 w-full rounded-md border border-slate-600 bg-slate-800 px-3 text-white focus:outline-none focus:ring-2 focus:ring-accent"
                                 >
-                                    {EVENT_TYPE_OPTIONS.map((option) => (
+                                    {EVENT_SPACE_SUBTYPE_OPTIONS.map((option) => (
                                         <option key={option.value} value={option.value}>
                                             {lang === 'en' ? option.labelEn : option.labelAr}
                                         </option>
                                     ))}
                                 </select>
                             </div>
-                            {eventType === TYPE_OTHER && (
-                                <InputField
-                                    id="evt-type-other"
-                                    label={lang === 'en' ? 'Specify Type' : 'حدد النوع'}
-                                    value={customEventType}
-                                    onChange={e => setCustomEventType(e.target.value)}
-                                    required
-                                />
-                            )}
                             <InputField id="evt-datetime" label={lang === 'en' ? 'Date & Time' : 'التاريخ والوقت'} type="datetime-local" value={dateTime} onChange={e => setDateTime(e.target.value)} required />
                             <InputField id="evt-duration" label={lang === 'en' ? 'Duration (e.g., 2 hours)' : 'المدة (مثال: ساعتان)'} value={duration} onChange={e => setDuration(e.target.value)} />
                             

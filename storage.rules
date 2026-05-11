@@ -79,10 +79,10 @@ service firebase.storage {
        👤 USER ASSETS (AVATAR / BANNER / POSTS)
        ========================= */
     match /users/{uid}/{category}/{allPaths=**} {
-      allow read: if category in ['avatar', 'banner', 'cover', 'post', 'misc'];
+      allow read: if category in ['avatar', 'banner', 'cover', 'post', 'venue', 'misc'];
 
       allow write: if isOwner(uid)
-        && category in ['avatar', 'banner', 'cover', 'post', 'misc']
+        && category in ['avatar', 'banner', 'cover', 'post', 'venue', 'misc']
         && isImage()
         && (
           (category == 'avatar' && request.resource.size < 5 * 1024 * 1024)

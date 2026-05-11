@@ -10,6 +10,14 @@ import { Venue, Event } from '../../types/entities.ts';
 import { useUpdateVenue } from '../../lib/hooks/useUpdateVenue.ts';
 import { useMediaUpload } from '../../lib/hooks/useMediaUpload.ts';
 import { UploadIcon } from '../icons/UploadIcon.tsx';
+import {
+    EVENT_SPACE_SUBTYPE_OPTIONS,
+    EventSpaceSubtype,
+    normalizeEventSpaceSubtype,
+    normalizeVenueSpaceSubtype,
+    VENUE_SPACE_SUBTYPE_OPTIONS,
+    VenueSpaceSubtype,
+} from '../../lib/spaces/domain.ts';
 
 interface EditVenueModalProps {
     isOpen: boolean;
@@ -31,6 +39,9 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
             setFormData({
                 ...venue,
                 name: isEvent ? venue.titleEn : venue.name,
+                type: isEvent
+                    ? normalizeEventSpaceSubtype(venue.spaceSubtype || venue.type, { isOnline: venue.isOnline })
+                    : normalizeVenueSpaceSubtype(venue.spaceSubtype || venue.type),
             });
             setImagePreview(venue.imageUrl);
         }
@@ -57,11 +68,15 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
 
     const handleSubmit = () => {
         const isEvent = 'dateTime' in venue;
+        const normalizedType = isEvent
+            ? normalizeEventSpaceSubtype(formData.type || venue.type, { isOnline: Boolean(formData.isOnline) })
+            : normalizeVenueSpaceSubtype(formData.type || venue.type);
         const updatedData = isEvent ? {
             ...venue,
             titleEn: formData.name || venue.titleEn,
             titleAr: `${formData.name || venue.titleEn} (AR)`,
-            type: formData.type || venue.type,
+            type: normalizedType,
+            spaceSubtype: normalizedType,
             imageUrl: formData.imageUrl || venue.imageUrl,
             dateTime: formData.dateTime || venue.dateTime,
             duration: formData.duration,
@@ -72,7 +87,8 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
         } : {
             ...venue,
             name: formData.name || venue.name,
-            type: formData.type || venue.type,
+            type: normalizedType,
+            spaceSubtype: normalizedType,
             address: formData.address || venue.address,
             imageUrl: formData.imageUrl || venue.imageUrl,
             openingHours: formData.openingHours,
@@ -116,7 +132,27 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
                 </div>
 
                 <InputField id="name" name="name" label={lang === 'en' ? 'Name / Title' : 'الاسم / العنوان'} value={formData.name || ''} onChange={handleChange} />
-                <InputField id="type" name="type" label={lang === 'en' ? 'Type' : 'النوع'} value={formData.type || ''} onChange={handleChange} />
+                <div>
+                    <label htmlFor="type" className="text-xs text-slate-400 mb-1 block">{lang === 'en' ? 'Type' : 'النوع'}</label>
+                    <select
+                        id="type"
+                        name="type"
+                        value={formData.type || ''}
+                        onChange={(event) => setFormData(prev => ({
+                            ...prev,
+                            type: isEvent
+                                ? (event.target.value as EventSpaceSubtype)
+                                : (event.target.value as VenueSpaceSubtype),
+                        }))}
+                        className="h-12 w-full rounded-md border border-slate-600 bg-slate-800 px-3 text-white focus:outline-none focus:ring-2 focus:ring-accent"
+                    >
+                        {(isEvent ? EVENT_SPACE_SUBTYPE_OPTIONS : VENUE_SPACE_SUBTYPE_OPTIONS).map((option) => (
+                            <option key={option.value} value={option.value}>
+                                {lang === 'en' ? option.labelEn : option.labelAr}
+                            </option>
+                        ))}
+                    </select>
+                </div>
 
                 {isEvent ? (
                     <>

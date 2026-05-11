@@ -1175,6 +1175,67 @@ const directMessageSchema = z
   })
   .strict();
 
+const spaceTypeSchema = z.enum(["venue", "event"]);
+const venueSpaceSubtypeSchema = z.enum([
+  "bookstore",
+  "library",
+  "reading_cafe",
+  "community_space",
+  "cultural_center",
+  "university_space",
+  "publisher",
+  "archive",
+  "other",
+]);
+const eventSpaceSubtypeSchema = z.enum([
+  "reading_session",
+  "author_signing",
+  "book_club",
+  "launch",
+  "workshop",
+  "lecture",
+  "discussion",
+  "festival_session",
+  "exhibition",
+  "online_session",
+  "other",
+]);
+const spaceSubtypeSchema = z.union([venueSpaceSubtypeSchema, eventSpaceSubtypeSchema]);
+const spaceIdentitySchema = z
+  .object({
+    canonicalId: z.string().min(1),
+    slug: z.string().min(1),
+    displayName: z.string().min(1),
+    normalizedName: z.string().min(1),
+    routePath: z.string().min(1),
+    schemaVersion: z.literal(1),
+  })
+  .strict();
+const spaceAuthorityProfileSchema = z
+  .object({
+    claimState: z.enum(["unclaimed", "claimed", "verified", "institutional"]),
+    stewardshipState: z.enum(["community_created", "system_seeded", "institutional"]),
+    claimedByUid: z.string().min(1).optional(),
+    verifiedByUid: z.string().min(1).optional(),
+    institutionId: z.string().min(1).optional(),
+    seededBy: z.enum(["booktown", "partner", "import"]).optional(),
+    schemaVersion: z.literal(1),
+  })
+  .strict();
+const adminSpaceRecordSchema = z
+  .object({
+    id: z.string().min(1),
+    spaceType: spaceTypeSchema,
+    displayName: z.string().min(1),
+    spaceSubtype: z.string().min(1),
+    governanceStatus: z.string().min(1),
+    claimState: z.string().min(1),
+    stewardshipState: z.string().min(1),
+    managedByUid: z.string().nullable(),
+    routePath: z.string().nullable(),
+  })
+  .strict();
+
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,
   dataSchema: Data,
@@ -1528,6 +1589,168 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useMessenger.ts", "app/messenger/[id].tsx"],
+      }
+    ),
+
+    adminSearchSpaces: defineContract(
+      z
+        .object({
+          query: z.string().min(1).max(120),
+          limit: z.number().int().positive().max(25).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          spaces: z.array(adminSpaceRecordSchema),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/SpacesAuthorityTab.tsx"],
+      }
+    ),
+
+    adminSeedSpace: defineContract(
+      z
+        .object({
+          spaceType: spaceTypeSchema,
+          spaceSubtype: spaceSubtypeSchema,
+          displayName: z.string().min(1).max(160),
+          imageUrl: z.string().url(),
+          address: z.string().min(1).max(240).optional(),
+          openingHours: z.string().max(240).optional(),
+          descriptionEn: z.string().max(2000).optional(),
+          descriptionAr: z.string().max(2000).optional(),
+          websiteUrl: z.string().url().optional(),
+          phone: z.string().max(64).optional(),
+          dateTime: z.string().max(64).optional(),
+          titleAr: z.string().max(160).optional(),
+          privacy: z.enum(["public", "private"]).optional(),
+          isOnline: z.boolean().optional(),
+          link: z.string().url().optional(),
+          venueName: z.string().max(120).optional(),
+          managedByUid: z.string().min(1).max(128).optional(),
+          institutionId: z.string().min(1).max(128).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          spaceId: z.string().min(1),
+          spaceType: spaceTypeSchema,
+          collectionName: z.enum(["venues", "events"]),
+          identity: spaceIdentitySchema,
+          authorityProfile: spaceAuthorityProfileSchema,
+          managedByUid: z.string().nullable(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/SpacesAuthorityTab.tsx"],
+      }
+    ),
+
+    adminAssignSpaceStewardship: defineContract(
+      z
+        .object({
+          spaceId: z.string().min(1).max(128),
+          spaceType: spaceTypeSchema,
+          managedByUid: z.string().min(1).max(128),
+          institutionId: z.string().min(1).max(128).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          spaceId: z.string().min(1),
+          spaceType: spaceTypeSchema,
+          managedByUid: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/services/adminService.ts", "components/admin/SpacesAuthorityTab.tsx"],
+      }
+    ),
+
+    createUserSpace: defineContract(
+      z
+        .object({
+          spaceType: spaceTypeSchema,
+          spaceSubtype: spaceSubtypeSchema.optional(),
+          type: z.string().max(80).optional(),
+          displayName: z.string().min(1).max(160).optional(),
+          name: z.string().min(1).max(160).optional(),
+          titleEn: z.string().min(1).max(160).optional(),
+          titleAr: z.string().max(160).optional(),
+          imageUrl: z.string().url(),
+          address: z.string().min(1).max(240).optional(),
+          openingHours: z.string().max(240).optional(),
+          openingSchedule: z.unknown().optional(),
+          location: z.unknown().optional(),
+          descriptionEn: z.string().max(2000).optional(),
+          descriptionAr: z.string().max(2000).optional(),
+          websiteUrl: z.string().url().optional(),
+          phone: z.string().max(64).optional(),
+          dateTime: z.string().max(64).optional(),
+          privacy: z.enum(["public", "private"]).optional(),
+          duration: z.string().max(120).optional(),
+          isOnline: z.boolean().optional(),
+          locationId: z.string().max(128).optional(),
+          venueName: z.string().max(120).optional(),
+          link: z.string().url().optional(),
+        })
+        .strict(),
+      z
+        .object({
+          spaceId: z.string().min(1),
+          spaceType: spaceTypeSchema,
+          collectionName: z.enum(["venues", "events"]),
+          identity: spaceIdentitySchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    updateUserSpace: defineContract(
+      z
+        .object({
+          spaceId: z.string().min(1).max(128),
+          spaceType: spaceTypeSchema,
+          spaceSubtype: spaceSubtypeSchema.optional(),
+          type: z.string().max(80).optional(),
+          displayName: z.string().min(1).max(160).optional(),
+          name: z.string().min(1).max(160).optional(),
+          titleEn: z.string().min(1).max(160).optional(),
+          titleAr: z.string().max(160).optional(),
+          imageUrl: z.string().url(),
+          address: z.string().min(1).max(240).optional(),
+          openingHours: z.string().max(240).optional(),
+          openingSchedule: z.unknown().optional(),
+          location: z.unknown().optional(),
+          descriptionEn: z.string().max(2000).optional(),
+          descriptionAr: z.string().max(2000).optional(),
+          websiteUrl: z.string().url().optional(),
+          phone: z.string().max(64).optional(),
+          dateTime: z.string().max(64).optional(),
+          privacy: z.enum(["public", "private"]).optional(),
+          duration: z.string().max(120).optional(),
+          isOnline: z.boolean().optional(),
+          locationId: z.string().max(128).optional(),
+          venueName: z.string().max(120).optional(),
+          link: z.string().url().optional(),
+        })
+        .strict(),
+      z
+        .object({
+          spaceId: z.string().min(1),
+          spaceType: spaceTypeSchema,
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
       }
     ),
 

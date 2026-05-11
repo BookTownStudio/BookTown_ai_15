@@ -4,7 +4,6 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import DiscoveryEntryCard from '../../components/content/DiscoveryEntryCard.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import CollapsibleSection from '../../components/ui/CollapsibleSection.tsx';
@@ -423,8 +422,6 @@ const HomeScreen: React.FC = () => {
                     </div>
                   )}
                 </CollapsibleSection>
-
-                <DiscoveryEntryCard />
 
                 <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
                   <CollapsibleSection

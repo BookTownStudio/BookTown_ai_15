@@ -18,6 +18,7 @@ import { StarIcon } from '../../components/icons/StarIcon.tsx';
 import { BasketIcon } from '../../components/icons/BasketIcon.tsx';
 import { SettingsIcon } from '../../components/icons/SettingsIcon.tsx';
 import { FlagIcon } from '../../components/icons/FlagIcon.tsx';
+import { VenuesIcon } from '../../components/icons/VenuesIcon.tsx';
 
 // UI Components
 import InputField from '../../components/ui/InputField.tsx';
@@ -26,6 +27,7 @@ import GlassCard from '../../components/ui/GlassCard.tsx';
 import { cn } from '../../lib/utils.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import CatalogAuthorityTab from '../../components/admin/CatalogAuthorityTab.tsx';
+import SpacesAuthorityTab from '../../components/admin/SpacesAuthorityTab.tsx';
 
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
@@ -55,6 +57,7 @@ type ControlSectionId =
   | 'feedback'
   | 'ai_governance'
   | 'catalog'
+  | 'spaces'
   | 'curation'
   | 'marketplace'
   | 'settings'
@@ -89,6 +92,7 @@ const CONTROL_SECTIONS: ControlSection[] = [
   { id: 'feedback', en: 'Feedback', ar: 'الملاحظات', icon: FeedbackIcon, minimumRole: 'moderator', domain: 'intelligence' },
   { id: 'ai_governance', en: 'AI Governance', ar: 'حوكمة الذكاء الاصطناعي', icon: BrainIcon, minimumRole: 'superadmin', domain: 'governance' },
   { id: 'catalog', en: 'Catalog', ar: 'الكتالوج', icon: BookIcon, minimumRole: 'superadmin', domain: 'governance' },
+  { id: 'spaces', en: 'Spaces', ar: 'المساحات', icon: VenuesIcon, minimumRole: 'moderator', domain: 'governance' },
   { id: 'curation', en: 'Curation', ar: 'التنسيق', icon: StarIcon, minimumRole: 'superadmin', domain: 'governance' },
   { id: 'marketplace', en: 'Marketplace', ar: 'المتجر', icon: BasketIcon, minimumRole: 'superadmin', domain: 'governance' },
   { id: 'system_jobs', en: 'System Jobs', ar: 'مهام النظام', icon: SettingsIcon, minimumRole: 'superadmin', domain: 'governance' },
@@ -1265,6 +1269,9 @@ const ControlCenterScreen: React.FC = () => {
               )}
               {activeSection === 'catalog' && (
                 <CatalogAuthorityTab />
+              )}
+              {activeSection === 'spaces' && (
+                <SpacesAuthorityTab />
               )}
               {activeSection === 'curation' && (
                 <PlaceholderTab

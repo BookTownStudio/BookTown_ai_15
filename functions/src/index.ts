@@ -23,6 +23,7 @@ export * from "./domains/write";
 export * from "./domains/quotes";
 export * from "./domains/messaging";
 export * from "./domains/attachments";
+export * from "./domains/spaces";
 export * from "./domains/admin";
 export * from "./domains/ai";
 export * from "./domains/ssr";

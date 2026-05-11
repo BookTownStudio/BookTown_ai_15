@@ -2,6 +2,21 @@
 import React from 'react';
 
 import type { CanonicalTraditionRegistryKey } from '../functions/src/library/ontology/canonicalTraditionRegistry';
+import type {
+    SpaceEventState,
+    SpaceAuthorityProfile,
+    SpaceCommunication,
+    SpaceEventContinuity,
+    SpaceGovernanceState,
+    SpaceIdentity,
+    SpaceProvenance,
+    SpacePublicationLifecycle,
+    SpaceRelationshipRefs,
+    SpaceRelationshipVisibilityProfile,
+    SpaceStewardship,
+    SpaceSubtype,
+    SpaceType,
+} from '../lib/spaces/domain.ts';
 /**
  * Defines the standardized user roles across the application.
  */
@@ -710,6 +725,17 @@ export interface BookFlowItem {
 export interface Venue {
     id: string;
     ownerId: string;
+    spaceType?: SpaceType;
+    spaceSubtype?: SpaceSubtype;
+    identity?: SpaceIdentity;
+    governanceStatus?: SpaceGovernanceState;
+    authorityProfile?: SpaceAuthorityProfile;
+    provenance?: SpaceProvenance;
+    relationshipRefs?: SpaceRelationshipRefs;
+    relationshipVisibility?: SpaceRelationshipVisibilityProfile;
+    stewardship?: SpaceStewardship;
+    publication?: SpacePublicationLifecycle;
+    communication?: SpaceCommunication;
     name: string;
     type: string; 
     address: string;
@@ -741,6 +767,25 @@ export interface Venue {
 export interface Event {
     id: string;
     ownerId: string;
+    spaceType?: SpaceType;
+    spaceSubtype?: SpaceSubtype;
+    identity?: SpaceIdentity;
+    eventState?: SpaceEventState;
+    governanceStatus?: SpaceGovernanceState;
+    authorityProfile?: SpaceAuthorityProfile;
+    provenance?: SpaceProvenance;
+    relationshipRefs?: SpaceRelationshipRefs;
+    relationshipVisibility?: SpaceRelationshipVisibilityProfile;
+    stewardship?: SpaceStewardship;
+    publication?: SpacePublicationLifecycle;
+    communication?: SpaceCommunication;
+    continuity?: SpaceEventContinuity;
+    recurrence?: {
+      kind: 'none' | 'series_occurrence';
+      schemaVersion: 1;
+      seriesId?: string;
+      occurrenceId?: string;
+    };
     titleEn: string;
     titleAr: string;
     type: string; 
@@ -831,6 +876,29 @@ export interface Conversation {
     lastMessage: string;
     timestamp: string; // ISO string
     unreadCount: number;
+}
+
+export interface SpaceInbox {
+    id: string;
+    spaceId: string;
+    spaceType: SpaceType;
+    ownerUid: string;
+    adminUids: string[];
+    status: 'disabled' | 'available';
+    participantModel: 'space_admins_only';
+    lastMessage?: string;
+    timestamp?: string;
+    unreadCount?: number;
+}
+
+export interface SpaceMessage {
+    id: string;
+    inboxId: string;
+    spaceId: string;
+    senderId: string;
+    text: string;
+    timestamp: string;
+    readByAdminUids?: string[];
 }
 
 export interface Notification {

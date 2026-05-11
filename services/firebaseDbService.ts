@@ -56,6 +56,20 @@ import {
   Conversation,
   DirectMessage,
 } from "../types/entities.ts";
+import {
+  createPublishedSpaceLifecycle,
+  normalizeEventSpaceSubtype,
+  normalizeEventContinuity,
+  normalizeSpaceAuthorityProfile,
+  normalizeSpaceCommunication,
+  normalizeSpaceEventState,
+  normalizeSpaceGovernanceState,
+  normalizeSpaceIdentity,
+  normalizeSpaceRelationshipVisibility,
+  normalizeSpaceStewardship,
+  normalizeVenueSpaceSubtype,
+  SPACE_SCHEMA_VERSION,
+} from "../lib/spaces/domain.ts";
 import type { LibrarianRecommendationContext } from "../types/librarian.ts";
 
 import { normalizeNotification, normalizePost } from "../lib/data-validation.ts";
@@ -2156,6 +2170,17 @@ class FirebaseVenueService {
     return {
       id: data.id,
       ownerId: data.ownerId,
+      spaceType: "venue",
+      spaceSubtype: normalizeVenueSpaceSubtype(data.spaceSubtype || data.type),
+      identity: normalizeSpaceIdentity(data.identity, "venue", data.id, data.name),
+      governanceStatus: normalizeSpaceGovernanceState(data.governanceStatus),
+      authorityProfile: normalizeSpaceAuthorityProfile(data.authorityProfile),
+      provenance: data.provenance || undefined,
+      relationshipRefs: data.relationshipRefs || undefined,
+      relationshipVisibility: normalizeSpaceRelationshipVisibility(data.relationshipVisibility),
+      stewardship: normalizeSpaceStewardship(data.stewardship, data.provenance?.createdByUid || data.ownerId),
+      publication: data.publication || createPublishedSpaceLifecycle(),
+      communication: normalizeSpaceCommunication(data.communication, data.id, data.ownerId),
       name: data.name,
       type: data.type,
       address: data.address,
@@ -2182,20 +2207,42 @@ class FirebaseVenueService {
   }
 
   private mapEvent(data: any): Event {
+    const isOnline = Boolean(data.isOnline);
+    const dateTime = data.dateTime;
     return {
       id: data.id,
       ownerId: data.ownerId,
+      spaceType: "event",
+      spaceSubtype: normalizeEventSpaceSubtype(data.spaceSubtype || data.type, { isOnline }),
+      identity: normalizeSpaceIdentity(data.identity, "event", data.id, data.titleEn),
+      eventState: normalizeSpaceEventState(data.eventState, dateTime),
+      governanceStatus: normalizeSpaceGovernanceState(data.governanceStatus),
+      authorityProfile: normalizeSpaceAuthorityProfile(data.authorityProfile),
+      provenance: data.provenance || undefined,
+      relationshipRefs: data.relationshipRefs || undefined,
+      relationshipVisibility: normalizeSpaceRelationshipVisibility(data.relationshipVisibility),
+      stewardship: normalizeSpaceStewardship(data.stewardship, data.provenance?.createdByUid || data.ownerId),
+      publication: data.publication || createPublishedSpaceLifecycle(),
+      communication: normalizeSpaceCommunication(data.communication, data.id, data.ownerId),
       titleEn: data.titleEn,
       titleAr: data.titleAr,
       type: data.type,
-      dateTime: data.dateTime,
+      dateTime,
       imageUrl: data.imageUrl,
       privacy: data.privacy === "private" ? "private" : "public",
       duration: data.duration || undefined,
-      isOnline: Boolean(data.isOnline),
+      isOnline,
       locationId: normalizeOptionalString(data.locationId, 128),
       venueName: data.venueName || undefined,
       link: data.link || undefined,
+      recurrence:
+        data.recurrence && typeof data.recurrence === "object"
+          ? data.recurrence
+          : { kind: "none", schemaVersion: SPACE_SCHEMA_VERSION },
+      continuity: normalizeEventContinuity(data.continuity, {
+        privacy: data.privacy === "private" ? "private" : "public",
+        recurrence: data.recurrence,
+      }),
     };
   }
 
@@ -2219,12 +2266,18 @@ class FirebaseVenueService {
     const eventsQuery = normalizedQuery.length >= 2
       ? query(
           eventsRef,
+          where("privacy", "==", "public"),
           where("titleLower", ">=", normalizedQuery),
           where("titleLower", "<=", `${normalizedQuery}\uf8ff`),
           orderBy("titleLower"),
           limit(MAX_VENUE_SEARCH_RESULTS)
         )
-      : query(eventsRef, orderBy("dateTime", "asc"), limit(MAX_VENUE_SEARCH_RESULTS));
+      : query(
+          eventsRef,
+          where("privacy", "==", "public"),
+          orderBy("dateTime", "asc"),
+          limit(MAX_VENUE_SEARCH_RESULTS)
+        );
 
     const [venuesSnap, eventsSnap] = await Promise.all([
       getDocs(venuesQuery),
@@ -2296,8 +2349,9 @@ class FirebaseVenueService {
     const userData = userSnap.exists() ? userSnap.data() : {};
 
     const reviewRef = doc(collection(db, entity.collectionName, normalizedVenueId, "reviews"));
-    await setDoc(reviewRef, {
+    await setDoc(reviewRef, stripUndefined({
       venueId: normalizedVenueId,
+      eventId: entity.collectionName === "events" ? normalizedVenueId : undefined,
       userId: normalizedUid,
       rating: Math.round(normalizedRating),
       text: normalizedText,
@@ -2309,75 +2363,64 @@ class FirebaseVenueService {
       commentsCount: 0,
       timestamp: serverTimestamp(),
       updatedAt: serverTimestamp(),
-    });
+    }));
   }
 
   async createVenue(
     uid: string,
     data: Omit<Venue, "id" | "ownerId"> | Omit<Event, "id" | "ownerId">
   ): Promise<void> {
-    const db = this.requireDb();
-    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    ensureNonEmptyString(uid, "uid", 128);
 
     if ("dateTime" in data) {
       const titleEn = ensureNonEmptyString(data.titleEn, "titleEn");
       const titleAr = normalizeOptionalString(data.titleAr) || titleEn;
-      const type = ensureNonEmptyString(data.type, "type");
+      const spaceSubtype = normalizeEventSpaceSubtype(data.spaceSubtype || data.type, {
+        isOnline: Boolean(data.isOnline),
+      });
       const dateTime = normalizeIsoDate(data.dateTime, "dateTime");
       const imageUrl = ensureHttpsUrl(data.imageUrl, "imageUrl");
       const isOnline = Boolean(data.isOnline);
       const locationId = isOnline ? undefined : normalizeOptionalString(data.locationId, 128);
-      let venueName = isOnline ? undefined : normalizeOptionalString(data.venueName, 120);
-      if (!isOnline && locationId) {
-        const locationSnap = await getDoc(doc(db, "venues", locationId));
-        if (!locationSnap.exists()) {
-          throw new Error("INVALID_ARGUMENT: locationId must reference an existing location.");
-        }
-        if (!venueName) {
-          venueName = ensureNonEmptyString(locationSnap.data()?.name, "venueName");
-        }
-      }
-      if (!isOnline && !venueName) {
+      const venueName = isOnline ? undefined : normalizeOptionalString(data.venueName, 120);
+      if (!isOnline && !venueName && !locationId) {
         throw new Error("INVALID_ARGUMENT: venueName or locationId is required for offline events.");
       }
       const link = isOnline ? ensureHttpsUrl(data.link, "link") : undefined;
+      const privacy = data.privacy === "private" ? "private" : "public";
 
-      const eventRef = doc(collection(db, "events"));
-      await setDoc(eventRef, stripUndefined({
-        ownerId: normalizedUid,
+      await callEndpoint<Record<string, unknown>, { spaceId: string }>("createUserSpace", stripUndefined({
+        spaceType: "event",
+        spaceSubtype,
+        displayName: titleEn,
         titleEn,
         titleAr,
-        titleLower: titleEn.toLowerCase(),
-        type,
-        typeLower: type.toLowerCase(),
+        type: spaceSubtype,
         dateTime,
         imageUrl,
-        privacy: data.privacy === "private" ? "private" : "public",
+        privacy,
         duration: normalizeOptionalString(data.duration),
         isOnline,
         locationId,
         venueName,
         link,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
       }));
       return;
     }
 
     const name = ensureNonEmptyString(data.name, "name");
-    const type = ensureNonEmptyString(data.type, "type");
+    const spaceSubtype = normalizeVenueSpaceSubtype(data.spaceSubtype || data.type);
     const address = ensureNonEmptyString(data.address, "address");
     const imageUrl = ensureHttpsUrl(data.imageUrl, "imageUrl");
     const openingSchedule = sanitizeOpeningSchedule(data.openingSchedule);
     const location = sanitizeVenueLocation(data.location);
 
-    const venueRef = doc(collection(db, "venues"));
-    await setDoc(venueRef, stripUndefined({
-      ownerId: normalizedUid,
+    await callEndpoint<Record<string, unknown>, { spaceId: string }>("createUserSpace", stripUndefined({
+      spaceType: "venue",
+      spaceSubtype,
+      displayName: name,
       name,
-      nameLower: name.toLowerCase(),
-      type,
-      typeLower: type.toLowerCase(),
+      type: spaceSubtype,
       address,
       imageUrl,
       openingHours: normalizeOptionalString(data.openingHours),
@@ -2385,80 +2428,67 @@ class FirebaseVenueService {
       location,
       descriptionEn: normalizeOptionalString(data.descriptionEn, 2000) || "",
       descriptionAr: normalizeOptionalString(data.descriptionAr, 2000) || "",
-      rating: 0,
-      ratingsCount: 0,
       websiteUrl: normalizeOptionalString(data.websiteUrl, 1024),
       phone: normalizeOptionalString(data.phone, 64),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
     }));
   }
 
   async updateVenue(uid: string, venueId: string, data: Venue | Event): Promise<void> {
-    const db = this.requireDb();
-    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    ensureNonEmptyString(uid, "uid", 128);
     const normalizedVenueId = ensureNonEmptyString(venueId, "venueId", 128);
-    const entity = await this.resolveEntity(normalizedVenueId);
 
-    if (entity.data.ownerId !== normalizedUid) {
-      throw new Error("PERMISSION_DENIED: Only the owner can update this item.");
-    }
-
-    if (entity.collectionName === "events") {
+    if ("dateTime" in data) {
       const eventData = data as Event;
       const titleEn = ensureNonEmptyString(eventData.titleEn, "titleEn");
       const titleAr = normalizeOptionalString(eventData.titleAr) || titleEn;
-      const type = ensureNonEmptyString(eventData.type, "type");
+      const spaceSubtype = normalizeEventSpaceSubtype(eventData.spaceSubtype || eventData.type, {
+        isOnline: Boolean(eventData.isOnline),
+      });
       const dateTime = normalizeIsoDate(eventData.dateTime, "dateTime");
       const imageUrl = ensureHttpsUrl(eventData.imageUrl, "imageUrl");
       const isOnline = Boolean(eventData.isOnline);
       const locationId = isOnline ? undefined : normalizeOptionalString(eventData.locationId, 128);
-      let venueName = isOnline ? undefined : normalizeOptionalString(eventData.venueName, 120);
-      if (!isOnline && locationId) {
-        const locationSnap = await getDoc(doc(db, "venues", locationId));
-        if (!locationSnap.exists()) {
-          throw new Error("INVALID_ARGUMENT: locationId must reference an existing location.");
-        }
-        if (!venueName) {
-          venueName = ensureNonEmptyString(locationSnap.data()?.name, "venueName");
-        }
-      }
-      if (!isOnline && !venueName) {
+      const venueName = isOnline ? undefined : normalizeOptionalString(eventData.venueName, 120);
+      if (!isOnline && !venueName && !locationId) {
         throw new Error("INVALID_ARGUMENT: venueName or locationId is required for offline events.");
       }
+      const privacy = eventData.privacy === "private" ? "private" : "public";
 
-      await updateDoc(doc(db, "events", normalizedVenueId), stripUndefined({
+      await callEndpoint<Record<string, unknown>, { spaceId: string }>("updateUserSpace", stripUndefined({
+        spaceId: normalizedVenueId,
+        spaceType: "event",
+        spaceSubtype,
+        displayName: titleEn,
         titleEn,
         titleAr,
-        titleLower: titleEn.toLowerCase(),
-        type,
-        typeLower: type.toLowerCase(),
+        type: spaceSubtype,
         dateTime,
         imageUrl,
-        privacy: eventData.privacy === "private" ? "private" : "public",
+        privacy,
         duration: normalizeOptionalString(eventData.duration),
         isOnline,
         locationId,
         venueName,
         link: isOnline ? ensureHttpsUrl(eventData.link, "link") : undefined,
-        updatedAt: serverTimestamp(),
       }));
       return;
     }
 
     const venueData = data as Venue;
     const name = ensureNonEmptyString(venueData.name, "name");
-    const type = ensureNonEmptyString(venueData.type, "type");
+    const spaceSubtype = normalizeVenueSpaceSubtype(venueData.spaceSubtype || venueData.type);
     const address = ensureNonEmptyString(venueData.address, "address");
     const imageUrl = ensureHttpsUrl(venueData.imageUrl, "imageUrl");
     const openingSchedule = sanitizeOpeningSchedule(venueData.openingSchedule);
     const location = sanitizeVenueLocation(venueData.location);
 
-    await updateDoc(doc(db, "venues", normalizedVenueId), stripUndefined({
+    await callEndpoint<Record<string, unknown>, { spaceId: string }>("updateUserSpace", stripUndefined({
+      spaceId: normalizedVenueId,
+      spaceType: "venue",
+      spaceSubtype,
+      displayName: name,
       name,
-      nameLower: name.toLowerCase(),
-      type,
-      typeLower: type.toLowerCase(),
+      type: spaceSubtype,
       address,
       imageUrl,
       openingHours: normalizeOptionalString(venueData.openingHours),
@@ -2468,7 +2498,6 @@ class FirebaseVenueService {
       descriptionAr: normalizeOptionalString(venueData.descriptionAr, 2000) || "",
       websiteUrl: normalizeOptionalString(venueData.websiteUrl, 1024),
       phone: normalizeOptionalString(venueData.phone, 64),
-      updatedAt: serverTimestamp(),
     }));
   }
 
@@ -2491,6 +2520,20 @@ class FirebaseVenueService {
       },
       { merge: true }
     );
+
+    if (bookmarkType === "event") {
+      await setDoc(
+        doc(db, "events", normalizedVenueId, "rsvps", normalizedUid),
+        {
+          userId: normalizedUid,
+          eventId: normalizedVenueId,
+          status: "attending",
+          updatedAt: serverTimestamp(),
+          createdAt: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
   }
 }
 

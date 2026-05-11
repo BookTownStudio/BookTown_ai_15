@@ -14,6 +14,11 @@ import {
   adminDeleteAllBooks as adminDeleteAllBooksRaw,
   adminSeedCanonicalBatch as adminSeedCanonicalBatchRaw,
 } from "../admin/literaryAuthority";
+import {
+  adminAssignSpaceStewardship as adminAssignSpaceStewardshipRaw,
+  adminSearchSpaces as adminSearchSpacesRaw,
+  adminSeedSpace as adminSeedSpaceRaw,
+} from "../admin/spacesAuthority";
 
 export const backfillDerivedStats = wrapCallableV2("backfillDerivedStats", backfillDerivedStatsRaw);
 export const backfillReadingProgressCanonical = wrapCallableV2("backfillReadingProgressCanonical", backfillReadingProgressCanonicalRaw);
@@ -28,6 +33,9 @@ export const adminDeleteCanonicalBook = wrapCallableV2("adminDeleteCanonicalBook
 export const adminDeleteCanonicalSeedList = wrapCallableV2("adminDeleteCanonicalSeedList", adminDeleteCanonicalSeedListRaw);
 export const adminDeleteAllBooks = wrapCallableV2("adminDeleteAllBooks", adminDeleteAllBooksRaw);
 export const adminSeedCanonicalBatch = wrapCallableV2("adminSeedCanonicalBatch", adminSeedCanonicalBatchRaw);
+export const adminSearchSpaces = wrapCallableV2("adminSearchSpaces", adminSearchSpacesRaw);
+export const adminSeedSpace = wrapCallableV2("adminSeedSpace", adminSeedSpaceRaw);
+export const adminAssignSpaceStewardship = wrapCallableV2("adminAssignSpaceStewardship", adminAssignSpaceStewardshipRaw);
 
 export { scheduledNotificationCleanup } from "../admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "../admin/cleanupAttachments";

@@ -847,6 +847,20 @@
           "order": "ASCENDING"
         },
         {
+          "fieldPath": "titleLower",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "events",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "privacy",
+          "order": "ASCENDING"
+        },
+        {
           "fieldPath": "dateTime",
           "order": "ASCENDING"
         }
