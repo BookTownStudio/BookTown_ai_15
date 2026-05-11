@@ -17,20 +17,39 @@ import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import VenueReviewCard from '../components/content/VenueReviewCard.tsx';
 import { GlobeIcon } from '../components/icons/GlobeIcon.tsx';
 import { getSpaceAuthoritySignal, getSpaceSubtypeLabel } from '../lib/spaces/domain.ts';
+import { useSpaceEvents } from '../lib/hooks/useSpaceEvents.ts';
+import EventCard from '../components/content/EventCard.tsx';
+import { BookIcon } from '../components/icons/BookIcon.tsx';
+import { AuthorsIcon } from '../components/icons/AuthorsIcon.tsx';
+import { ChatIcon } from '../components/icons/ChatIcon.tsx';
+import { useSpaceRelationshipSummaries } from '../lib/hooks/useSpaceRelationshipSummaries.ts';
+import SpaceStewardshipPanel from '../components/spaces/SpaceStewardshipPanel.tsx';
 
 const VenueDetailsScreen: React.FC = () => {
     const { currentView, navigate, navigateToSocialAndHighlight } = useNavigation();
     const { lang } = useI18n();
-    const venueId = currentView.type === 'immersive' ? currentView.params?.venueId : undefined;
+    const params = currentView.type === 'immersive' ? currentView.params : undefined;
+    const venueId = typeof params?.venueId === 'string'
+        ? params.venueId
+        : typeof params?.spaceSlug === 'string'
+            ? params.spaceSlug
+            : undefined;
 
     const { data: venue, isLoading, isError } = useVenueDetails(venueId);
-    const { data: reviews, isLoading: isLoadingReviews } = useVenueReviews(venueId);
+    const resolvedVenueId = venue && !('dateTime' in venue) ? venue.id : undefined;
+    const reviewTargetId = venue?.id;
+    const { data: reviews, isLoading: isLoadingReviews } = useVenueReviews(reviewTargetId);
+    const { data: relatedEvents = [], isLoading: isLoadingRelatedEvents } = useSpaceEvents(resolvedVenueId);
+    const bookIds = venue?.relationshipRefs?.bookIds || [];
+    const authorIds = venue?.relationshipRefs?.authorIds || [];
+    const { data: relationshipSummaries } = useSpaceRelationshipSummaries(bookIds, authorIds);
     const { mutate: submitReview, isPending: isSubmittingReview } = useSubmitVenueReview();
     const { mutate: saveVenue, isPending: isSaving } = useSaveVenue();
 
     const [isSaved, setIsSaved] = useState(false);
     const [rating, setRating] = useState(0);
     const [reviewText, setReviewText] = useState('');
+    const [eventContinuityFilter, setEventContinuityFilter] = useState<'upcoming' | 'past'>('upcoming');
 
     const handleBack = () => {
         const fromView = currentView.params?.from;
@@ -46,16 +65,16 @@ const VenueDetailsScreen: React.FC = () => {
     };
     
     const handleSave = () => {
-        if (venueId && !isSaved) {
-            saveVenue(venueId, {
+        if (reviewTargetId && !isSaved) {
+            saveVenue(reviewTargetId, {
                 onSuccess: () => setIsSaved(true)
             });
         }
     };
 
     const handleReviewSubmit = () => {
-        if (rating === 0 || !venueId) return;
-        submitReview({ venueId, rating, text: reviewText }, {
+        if (rating === 0 || !reviewTargetId) return;
+        submitReview({ venueId: reviewTargetId, rating, text: reviewText }, {
             onSuccess: () => {
                 setRating(0);
                 setReviewText('');
@@ -84,6 +103,22 @@ const VenueDetailsScreen: React.FC = () => {
     const isHistoricalEvent = isEvent && (venue.eventState === 'completed' || venue.continuity?.historicalRecord === true);
     const saveButtonText = isEvent ? (lang === 'en' ? 'RSVP' : 'تسجيل الحضور') : (lang === 'en' ? 'Save Venue' : 'حفظ المكان');
     const savedButtonText = isEvent ? (lang === 'en' ? 'Attending' : 'ستحضر') : (lang === 'en' ? 'Saved' : 'محفوظ');
+    const upcomingEvents = relatedEvents.filter(event => event.eventState !== 'completed' && new Date(event.dateTime).getTime() >= Date.now());
+    const pastEvents = relatedEvents.filter(event => event.eventState === 'completed' || new Date(event.dateTime).getTime() < Date.now());
+    const activeContinuityFilter = upcomingEvents.length === 0 && pastEvents.length > 0 ? 'past' : eventContinuityFilter;
+    const visibleContinuityEvents = activeContinuityFilter === 'upcoming' ? upcomingEvents : pastEvents;
+    const provenanceLabel =
+        venue.provenance?.source === 'system_seeded'
+            ? (lang === 'en' ? 'BookTown seeded' : 'منسق من BookTown')
+            : venue.authorityProfile?.claimState === 'institutional' || venue.authorityProfile?.claimState === 'verified'
+                ? (lang === 'en' ? 'Institutional Space' : 'مساحة مؤسسية')
+                : (lang === 'en' ? 'Community submitted' : 'أضافه المجتمع');
+    const inboxStatus = venue.communication?.inboxStatus || 'disabled';
+    const geographyLabel = !isEvent
+        ? [venue.location?.city, venue.location?.country].filter(Boolean).join(', ')
+        : venue.isOnline
+            ? (lang === 'en' ? 'Online literary space' : 'مساحة أدبية رقمية')
+            : venue.venueName || '';
     
     const eventDate = isEvent ? new Date(venue.dateTime).toLocaleDateString(lang === 'ar' ? 'ar-EG' : 'en-US', { weekday: 'long', month: 'long', day: 'numeric' }) : '';
     const eventTime = isEvent ? new Date(venue.dateTime).toLocaleTimeString(lang === 'ar' ? 'ar-EG' : 'en-US', { hour: 'numeric', minute: '2-digit' }) : '';
@@ -107,6 +142,9 @@ const VenueDetailsScreen: React.FC = () => {
                     <BilingualText role="H1" className="!text-4xl text-white drop-shadow-lg">{name}</BilingualText>
                     <div className="mt-1 flex flex-wrap items-center gap-2">
                         <BilingualText role="Body" className="!text-lg !text-accent">{typeLabel}</BilingualText>
+                        <span className="rounded-sm border border-white/15 px-2 py-1 text-xs uppercase tracking-wide text-white/60">
+                            {provenanceLabel}
+                        </span>
                         {authoritySignal && (
                             <span className="rounded-sm border border-accent/40 px-2 py-1 text-xs uppercase tracking-wide text-accent">
                                 {authoritySignal}
@@ -117,7 +155,79 @@ const VenueDetailsScreen: React.FC = () => {
                                 {lang === 'en' ? 'Historical record' : 'سجل تاريخي'}
                             </span>
                         )}
+                        {geographyLabel && (
+                            <span className="rounded-sm border border-white/15 px-2 py-1 text-xs text-white/65">
+                                {geographyLabel}
+                            </span>
+                        )}
                     </div>
+
+                    {(bookIds.length > 0 || authorIds.length > 0) && (
+                        <section className="mt-6">
+                            <div className="mb-3">
+                                <BilingualText role="Body" className="font-semibold text-white/85">
+                                    {lang === 'en' ? 'Literary connections' : 'روابط أدبية'}
+                                </BilingualText>
+                            </div>
+                            <div className="grid gap-3 sm:grid-cols-2">
+                            {bookIds.length > 0 && (
+                                <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+                                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white/80">
+                                        <BookIcon className="h-4 w-4 text-accent" />
+                                        <span>{lang === 'en' ? 'Books in this orbit' : 'كتب في هذا المدار'}</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {(relationshipSummaries?.books || bookIds.map(id => ({ id, labelEn: id, labelAr: id, imageUrl: undefined, subtitleEn: undefined, subtitleAr: undefined }))).map((book) => (
+                                            <button
+                                                key={book.id}
+                                                onClick={() => navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: book.id, from: currentView } })}
+                                                className="flex w-full items-center gap-3 rounded-sm border border-white/10 px-2 py-2 text-left text-white/75 hover:border-accent hover:text-accent"
+                                            >
+                                                <span className="h-11 w-8 flex-shrink-0 overflow-hidden rounded-sm bg-slate-800">
+                                                    {book.imageUrl && <img src={book.imageUrl} alt="" className="h-full w-full object-cover" />}
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold">{lang === 'en' ? book.labelEn : book.labelAr}</span>
+                                                    {(book.subtitleEn || book.subtitleAr) && (
+                                                        <span className="block truncate text-xs text-white/45">{lang === 'en' ? book.subtitleEn : book.subtitleAr || book.subtitleEn}</span>
+                                                    )}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            {authorIds.length > 0 && (
+                                <div className="rounded-md border border-white/10 bg-white/[0.03] p-3">
+                                    <div className="mb-2 flex items-center gap-2 text-sm font-semibold text-white/80">
+                                        <AuthorsIcon className="h-4 w-4 text-accent" />
+                                        <span>{lang === 'en' ? 'Literary figures' : 'أسماء أدبية'}</span>
+                                    </div>
+                                    <div className="space-y-2">
+                                        {(relationshipSummaries?.authors || authorIds.map(id => ({ id, labelEn: id, labelAr: id, imageUrl: undefined, subtitleEn: undefined, subtitleAr: undefined }))).map((author) => (
+                                            <button
+                                                key={author.id}
+                                                onClick={() => navigate({ type: 'immersive', id: 'authorDetails', params: { authorId: author.id, from: currentView } })}
+                                                className="flex w-full items-center gap-3 rounded-sm border border-white/10 px-2 py-2 text-left text-white/75 hover:border-accent hover:text-accent"
+                                            >
+                                                <span className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-full bg-slate-800">
+                                                    {author.imageUrl && <img src={author.imageUrl} alt="" className="h-full w-full object-cover" />}
+                                                </span>
+                                                <span className="min-w-0">
+                                                    <span className="block truncate text-sm font-semibold">{lang === 'en' ? author.labelEn : author.labelAr}</span>
+                                                    {(author.subtitleEn || author.subtitleAr) && (
+                                                        <span className="block truncate text-xs text-white/45">{lang === 'en' ? author.subtitleEn : author.subtitleAr || author.subtitleEn}</span>
+                                                    )}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            </div>
+                        </section>
+                    )}
+
                     <div className="mt-6 space-y-3 text-white/80">
                         {isEvent ? (
                             <>
@@ -140,12 +250,85 @@ const VenueDetailsScreen: React.FC = () => {
                     <Button onClick={handleSave} disabled={isSaving || isSaved} className={`w-full mt-6 ${isSaved ? '!bg-green-500' : ''}`}>
                         {isSaving ? <LoadingSpinner/> : (isSaved ? savedButtonText : saveButtonText)}
                     </Button>
+
+                    <Button
+                        variant="ghost"
+                        disabled={inboxStatus !== 'available'}
+                        className="w-full mt-3 border border-white/10"
+                    >
+                        <ChatIcon className="mr-2 h-4 w-4" />
+                        {inboxStatus === 'available'
+                            ? (lang === 'en' ? 'Message Space' : 'راسل المساحة')
+                            : (lang === 'en' ? 'Messages closed' : 'المراسلة مغلقة')}
+                    </Button>
                     
                     {(!isEvent || (isEvent && !venue.isOnline)) && (
-                        <div className="mt-6 h-40 w-full rounded-lg bg-slate-800 flex items-center justify-center text-slate-500">
-                           <MapPinIcon className="h-8 w-8 mr-2"/> Map Placeholder
+                        <div className="mt-6 rounded-md border border-white/10 bg-slate-800/50 p-4 text-white/70">
+                            <div className="mb-2 flex items-center gap-2 font-semibold text-white/85">
+                                <MapPinIcon className="h-5 w-5 text-accent" />
+                                <span>{lang === 'en' ? 'Literary geography' : 'جغرافيا أدبية'}</span>
+                            </div>
+                            <BilingualText role="Body" className="text-white/65">
+                                {geographyLabel || (isEvent ? venue.venueName : venue.address)}
+                            </BilingualText>
                         </div>
                     )}
+
+                    {!isEvent && (
+                        <section className="mt-12">
+                            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                <BilingualText role="H1" className="!text-2xl">
+                                    {lang === 'en' ? 'Events at this Space' : 'فعاليات هذه المساحة'}
+                                </BilingualText>
+                                <div className="flex rounded-md border border-white/10 p-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setEventContinuityFilter('upcoming')}
+                                        className={`rounded-sm px-3 py-1 text-xs font-semibold ${activeContinuityFilter === 'upcoming' ? 'bg-accent text-slate-950' : 'text-white/60 hover:text-white'}`}
+                                    >
+                                        {lang === 'en' ? `Upcoming ${upcomingEvents.length}` : `القادمة ${upcomingEvents.length}`}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setEventContinuityFilter('past')}
+                                        className={`rounded-sm px-3 py-1 text-xs font-semibold ${activeContinuityFilter === 'past' ? 'bg-accent text-slate-950' : 'text-white/60 hover:text-white'}`}
+                                    >
+                                        {lang === 'en' ? `Past ${pastEvents.length}` : `السابقة ${pastEvents.length}`}
+                                    </button>
+                                </div>
+                            </div>
+                            {isLoadingRelatedEvents && <div className="flex justify-center py-4"><LoadingSpinner /></div>}
+                            {!isLoadingRelatedEvents && visibleContinuityEvents.length > 0 && (
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    {visibleContinuityEvents.slice(0, 4).map(event => (
+                                        <EventCard
+                                            key={event.id}
+                                            event={event}
+                                            onClick={() => navigate({
+                                                type: 'immersive',
+                                                id: 'venueDetails',
+                                                params: {
+                                                    venueId: event.id,
+                                                    ...(event.identity?.slug ? { spaceSlug: event.identity.slug, canonicalSlug: event.identity.slug } : {}),
+                                                    from: currentView,
+                                                },
+                                            })}
+                                        />
+                                    ))}
+                                </div>
+                            )}
+                            {!isLoadingRelatedEvents && relatedEvents.length === 0 && (
+                                <BilingualText className="text-center text-white/60 py-4">
+                                    {lang === 'en' ? 'No public events recorded yet.' : 'لا توجد فعاليات عامة مسجلة بعد.'}
+                                </BilingualText>
+                            )}
+                        </section>
+                    )}
+
+                    <SpaceStewardshipPanel
+                        space={venue}
+                        relatedEvents={relatedEvents}
+                    />
 
                     <section className="mt-12">
                         <BilingualText role="H1" className="!text-2xl mb-4">{lang === 'en' ? 'Reviews' : 'المراجعات'}</BilingualText>

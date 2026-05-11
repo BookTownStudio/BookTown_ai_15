@@ -33,6 +33,10 @@ import {
   acquireExternalEbookForRead,
   buildAcquireExternalReadParams,
 } from '../../lib/books/acquireExternalEbookForRead.ts';
+import { useVenuesAndEvents } from '../../lib/hooks/useVenuesAndEvents.ts';
+import VenueCard from '../../components/content/VenueCard.tsx';
+import EventCard from '../../components/content/EventCard.tsx';
+import { Event, Venue } from '../../types/entities.ts';
 
 /* -------------------------------
    Constants
@@ -74,6 +78,8 @@ const HomeScreen: React.FC = () => {
   -------------------------------- */
   const [isContinueOpen, setIsContinueOpen] = useState(true);
   const [isRecommendationsOpen, setIsRecommendationsOpen] = useState(true);
+  const [isSpacesOpen, setIsSpacesOpen] = useState(true);
+  const { data: homeSpaces = [], isLoading: isSpacesLoading } = useVenuesAndEvents('');
 
   /* -------------------------------
      🔒 HOME RESET CONTRACT
@@ -260,6 +266,18 @@ const HomeScreen: React.FC = () => {
       params: {
         kind: chip.kind,
         id: chip.value,
+        from: currentView,
+      },
+    });
+  };
+
+  const handleOpenSpace = (space: Venue | Event) => {
+    navigate({
+      type: 'immersive',
+      id: 'venueDetails',
+      params: {
+        venueId: space.id,
+        ...(space.identity?.slug ? { spaceSlug: space.identity.slug, canonicalSlug: space.identity.slug } : {}),
         from: currentView,
       },
     });
@@ -468,6 +486,41 @@ const HomeScreen: React.FC = () => {
                           {lang === 'en'
                             ? 'Recommendations will appear here soon.'
                             : 'ستظهر التوصيات هنا قريباً.'}
+                        </span>
+                      </div>
+                    )}
+                  </CollapsibleSection>
+                </div>
+
+                <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
+                  <CollapsibleSection
+                    titleEn="Literary Spaces"
+                    titleAr="مساحات أدبية"
+                    isOpen={isSpacesOpen}
+                    onToggle={() => setIsSpacesOpen(v => !v)}
+                  >
+                    {isSpacesLoading ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
+                        {[1, 2].map(i => (
+                          <div key={i} className="h-52 rounded-lg bg-slate-800 animate-pulse" />
+                        ))}
+                      </div>
+                    ) : homeSpaces.length > 0 ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                        {homeSpaces.slice(0, 4).map(space => (
+                          'dateTime' in space ? (
+                            <EventCard key={`event-${space.id}`} event={space} onClick={() => handleOpenSpace(space)} />
+                          ) : (
+                            <VenueCard key={`venue-${space.id}`} venue={space} onClick={() => handleOpenSpace(space)} />
+                          )
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
+                        <span className="text-sm italic text-slate-500 text-center">
+                          {lang === 'en'
+                            ? 'Bookshops, libraries, and literary events will appear here.'
+                            : 'ستظهر هنا المكتبات والفعاليات الأدبية.'}
                         </span>
                       </div>
                     )}

@@ -33,8 +33,16 @@ const VenuesScreen: React.FC = () => {
         return { locations: locs, events: evs };
     }, [data]);
     
-    const handleItemClick = (itemId: string) => {
-        navigate({ type: 'immersive', id: 'venueDetails', params: { venueId: itemId, from: currentView } });
+    const handleItemClick = (item: Venue | Event) => {
+        navigate({
+            type: 'immersive',
+            id: 'venueDetails',
+            params: {
+                venueId: item.id,
+                ...(item.identity?.slug ? { spaceSlug: item.identity.slug, canonicalSlug: item.identity.slug } : {}),
+                from: currentView,
+            },
+        });
     }
 
     const renderContent = () => {
@@ -49,7 +57,7 @@ const VenuesScreen: React.FC = () => {
         if (activeTab === 'locations') {
             return locations.length > 0 ? (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {locations.map(venue => <VenueCard key={venue.id} venue={venue} onClick={() => handleItemClick(venue.id)} />)}
+                    {locations.map(venue => <VenueCard key={venue.id} venue={venue} onClick={() => handleItemClick(venue)} />)}
                 </div>
             ) : <BilingualText className="text-center text-white/60 pt-8">No locations found.</BilingualText>;
         }
@@ -57,7 +65,7 @@ const VenuesScreen: React.FC = () => {
         if (activeTab === 'events') {
             return events.length > 0 ? (
                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {events.map(event => <EventCard key={event.id} event={event} onClick={() => handleItemClick(event.id)} />)}
+                    {events.map(event => <EventCard key={event.id} event={event} onClick={() => handleItemClick(event)} />)}
                 </div>
             ) : <BilingualText className="text-center text-white/60 pt-8">No events found.</BilingualText>;
         }

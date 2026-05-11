@@ -651,6 +651,7 @@ export interface SocialDataService {
 export interface VenueDataService {
   searchVenues(query: string): Promise<(Venue | Event)[]>;
   getVenue(venueId: string): Promise<Venue | Event>;
+  getSpaceEvents(venueId: string): Promise<Event[]>;
   getVenueReviews(venueId: string): Promise<VenueReview[]>;
   submitVenueReview(uid: string, venueId: string, rating: number, text: string): Promise<void>;
   createVenue(

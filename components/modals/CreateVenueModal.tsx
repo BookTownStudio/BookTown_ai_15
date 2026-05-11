@@ -17,6 +17,7 @@ import {
     VENUE_SPACE_SUBTYPE_OPTIONS,
     VenueSpaceSubtype,
 } from '../../lib/spaces/domain.ts';
+import SpaceRelationshipCurationField, { CuratedSpaceRelationshipRefs } from '../spaces/SpaceRelationshipCurationField.tsx';
 
 interface CreateVenueModalProps {
     isOpen: boolean;
@@ -58,6 +59,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
     // Shared fields
     const [nameEn, setNameEn] = useState('');
     const [imageUrl, setImageUrl] = useState('');
+    const [relationshipRefs, setRelationshipRefs] = useState<CuratedSpaceRelationshipRefs>({});
 
     // Location fields
     const [locationType, setLocationType] = useState<VenueSpaceSubtype>(VENUE_SPACE_SUBTYPE_OPTIONS[0].value);
@@ -105,6 +107,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
     const resetForm = () => {
         setNameEn('');
         setImageUrl('');
+        setRelationshipRefs({});
         setLocationType(VENUE_SPACE_SUBTYPE_OPTIONS[0].value);
         setAddress('');
         setOpeningSchedule(DEFAULT_OPENING_SCHEDULE);
@@ -235,6 +238,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
                 },
                 descriptionEn: descriptionEn.trim(),
                 descriptionAr: `${descriptionEn.trim()} (AR)`,
+                relationshipRefs,
                 location:
                     latitude !== undefined && longitude !== undefined
                         ? {
@@ -268,6 +272,7 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
                 venueName: resolvedVenueName,
                 link: isOnline ? link.trim() : undefined,
                 privacy: 'public',
+                relationshipRefs,
             };
             createVenue(newEvent, { onSuccess: handleClose });
         }
@@ -471,6 +476,11 @@ const CreateVenueModal: React.FC<CreateVenueModalProps> = ({ isOpen, onClose }) 
                             )}
                         </>
                     )}
+                    <SpaceRelationshipCurationField
+                        value={relationshipRefs}
+                        onChange={setRelationshipRefs}
+                        disabled={isCreating || isUploading}
+                    />
                 </div>
 
                 <div className="mt-6 flex justify-end gap-4">

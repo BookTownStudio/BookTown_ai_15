@@ -180,6 +180,9 @@ export const queryKeys = {
     detail: (id: string | undefined) =>
       ['venues', 'detail', safe({ id })] as const,
 
+    events: (id: string | undefined) =>
+      ['venues', 'events', safe({ id })] as const,
+
     reviews: (id: string | undefined) =>
       ['venues', 'reviews', safe({ id })] as const,
   }

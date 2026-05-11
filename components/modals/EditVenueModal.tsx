@@ -84,6 +84,7 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
             isOnline: formData.isOnline,
             link: formData.isOnline ? formData.link : undefined,
             venueName: formData.isOnline ? undefined : formData.venueName,
+            relationshipRefs: venue.relationshipRefs,
         } : {
             ...venue,
             name: formData.name || venue.name,
@@ -94,6 +95,7 @@ const EditVenueModal: React.FC<EditVenueModalProps> = ({ isOpen, onClose, venue 
             openingHours: formData.openingHours,
             descriptionEn: formData.descriptionEn,
             descriptionAr: `${formData.descriptionEn} (AR)`,
+            relationshipRefs: venue.relationshipRefs,
         };
         updateVenue({ venueId: venue.id, data: updatedData as Venue | Event }, {
             onSuccess: onClose

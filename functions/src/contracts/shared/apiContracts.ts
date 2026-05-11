@@ -1235,6 +1235,12 @@ const adminSpaceRecordSchema = z
     routePath: z.string().nullable(),
   })
   .strict();
+const spaceRelationshipRefsInputSchema = z
+  .object({
+    bookIds: z.array(z.string().min(1).max(128)).max(25).optional(),
+    authorIds: z.array(z.string().min(1).max(128)).max(25).optional(),
+  })
+  .strict();
 
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,
@@ -1697,6 +1703,7 @@ export const apiContracts = {
           locationId: z.string().max(128).optional(),
           venueName: z.string().max(120).optional(),
           link: z.string().url().optional(),
+          relationshipRefs: spaceRelationshipRefsInputSchema.optional(),
         })
         .strict(),
       z
@@ -1740,6 +1747,7 @@ export const apiContracts = {
           locationId: z.string().max(128).optional(),
           venueName: z.string().max(120).optional(),
           link: z.string().url().optional(),
+          relationshipRefs: spaceRelationshipRefsInputSchema.optional(),
         })
         .strict(),
       z

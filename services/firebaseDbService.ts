@@ -629,6 +629,34 @@ const sanitizeVenueLocation = (
   });
 };
 
+const sanitizeSpaceRelationshipRefs = (
+  value: unknown
+): NonNullable<Venue["relationshipRefs"]> | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const source = value as Record<string, unknown>;
+  const normalizeIds = (raw: unknown): string[] | undefined => {
+    if (!Array.isArray(raw)) return undefined;
+    const ids = Array.from(
+      new Set(
+        raw
+          .filter((item): item is string => typeof item === "string")
+          .map((item) => item.trim().slice(0, 128))
+          .filter((item) => item.length > 0)
+      )
+    ).slice(0, 25);
+    return ids.length > 0 ? ids : undefined;
+  };
+
+  return stripUndefined({
+    venueId: normalizeOptionalString(source.venueId, 128),
+    cityId: normalizeOptionalString(source.cityId, 128),
+    organizationId: normalizeOptionalString(source.organizationId, 128),
+    seriesId: normalizeOptionalString(source.seriesId, 128),
+    bookIds: normalizeIds(source.bookIds),
+    authorIds: normalizeIds(source.authorIds),
+  });
+};
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => {
     setTimeout(resolve, ms);
@@ -2155,6 +2183,43 @@ class FirebaseVenueService {
     throw new Error("NOT_FOUND: Venue or event not found.");
   }
 
+  private async resolveEntityBySlug(slug: string): Promise<{
+    collectionName: "venues" | "events";
+    data: any;
+  }> {
+    const db = this.requireDb();
+    const normalizedSlug = ensureNonEmptyString(slug, "spaceSlug", 160);
+
+    const venuesQuery = query(
+      collection(db, "venues"),
+      where("identity.slug", "==", normalizedSlug),
+      limit(1)
+    );
+    const eventsQuery = query(
+      collection(db, "events"),
+      where("identity.slug", "==", normalizedSlug),
+      where("privacy", "==", "public"),
+      limit(1)
+    );
+
+    const [venuesSnap, eventsSnap] = await Promise.all([
+      getDocs(venuesQuery),
+      getDocs(eventsQuery),
+    ]);
+
+    const venueSnap = venuesSnap.docs[0];
+    if (venueSnap) {
+      return { collectionName: "venues", data: { id: venueSnap.id, ...venueSnap.data() } };
+    }
+
+    const eventSnap = eventsSnap.docs[0];
+    if (eventSnap) {
+      return { collectionName: "events", data: { id: eventSnap.id, ...eventSnap.data() } };
+    }
+
+    throw new Error("NOT_FOUND: Space not found.");
+  }
+
   private mapVenue(data: any): Venue {
     const rawLocation =
       data && typeof data.location === "object" ? (data.location as Record<string, unknown>) : undefined;
@@ -2176,7 +2241,7 @@ class FirebaseVenueService {
       governanceStatus: normalizeSpaceGovernanceState(data.governanceStatus),
       authorityProfile: normalizeSpaceAuthorityProfile(data.authorityProfile),
       provenance: data.provenance || undefined,
-      relationshipRefs: data.relationshipRefs || undefined,
+      relationshipRefs: sanitizeSpaceRelationshipRefs(data.relationshipRefs),
       relationshipVisibility: normalizeSpaceRelationshipVisibility(data.relationshipVisibility),
       stewardship: normalizeSpaceStewardship(data.stewardship, data.provenance?.createdByUid || data.ownerId),
       publication: data.publication || createPublishedSpaceLifecycle(),
@@ -2219,7 +2284,7 @@ class FirebaseVenueService {
       governanceStatus: normalizeSpaceGovernanceState(data.governanceStatus),
       authorityProfile: normalizeSpaceAuthorityProfile(data.authorityProfile),
       provenance: data.provenance || undefined,
-      relationshipRefs: data.relationshipRefs || undefined,
+      relationshipRefs: sanitizeSpaceRelationshipRefs(data.relationshipRefs),
       relationshipVisibility: normalizeSpaceRelationshipVisibility(data.relationshipVisibility),
       stewardship: normalizeSpaceStewardship(data.stewardship, data.provenance?.createdByUid || data.ownerId),
       publication: data.publication || createPublishedSpaceLifecycle(),
@@ -2295,11 +2360,29 @@ class FirebaseVenueService {
   }
 
   async getVenue(venueId: string): Promise<Venue | Event> {
-    const entity = await this.resolveEntity(venueId);
+    const normalizedVenueId = ensureNonEmptyString(venueId, "venueId", 160);
+    const entity = normalizedVenueId.includes("-")
+      ? await this.resolveEntity(normalizedVenueId).catch(() => this.resolveEntityBySlug(normalizedVenueId))
+      : await this.resolveEntity(normalizedVenueId);
     if (entity.collectionName === "venues") {
       return this.mapVenue(entity.data);
     }
     return this.mapEvent(entity.data);
+  }
+
+  async getSpaceEvents(venueId: string): Promise<Event[]> {
+    const db = this.requireDb();
+    const normalizedVenueId = ensureNonEmptyString(venueId, "venueId", 128);
+    const eventsQuery = query(
+      collection(db, "events"),
+      where("privacy", "==", "public"),
+      where("locationId", "==", normalizedVenueId),
+      limit(30)
+    );
+    const eventsSnap = await getDocs(eventsQuery);
+    return eventsSnap.docs
+      .map((snap) => this.mapEvent({ id: snap.id, ...snap.data() }))
+      .sort((a, b) => a.dateTime.localeCompare(b.dateTime));
   }
 
   async getVenueReviews(venueId: string): Promise<VenueReview[]> {
@@ -2404,6 +2487,7 @@ class FirebaseVenueService {
         locationId,
         venueName,
         link,
+        relationshipRefs: sanitizeSpaceRelationshipRefs(data.relationshipRefs),
       }));
       return;
     }
@@ -2430,6 +2514,7 @@ class FirebaseVenueService {
       descriptionAr: normalizeOptionalString(data.descriptionAr, 2000) || "",
       websiteUrl: normalizeOptionalString(data.websiteUrl, 1024),
       phone: normalizeOptionalString(data.phone, 64),
+      relationshipRefs: sanitizeSpaceRelationshipRefs(data.relationshipRefs),
     }));
   }
 
@@ -2470,6 +2555,7 @@ class FirebaseVenueService {
         locationId,
         venueName,
         link: isOnline ? ensureHttpsUrl(eventData.link, "link") : undefined,
+        relationshipRefs: sanitizeSpaceRelationshipRefs(eventData.relationshipRefs),
       }));
       return;
     }
@@ -2498,6 +2584,7 @@ class FirebaseVenueService {
       descriptionAr: normalizeOptionalString(venueData.descriptionAr, 2000) || "",
       websiteUrl: normalizeOptionalString(venueData.websiteUrl, 1024),
       phone: normalizeOptionalString(venueData.phone, 64),
+      relationshipRefs: sanitizeSpaceRelationshipRefs(venueData.relationshipRefs),
     }));
   }
 

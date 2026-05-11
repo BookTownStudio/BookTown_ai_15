@@ -122,6 +122,13 @@ function resolveViewFromPath(pathname: string, search = ''): View {
         }
     }
 
+    if (segments.length >= 2 && segments[0] === 'spaces') {
+        const spaceSlug = decodePathSegment(segments[1]);
+        if (spaceSlug.length > 0) {
+            return { type: 'immersive', id: 'venueDetails', params: { spaceSlug } };
+        }
+    }
+
     if (segments.length >= 3 && segments[0] === 'quotes') {
         const ownerId = decodePathSegment(segments[1]);
         const quoteId = decodePathSegment(segments[2]);
@@ -338,6 +345,17 @@ function resolvePathFromView(view: View): string | null {
                 const authorId = typeof view.params?.authorId === 'string' ? view.params.authorId.trim() : '';
                 return authorId ? `/authors/${encodePathSegment(authorId)}` : null;
             }
+            case 'venueDetails': {
+                const spaceSlug =
+                    typeof view.params?.spaceSlug === 'string'
+                        ? view.params.spaceSlug.trim()
+                        : typeof view.params?.canonicalSlug === 'string'
+                            ? view.params.canonicalSlug.trim()
+                            : '';
+                const venueId = typeof view.params?.venueId === 'string' ? view.params.venueId.trim() : '';
+                const identifier = spaceSlug || venueId;
+                return identifier ? `/spaces/${encodePathSegment(identifier)}` : null;
+            }
             case 'quoteDetails': {
                 const ownerId = typeof view.params?.ownerId === 'string' ? view.params.ownerId.trim() : '';
                 const quoteId = typeof view.params?.quoteId === 'string' ? view.params.quoteId.trim() : '';
@@ -514,6 +532,7 @@ function isRouteBackedPath(pathname: string): boolean {
         || normalizedPath === '/social'
         || normalizedPath.startsWith('/books/')
         || normalizedPath.startsWith('/authors/')
+        || normalizedPath.startsWith('/spaces/')
         || normalizedPath.startsWith('/quotes/')
         || normalizedPath === '/profile'
         || normalizedPath.startsWith('/profile/')
@@ -569,6 +588,18 @@ function sanitizeViewForHistory(view: View): View {
             case 'authorDetails': {
                 const authorId = typeof view.params?.authorId === 'string' ? view.params.authorId.trim() : '';
                 return authorId ? { type: 'immersive', id: 'authorDetails', params: { authorId } } : { type: 'tab', id: 'home' };
+            }
+            case 'venueDetails': {
+                const venueId = typeof view.params?.venueId === 'string' ? view.params.venueId.trim() : '';
+                const spaceSlug = typeof view.params?.spaceSlug === 'string' ? view.params.spaceSlug.trim() : '';
+                const canonicalSlug = typeof view.params?.canonicalSlug === 'string' ? view.params.canonicalSlug.trim() : '';
+                const params: NavigationParams = {};
+                if (venueId) params.venueId = venueId;
+                if (spaceSlug) params.spaceSlug = spaceSlug;
+                if (canonicalSlug) params.canonicalSlug = canonicalSlug;
+                return Object.keys(params).length > 0
+                    ? { type: 'immersive', id: 'venueDetails', params }
+                    : { type: 'immersive', id: 'venues' };
             }
             case 'quoteDetails': {
                 const quoteId = typeof view.params?.quoteId === 'string' ? view.params.quoteId.trim() : '';

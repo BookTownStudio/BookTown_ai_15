@@ -255,14 +255,78 @@ function communication(spaceId: string, ownerUid: string, adminUids: string[] = 
   };
 }
 
-function relationshipVisibility() {
+type LiteraryRelationshipRefs = {
+  bookIds?: string[];
+  authorIds?: string[];
+};
+
+function relationshipVisibility(refs: LiteraryRelationshipRefs = {}) {
   return {
     venue: "public",
     organization: "public",
-    books: "private",
-    authors: "private",
+    books: refs.bookIds && refs.bookIds.length > 0 ? "public" : "private",
+    authors: refs.authorIds && refs.authorIds.length > 0 ? "public" : "private",
     series: "private",
     schemaVersion: SPACE_SCHEMA_VERSION,
+  };
+}
+
+function normalizeIdArray(value: unknown, fieldName: string): string[] {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    throw new HttpsError("invalid-argument", `${fieldName} must be an array.`);
+  }
+  const normalized = Array.from(
+    new Set(
+      value.map((item) => {
+        if (typeof item !== "string") {
+          throw new HttpsError("invalid-argument", `${fieldName} must contain string IDs.`);
+        }
+        const id = item.trim();
+        if (!id || id.length > 128) {
+          throw new HttpsError("invalid-argument", `${fieldName} contains an invalid ID.`);
+        }
+        return id;
+      })
+    )
+  );
+  if (normalized.length > 25) {
+    throw new HttpsError("invalid-argument", `${fieldName} may contain at most 25 IDs.`);
+  }
+  return normalized;
+}
+
+async function assertDocsExist(collectionName: "books" | "authors", ids: string[]): Promise<void> {
+  await Promise.all(
+    ids.map(async (id) => {
+      const snap = await db.collection(collectionName).doc(id).get();
+      if (!snap.exists) {
+        throw new HttpsError(
+          "invalid-argument",
+          `${collectionName.slice(0, -1)}Id must reference an existing canonical document.`
+        );
+      }
+    })
+  );
+}
+
+async function sanitizeLiteraryRelationshipRefs(value: unknown): Promise<LiteraryRelationshipRefs> {
+  if (value === undefined || value === null) return {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpsError("invalid-argument", "relationshipRefs must be an object.");
+  }
+  const source = value as Record<string, unknown>;
+  const bookIds = normalizeIdArray(source.bookIds, "relationshipRefs.bookIds");
+  const authorIds = normalizeIdArray(source.authorIds, "relationshipRefs.authorIds");
+
+  await Promise.all([
+    assertDocsExist("books", bookIds),
+    assertDocsExist("authors", authorIds),
+  ]);
+
+  return {
+    ...(bookIds.length > 0 ? { bookIds } : {}),
+    ...(authorIds.length > 0 ? { authorIds } : {}),
   };
 }
 
@@ -315,6 +379,7 @@ export const createUserSpace = onCall({ cors: true }, async (request) => {
   const spaceSubtype = normalizeSubtype(spaceType, data.spaceSubtype || data.type, isOnline);
   const displayName = requireString(data.displayName || data.name || data.titleEn, "displayName", 160);
   const imageUrl = requireHttpsUrl(data.imageUrl, "imageUrl");
+  const literaryRefs = await sanitizeLiteraryRelationshipRefs(data.relationshipRefs);
   const ref = db.collection(collectionFor(spaceType)).doc();
   const now = admin.firestore.FieldValue.serverTimestamp();
   const identity = createIdentity(spaceType, ref.id, displayName);
@@ -334,7 +399,7 @@ export const createUserSpace = onCall({ cors: true }, async (request) => {
       schemaVersion: SPACE_SCHEMA_VERSION,
     },
     communication: communication(ref.id, caller.uid),
-    relationshipVisibility: relationshipVisibility(),
+    relationshipVisibility: relationshipVisibility(literaryRefs),
     publication: publicationLifecycle(),
     createdAt: now,
     updatedAt: now,
@@ -358,6 +423,7 @@ export const createUserSpace = onCall({ cors: true }, async (request) => {
       ratingsCount: 0,
       websiteUrl: optionalString(data.websiteUrl, 1024) || null,
       phone: optionalString(data.phone, 64) || null,
+      ...(Object.keys(literaryRefs).length > 0 ? { relationshipRefs: literaryRefs } : {}),
     });
   } else {
     const dateTime = requireIsoDate(data.dateTime, "dateTime");
@@ -391,7 +457,10 @@ export const createUserSpace = onCall({ cors: true }, async (request) => {
         lineageKind: "single_event",
         schemaVersion: SPACE_SCHEMA_VERSION,
       },
-      relationshipRefs: locationId ? { venueId: locationId } : {},
+      relationshipRefs: {
+        ...(locationId ? { venueId: locationId } : {}),
+        ...literaryRefs,
+      },
     });
   }
 
@@ -431,12 +500,14 @@ export const updateUserSpace = onCall({ cors: true }, async (request) => {
   const displayName = requireString(data.displayName || data.name || data.titleEn, "displayName", 160);
   const spaceSubtype = normalizeSubtype(spaceType, data.spaceSubtype || data.type || existing.spaceSubtype, isOnline);
   const imageUrl = requireHttpsUrl(data.imageUrl, "imageUrl");
+  const literaryRefs = await sanitizeLiteraryRelationshipRefs(data.relationshipRefs);
   const now = admin.firestore.FieldValue.serverTimestamp();
   const baseUpdate = {
     spaceSubtype,
     identity: updateDisplayIdentity(existing, spaceType, spaceId, displayName),
     type: spaceSubtype,
     typeLower: spaceSubtype,
+    relationshipVisibility: relationshipVisibility(literaryRefs),
     publication: publicationLifecycle(),
     updatedAt: now,
   };
@@ -455,6 +526,7 @@ export const updateUserSpace = onCall({ cors: true }, async (request) => {
       descriptionAr: optionalString(data.descriptionAr, 2000) || "",
       websiteUrl: optionalString(data.websiteUrl, 1024) || null,
       phone: optionalString(data.phone, 64) || null,
+      relationshipRefs: literaryRefs,
     });
   } else {
     const dateTime = requireIsoDate(data.dateTime, "dateTime");
@@ -497,7 +569,10 @@ export const updateUserSpace = onCall({ cors: true }, async (request) => {
         ...(seriesId ? { seriesId } : {}),
         schemaVersion: SPACE_SCHEMA_VERSION,
       },
-      relationshipRefs: locationId ? { venueId: locationId } : {},
+      relationshipRefs: {
+        ...(locationId ? { venueId: locationId } : {}),
+        ...literaryRefs,
+      },
     });
   }
 
