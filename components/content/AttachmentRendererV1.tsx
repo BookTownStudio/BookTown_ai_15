@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth.tsx';
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { useQuoteDetails } from '../../lib/hooks/useQuoteDetails.ts';
 import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
+import { useSocialRenderDiagnostics } from '../../lib/socialPerformanceDiagnostics.ts';
 import { cn } from '../../lib/utils.ts';
 
 import { useI18n } from '../../store/i18n.tsx';
@@ -674,6 +675,10 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     }, [isV1, autoLoad]);
 
     const v1Type = typeof v1?.type === 'string' ? v1.type.toUpperCase() : '';
+    useSocialRenderDiagnostics('AttachmentRendererV1', {
+        attachmentType: v1Type || (isV1 ? 'UNKNOWN_V1' : 'LEGACY'),
+        surface,
+    });
     const v1Payload: Record<string, unknown> =
         v1?.payload && typeof v1.payload === 'object'
             ? (v1.payload as Record<string, unknown>)
@@ -1096,7 +1101,9 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     );
 };
 
-export const AttachmentListV1: React.FC<{ 
+const MemoizedAttachmentRendererV1 = React.memo(AttachmentRendererV1);
+
+const AttachmentListV1Component: React.FC<{ 
     attachments?: PostAttachment[]; 
     surface?: RenderSurface;
     onRemove?: (id: string) => void;
@@ -1111,7 +1118,7 @@ export const AttachmentListV1: React.FC<{
             surface === 'feed' ? "gap-4" : "gap-2.5"
         )}>
             {attachments.map((att, i) => (
-                <AttachmentRendererV1 
+                <MemoizedAttachmentRendererV1 
                     key={('attachmentId' in att ? att.attachmentId : i)} 
                     attachment={att} 
                     surface={surface} 
@@ -1123,4 +1130,6 @@ export const AttachmentListV1: React.FC<{
     );
 };
 
-export default AttachmentRendererV1;
+export const AttachmentListV1 = React.memo(AttachmentListV1Component);
+
+export default MemoizedAttachmentRendererV1;

@@ -1,4 +1,5 @@
 import { queryKeys } from './queryKeys.ts';
+import { recordSocialPerformanceMetric } from './socialPerformanceDiagnostics.ts';
 
 type QueryClientLike = {
   invalidateQueries: (filters: { queryKey: readonly unknown[] | unknown[]; exact?: boolean }) => Promise<unknown> | unknown;
@@ -13,6 +14,10 @@ export async function invalidatePostConvergence(
   postId: string | undefined
 ): Promise<void> {
   if (!postId) return;
+  recordSocialPerformanceMetric('social_cache_invalidation', {
+    kind: 'post',
+    queryCount: 5,
+  });
 
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: ['feed'] }),
@@ -28,6 +33,10 @@ export async function invalidateCommentConvergence(
   postId: string | undefined
 ): Promise<void> {
   if (!postId) return;
+  recordSocialPerformanceMetric('social_cache_invalidation', {
+    kind: 'comment',
+    queryCount: 2,
+  });
 
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: commentsByPostKey(postId) }),
@@ -42,6 +51,10 @@ export async function invalidateBookmarkConvergence(
   entityId: string
 ): Promise<void> {
   if (!uid || !entityId) return;
+  recordSocialPerformanceMetric('social_cache_invalidation', {
+    kind: entityType === 'post' ? 'postBookmark' : 'bookmark',
+    queryCount: entityType === 'post' ? 3 : 2,
+  });
 
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: queryKeys.user.bookmarks(uid) as unknown as unknown[] }),
@@ -59,5 +72,9 @@ export async function invalidateNotificationConvergence(
   uid: string | undefined
 ): Promise<void> {
   if (!uid) return;
+  recordSocialPerformanceMetric('social_cache_invalidation', {
+    kind: 'notification',
+    queryCount: 1,
+  });
   await queryClient.invalidateQueries({ queryKey: queryKeys.user.notifications(uid) });
 }

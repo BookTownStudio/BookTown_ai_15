@@ -33,6 +33,7 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
     const uid = caller.uid;
 
     const likeRef = db.collection('users').doc(uid).collection('likes').doc(postId);
+    const viewerStateRef = db.collection('users').doc(uid).collection('post_interaction_state').doc(postId);
     const postRef = db.collection('posts').doc(postId);
 
     try {
@@ -59,6 +60,16 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
                     createdAt: now,
                     version: 1
                 });
+                transaction.set(
+                    viewerStateRef,
+                    {
+                        postId,
+                        liked: true,
+                        updatedAt: now,
+                        version: 1,
+                    },
+                    { merge: true }
+                );
 
                 // 2. Emit activity (Triggers notification pipeline)
                 const activityRef = db.collection('activity_log').doc();
@@ -76,6 +87,16 @@ export const likeSocialPost = onCall({ cors: true }, async (request) => {
             } else {
                 // Unlike: Removal of signal
                 transaction.delete(likeRef);
+                transaction.set(
+                    viewerStateRef,
+                    {
+                        postId,
+                        liked: false,
+                        updatedAt: now,
+                        version: 1,
+                    },
+                    { merge: true }
+                );
                 
                 // Optional: Emit unlike activity for analytics, though not required for core V1
             }
@@ -100,6 +121,7 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
     const uid = caller.uid;
 
     const repostRef = db.collection('users').doc(uid).collection('reposts').doc(postId);
+    const viewerStateRef = db.collection('users').doc(uid).collection('post_interaction_state').doc(postId);
     const postRef = db.collection('posts').doc(postId);
 
     try {
@@ -125,6 +147,16 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
                     createdAt: now,
                     version: 1
                 });
+                transaction.set(
+                    viewerStateRef,
+                    {
+                        postId,
+                        reposted: true,
+                        updatedAt: now,
+                        version: 1,
+                    },
+                    { merge: true }
+                );
 
                 // Emit activity
                 const activityRef = db.collection('activity_log').doc();
@@ -141,6 +173,16 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
                 });
             } else {
                 transaction.delete(repostRef);
+                transaction.set(
+                    viewerStateRef,
+                    {
+                        postId,
+                        reposted: false,
+                        updatedAt: now,
+                        version: 1,
+                    },
+                    { merge: true }
+                );
             }
 
             return { success: true, reposted: isReposting };

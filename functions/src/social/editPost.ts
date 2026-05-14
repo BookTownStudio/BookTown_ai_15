@@ -144,12 +144,15 @@ export const editSocialPost = onCall({ cors: true }, async (request) => {
 
             // 4. Field Updates
             if (text !== undefined && text.trim() !== post.content.text) {
-                updates['content.text'] = text.trim();
+                const nextText = text.trim();
+                updates['content.text'] = nextText;
+                updates['renderProjection.contentText'] = nextText;
                 updates['flags.edited'] = true;
             }
 
             if (visibility !== undefined && visibility !== post.visibility) {
                 updates['visibility'] = visibility;
+                updates['renderProjection.visibility'] = visibility;
             }
 
             transaction.update(postRef, updates);

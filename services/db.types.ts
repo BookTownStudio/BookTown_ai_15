@@ -576,13 +576,45 @@ export interface CatalogDataService {
 /* =========================
    SOCIAL
    ========================= */
+export interface SocialFeedDiagnosticsMeta {
+  assemblyMs: number;
+  candidateReads?: number;
+  fallbackEntityHydrationReads: number;
+  fallbackEntityHydrationRequests: number;
+  fetchedDocs?: number;
+  fetchAttempts?: number;
+  filteredPostCount: number;
+  followingAuthorReads: number;
+  hydrationMs: number;
+  legacyViewerStateFallbackReads: number;
+  legacyViewerStateFallbackRequestedCount: number;
+  maxFetchAttempts: number;
+  postDocumentsRead: number;
+  primaryEntityPostCount: number;
+  projectedEntityHydrationHits: number;
+  projectedEntityHydrationRate: number;
+  projectedViewerStateReads: number;
+  projectionAvailableCount: number;
+  projectionMissingCount: number;
+  projectionUsageRate: number;
+  queryBatches: number;
+  queryMs: number;
+  returnedPostCount: number;
+  statsReads: number;
+  statsRequestedCount: number;
+  unresolvedHydrationCount: number;
+  viewerStateProjectedHitCount: number;
+  viewerStateProjectionHitRate: number;
+  viewerStateRequestedCount: number;
+}
+
 export interface SocialDataService {
   getFeed(
     uid: string,
     scope: string,
     filters: string[],
     cursor?: string
-  ): Promise<{ posts: Post[]; nextCursor?: string }>;
+  ): Promise<{ posts: Post[]; nextCursor?: string; meta?: SocialFeedDiagnosticsMeta }>;
 
   getPost(postId: string): Promise<Post>;
   getComments(

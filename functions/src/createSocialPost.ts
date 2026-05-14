@@ -4,6 +4,10 @@ import * as logger from "firebase-functions/logger";
 import { recomputeUserStats } from "./userStats/recomputeUserStats";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { checkUserMutationQuota } from "./utils/mutationQuota";
+import {
+  buildPostRenderProjection,
+  buildRenderProjectionEntity,
+} from "./social/postRenderProjection";
 
 type StructuredEntityType =
   | "book"
@@ -17,6 +21,7 @@ type StructuredAttachment = {
   type: StructuredEntityType;
   entityId: string;
   entityOwnerId?: string;
+  renderEntity?: ReturnType<typeof buildRenderProjectionEntity>;
 };
 
 type MediaAttachment = {
@@ -141,7 +146,14 @@ async function assertStructuredEntityAccessible(
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced book not found.");
     }
-    return entity;
+    return {
+      ...entity,
+      renderEntity: buildRenderProjectionEntity({
+        type: entity.type,
+        id: entity.entityId,
+        data: (snap.data() ?? {}) as Record<string, unknown>,
+      }),
+    };
   }
 
   if (entity.type === "author") {
@@ -149,7 +161,14 @@ async function assertStructuredEntityAccessible(
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced author not found.");
     }
-    return entity;
+    return {
+      ...entity,
+      renderEntity: buildRenderProjectionEntity({
+        type: entity.type,
+        id: entity.entityId,
+        data: (snap.data() ?? {}) as Record<string, unknown>,
+      }),
+    };
   }
 
   if (entity.type === "venue") {
@@ -157,7 +176,14 @@ async function assertStructuredEntityAccessible(
     if (!snap.exists) {
       throw new HttpsError("not-found", "Referenced venue not found.");
     }
-    return entity;
+    return {
+      ...entity,
+      renderEntity: buildRenderProjectionEntity({
+        type: entity.type,
+        id: entity.entityId,
+        data: (snap.data() ?? {}) as Record<string, unknown>,
+      }),
+    };
   }
 
   if (entity.type === "shelf") {
@@ -180,7 +206,15 @@ async function assertStructuredEntityAccessible(
         "Referenced shelf is not accessible."
       );
     }
-    return entity;
+    return {
+      ...entity,
+      renderEntity: buildRenderProjectionEntity({
+        type: entity.type,
+        id: entity.entityId,
+        ownerId,
+        data,
+      }),
+    };
   }
 
   if (entity.type === "quote") {
@@ -198,6 +232,12 @@ async function assertStructuredEntityAccessible(
         type: "quote",
         entityId: entity.entityId,
         ...(ownerId ? { entityOwnerId: ownerId } : {}),
+        renderEntity: buildRenderProjectionEntity({
+          type: "quote",
+          id: entity.entityId,
+          ownerId,
+          data: quote,
+        }),
       };
     }
 
@@ -231,6 +271,12 @@ async function assertStructuredEntityAccessible(
       type: "quote",
       entityId: canonicalQuoteId,
       ...(ownerId ? { entityOwnerId: ownerId } : {}),
+      renderEntity: buildRenderProjectionEntity({
+        type: "quote",
+        id: canonicalQuoteId,
+        ownerId,
+        data: quote,
+      }),
     };
   }
 
@@ -252,7 +298,15 @@ async function assertStructuredEntityAccessible(
         "Referenced publication is not accessible."
       );
     }
-    return entity;
+    return {
+      ...entity,
+      renderEntity: buildRenderProjectionEntity({
+        type: entity.type,
+        id: entity.entityId,
+        ownerId: ownerUid,
+        data,
+      }),
+    };
   }
 
   return entity;
@@ -418,6 +472,15 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         edited: false,
         hasAttachments: attachmentRefs.length > 0
     },
+
+    renderProjection: buildPostRenderProjection({
+        contentText: text,
+        attachments: attachmentRefs,
+        visibility,
+        primaryEntityType: primaryStructured?.type ?? null,
+        primaryEntityId: primaryStructured?.entityId ?? null,
+        hydratedEntity: primaryStructured?.renderEntity ?? null,
+    }),
 
     publishToken,
     version: 1

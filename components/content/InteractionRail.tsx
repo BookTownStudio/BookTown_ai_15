@@ -20,7 +20,7 @@ interface InteractionRailProps {
     className?: string;
 }
 
-const ActionButton: React.FC<{ 
+type ActionButtonProps = { 
     icon: React.FC<any>, 
     label: string, 
     count?: number, 
@@ -29,7 +29,9 @@ const ActionButton: React.FC<{
     loading?: boolean,
     active?: boolean,
     disabled?: boolean 
-} & React.ButtonHTMLAttributes<HTMLButtonElement>> = ({ 
+} & React.ButtonHTMLAttributes<HTMLButtonElement>;
+
+const ActionButton = React.memo<ActionButtonProps>(({
     icon: Icon, 
     label, 
     count, 
@@ -67,7 +69,9 @@ const ActionButton: React.FC<{
             {count !== undefined && <span className="text-[10px] font-medium tabular-nums text-white/46">{count}</span>}
         </button>
     );
-};
+});
+
+ActionButton.displayName = 'ActionButton';
 
 const InteractionRail: React.FC<InteractionRailProps> = ({
     post,
@@ -188,4 +192,4 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
     );
 };
 
-export default InteractionRail;
+export default React.memo(InteractionRail);

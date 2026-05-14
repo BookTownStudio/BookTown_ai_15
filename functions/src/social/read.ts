@@ -1,6 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldPath, Timestamp } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
+import type { RenderProjectionHydratedEntity } from "./postRenderProjection";
 
 const db = admin.firestore();
 
@@ -39,6 +40,30 @@ type HydratedEntity = {
   id: string;
   data: Record<string, unknown>;
   ownerId?: string;
+};
+
+type FeedReadDiagnostics = {
+  fallbackEntityHydrationReads: number;
+  fallbackEntityHydrationRequests: number;
+  filteredPostCount: number;
+  followingAuthorReads: number;
+  hydrationMs: number;
+  legacyViewerStateFallbackReads: number;
+  legacyViewerStateFallbackRequestedCount: number;
+  maxFetchAttempts: number;
+  postDocumentsRead: number;
+  primaryEntityPostCount: number;
+  projectionAvailableCount: number;
+  projectionMissingCount: number;
+  projectedEntityHydrationHits: number;
+  projectedViewerStateReads: number;
+  queryBatches: number;
+  queryMs: number;
+  statsRequestedCount: number;
+  statsReads: number;
+  unresolvedHydrationCount: number;
+  viewerStateProjectedHitCount: number;
+  viewerStateRequestedCount: number;
 };
 
 type NormalizedPost = {
@@ -210,6 +235,90 @@ function chunk<T>(values: readonly T[], size: number): T[][] {
   return out;
 }
 
+function createFeedReadDiagnostics(): FeedReadDiagnostics {
+  return {
+    fallbackEntityHydrationReads: 0,
+    fallbackEntityHydrationRequests: 0,
+    filteredPostCount: 0,
+    followingAuthorReads: 0,
+    hydrationMs: 0,
+    legacyViewerStateFallbackReads: 0,
+    legacyViewerStateFallbackRequestedCount: 0,
+    maxFetchAttempts: FEED_FETCH_ATTEMPTS,
+    postDocumentsRead: 0,
+    primaryEntityPostCount: 0,
+    projectionAvailableCount: 0,
+    projectionMissingCount: 0,
+    projectedEntityHydrationHits: 0,
+    projectedViewerStateReads: 0,
+    queryBatches: 0,
+    queryMs: 0,
+    statsRequestedCount: 0,
+    statsReads: 0,
+    unresolvedHydrationCount: 0,
+    viewerStateProjectedHitCount: 0,
+    viewerStateRequestedCount: 0,
+  };
+}
+
+function roundRatio(numerator: number, denominator: number): number {
+  if (denominator <= 0) return 0;
+  return Math.round((numerator / denominator) * 10000) / 10000;
+}
+
+function buildFeedDiagnosticMeta(
+  startedAtMs: number,
+  diagnostics: FeedReadDiagnostics,
+  returnedPostCount: number,
+  extra: {
+    candidateReads?: number;
+    fetchedDocs?: number;
+    fetchAttempts?: number;
+  } = {}
+): FeedReadDiagnostics & {
+  assemblyMs: number;
+  candidateReads?: number;
+  fetchedDocs?: number;
+  fetchAttempts?: number;
+  projectionUsageRate: number;
+  projectedEntityHydrationRate: number;
+  viewerStateProjectionHitRate: number;
+  returnedPostCount: number;
+} {
+  return {
+    assemblyMs: Date.now() - startedAtMs,
+    ...diagnostics,
+    ...extra,
+    returnedPostCount,
+    projectionUsageRate: roundRatio(
+      diagnostics.projectionAvailableCount,
+      diagnostics.projectionAvailableCount + diagnostics.projectionMissingCount
+    ),
+    projectedEntityHydrationRate: roundRatio(
+      diagnostics.projectedEntityHydrationHits,
+      diagnostics.primaryEntityPostCount
+    ),
+    viewerStateProjectionHitRate: roundRatio(
+      diagnostics.viewerStateProjectedHitCount,
+      diagnostics.viewerStateRequestedCount
+    ),
+  };
+}
+
+function classifyFeedAssemblyFailure(error: unknown): string {
+  if (error instanceof HttpsError) {
+    return `https:${error.code}`;
+  }
+  if (error && typeof error === "object") {
+    const code = readTrimmedString((error as { code?: unknown }).code, 80);
+    if (code.includes("permission-denied")) return "firestore_permission_denied";
+    if (code.includes("resource-exhausted")) return "firestore_resource_exhausted";
+    if (code.includes("deadline-exceeded")) return "firestore_deadline_exceeded";
+    if (code.includes("failed-precondition")) return "firestore_index_required";
+  }
+  return "unknown";
+}
+
 function isModerator(auth: { token?: Record<string, unknown> } | null | undefined): boolean {
   const token =
     auth?.token && typeof auth.token === "object"
@@ -297,6 +406,61 @@ function normalizeAttachmentRefs(
     );
 }
 
+function normalizeProjectedHydratedEntity(value: unknown): HydratedEntity | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<RenderProjectionHydratedEntity>;
+  const type = normalizeStructuredEntityType(raw.type);
+  const id = readTrimmedString(raw.id, 256);
+  if (!type || !id) return null;
+  const data = raw.data && typeof raw.data === "object"
+    ? (raw.data as Record<string, unknown>)
+    : {};
+  const ownerId = readTrimmedString(raw.ownerId, 128);
+  return {
+    type,
+    id,
+    ...(ownerId ? { ownerId } : {}),
+    data,
+  };
+}
+
+function readPostRenderProjection(
+  source: Record<string, unknown>
+): {
+  contentText?: string | null;
+  attachments?: ReturnType<typeof normalizeAttachmentRefs>;
+  visibility?: "public" | "followers" | "private" | "restricted";
+  primaryEntityType?: StructuredEntityType | null;
+  primaryEntityId?: string | null;
+  hydratedEntity?: HydratedEntity | null;
+} | null {
+  const projection =
+    source.renderProjection && typeof source.renderProjection === "object"
+      ? (source.renderProjection as Record<string, unknown>)
+      : null;
+  if (!projection || projection.v !== 1) return null;
+
+  const contentText =
+    typeof projection.contentText === "string"
+      ? projection.contentText.slice(0, 10000)
+      : projection.contentText === null
+        ? null
+        : undefined;
+  const attachments = normalizeAttachmentRefs(projection.attachments);
+  const visibilityRaw = normalizePostVisibility(projection.visibility);
+  const primaryEntityType = normalizeStructuredEntityType(projection.primaryEntityType);
+  const primaryEntityId = readTrimmedString(projection.primaryEntityId, 256);
+
+  return {
+    ...(contentText !== undefined ? { contentText } : {}),
+    attachments,
+    visibility: visibilityRaw,
+    primaryEntityType,
+    primaryEntityId: primaryEntityId || null,
+    hydratedEntity: normalizeProjectedHydratedEntity(projection.hydratedEntity),
+  };
+}
+
 function normalizePostDoc(
   docId: string,
   source: Record<string, unknown>,
@@ -308,6 +472,7 @@ function normalizePostDoc(
     reposted: boolean;
   } | null
 ): NormalizedPost {
+  const projection = readPostRenderProjection(source);
   const content =
     source.content && typeof source.content === "object"
       ? (source.content as Record<string, unknown>)
@@ -329,9 +494,16 @@ function normalizePostDoc(
       ? (source.flags as Record<string, unknown>)
       : {};
 
-  const attachments = normalizeAttachmentRefs(content.attachments);
-  const primaryEntityType = normalizeStructuredEntityType(source.primaryEntityType);
-  const primaryEntityId = readTrimmedString(source.primaryEntityId, 256);
+  const attachments = projection?.attachments?.length
+    ? projection.attachments
+    : normalizeAttachmentRefs(content.attachments);
+  const primaryEntityType =
+    projection?.primaryEntityType ?? normalizeStructuredEntityType(source.primaryEntityType);
+  const primaryEntityId =
+    projection?.primaryEntityId ?? readTrimmedString(source.primaryEntityId, 256);
+  const projectedHydratedEntity = projection?.hydratedEntity ?? null;
+  const resolvedHydratedEntity =
+    hydratedEntity === undefined ? projectedHydratedEntity : hydratedEntity;
 
   return {
     id: readTrimmedString(docId, 128),
@@ -341,12 +513,14 @@ function normalizePostDoc(
     authorAvatar: readTrimmedString(source.authorAvatar, 2048),
     content: {
       text:
-        typeof content.text === "string"
-          ? content.text.slice(0, 10000)
-          : null,
+        projection && "contentText" in projection
+          ? projection.contentText ?? null
+          : typeof content.text === "string"
+            ? content.text.slice(0, 10000)
+            : null,
       attachments,
     },
-    visibility: normalizePostVisibility(source.visibility),
+    visibility: projection?.visibility ?? normalizePostVisibility(source.visibility),
     status: "published",
     counters: {
       likes: toNonNegativeInt(statCounters.likes ?? counters.likes),
@@ -370,7 +544,7 @@ function normalizePostDoc(
     ...(viewerState ? { viewerState } : {}),
     ...(primaryEntityType ? { primaryEntityType } : {}),
     ...(primaryEntityId ? { primaryEntityId } : {}),
-    ...(hydratedEntity === undefined ? {} : { hydratedEntity }),
+    ...(resolvedHydratedEntity === undefined ? {} : { hydratedEntity: resolvedHydratedEntity }),
   };
 }
 
@@ -468,11 +642,15 @@ async function canViewerAccessPost(
 }
 
 async function readPostStatsMap(
-  postIds: string[]
+  postIds: string[],
+  diagnostics?: FeedReadDiagnostics
 ): Promise<Map<string, Record<string, unknown>>> {
   const uniqueIds = Array.from(new Set(postIds.filter((value) => value.length > 0)));
   const statsMap = new Map<string, Record<string, unknown>>();
   const idChunks = chunk(uniqueIds, FOLLOWING_BATCH_SIZE);
+  if (diagnostics) {
+    diagnostics.statsRequestedCount += uniqueIds.length;
+  }
 
   await Promise.all(
     idChunks.map(async (postIdBatch) => {
@@ -483,6 +661,9 @@ async function readPostStatsMap(
       snap.docs.forEach((docSnap) => {
         statsMap.set(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>);
       });
+      if (diagnostics) {
+        diagnostics.statsReads += snap.docs.length;
+      }
     })
   );
 
@@ -497,7 +678,8 @@ async function readPostStatsMap(
 
 async function readViewerInteractionStateMap(
   viewerUid: string,
-  postIds: string[]
+  postIds: string[],
+  diagnostics?: FeedReadDiagnostics
 ): Promise<Map<string, { liked: boolean; bookmarked: boolean; reposted: boolean }>> {
   const uniqueIds = Array.from(new Set(postIds.filter((value) => value.length > 0)));
   const viewerStateMap = new Map<
@@ -517,10 +699,55 @@ async function readViewerInteractionStateMap(
     return viewerStateMap;
   }
 
+  if (diagnostics) {
+    diagnostics.viewerStateRequestedCount += uniqueIds.length;
+  }
+
   const idChunks = chunk(uniqueIds, FOLLOWING_BATCH_SIZE);
+
+  const missingProjectionIds = new Set(uniqueIds);
 
   await Promise.all(
     idChunks.map(async (postIdBatch) => {
+      const projectionSnap = await db
+        .collection("users")
+        .doc(viewerUid)
+        .collection("post_interaction_state")
+        .where(FieldPath.documentId(), "in", postIdBatch)
+        .get();
+
+      if (diagnostics) {
+        diagnostics.projectedViewerStateReads += projectionSnap.docs.length;
+      }
+
+      projectionSnap.docs.forEach((docSnap) => {
+        const data = (docSnap.data() ?? {}) as Record<string, unknown>;
+        const current = viewerStateMap.get(docSnap.id);
+        if (!current) return;
+        viewerStateMap.set(docSnap.id, {
+          liked: data.liked === true,
+          bookmarked: data.bookmarked === true,
+          reposted: data.reposted === true,
+        });
+        missingProjectionIds.delete(docSnap.id);
+        if (diagnostics) {
+          diagnostics.viewerStateProjectedHitCount += 1;
+        }
+      });
+    })
+  );
+
+  if (missingProjectionIds.size === 0) {
+    return viewerStateMap;
+  }
+
+  const legacyChunks = chunk(Array.from(missingProjectionIds), FOLLOWING_BATCH_SIZE);
+  if (diagnostics) {
+    diagnostics.legacyViewerStateFallbackRequestedCount += missingProjectionIds.size;
+  }
+
+  await Promise.all(
+    legacyChunks.map(async (postIdBatch) => {
       const [likesSnap, bookmarksSnap, repostsSnap] = await Promise.all([
         db
           .collection("users")
@@ -541,6 +768,11 @@ async function readViewerInteractionStateMap(
           .where(FieldPath.documentId(), "in", postIdBatch)
           .get(),
       ]);
+
+      if (diagnostics) {
+        diagnostics.legacyViewerStateFallbackReads +=
+          likesSnap.docs.length + bookmarksSnap.docs.length + repostsSnap.docs.length;
+      }
 
       likesSnap.docs.forEach((docSnap) => {
         const current = viewerStateMap.get(docSnap.id);
@@ -569,7 +801,8 @@ async function readViewerInteractionStateMap(
 
 async function hydratePrimaryEntities(
   posts: Array<{ id: string; authorId: string; raw: Record<string, unknown> }>,
-  normalizedPosts: NormalizedPost[]
+  normalizedPosts: NormalizedPost[],
+  diagnostics?: FeedReadDiagnostics
 ): Promise<Map<string, HydratedEntity | null>> {
   const hydratedByPostId = new Map<string, HydratedEntity | null>();
   const rootEntityRequests = new Map<Exclude<StructuredEntityType, "quote">, Set<string>>([
@@ -641,6 +874,9 @@ async function hydratePrimaryEntities(
               data: (docSnap.data() ?? {}) as Record<string, unknown>,
             });
           });
+          if (diagnostics) {
+            diagnostics.fallbackEntityHydrationReads += snap.docs.length;
+          }
         })
       );
     })
@@ -669,6 +905,9 @@ async function hydratePrimaryEntities(
           data,
         });
       });
+      if (diagnostics) {
+        diagnostics.fallbackEntityHydrationReads += rootSnap.docs.length;
+      }
     })
   );
 
@@ -698,12 +937,13 @@ async function hydratePrimaryEntities(
 
 async function buildNormalizedPosts(
   posts: Array<{ id: string; authorId: string; raw: Record<string, unknown> }>,
-  viewerUid = ""
+  viewerUid = "",
+  diagnostics?: FeedReadDiagnostics
 ): Promise<NormalizedPost[]> {
   const postIds = posts.map((post) => post.id);
   const [statsMap, viewerStateMap] = await Promise.all([
-    readPostStatsMap(postIds),
-    readViewerInteractionStateMap(viewerUid, postIds),
+    readPostStatsMap(postIds, diagnostics),
+    readViewerInteractionStateMap(viewerUid, postIds, diagnostics),
   ]);
   const basePosts = posts.map((post) =>
     normalizePostDoc(
@@ -714,26 +954,80 @@ async function buildNormalizedPosts(
       viewerStateMap.get(post.id) ?? null
     )
   );
-  const hydrationMap = await hydratePrimaryEntities(posts, basePosts);
 
-  return posts.map((post) =>
+  if (diagnostics) {
+    posts.forEach((post, index) => {
+      const projection =
+        post.raw.renderProjection && typeof post.raw.renderProjection === "object"
+          ? (post.raw.renderProjection as Record<string, unknown>)
+          : null;
+      if (projection?.v === 1) {
+        diagnostics.projectionAvailableCount += 1;
+      } else {
+        diagnostics.projectionMissingCount += 1;
+      }
+      if (basePosts[index]?.primaryEntityType && basePosts[index]?.primaryEntityId) {
+        diagnostics.primaryEntityPostCount += 1;
+      }
+      if (basePosts[index]?.hydratedEntity) {
+        diagnostics.projectedEntityHydrationHits += 1;
+      }
+    });
+  }
+
+  const fallbackHydrationInputs = posts.filter((post, index) => {
+    const normalized = basePosts[index];
+    return Boolean(
+      normalized.primaryEntityType &&
+      normalized.primaryEntityId &&
+      !normalized.hydratedEntity
+    );
+  });
+  const fallbackBasePosts = basePosts.filter((post) =>
+    Boolean(post.primaryEntityType && post.primaryEntityId && !post.hydratedEntity)
+  );
+  if (diagnostics) {
+    diagnostics.fallbackEntityHydrationRequests += fallbackHydrationInputs.length;
+  }
+  const hydrationStartedAtMs = Date.now();
+  const hydrationMap =
+    fallbackHydrationInputs.length > 0
+      ? await hydratePrimaryEntities(fallbackHydrationInputs, fallbackBasePosts, diagnostics)
+      : new Map<string, HydratedEntity | null>();
+  if (diagnostics && fallbackHydrationInputs.length > 0) {
+    diagnostics.hydrationMs += Date.now() - hydrationStartedAtMs;
+  }
+
+  const normalized = posts.map((post, index) =>
     normalizePostDoc(
       post.id,
       post.raw,
       statsMap.get(post.id),
-      hydrationMap.get(post.id) ?? null,
+      basePosts[index].hydratedEntity ?? hydrationMap.get(post.id) ?? null,
       viewerStateMap.get(post.id) ?? null
     )
   );
+  if (diagnostics) {
+    diagnostics.unresolvedHydrationCount += normalized.filter((post) =>
+      Boolean(post.primaryEntityType && post.primaryEntityId && !post.hydratedEntity)
+    ).length;
+  }
+  return normalized;
 }
 
-async function readFollowingAuthorIds(uid: string): Promise<string[]> {
+async function readFollowingAuthorIds(
+  uid: string,
+  diagnostics?: FeedReadDiagnostics
+): Promise<string[]> {
   const followingSnap = await db
     .collection("users")
     .doc(uid)
     .collection("following")
     .limit(FOLLOWING_LOOKUP_LIMIT)
     .get();
+  if (diagnostics) {
+    diagnostics.followingAuthorReads += followingSnap.docs.length;
+  }
 
   const ids = new Set<string>();
   ids.add(uid);
@@ -751,6 +1045,9 @@ async function readFollowingAuthorIds(uid: string): Promise<string[]> {
 }
 
 export const listSocialFeed = onCall({ cors: true }, async (request) => {
+  try {
+  const startedAtMs = Date.now();
+  const diagnostics = createFeedReadDiagnostics();
   const scopeRaw = readTrimmedString(request.data?.scope, 32).toLowerCase();
   const scope =
     scopeRaw === "following" ||
@@ -780,13 +1077,19 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
   const decodedCursor = decodeFeedCursor(request.data?.cursor, scope);
 
   if (scope === "following" && !viewerUid) {
-    return { posts: [] as NormalizedPost[] };
+    return {
+      posts: [] as NormalizedPost[],
+      meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, 0),
+    };
   }
 
   if (scope === "following") {
-    const authorIds = await readFollowingAuthorIds(viewerUid);
+    const authorIds = await readFollowingAuthorIds(viewerUid, diagnostics);
     if (authorIds.length === 0) {
-      return { posts: [] as NormalizedPost[] };
+      return {
+        posts: [] as NormalizedPost[],
+        meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, 0),
+      };
     }
     const followedAuthorIds = new Set(authorIds);
 
@@ -812,7 +1115,12 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
           );
         }
 
-        return queryRef.get();
+        const queryStartedAtMs = Date.now();
+        const snap = await queryRef.get();
+        diagnostics.queryBatches += 1;
+        diagnostics.queryMs += Date.now() - queryStartedAtMs;
+        diagnostics.postDocumentsRead += snap.docs.length;
+        return snap;
       })
     );
 
@@ -820,11 +1128,20 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
     for (const snap of batchSnapshots) {
       for (const docSnap of snap.docs) {
         const raw = (docSnap.data() ?? {}) as Record<string, unknown>;
-        if (isDeletedPost(raw)) continue;
-        if (!(await canViewerAccessPost(raw, viewerUid, false, followedAuthorIds))) continue;
+        if (isDeletedPost(raw)) {
+          diagnostics.filteredPostCount += 1;
+          continue;
+        }
+        if (!(await canViewerAccessPost(raw, viewerUid, false, followedAuthorIds))) {
+          diagnostics.filteredPostCount += 1;
+          continue;
+        }
 
         const normalizedCandidate = normalizePostDoc(docSnap.id, raw);
-        if (!matchesFeedFilters(normalizedCandidate, filters)) continue;
+        if (!matchesFeedFilters(normalizedCandidate, filters)) {
+          diagnostics.filteredPostCount += 1;
+          continue;
+        }
 
         if (!deduped.has(docSnap.id)) {
           deduped.set(docSnap.id, {
@@ -850,19 +1167,29 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
     });
 
     const page = sorted.slice(0, FEED_PAGE_SIZE);
-    const posts = await buildNormalizedPosts(page, viewerUid);
+    const posts = await buildNormalizedPosts(page, viewerUid, diagnostics);
     const hasMore =
       sorted.length > FEED_PAGE_SIZE ||
       batchSnapshots.some((snap) => snap.docs.length === perBatchLimit);
 
     if (!hasMore || page.length === 0) {
-      return { posts };
+      return {
+        posts,
+        meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, posts.length, {
+          candidateReads: deduped.size,
+          fetchAttempts: 1,
+        }),
+      };
     }
 
     const lastPost = posts[posts.length - 1];
     const createdAtMs = Date.parse(lastPost.timestamps.createdAt);
     return {
       posts,
+      meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, posts.length, {
+        candidateReads: deduped.size,
+        fetchAttempts: 1,
+      }),
       nextCursor: encodeFeedCursor({
         v: 1,
         scope,
@@ -893,7 +1220,12 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
       );
     }
 
+    const queryStartedAtMs = Date.now();
     const snap = await queryRef.get();
+    diagnostics.queryBatches += 1;
+    diagnostics.queryMs += Date.now() - queryStartedAtMs;
+    diagnostics.postDocumentsRead += snap.docs.length;
+    diagnostics.maxFetchAttempts = FEED_FETCH_ATTEMPTS;
     lastFetchedDocs = snap.docs.length;
     if (snap.empty) {
       break;
@@ -901,13 +1233,20 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
 
     for (const docSnap of snap.docs) {
       const raw = (docSnap.data() ?? {}) as Record<string, unknown>;
-      if (isDeletedPost(raw)) continue;
+      if (isDeletedPost(raw)) {
+        diagnostics.filteredPostCount += 1;
+        continue;
+      }
 
       const normalizedCandidate = normalizePostDoc(docSnap.id, raw);
       if (scope === "books" && normalizedCandidate.flags.hasAttachments !== true) {
+        diagnostics.filteredPostCount += 1;
         continue;
       }
-      if (!matchesFeedFilters(normalizedCandidate, filters)) continue;
+      if (!matchesFeedFilters(normalizedCandidate, filters)) {
+        diagnostics.filteredPostCount += 1;
+        continue;
+      }
 
       if (!collected.has(docSnap.id)) {
         collected.set(docSnap.id, {
@@ -942,17 +1281,37 @@ export const listSocialFeed = onCall({ cors: true }, async (request) => {
   }
 
   const page = Array.from(collected.values()).slice(0, FEED_PAGE_SIZE);
-  const posts = await buildNormalizedPosts(page, viewerUid);
+  const posts = await buildNormalizedPosts(page, viewerUid, diagnostics);
   const hasMore = page.length === FEED_PAGE_SIZE && lastFetchedDocs === FEED_QUERY_BATCH_SIZE && cursor;
 
   if (!hasMore || !cursor) {
-    return { posts };
+    return {
+    posts,
+      meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, posts.length, {
+        fetchedDocs: collected.size,
+        fetchAttempts: diagnostics.queryBatches,
+      }),
+    };
   }
 
   return {
     posts,
+    meta: buildFeedDiagnosticMeta(startedAtMs, diagnostics, posts.length, {
+      fetchedDocs: collected.size,
+      fetchAttempts: diagnostics.queryBatches,
+    }),
     nextCursor: encodeFeedCursor(cursor),
   };
+  } catch (error) {
+    const failureClass = classifyFeedAssemblyFailure(error);
+    console.error("[SOCIAL_FEED][ASSEMBLY_FAILED]", { failureClass });
+    if (error instanceof HttpsError) {
+      throw error;
+    }
+    throw new HttpsError("internal", "Unable to assemble social feed.", {
+      failureClass,
+    });
+  }
 });
 
 export const getSocialPost = onCall({ cors: true }, async (request) => {

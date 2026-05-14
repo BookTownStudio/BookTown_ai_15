@@ -202,6 +202,11 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
     .doc(uid)
     .collection(target.collectionName)
     .doc(target.bookmarkId);
+  const viewerStateRef = db
+    .collection("users")
+    .doc(uid)
+    .collection("post_interaction_state")
+    .doc(target.entityId);
 
   if (active) {
     const batch = db.batch();
@@ -216,6 +221,18 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
       },
       { merge: true }
     );
+    if (target.entityType === "post") {
+      batch.set(
+        viewerStateRef,
+        {
+          postId: target.entityId,
+          bookmarked: true,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          version: 1,
+        },
+        { merge: true }
+      );
+    }
     if (target.entityType === "event") {
       batch.set(
         db.collection("events").doc(target.entityId).collection("rsvps").doc(uid),
@@ -231,7 +248,21 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
     }
     await batch.commit();
   } else {
-    await bookmarkRef.delete();
+    const batch = db.batch();
+    batch.delete(bookmarkRef);
+    if (target.entityType === "post") {
+      batch.set(
+        viewerStateRef,
+        {
+          postId: target.entityId,
+          bookmarked: false,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+          version: 1,
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
   }
 
   return {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useCallback, useEffect, useMemo } from 'react';
 import { useMutation, useQuery, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -9,6 +9,7 @@ import { queryKeys } from '../queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
 import { socialActionRepository } from '../../services/socialActionRepository.ts';
 import { invalidateBookmarkConvergence, invalidatePostConvergence } from '../socialCacheReconciliation.ts';
+import { measureSocialAsync } from '../socialPerformanceDiagnostics.ts';
 
 type PostInteractionSnapshot = {
   counts: {
@@ -126,15 +127,21 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
 
   const isDeleted = post && post.status === 'deleted';
 
-  const loginPrompt = () =>
-    showToast(lang === 'en' ? 'Please sign in to interact.' : 'يرجى تسجيل الدخول للتفاعل.');
+  const loginPrompt = useCallback(() =>
+    showToast(lang === 'en' ? 'Please sign in to interact.' : 'يرجى تسجيل الدخول للتفاعل.'),
+    [lang, showToast]
+  );
 
   const likeMutation = useMutation({
     mutationFn: async (id: string) => {
       if (isGuest || !uid) throw new Error('AUTH_REQUIRED');
-      return callCallableEndpoint<{ postId: string }, { success: boolean; liked?: boolean }>(
-        'likeSocialPost',
-        { postId: id }
+      return measureSocialAsync(
+        'social_interaction_mutation',
+        { kind: 'like' },
+        () => callCallableEndpoint<{ postId: string }, { success: boolean; liked?: boolean }>(
+          'likeSocialPost',
+          { postId: id }
+        )
       );
     },
     onMutate: async () => {
@@ -184,16 +191,24 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
       );
     },
     onSettled: async (_data, _error, id) => {
-      await invalidatePostConvergence(queryClient, id);
+      await measureSocialAsync(
+        'social_cache_invalidation',
+        { kind: 'postInteraction' },
+        () => invalidatePostConvergence(queryClient, id)
+      );
     },
   });
 
   const repostMutation = useMutation({
     mutationFn: async (id: string) => {
       if (isGuest || !uid) throw new Error('AUTH_REQUIRED');
-      return callCallableEndpoint<{ postId: string }, { success: boolean; reposted?: boolean }>(
-        'repostSocialPost',
-        { postId: id }
+      return measureSocialAsync(
+        'social_interaction_mutation',
+        { kind: 'repost' },
+        () => callCallableEndpoint<{ postId: string }, { success: boolean; reposted?: boolean }>(
+          'repostSocialPost',
+          { postId: id }
+        )
       );
     },
     onMutate: async () => {
@@ -243,14 +258,22 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
       );
     },
     onSettled: async (_data, _error, id) => {
-      await invalidatePostConvergence(queryClient, id);
+      await measureSocialAsync(
+        'social_cache_invalidation',
+        { kind: 'postInteraction' },
+        () => invalidatePostConvergence(queryClient, id)
+      );
     },
   });
 
   const bookmarkMutation = useMutation({
     mutationFn: async (variables: { id: string; shouldBookmark: boolean }) => {
       if (!uid || isGuest) throw new Error('AUTH_REQUIRED');
-      return dataService.social.toggleBookmark(uid, variables.id, 'post', variables.shouldBookmark);
+      return measureSocialAsync(
+        'social_interaction_mutation',
+        { kind: 'bookmark' },
+        () => dataService.social.toggleBookmark(uid, variables.id, 'post', variables.shouldBookmark)
+      );
     },
 
     onMutate: async (variables) => {
@@ -291,7 +314,11 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
         );
       }
       if (uid) {
-        await invalidateBookmarkConvergence(queryClient, uid, 'post', variables.id);
+        await measureSocialAsync(
+          'social_cache_invalidation',
+          { kind: 'bookmark' },
+          () => invalidateBookmarkConvergence(queryClient, uid, 'post', variables.id)
+        );
       }
     },
 
@@ -306,6 +333,45 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
 
   const snapshot = interactionSnapshot.data || seedSnapshot;
 
+  const toggleLike = useCallback(() => {
+    if (isGuest) return loginPrompt();
+    if (postId) likeMutation.mutate(postId);
+  }, [isGuest, likeMutation.mutate, loginPrompt, postId]);
+
+  const toggleBookmark = useCallback(() => {
+    if (isGuest) return loginPrompt();
+    if (!postId) return;
+    const current =
+      queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
+    bookmarkMutation.mutate({
+      id: postId,
+      shouldBookmark: !current.status.bookmark,
+    });
+  }, [bookmarkMutation.mutate, interactionKey, isGuest, loginPrompt, postId, queryClient, seedSnapshot]);
+
+  const toggleRepost = useCallback(() => {
+    if (isGuest) return loginPrompt();
+    if (!postId) return;
+    repostMutation.mutate(postId);
+  }, [isGuest, loginPrompt, postId, repostMutation.mutate]);
+
+  const share = useCallback(() => {
+    const url = `${window.location.origin}/post/${postId}`;
+    if (navigator.share) {
+      navigator.share({ title: 'BookTown 11 Post', url });
+    } else {
+      navigator.clipboard.writeText(url);
+      showToast(lang === 'en' ? 'Link copied!' : 'تم نسخ الرابط!');
+    }
+  }, [lang, postId, showToast]);
+
+  const actions = useMemo(() => ({
+    toggleLike,
+    toggleBookmark,
+    toggleRepost,
+    share,
+  }), [share, toggleBookmark, toggleLike, toggleRepost]);
+
   return {
     isLiked: snapshot.status.like,
     isBookmarked: snapshot.status.bookmark,
@@ -317,36 +383,6 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
       likeMutation.isPending ||
       repostMutation.isPending ||
       bookmarkMutation.isPending,
-    actions: {
-      toggleLike: () => {
-        if (isGuest) return loginPrompt();
-        if (postId) likeMutation.mutate(postId);
-      },
-      toggleBookmark: () => {
-        if (isGuest) return loginPrompt();
-        if (postId) {
-          const current =
-            queryClient.getQueryData<PostInteractionSnapshot>(interactionKey) || seedSnapshot;
-          bookmarkMutation.mutate({
-            id: postId,
-            shouldBookmark: !current.status.bookmark,
-          });
-        }
-      },
-      toggleRepost: () => {
-        if (isGuest) return loginPrompt();
-        if (!postId) return;
-        repostMutation.mutate(postId);
-      },
-      share: () => {
-        const url = `${window.location.origin}/post/${postId}`;
-        if (navigator.share) {
-          navigator.share({ title: 'BookTown 11 Post', url });
-        } else {
-          navigator.clipboard.writeText(url);
-          showToast(lang === 'en' ? 'Link copied!' : 'تم نسخ الرابط!');
-        }
-      },
-    },
+    actions,
   };
 };

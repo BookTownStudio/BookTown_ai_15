@@ -4,6 +4,7 @@ import { useSocialFeeds, SocialFeedScope, SocialFeedFilter } from '../../lib/hoo
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import PostCard from '../../components/content/PostCard.tsx';
+import VirtualizedPostFeed from '../../components/content/VirtualizedPostFeed.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { cn } from '../../lib/utils.ts';
 import { VerticalEllipsisIcon } from '../../components/icons/VerticalEllipsisIcon.tsx';
@@ -34,6 +35,7 @@ const TextIcon = (props: any) => (
 );
 
 const MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS = 2;
+const ESTIMATED_VIRTUAL_POST_HEIGHT = 560;
 
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
@@ -234,6 +236,18 @@ const SocialScreen: React.FC = () => {
         }
     }, [currentView, socialPostEntry, scope, filters.length, isSearchOpen]);
 
+    const scrollToVirtualPostId = useCallback((postId: string, behavior: ScrollBehavior = 'smooth') => {
+        const normalizedPostId = postId.trim();
+        if (!normalizedPostId || !mainContentRef.current) return false;
+        const targetIndex = posts.findIndex((post) => post?.id === normalizedPostId);
+        if (targetIndex < 0) return false;
+        mainContentRef.current.scrollTo({
+            top: Math.max(0, targetIndex * ESTIMATED_VIRTUAL_POST_HEIGHT),
+            behavior,
+        });
+        return true;
+    }, [posts]);
+
     useEffect(() => {
         if (scrollToPost && mainContentRef.current && !isLoading && !isSearchOpen) {
             setTimeout(() => {
@@ -244,11 +258,27 @@ const SocialScreen: React.FC = () => {
                     setTimeout(() => {
                         el.classList.remove('flash-highlight');
                     }, 800);
+                    clearScrollToPost();
+                    return;
+                }
+                if (scrollToVirtualPostId(scrollToPost)) {
+                    window.setTimeout(() => {
+                        const virtualEl = document.getElementById(`post-${scrollToPost}`);
+                        if (virtualEl) {
+                            virtualEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            virtualEl.classList.add('flash-highlight');
+                            window.setTimeout(() => {
+                                virtualEl.classList.remove('flash-highlight');
+                            }, 800);
+                        }
+                        clearScrollToPost();
+                    }, 160);
+                    return;
                 }
                 clearScrollToPost();
             }, 100);
         }
-    }, [scrollToPost, clearScrollToPost, data, isLoading, isSearchOpen]);
+    }, [scrollToPost, clearScrollToPost, data, isLoading, isSearchOpen, scrollToVirtualPostId]);
 
     useEffect(() => {
         if (currentView.type !== 'tab' || currentView.id !== 'social' || !socialPostEntry) {
@@ -307,6 +337,38 @@ const SocialScreen: React.FC = () => {
             return;
         }
 
+        const targetPostIndex = posts.findIndex((post) => post?.id === targetPostId);
+        if (targetPostIndex >= 0) {
+            scrollToVirtualPostId(targetPostId);
+            window.setTimeout(() => {
+                const virtualTarget = document.getElementById(`post-${targetPostId}`);
+                if (virtualTarget) {
+                    virtualTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    virtualTarget.classList.add('flash-highlight');
+                    window.setTimeout(() => {
+                        virtualTarget.classList.remove('flash-highlight');
+                    }, 800);
+                }
+
+                if (socialPostEntry.openDiscussion && !entryTracker.discussionOpened) {
+                    entryTracker.discussionOpened = true;
+                    clearSocialPostEntry();
+                    navigate({
+                        type: 'immersive',
+                        id: 'postDiscussion',
+                        params: {
+                            postId: targetPostId,
+                            from: returnView,
+                        },
+                    });
+                    return;
+                }
+
+                clearSocialPostEntry();
+            }, 180);
+            return;
+        }
+
         if (hasNextPage && entryTracker.fetchAttempts < MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS) {
             entryTracker.fetchAttempts += 1;
             void fetchNextPage();
@@ -346,25 +408,13 @@ const SocialScreen: React.FC = () => {
         clearSocialPostEntry,
         navigate,
         socialAnchorPostId,
+        posts,
+        scrollToVirtualPostId,
     ]);
 
-    const lastPostObserver = useRef<IntersectionObserver | null>(null);
-    const lastPostElementRef = useCallback(node => {
-        if (isLoading || isFetchingNextPage || isSearchOpen) return;
-        if (lastPostObserver.current) lastPostObserver.current.disconnect();
-        
-        lastPostObserver.current = new IntersectionObserver(entries => {
-            if (entries[0].isIntersecting && hasNextPage) {
-                fetchNextPage();
-            }
-        });
-
-        if (node) lastPostObserver.current.observe(node);
-    }, [isLoading, isFetchingNextPage, hasNextPage, fetchNextPage, isSearchOpen]);
-
-    const handleNewPost = () => {
+    const handleNewPost = useCallback(() => {
         navigate({ type: 'immersive', id: 'postComposer', params: { from: currentView } });
-    };
+    }, [currentView, navigate]);
 
     const handleScopeChange = (newScope: SocialFeedScope) => {
         setScope(newScope);
@@ -380,7 +430,7 @@ const SocialScreen: React.FC = () => {
         mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
-    const handleOpenThread = (post: Post) => {
+    const handleOpenThread = useCallback((post: Post) => {
         if (!post || !post.id) return;
         navigate({ 
             type: 'immersive', 
@@ -398,7 +448,12 @@ const SocialScreen: React.FC = () => {
                 }
             } 
         });
-    };
+    }, [navigate, scope]);
+
+    const handleFetchNextFeedPage = useCallback(() => {
+        if (!hasNextPage || isFetchingNextPage || isSearchOpen) return;
+        void fetchNextPage();
+    }, [fetchNextPage, hasNextPage, isFetchingNextPage, isSearchOpen]);
 
     const TABS: { id: SocialFeedScope; en: string; ar: string }[] = [
         { id: 'following', en: 'Following', ar: 'متابعة' },
@@ -449,31 +504,15 @@ const SocialScreen: React.FC = () => {
         }
 
         return (
-            <div className={socialShellClassName}>
-                {posts.map((post, index) => {
-                    const isLastElement = posts.length === index + 1;
-                    return (
-                        <div 
-                            ref={(node) => {
-                                if (isLastElement) lastPostElementRef(node);
-                            }} 
-                            key={post.id} 
-                            id={`post-${post.id}`} 
-                            data-post-id={post.id}
-                            className={cn(
-                                "relative w-full",
-                                index > 0 && "before:absolute before:top-0 before:left-4 before:right-4 before:h-px before:bg-white/[0.09] md:before:left-5 md:before:right-5"
-                            )}
-                        >
-                            <PostCard 
-                                post={post} 
-                                viewMode="list" 
-                                onOpenDiscussion={() => handleOpenThread(post)}
-                            />
-                        </div>
-                    );
-                })}
-            </div>
+            <VirtualizedPostFeed
+                posts={posts}
+                scrollerRef={mainContentRef}
+                className={socialShellClassName}
+                hasNextPage={hasNextPage}
+                isFetchingNextPage={isFetchingNextPage}
+                onFetchNextPage={handleFetchNextFeedPage}
+                onOpenThread={handleOpenThread}
+            />
         );
     }
 
