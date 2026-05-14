@@ -5,7 +5,7 @@ import { dataService } from '../../services/dataService.ts';
 import { useInfiniteQuery, useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { callCallableEndpoint } from '../callable.ts';
-import { queryKeys } from '../queryKeys.ts';
+import { invalidateCommentConvergence } from '../socialCacheReconciliation.ts';
 
 interface CommentsPage {
   comments: ThreadComment[];
@@ -16,21 +16,6 @@ interface CommentsPage {
 interface InfiniteCommentsData {
   pages: CommentsPage[];
   pageParams: unknown[];
-}
-
-interface InteractionSnapshotData {
-  counts?: {
-    commentsCount?: number;
-  };
-}
-
-interface FeedPageData {
-  posts?: Array<{
-    id?: string;
-    counters?: {
-      comments?: number;
-    };
-  }>;
 }
 
 interface UseThreadCommentsResult {
@@ -45,35 +30,6 @@ interface UseThreadCommentsResult {
   editComment: (commentId: string, text: string) => Promise<void>;
   isSubmitting: boolean;
 }
-
-const buildOptimisticComment = ({
-  authorAvatar,
-  authorHandle,
-  authorId,
-  authorName,
-  parentId,
-  text,
-  tempId,
-}: {
-  authorAvatar: string;
-  authorHandle: string;
-  authorId: string;
-  authorName: string;
-  parentId?: string;
-  text: string;
-  tempId: string;
-}): ThreadComment => ({
-  id: tempId,
-  authorId,
-  authorName,
-  authorHandle,
-  authorAvatar,
-  createdAt: new Date().toISOString(),
-  text: text.trim(),
-  parentId: parentId?.trim() || null,
-  liked: false,
-  likesCount: 0,
-});
 
 const flattenPages = (data?: { pages?: CommentsPage[] }): ThreadComment[] =>
   Array.isArray(data?.pages)
@@ -101,34 +57,6 @@ const patchCommentPages = (
   };
 };
 
-const prependCommentToFirstPage = (
-  old: InfiniteCommentsData | undefined,
-  comment: ThreadComment
-): InfiniteCommentsData => {
-  if (!old || old.pages.length === 0) {
-    return {
-      pages: [{ comments: [comment], hasMore: false }],
-      pageParams: [undefined],
-    };
-  }
-
-  const firstPage = old.pages[0];
-  const dedupedFirstPageComments = firstPage.comments.filter(
-    (existingComment) => existingComment.id !== comment.id
-  );
-
-  return {
-    ...old,
-    pages: [
-      {
-        ...firstPage,
-        comments: [comment, ...dedupedFirstPageComments],
-      },
-      ...old.pages.slice(1),
-    ],
-  };
-};
-
 const restoreCommentsSnapshot = (
   queryClient: ReturnType<typeof useQueryClient>,
   queryKey: readonly unknown[],
@@ -140,88 +68,6 @@ const restoreCommentsSnapshot = (
   }
 
   queryClient.removeQueries({ queryKey: queryKey });
-};
-
-const incrementPostCommentCaches = (
-  queryClient: ReturnType<typeof useQueryClient>,
-  postId: string,
-  uid: string | undefined,
-  delta: number
-) => {
-  const applyDelta = (count: unknown) =>
-    Math.max(
-      0,
-      (typeof count === 'number' && Number.isFinite(count) ? count : 0) + delta
-    );
-
-  queryClient.setQueryData<InteractionSnapshotData>(
-    ['social', 'interactionSnapshot', uid || 'guest', postId],
-    (current) =>
-      current
-        ? {
-            ...current,
-            counts: {
-              ...current.counts,
-              commentsCount: applyDelta(current.counts?.commentsCount),
-            },
-          }
-        : current
-  );
-
-  queryClient.setQueryData(
-    ['social', 'post-discussion', postId],
-    (current: any) =>
-      current
-        ? {
-            ...current,
-            counters: {
-              ...(current.counters || {}),
-              comments: applyDelta(current.counters?.comments),
-            },
-          }
-        : current
-  );
-
-  queryClient.setQueryData(
-    queryKeys.social.post(postId) as unknown as any[],
-    (current: any) =>
-      current
-        ? {
-            ...current,
-            counters: {
-              ...(current.counters || {}),
-              comments: applyDelta(current.counters?.comments),
-            },
-          }
-        : current
-  );
-
-  queryClient.setQueriesData(
-    { queryKey: ['feed'] },
-    (current: any) => {
-      if (!current || !Array.isArray(current.pages)) return current;
-
-      return {
-        ...current,
-        pages: current.pages.map((page: FeedPageData) => ({
-          ...page,
-          posts: Array.isArray(page.posts)
-            ? page.posts.map((post) =>
-                post?.id === postId
-                  ? {
-                      ...post,
-                      counters: {
-                        ...(post.counters || {}),
-                        comments: applyDelta(post.counters?.comments),
-                      },
-                    }
-                  : post
-              )
-            : page.posts,
-        })),
-      };
-    }
-  );
 };
 
 /**
@@ -274,7 +120,7 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
         { postId: string; text: string; parentId?: string },
         { success: boolean; commentId?: string }
       >('addSocialComment', { postId, text, parentId }),
-    onMutate: async ({ parentId, text }) => {
+    onMutate: async () => {
       if (!user) {
         throw new Error('AUTH_REQUIRED');
       }
@@ -282,78 +128,16 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
       await queryClient.cancelQueries({ queryKey: queryKey });
 
       const previousComments = queryClient.getQueryData<InfiniteCommentsData>(queryKey);
-      const previousInteractionSnapshot = queryClient.getQueryData<InteractionSnapshotData>([
-        'social',
-        'interactionSnapshot',
-        user.uid,
-        postId,
-      ]);
-      const previousDiscussionPost = queryClient.getQueryData(['social', 'post-discussion', postId]);
-      const previousPost = queryClient.getQueryData(
-        queryKeys.social.post(postId) as unknown as any[]
-      );
-      const previousFeeds = queryClient.getQueriesData({ queryKey: ['feed'] });
-      const tempId = `temp_comment_${Date.now()}`;
-      const optimisticComment = buildOptimisticComment({
-        authorAvatar: user.photoURL || `https://api.dicebear.com/8.x/lorelei/svg?seed=${user.uid}`,
-        authorHandle: `@${(user.email || 'user').split('@')[0]}`,
-        authorId: user.uid,
-        authorName: user.displayName || (user.email || 'Anonymous').split('@')[0],
-        parentId,
-        text,
-        tempId,
-      });
-
-      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
-        prependCommentToFirstPage(old, optimisticComment)
-      );
-      incrementPostCommentCaches(queryClient, postId, user.uid, 1);
 
       return {
-        optimisticComment,
         previousComments,
-        previousInteractionSnapshot,
-        previousDiscussionPost,
-        previousPost,
-        previousFeeds,
-        tempId,
       };
     },
     onError: (_error, _variables, context) => {
       restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
-      if (context?.previousInteractionSnapshot) {
-        queryClient.setQueryData(
-          ['social', 'interactionSnapshot', user?.uid || 'guest', postId],
-          context.previousInteractionSnapshot
-        );
-      }
-      if (typeof context?.previousDiscussionPost !== 'undefined') {
-        queryClient.setQueryData(['social', 'post-discussion', postId], context.previousDiscussionPost);
-      }
-      if (typeof context?.previousPost !== 'undefined') {
-        queryClient.setQueryData(
-          queryKeys.social.post(postId) as unknown as any[],
-          context.previousPost
-        );
-      }
-      if (Array.isArray(context?.previousFeeds)) {
-        context.previousFeeds.forEach(([key, value]: [unknown, unknown]) => {
-          queryClient.setQueryData(key as any, value);
-        });
-      }
     },
-    onSuccess: (result, _variables, context) => {
-      if (!context) return;
-
-      queryClient.setQueryData<InfiniteCommentsData>(queryKey, (old) =>
-        patchCommentPages(old, (comment) => {
-          if (comment.id !== context.tempId) return comment;
-          return {
-            ...comment,
-            id: result.commentId || comment.id,
-          };
-        })
-      );
+    onSuccess: async () => {
+      await invalidateCommentConvergence(queryClient, postId);
     },
   });
 
@@ -384,6 +168,9 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     onError: (_error, _variables, context) => {
       restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
     },
+    onSettled: async () => {
+      await invalidateCommentConvergence(queryClient, postId);
+    },
   });
 
   const deleteCommentMutation = useMutation({
@@ -404,6 +191,9 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     },
     onError: (_error, _variables, context) => {
       restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+    onSettled: async () => {
+      await invalidateCommentConvergence(queryClient, postId);
     },
   });
 
@@ -429,6 +219,9 @@ export const useThreadComments = (postId: string): UseThreadCommentsResult => {
     },
     onError: (_error, _variables, context) => {
       restoreCommentsSnapshot(queryClient, queryKey, context?.previousComments);
+    },
+    onSettled: async () => {
+      await invalidateCommentConvergence(queryClient, postId);
     },
   });
 

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { PostVisibilityScope, PostAttachment } from '../../types/entities.ts';
-import { queryKeys } from '../queryKeys.ts';
 import { callCallableEndpoint } from '../callable.ts';
+import { invalidatePostConvergence } from '../socialCacheReconciliation.ts';
 
 interface EditPostVariables {
     postId: string;
@@ -24,11 +24,8 @@ export const useEditPost = () => {
                 variables
             );
         },
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.social.post(variables.postId)
-            });
-            queryClient.invalidateQueries({ queryKey: ['social'] });
+        onSuccess: async (_, variables) => {
+            await invalidatePostConvergence(queryClient, variables.postId);
         }
     });
 };

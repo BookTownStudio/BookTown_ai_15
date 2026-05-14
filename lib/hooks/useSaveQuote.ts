@@ -2,9 +2,10 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { quoteService } from '../../services/quoteService.ts';
 import { useAuth } from '../auth.tsx';
-import { socialActionRepository } from '../../services/socialActionRepository.ts';
 import { BookmarkType } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
+import { dataService } from '../../services/dataService.ts';
+import { invalidateBookmarkConvergence } from '../socialCacheReconciliation.ts';
 
 export const useSaveQuote = () => {
     const queryClient = useQueryClient();
@@ -42,21 +43,20 @@ export const useSaveBookmark = () => {
         mutationFn: async (params: SaveBookmarkParams) => {
             if (!uid) throw new Error("Not authenticated");
 
-            if (params.type === 'quote') {
-                await quoteService.toggleQuoteBookmark({
-                    quoteId: params.entityId,
-                    active: true,
-                    ...(params.quoteOwnerId ? { quoteOwnerId: params.quoteOwnerId } : {}),
-                });
-                return;
+            if (params.type === 'attachment') {
+                throw new Error("Unsupported bookmark type");
             }
 
-            await socialActionRepository.bookmark(params.entityId, uid, params.type);
+            await dataService.social.toggleBookmark(
+                uid,
+                params.entityId,
+                params.type,
+                true,
+                params.quoteOwnerId
+            );
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.user.bookmarks(uid),
-            });
+        onSuccess: async (_result, params) => {
+            await invalidateBookmarkConvergence(queryClient, uid, params.type, params.entityId);
         }
     });
 };

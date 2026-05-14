@@ -1,6 +1,7 @@
 
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { callCallableEndpoint } from '../callable.ts';
+import { invalidatePostConvergence } from '../socialCacheReconciliation.ts';
 
 /**
  * useTransitionModerationStage
@@ -37,8 +38,8 @@ export const useApplyModerationAction = () => {
                 variables
             );
         },
-        onSuccess: () => {
-            queryClient.invalidateQueries({ queryKey: ['social'] });
+        onSuccess: async (_result, variables) => {
+            await invalidatePostConvergence(queryClient, variables.postId);
             queryClient.invalidateQueries({ queryKey: ['admin_reports'] });
         }
     });

@@ -1,6 +1,5 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
-import { socialActionRepository } from '../../services/socialActionRepository.ts';
 import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { callCallableEndpoint } from '../callable.ts';
@@ -38,7 +37,10 @@ export const useCommentActions = (postId: string) => {
     const blockMutation = useMutation({
         mutationFn: async (targetUid: string) => {
             if (!uid) throw new Error("AUTH_REQUIRED");
-            return socialActionRepository.blockUser(uid, targetUid);
+            return callCallableEndpoint<
+                { targetUid: string },
+                { targetUid: string; blocked: boolean }
+            >('blockUser', { targetUid });
         },
         onSuccess: () => {
             showToast(lang === 'en' ? "User blocked." : "تم حظر المستخدم.");

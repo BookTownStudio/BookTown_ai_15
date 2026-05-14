@@ -3,6 +3,7 @@ import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 import { PostVisibilityScope } from '../../types/entities.ts';
 import type { PostCreateAttachmentDTO } from '../../types/socialAttachments.ts';
+import { queryKeys } from '../queryKeys.ts';
 
 interface CreatePostVariables {
     content: string | { text: string };
@@ -34,7 +35,7 @@ export const useCreatePost = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['feed'] });
-            queryClient.invalidateQueries({ queryKey: ['social'] });
+            queryClient.invalidateQueries({ queryKey: queryKeys.social.all });
         },
     });
 };

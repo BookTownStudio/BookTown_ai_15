@@ -506,15 +506,12 @@ service cloud.firestore {
 
       match /likes/{postId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && request.resource.data.postId == postId;
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /reposts/{postId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid);
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /post_bookmarks/{postId} {
@@ -524,44 +521,22 @@ service cloud.firestore {
 
       match /venue_bookmarks/{venueId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && request.resource.data.type == "venue"
-          && request.resource.data.entityId == venueId;
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /event_bookmarks/{eventId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && request.resource.data.type == "event"
-          && request.resource.data.entityId == eventId;
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /bookmarks/{bookmarkId} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && (
-            request.resource.data.type == "quote"
-            || (
-              request.resource.data.type == "post"
-              && request.resource.data.entityId == bookmarkId
-              && request.resource.data.version == 1
-              && request.resource.data.keys().hasOnly([
-                "type",
-                "entityId",
-                "timestamp",
-                "version"
-              ])
-              && exists(/databases/$(database)/documents/posts/$(bookmarkId))
-            )
-          );
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /comment_likes/{commentLikeId} {
         allow read: if isOwner(uid);
-        allow create, update, delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /followers/{followerId} {
@@ -626,14 +601,12 @@ service cloud.firestore {
 
       match /reports/{reportId} {
         allow read: if isOwner(uid);
-        allow create, update, delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /blocks/{blockedUid} {
         allow read: if isOwner(uid);
-        allow create, update: if isActiveOwner(uid)
-          && request.resource.data.blockedUid == blockedUid;
-        allow delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
 
       match /drafts/{draftId} {
@@ -643,7 +616,7 @@ service cloud.firestore {
 
       match /meta/{metaId} {
         allow read: if isOwner(uid);
-        allow create, update, delete: if isActiveOwner(uid);
+        allow create, update, delete: if false;
       }
     }
 
@@ -766,11 +739,7 @@ service cloud.firestore {
 
       match /followers/{followerId} {
         allow get, list: if canReadShelfByData(get(/databases/$(database)/documents/shelves/$(shelfDocId)).data);
-        allow create: if isActiveOwner(followerId)
-          && canReadShelfByData(get(/databases/$(database)/documents/shelves/$(shelfDocId)).data)
-          && request.resource.data.uid == request.auth.uid;
-        allow update: if false;
-        allow delete: if isActiveOwner(followerId);
+        allow create, update, delete: if false;
       }
     }
 
@@ -974,10 +943,7 @@ service cloud.firestore {
        ========================= */
     match /notifications/{notificationId} {
       allow get, list: if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow update: if isSignedIn()
-        && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == resource.data.uid;
-      allow create, delete: if false;
+      allow create, update, delete: if false;
     }
 
     match /search_notifications/{notificationId} {

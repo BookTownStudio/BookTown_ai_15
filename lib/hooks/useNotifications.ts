@@ -8,19 +8,18 @@ import {
     limit,
     doc,
     getDoc,
-    updateDoc,
     getDocs,
     where,
     startAfter,
     QueryDocumentSnapshot,
     DocumentData,
-    serverTimestamp,
-    writeBatch
 } from 'firebase/firestore';
 import { useAuth } from '../auth.tsx';
 import { Notification } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
+import { callCallableEndpoint } from '../callable.ts';
+import { invalidateNotificationConvergence } from '../socialCacheReconciliation.ts';
 
 const cursorRegistry = new Map<string, QueryDocumentSnapshot<DocumentData>>();
 
@@ -207,7 +206,7 @@ export const useUnreadNotificationsCount = () => {
 
 /**
  * useToggleNotificationRead
- * Optimistic single-item read state.
+ * Server-reconciled single-item read state.
  */
 export const useToggleNotificationRead = () => {
     const queryClient = useQueryClient();
@@ -217,31 +216,19 @@ export const useToggleNotificationRead = () => {
     return useMutation({
         mutationFn: async ({ notificationId }: { notificationId: string }) => {
             if (!uid) return;
-
-            const db = getFirebaseDb();
-            if (!db) return;
-
-            const ref = doc(db, 'notifications', notificationId);
-            const snap = await getDoc(ref);
-
-            if (snap.exists() && snap.data().read === true) return;
-
-            await updateDoc(ref, {
-                read: true,
-                readAt: serverTimestamp()
-            });
+            await callCallableEndpoint<
+                { notificationId: string },
+                { notificationId: string; updated: boolean }
+            >('markNotificationRead', { notificationId });
         },
         onMutate: async ({ notificationId }) => {
             if (!uid) return;
 
             const infiniteKey = [...queryKeys.user.notifications(uid), 'infinite'];
-            const countKey = [...queryKeys.user.notifications(uid), 'unread-count'];
 
             await queryClient.cancelQueries({ queryKey: infiniteKey });
-            await queryClient.cancelQueries({ queryKey: countKey });
 
             const previousInfinite = queryClient.getQueryData<any>(infiniteKey);
-            const previousCount = queryClient.getQueryData<number>(countKey);
 
             if (previousInfinite) {
                 queryClient.setQueryData(infiniteKey, (old: any) => ({
@@ -257,11 +244,7 @@ export const useToggleNotificationRead = () => {
                 }));
             }
 
-            if (previousCount && previousCount > 0) {
-                queryClient.setQueryData(countKey, previousCount - 1);
-            }
-
-            return { previousInfinite, previousCount };
+            return { previousInfinite };
         },
         onError: (_err, _vars, ctx: any) => {
             if (!uid || !ctx) return;
@@ -269,17 +252,9 @@ export const useToggleNotificationRead = () => {
                 [...queryKeys.user.notifications(uid), 'infinite'],
                 ctx.previousInfinite
             );
-            queryClient.setQueryData(
-                [...queryKeys.user.notifications(uid), 'unread-count'],
-                ctx.previousCount
-            );
         },
-        onSettled: () => {
-            if (uid) {
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.user.notifications(uid)
-                });
-            }
+        onSettled: async () => {
+            await invalidateNotificationConvergence(queryClient, uid);
         }
     });
 };
@@ -296,52 +271,19 @@ export const useMarkAllAsRead = () => {
     return useMutation({
         mutationFn: async () => {
             if (!uid) return;
-
-            const db = getFirebaseDb();
-            if (!db) return;
-
-            const q = query(
-                collection(db, 'notifications'),
-                where('uid', '==', uid),
-                where('read', '==', false),
-                limit(100)
-            );
-
-            const snap = await getDocs(q);
-            if (snap.empty) return;
-
-            const batch = writeBatch(db);
-
-            snap.docs.forEach(d => {
-                batch.update(doc(db, 'notifications', d.id), {
-                    read: true,
-                    readAt: serverTimestamp()
-                });
-            });
-
-            const unreadRef = doc(db, 'users', uid, 'meta', 'unread');
-            batch.set(
-                unreadRef,
-                {
-                    notificationsCount: 0,
-                    lastUpdatedAt: serverTimestamp()
-                },
-                { merge: true }
-            );
-
-            await batch.commit();
+            await callCallableEndpoint<
+                Record<string, never>,
+                { updatedCount: number; complete: boolean }
+            >('markAllNotificationsRead', {});
         },
         onMutate: async () => {
             if (!uid) return;
 
             const infiniteKey = [...queryKeys.user.notifications(uid), 'infinite'];
-            const countKey = [...queryKeys.user.notifications(uid), 'unread-count'];
 
             await queryClient.cancelQueries({ queryKey: infiniteKey });
-            await queryClient.cancelQueries({ queryKey: countKey });
 
             const previousInfinite = queryClient.getQueryData<any>(infiniteKey);
-            const previousCount = queryClient.getQueryData<number>(countKey);
 
             if (previousInfinite) {
                 queryClient.setQueryData(infiniteKey, (old: any) => ({
@@ -357,8 +299,7 @@ export const useMarkAllAsRead = () => {
                 }));
             }
 
-            queryClient.setQueryData(countKey, 0);
-            return { previousInfinite, previousCount };
+            return { previousInfinite };
         },
         onError: (_err, _vars, ctx: any) => {
             if (!uid || !ctx) return;
@@ -366,17 +307,9 @@ export const useMarkAllAsRead = () => {
                 [...queryKeys.user.notifications(uid), 'infinite'],
                 ctx.previousInfinite
             );
-            queryClient.setQueryData(
-                [...queryKeys.user.notifications(uid), 'unread-count'],
-                ctx.previousCount
-            );
         },
-        onSettled: () => {
-            if (uid) {
-                queryClient.invalidateQueries({
-                    queryKey: queryKeys.user.notifications(uid)
-                });
-            }
+        onSettled: async () => {
+            await invalidateNotificationConvergence(queryClient, uid);
         }
     });
 };

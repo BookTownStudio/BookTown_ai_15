@@ -246,10 +246,6 @@ function allocateCanonicalQuoteId(): string {
   return `cq_${db.collection("quotes").doc().id}`;
 }
 
-function quoteBookmarkId(canonicalQuoteId: string): string {
-  return canonicalQuoteId;
-}
-
 export function normalizeQuoteSearchText(parts: Array<string | undefined>): string {
   return normalizeSearchText(parts.filter(Boolean).join(" "));
 }
@@ -2037,76 +2033,5 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
       updatedAt: nowIso,
     },
     alreadySaved: false,
-  };
-});
-
-export const toggleQuoteBookmark = onCall({ cors: true }, async (request) => {
-  const caller = await assertActiveAuthenticatedUser(request.auth);
-  const uid = caller.uid;
-  const data = (request.data ?? {}) as Record<string, unknown>;
-
-  const quoteId = normalizeRequiredString(data.quoteId, "quoteId", 180);
-  const quoteOwnerId = normalizeOptionalString(data.quoteOwnerId, "quoteOwnerId", 128);
-
-  if (typeof data.active !== "boolean") {
-    throw new HttpsError("invalid-argument", "active must be boolean.");
-  }
-
-  let sourceQuote: CanonicalQuote | null = null;
-
-  const rootSnap = await rootQuoteRef(quoteId).get();
-  if (rootSnap.exists) {
-    sourceQuote = parseRootQuote(quoteId, rootSnap.data() as DocumentData);
-  }
-
-  if (!sourceQuote && quoteOwnerId) {
-    const legacySnap = await quoteDocRef(quoteOwnerId, quoteId).get();
-    if (legacySnap.exists) {
-      sourceQuote = parseQuote(
-        quoteOwnerId,
-        quoteId,
-        legacySnap.data() as DocumentData
-      );
-    }
-  }
-
-  if (!sourceQuote) {
-    throw new HttpsError("not-found", "Quote not found.");
-  }
-
-  const canonicalQuoteId = sourceQuote.canonicalQuoteId || sourceQuote.id;
-  if (!canonicalQuoteId) {
-    throw new HttpsError("internal", "Quote payload is invalid.");
-  }
-
-  if (!sourceQuote.isPublic && uid !== sourceQuote.ownerId) {
-    throw new HttpsError("permission-denied", "Quote is private.");
-  }
-
-  const bookmarkId = quoteBookmarkId(canonicalQuoteId);
-  const bookmarkRef = db
-    .collection("users")
-    .doc(uid)
-    .collection("bookmarks")
-    .doc(bookmarkId);
-
-  if (data.active) {
-    await bookmarkRef.set(
-      {
-        type: "quote",
-        entityId: canonicalQuoteId,
-        ...(sourceQuote.ownerId ? { quoteOwnerId: sourceQuote.ownerId } : {}),
-        timestamp: admin.firestore.FieldValue.serverTimestamp(),
-        version: 1,
-      },
-      { merge: true }
-    );
-  } else {
-    await bookmarkRef.delete();
-  }
-
-  return {
-    bookmarked: data.active,
-    bookmarkId,
   };
 });

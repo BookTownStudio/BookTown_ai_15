@@ -167,10 +167,16 @@ export const onNotificationStateChanged = onDocumentUpdated("notifications/{id}"
     if (!before || !after) return;
     if (before.read === false && after.read === true) {
         const unreadRef = db.collection('users').doc(after.uid).collection('meta').doc('unread');
-        await unreadRef.set({
-            notificationsCount: admin.firestore.FieldValue.increment(-1),
-            lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
-        }, { merge: true });
+        await db.runTransaction(async (transaction) => {
+            const unreadSnap = await transaction.get(unreadRef);
+            const current = unreadSnap.exists
+                ? Math.max(0, Number(unreadSnap.data()?.notificationsCount || 0))
+                : 0;
+            transaction.set(unreadRef, {
+                notificationsCount: Math.max(0, current - 1),
+                lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
+            }, { merge: true });
+        });
     }
 });
 
@@ -186,7 +192,30 @@ export const onPostDeletedCleanupNotifications = onDocumentDeleted("posts/{postI
         .get();
 
     if (snap.empty) return;
+    const recipientCounts = new Map<string, number>();
     const batch = db.batch();
-    snap.docs.forEach(doc => batch.delete(doc.ref));
+    snap.docs.forEach(doc => {
+        const uid = typeof doc.data().uid === "string" ? doc.data().uid : "";
+        if (uid) {
+            recipientCounts.set(uid, (recipientCounts.get(uid) || 0) + 1);
+        }
+        batch.delete(doc.ref);
+    });
     await batch.commit();
+
+    await Promise.all(
+        Array.from(recipientCounts.entries()).map(([uid, count]) => {
+            const unreadRef = db.collection("users").doc(uid).collection("meta").doc("unread");
+            return db.runTransaction(async (transaction) => {
+                const unreadSnap = await transaction.get(unreadRef);
+                const current = unreadSnap.exists
+                    ? Math.max(0, Number(unreadSnap.data()?.notificationsCount || 0))
+                    : 0;
+                transaction.set(unreadRef, {
+                    notificationsCount: Math.max(0, current - count),
+                    lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+                }, { merge: true });
+            });
+        })
+    );
 });

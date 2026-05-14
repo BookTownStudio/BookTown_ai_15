@@ -261,19 +261,4 @@ export const quoteService = {
     };
   },
 
-  async toggleQuoteBookmark(params: {
-    quoteId: string;
-    quoteOwnerId?: string;
-    active: boolean;
-  }): Promise<{ bookmarked: boolean; bookmarkId: string }> {
-    const data = await callQuoteEndpoint<typeof params, {
-      bookmarked: boolean;
-      bookmarkId: string;
-    }>("toggleQuoteBookmark", params);
-
-    return {
-      bookmarked: data.bookmarked === true,
-      bookmarkId: assertNonEmptyString(data.bookmarkId, "bookmarkId"),
-    };
-  },
 };

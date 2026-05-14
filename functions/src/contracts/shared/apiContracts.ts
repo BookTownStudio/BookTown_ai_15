@@ -3329,6 +3329,102 @@ export const apiContracts = {
       }
     ),
 
+    toggleBookmark: defineContract(
+      z
+        .object({
+          entityType: z.enum(["book", "quote", "post", "author", "venue", "event"]),
+          entityId: z.string().min(1),
+          active: z.boolean(),
+          quoteOwnerId: z.string().min(1).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          bookmarked: z.boolean(),
+          bookmarkId: z.string().min(1),
+          entityId: z.string().min(1),
+          entityType: z.enum(["book", "quote", "post", "author", "venue", "event"]),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/hooks/useBookmarkToggle.ts",
+          "lib/hooks/usePostInteractions.ts",
+          "lib/hooks/useSaveQuote.ts",
+          "services/firebaseDbService.ts",
+        ],
+      }
+    ),
+
+    blockUser: defineContract(
+      z
+        .object({
+          targetUid: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          targetUid: z.string().min(1),
+          blocked: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useCommentActions.ts"],
+      }
+    ),
+
+    followShelf: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          shelfId: z.string().min(1),
+          following: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts", "lib/hooks/useFollowShelf.ts"],
+      }
+    ),
+
+    markNotificationRead: defineContract(
+      z
+        .object({
+          notificationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          notificationId: z.string().min(1),
+          updated: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useNotifications.ts"],
+      }
+    ),
+
+    markAllNotificationsRead: defineContract(
+      z.object({}).strict(),
+      z
+        .object({
+          updatedCount: z.number().int().min(0),
+          complete: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useNotifications.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
     reportSocialPost: defineContract(
       z
         .object({
@@ -3650,29 +3746,6 @@ export const apiContracts = {
         .object({
           quote: quoteSchema,
           alreadySaved: z.boolean(),
-        })
-        .strict(),
-      "httpsCallable",
-      {
-        callSites: ["services/quoteService.ts", "lib/hooks/useSaveQuote.ts"],
-      }
-    ),
-
-    // Canonical quote bookmark contract:
-    // - `quoteId` is the canonical quote identity.
-    // - `quoteOwnerId` remains optional metadata for legacy fallback compatibility only.
-    toggleQuoteBookmark: defineContract(
-      z
-        .object({
-          quoteId: z.string().min(1),
-          quoteOwnerId: z.string().min(1).optional(),
-          active: z.boolean(),
-        })
-        .strict(),
-      z
-        .object({
-          bookmarked: z.boolean(),
-          bookmarkId: z.string().min(1),
         })
         .strict(),
       "httpsCallable",

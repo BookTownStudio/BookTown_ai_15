@@ -50,6 +50,7 @@ import {
   VenueReview,
   Review,
   Bookmark,
+  BookmarkType,
   AgentSession,
   ChatMessage,
   Feedback,
@@ -2123,13 +2124,12 @@ class FirebaseShelfService {
   }
 
   async followShelf(uid: string, shelfId: string): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    const followRef = doc(db, "shelves", shelfId, "followers", uid);
-    await setDoc(followRef, {
-      uid,
-      followedAt: serverTimestamp()
-    });
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
+    await callEndpoint<{ shelfId: string }, { shelfId: string; following: boolean }>(
+      "followShelf",
+      { shelfId: normalizedShelfId }
+    );
   }
 
   async getStats(shelfId: string): Promise<ShelfStats> {
@@ -2589,38 +2589,18 @@ class FirebaseVenueService {
   }
 
   async saveVenue(uid: string, venueId: string): Promise<void> {
-    const db = this.requireDb();
-    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    ensureNonEmptyString(uid, "uid", 128);
     const normalizedVenueId = ensureNonEmptyString(venueId, "venueId", 128);
     const entity = await this.resolveEntity(normalizedVenueId);
     const bookmarkType = entity.collectionName === "events" ? "event" : "venue";
-    const bookmarkCollection =
-      bookmarkType === "event" ? "event_bookmarks" : "venue_bookmarks";
-
-    await setDoc(
-      doc(db, "users", normalizedUid, bookmarkCollection, normalizedVenueId),
-      {
-        type: bookmarkType,
-        entityId: normalizedVenueId,
-        timestamp: serverTimestamp(),
-        version: 1,
-      },
-      { merge: true }
-    );
-
-    if (bookmarkType === "event") {
-      await setDoc(
-        doc(db, "events", normalizedVenueId, "rsvps", normalizedUid),
-        {
-          userId: normalizedUid,
-          eventId: normalizedVenueId,
-          status: "attending",
-          updatedAt: serverTimestamp(),
-          createdAt: serverTimestamp(),
-        },
-        { merge: true }
-      );
-    }
+    await callEndpoint<
+      { entityType: "venue" | "event"; entityId: string; active: boolean },
+      { bookmarked: boolean; bookmarkId: string; entityId: string; entityType: "venue" | "event" }
+    >("toggleBookmark", {
+      entityType: bookmarkType,
+      entityId: normalizedVenueId,
+      active: true,
+    });
   }
 }
 
@@ -3796,16 +3776,6 @@ class FirebaseSocialService {
     }
 
     const createdPostId = result.postId.trim();
-    const primaryStructuredAttachment = mappedAttachments.find(
-      (
-        attachment
-      ): attachment is {
-        type: "book" | "author" | "quote" | "shelf" | "venue" | "publication";
-        entityId: string;
-        entityOwnerId?: string;
-      } => "entityId" in attachment
-    );
-
     let createdPost: Post;
     try {
       createdPost = await this.getPost(createdPostId);
@@ -3824,51 +3794,7 @@ class FirebaseSocialService {
             : String(error),
       });
 
-      return normalizePost({
-        id: createdPostId,
-        authorId: normalizedUid,
-        content: {
-          text: text || null,
-          attachments: mappedAttachments.map((attachment) =>
-            "entityId" in attachment
-              ? {
-                  attachmentId: attachment.entityId,
-                  entityId: attachment.entityId,
-                  ...(attachment.entityOwnerId
-                    ? { entityOwnerId: attachment.entityOwnerId }
-                    : {}),
-                  type: attachment.type,
-                  role: "primary",
-                  renderHint: "card",
-                }
-              : {
-                  attachmentId: attachment.attachmentId,
-                  type: attachment.type,
-                  role: "primary",
-                  renderHint: "card",
-                }
-          ),
-        },
-        visibility,
-        status: "published",
-        counters: {
-          likes: 0,
-          comments: 0,
-          reposts: 0,
-          bookmarks: 0,
-        },
-        timestamps: {
-          createdAt: new Date().toISOString(),
-          updatedAt: null,
-          publishedAt: new Date().toISOString(),
-        },
-        flags: {
-          edited: false,
-          hasAttachments: mappedAttachments.length > 0,
-        },
-        primaryEntityType: primaryStructuredAttachment?.type ?? null,
-        primaryEntityId: primaryStructuredAttachment?.entityId ?? null,
-      });
+      throw new Error("[createSocialPost] Authoritative post readback failed.");
     }
 
     if (createdPost.authorId !== normalizedUid) {
@@ -3915,6 +3841,46 @@ class FirebaseSocialService {
     if (repostSnap.exists()) {
       await this.repostPost(normalizedUid, normalizedPostId);
     }
+  }
+
+  async toggleBookmark(
+    uid: string,
+    entityId: string,
+    entityType: Exclude<BookmarkType, "attachment">,
+    active: boolean,
+    quoteOwnerId?: string
+  ): Promise<{
+    bookmarked: boolean;
+    bookmarkId: string;
+    entityId: string;
+    entityType: Exclude<BookmarkType, "attachment">;
+  }> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedEntityId = ensureNonEmptyString(entityId, "entityId", 190);
+    const allowedTypes = new Set(["book", "quote", "post", "author", "venue", "event"]);
+    if (!allowedTypes.has(entityType)) {
+      throw new Error("INVALID_ARGUMENT: Unsupported bookmark type.");
+    }
+
+    return callEndpoint<
+      {
+        entityType: Exclude<BookmarkType, "attachment">;
+        entityId: string;
+        active: boolean;
+        quoteOwnerId?: string;
+      },
+      {
+        bookmarked: boolean;
+        bookmarkId: string;
+        entityId: string;
+        entityType: Exclude<BookmarkType, "attachment">;
+      }
+    >("toggleBookmark", {
+      entityType,
+      entityId: normalizedEntityId,
+      active,
+      ...(quoteOwnerId ? { quoteOwnerId } : {}),
+    });
   }
 
   async hasUserLikedPost(uid: string, postId: string): Promise<boolean> {
@@ -4155,25 +4121,10 @@ class FirebaseNotificationService {
   }
 
   async markAllAsRead(uid: string): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
-    const unreadSnap = await getDocs(
-      query(
-        collection(db, "notifications"),
-        where("uid", "==", normalizedUid),
-        where("read", "==", false),
-        limit(100)
-      )
-    );
-
-    await Promise.all(
-      unreadSnap.docs.map((notificationDoc) =>
-        updateDoc(notificationDoc.ref, {
-          read: true,
-          readAt: serverTimestamp(),
-        })
-      )
+    ensureNonEmptyString(uid, "uid", 128);
+    await callEndpoint<Record<string, never>, { updatedCount: number; complete: boolean }>(
+      "markAllNotificationsRead",
+      {}
     );
   }
 }

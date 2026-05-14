@@ -10,7 +10,6 @@ import {
   adminQuoteUpdate as adminQuoteUpdateRaw,
   adminQuoteArchive as adminQuoteArchiveRaw,
   saveQuoteFromReference as saveQuoteFromReferenceRaw,
-  toggleQuoteBookmark as toggleQuoteBookmarkRaw,
 } from "../quotes";
 import {
   adminRegisterQuoteImport as adminRegisterQuoteImportRaw,
@@ -30,5 +29,4 @@ export const adminQuoteArchive = wrapCallableV2("adminQuoteArchive", adminQuoteA
 export const adminRegisterQuoteImport = wrapCallableV2("adminRegisterQuoteImport", adminRegisterQuoteImportRaw);
 export const adminGetQuoteImportStatus = wrapCallableV2("adminGetQuoteImportStatus", adminGetQuoteImportStatusRaw);
 export const saveQuoteFromReference = wrapCallableV2("saveQuoteFromReference", saveQuoteFromReferenceRaw);
-export const toggleQuoteBookmark = wrapCallableV2("toggleQuoteBookmark", toggleQuoteBookmarkRaw);
 export { processQuotesDaily };

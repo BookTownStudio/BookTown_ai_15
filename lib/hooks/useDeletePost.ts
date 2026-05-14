@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { queryKeys } from '../queryKeys.ts';
 import { callCallableEndpoint } from '../callable.ts';
 import { useToast } from '../../store/toast.tsx';
+import { invalidatePostConvergence } from '../socialCacheReconciliation.ts';
 
 interface DeletePostVariables {
     postId: string;
@@ -24,11 +24,8 @@ export const useDeletePost = () => {
                 variables
             );
         },
-        onSuccess: (_, variables) => {
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.social.post(variables.postId)
-            });
-            queryClient.invalidateQueries({ queryKey: ['social'] });
+        onSuccess: async (_, variables) => {
+            await invalidatePostConvergence(queryClient, variables.postId);
             showPostDeleteUndo(variables.postId);
         }
     });

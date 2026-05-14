@@ -2,7 +2,7 @@ import React from 'react';
 import { ThreadPost, PostAttachment } from '../../types/entities.ts';
 import { AttachmentListV1 } from './AttachmentRendererV1.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
-import { buildRuntimeAttachmentFromRef } from '../../types/socialAttachments.ts';
+import { resolveCanonicalPostAttachments } from '../../types/socialAttachments.ts';
 
 interface ThreadBodyProps {
     readonly post: ThreadPost;
@@ -11,18 +11,7 @@ interface ThreadBodyProps {
 const ThreadBody: React.FC<ThreadBodyProps> = ({ post }) => {
     // Resolve attachments for the V1 renderer using ThreadPost model
     const resolvedAttachments = React.useMemo(() => {
-        const refs = post.content?.attachments || [];
-        if (refs.length === 0) return [];
-        
-        return refs.map((ref): PostAttachment | null => {
-            const hydrated = post.attachments?.find(a => 
-                ('attachmentId' in a ? a.attachmentId : 'legacy') === ref.attachmentId
-            );
-            return hydrated || buildRuntimeAttachmentFromRef(ref, {
-                createdAt: post.createdAt,
-                uploaderUid: post.authorId,
-            });
-        }).filter((attachment): attachment is PostAttachment => attachment !== null);
+        return resolveCanonicalPostAttachments(post) as PostAttachment[];
     }, [post]);
 
     return (

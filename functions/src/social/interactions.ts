@@ -15,6 +15,12 @@ const postInteractionSchema = z
   })
   .strict();
 
+const blockUserSchema = z
+  .object({
+    targetUid: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
 /**
  * likeSocialPost
  * Authority: POST_INTERACTION_V1
@@ -143,5 +149,34 @@ export const repostSocialPost = onCall({ cors: true }, async (request) => {
         if (error instanceof HttpsError) throw error;
         logger.error(`[SOCIAL][REPOST_FAIL] ${error.message}`);
         throw new HttpsError("internal", "Repost process failed.");
+	}
+});
+
+export const blockUser = onCall({ cors: true }, async (request) => {
+    const caller = await assertActiveAuthenticatedUser(request.auth);
+    const { targetUid } = parseInput(blockUserSchema, request.data);
+    const uid = caller.uid;
+
+    if (uid === targetUid) {
+        throw new HttpsError("invalid-argument", "Cannot block yourself.");
     }
+
+    const targetSnap = await db.collection("users").doc(targetUid).get();
+    if (!targetSnap.exists) {
+        throw new HttpsError("not-found", "Target user not found.");
+    }
+
+    await db.collection("users").doc(uid).collection("blocks").doc(targetUid).set(
+        {
+            blockedUid: targetUid,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            version: 1,
+        },
+        { merge: true }
+    );
+
+    return {
+        targetUid,
+        blocked: true,
+    };
 });

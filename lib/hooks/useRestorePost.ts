@@ -1,6 +1,6 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
-import { queryKeys } from '../queryKeys.ts';
 import { callCallableEndpoint } from '../callable.ts';
+import { invalidatePostConvergence } from '../socialCacheReconciliation.ts';
 
 /**
  * useRestorePost
@@ -16,11 +16,8 @@ export const useRestorePost = () => {
                 { postId }
             );
         },
-        onSuccess: (_, postId) => {
-            queryClient.invalidateQueries({
-                queryKey: queryKeys.social.post(postId)
-            });
-            queryClient.invalidateQueries({ queryKey: ['social'] });
+        onSuccess: async (_, postId) => {
+            await invalidatePostConvergence(queryClient, postId);
         }
     });
 };

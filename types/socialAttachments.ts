@@ -1,4 +1,10 @@
-import type { AttachmentRef, AttachmentTypeV1, AttachmentV1, PostAttachment } from "./entities.ts";
+import type {
+  AttachmentRef,
+  AttachmentTypeV1,
+  AttachmentV1,
+  HydratedSocialEntity,
+  PostAttachment,
+} from "./entities.ts";
 
 export type StructuredPostAttachmentType =
   | "book"
@@ -206,6 +212,205 @@ export function buildPublicationPostAttachment(params: {
     ...(readText(params.author) ? { author: readText(params.author) } : {}),
     ...(readText(params.canonicalSlug) ? { canonicalSlug: readText(params.canonicalSlug) } : {}),
   };
+}
+
+const structuredTypes = new Set<StructuredPostAttachmentType>([
+  "book",
+  "author",
+  "quote",
+  "shelf",
+  "venue",
+  "publication",
+]);
+
+function normalizeStructuredAttachmentType(value: unknown): StructuredPostAttachmentType | null {
+  const normalized = readText(value).toLowerCase();
+  return structuredTypes.has(normalized as StructuredPostAttachmentType)
+    ? (normalized as StructuredPostAttachmentType)
+    : null;
+}
+
+const readCount = (value: unknown): number | null =>
+  typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? Math.trunc(value)
+    : null;
+
+function resolveShelfBookCount(data: Record<string, unknown>): number {
+  const direct =
+    readCount(data.bookCount) ??
+    readCount(data.itemsCount) ??
+    readCount(data.totalBooks) ??
+    readCount((data.counters as Record<string, unknown> | undefined)?.totalBooks);
+  if (direct !== null) return direct;
+
+  if (data.entries && typeof data.entries === "object") {
+    return Object.keys(data.entries as Record<string, unknown>).length;
+  }
+
+  if (Array.isArray(data.bookIds)) {
+    return data.bookIds.filter((id) => readText(id).length > 0).length;
+  }
+
+  return Array.isArray(data.books) ? data.books.length : 0;
+}
+
+function resolveShelfCovers(data: Record<string, unknown>): string[] {
+  const direct = Array.isArray(data.covers)
+    ? data.covers.filter((cover): cover is string => readText(cover).length > 0)
+    : [];
+  if (direct.length > 0) return direct.slice(0, 4);
+
+  const entries = data.entries && typeof data.entries === "object"
+    ? Object.values(data.entries as Record<string, unknown>)
+    : [];
+
+  const covers: string[] = [];
+  for (const entry of entries) {
+    if (!entry || typeof entry !== "object") continue;
+    const entryObj = entry as Record<string, unknown>;
+    const snapshot = entryObj.snapshot && typeof entryObj.snapshot === "object"
+      ? (entryObj.snapshot as Record<string, unknown>)
+      : {};
+    const cover = readText(snapshot.coverUrl) || readText(entryObj.coverUrl);
+    if (!cover) continue;
+    covers.push(cover);
+    if (covers.length >= 4) break;
+  }
+  return covers;
+}
+
+function attachmentIdentity(attachment: PostAttachment): string {
+  if ("attachmentId" in attachment) return readText(attachment.attachmentId);
+  if (attachment.type === "book") return readText(attachment.bookId);
+  if (attachment.type === "author") return readText(attachment.authorId);
+  if (attachment.type === "quote") return readText(attachment.quoteId);
+  if (attachment.type === "shelf") return readText(attachment.shelfId);
+  if (attachment.type === "venue") return readText(attachment.venueId);
+  if (attachment.type === "publication") return readText(attachment.publicationId);
+  if (attachment.type === "post") return readText(attachment.postId);
+  if (attachment.type === "user") return readText(attachment.userId);
+  return "";
+}
+
+function buildStructuredRuntimeAttachment(params: {
+  ref: AttachmentRef;
+  entityId: string;
+  authorId?: unknown;
+  hydratedEntity?: HydratedSocialEntity | null;
+}): PostAttachment | null {
+  const refType = normalizeStructuredAttachmentType(params.ref.type);
+  if (!refType || !params.entityId) return null;
+
+  const hydrated = params.hydratedEntity;
+  const hydratedType = normalizeStructuredAttachmentType(hydrated?.type);
+  const hydratedId = readText(hydrated?.id);
+  if (!hydrated || hydratedType !== refType || hydratedId !== params.entityId) {
+    return null;
+  }
+
+  const data = hydrated.data && typeof hydrated.data === "object" ? hydrated.data : {};
+
+  if (refType === "book") {
+    return buildBookPostAttachment({
+      bookId: params.entityId,
+      titleEn: data.titleEn,
+      titleAr: data.titleAr,
+      authorEn: data.authorEn,
+      authorAr: data.authorAr,
+      coverUrl: data.coverUrl,
+      rating: data.rating,
+    });
+  }
+
+  if (refType === "author") {
+    return buildAuthorPostAttachment({
+      authorId: params.entityId,
+      nameEn: data.nameEn,
+      nameAr: data.nameAr,
+      avatarUrl: data.avatarUrl,
+      countryEn: data.countryEn,
+      countryAr: data.countryAr,
+    });
+  }
+
+  if (refType === "quote") {
+    return buildQuotePostAttachment({
+      quoteId: params.entityId,
+      quoteOwnerId: hydrated.ownerId || data.ownerId || params.ref.entityOwnerId || params.authorId,
+      quoteText: data.textEn || data.textAr,
+    });
+  }
+
+  if (refType === "shelf") {
+    return buildShelfPostAttachment({
+      shelfId: params.entityId,
+      ownerId: data.ownerId || params.ref.entityOwnerId || params.authorId,
+      titleEn: data.titleEn,
+      titleAr: data.titleAr,
+      bookCount: resolveShelfBookCount(data),
+      covers: resolveShelfCovers(data),
+    });
+  }
+
+  if (refType === "venue") {
+    return { type: "venue", venueId: params.entityId };
+  }
+
+  return buildPublicationPostAttachment({
+    publicationId: params.entityId,
+    title: data.title,
+    coverUrl: data.coverUrl,
+    author: data.authorDisplayName || data.author,
+    canonicalSlug: data.canonicalSlug,
+  });
+}
+
+export function resolveCanonicalPostAttachments(post: {
+  authorId?: unknown;
+  createdAt?: unknown;
+  timestamps?: { createdAt?: unknown } | null;
+  primaryEntityType?: unknown;
+  primaryEntityId?: unknown;
+  hydratedEntity?: HydratedSocialEntity | null;
+  content?: { attachments?: AttachmentRef[] | null } | null;
+  attachments?: PostAttachment[];
+}): PostAttachment[] {
+  const refs = Array.isArray(post.content?.attachments) ? post.content!.attachments! : [];
+  if (refs.length === 0) return [];
+
+  const hydratedAttachments = Array.isArray(post.attachments) ? post.attachments : [];
+  const hydratedEntity = post.hydratedEntity ?? null;
+  const primaryType = normalizeStructuredAttachmentType(post.primaryEntityType);
+  const primaryId = readText(post.primaryEntityId);
+  const createdAt = post.timestamps?.createdAt ?? post.createdAt;
+
+  return refs
+    .map((ref): PostAttachment | null => {
+      const attachmentId = readText(ref.attachmentId);
+      const refType = normalizeStructuredAttachmentType(ref.type);
+      const entityId = readText(ref.entityId) || (primaryType === refType ? primaryId : "") || attachmentId;
+
+      const existing = hydratedAttachments.find((attachment) => {
+        const identity = attachmentIdentity(attachment);
+        return identity && (identity === attachmentId || identity === entityId);
+      });
+      if (existing) return existing;
+
+      if (refType) {
+        return buildStructuredRuntimeAttachment({
+          ref,
+          entityId,
+          authorId: post.authorId,
+          hydratedEntity,
+        });
+      }
+
+      return buildRuntimeAttachmentFromRef(ref, {
+        createdAt,
+        uploaderUid: post.authorId,
+      });
+    })
+    .filter((attachment): attachment is PostAttachment => attachment !== null);
 }
 
 export function toPostCreateAttachmentDTO(

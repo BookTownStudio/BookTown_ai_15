@@ -9,6 +9,7 @@ import {
   Notification,
   PostDraft,
   Bookmark,
+  BookmarkType,
   Author,
   Venue,
   Event,
@@ -255,25 +256,6 @@ export interface UserDataService {
   getStats(uid: string): Promise<UserStats>;
 
   getBookmarks(uid: string): Promise<Bookmark[]>;
-  saveBookmark(
-    uid: string,
-    bookmark: Omit<Bookmark, 'id' | 'timestamp'>
-  ): Promise<void>;
-  unbookmarkPost(uid: string, postId: string): Promise<void>;
-  hasUserBookmarkedPost(uid: string, postId: string): Promise<boolean>;
-
-  setInteraction(
-    uid: string,
-    entityType: string,
-    entityId: string,
-    updates: { like?: boolean; bookmark?: boolean; repost?: boolean }
-  ): Promise<void>;
-
-  getInteraction(
-    uid: string,
-    entityType: string,
-    entityId: string
-  ): Promise<{ like: boolean; bookmark: boolean; repost: boolean }>;
 
   getUserQuotes(uid: string): Promise<Quote[]>;
   getQuote(uid: string, quoteId: string): Promise<Quote>;
@@ -623,6 +605,13 @@ export interface SocialDataService {
   repostPost(uid: string, postId: string): Promise<void>;
   unrepostPost(uid: string, postId: string): Promise<void>;
   hasUserLikedPost(uid: string, postId: string): Promise<boolean>;
+  toggleBookmark(
+    uid: string,
+    entityId: string,
+    entityType: Exclude<BookmarkType, 'attachment'>,
+    active: boolean,
+    quoteOwnerId?: string
+  ): Promise<{ bookmarked: boolean; bookmarkId: string; entityId: string; entityType: Exclude<BookmarkType, 'attachment'> }>;
 
   getDrafts(uid: string): Promise<PostDraft[]>;
   getDraft(uid: string, draftId: string): Promise<PostDraft>;

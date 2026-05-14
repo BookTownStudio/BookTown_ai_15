@@ -669,33 +669,6 @@ async function hydratePrimaryEntities(
           data,
         });
       });
-
-      const unresolvedLegacyIds = quoteIdBatch.filter((quoteId) => !quoteHydrated.has(quoteId));
-      if (unresolvedLegacyIds.length === 0) return;
-
-      const legacySnap = await db
-        .collectionGroup("quotes")
-        .where(FieldPath.documentId(), "in", unresolvedLegacyIds)
-        .get();
-
-      legacySnap.docs.forEach((docSnap) => {
-        const ownerId = docSnap.ref.parent.parent?.id;
-        if (!ownerId) return;
-
-        const compositeKey = `${ownerId}:${docSnap.id}`;
-        if (!quoteRequests.has(compositeKey)) return;
-
-        const data = (docSnap.data() ?? {}) as Record<string, unknown>;
-        const canonicalQuoteId = readTrimmedString(data.canonicalQuoteId, 256);
-        if (!canonicalQuoteId) return;
-
-        quoteHydrated.set(compositeKey, {
-          type: "quote",
-          id: canonicalQuoteId,
-          ownerId,
-          data,
-        });
-      });
     })
   );
 
@@ -709,9 +682,7 @@ async function hydratePrimaryEntities(
     if (primary.type === "quote") {
       hydratedByPostId.set(
         post.id,
-        quoteHydrated.get(primary.id) ??
-          quoteHydrated.get(`${primary.ownerId}:${primary.id}`) ??
-          null
+        quoteHydrated.get(primary.id) ?? null
       );
       return;
     }

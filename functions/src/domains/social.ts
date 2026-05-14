@@ -17,7 +17,19 @@ import {
   deleteSocialPost as deleteSocialPostRaw,
   restoreSocialPost as restoreSocialPostRaw,
 } from "../social/deletePost";
-import { likeSocialPost as likeSocialPostRaw, repostSocialPost as repostSocialPostRaw } from "../social/interactions";
+import {
+  blockUser as blockUserRaw,
+  likeSocialPost as likeSocialPostRaw,
+  repostSocialPost as repostSocialPostRaw,
+} from "../social/interactions";
+import {
+  followShelf as followShelfRaw,
+  toggleBookmark as toggleBookmarkRaw,
+} from "../social/bookmarks";
+import {
+  markAllNotificationsRead as markAllNotificationsReadRaw,
+  markNotificationRead as markNotificationReadRaw,
+} from "../social/notifications";
 import {
   reportSocialComment as reportSocialCommentRaw,
   reportSocialPost as reportSocialPostRaw,
@@ -42,6 +54,11 @@ export const deleteSocialPost = wrapCallableV2("deleteSocialPost", deleteSocialP
 export const restoreSocialPost = wrapCallableV2("restoreSocialPost", restoreSocialPostRaw);
 export const likeSocialPost = wrapCallableV2("likeSocialPost", likeSocialPostRaw);
 export const repostSocialPost = wrapCallableV2("repostSocialPost", repostSocialPostRaw);
+export const blockUser = wrapCallableV2("blockUser", blockUserRaw);
+export const toggleBookmark = wrapCallableV2("toggleBookmark", toggleBookmarkRaw);
+export const followShelf = wrapCallableV2("followShelf", followShelfRaw);
+export const markNotificationRead = wrapCallableV2("markNotificationRead", markNotificationReadRaw);
+export const markAllNotificationsRead = wrapCallableV2("markAllNotificationsRead", markAllNotificationsReadRaw);
 export const reportSocialPost = wrapCallableV2("reportSocialPost", reportSocialPostRaw);
 export const reportSocialComment = wrapCallableV2("reportSocialComment", reportSocialCommentRaw);
 export const applyModerationAction = wrapCallableV2("applyModerationAction", applyModerationActionRaw);
