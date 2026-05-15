@@ -26,6 +26,7 @@ import { BasketIcon as FeedIcon } from '../../components/icons/BasketIcon.tsx';
 import Button from '../../components/ui/Button.tsx';
 import { Post } from '../../types/entities.ts';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
+import { canonicalizeSocialFeedFilters } from '../../lib/socialFeedState.ts';
 
 // Simple text icon for the filters
 const TextIcon = (props: any) => (
@@ -418,13 +419,18 @@ const SocialScreen: React.FC = () => {
 
     const handleScopeChange = (newScope: SocialFeedScope) => {
         setScope(newScope);
+        setFilters([]);
+        setMoreFiltersOpen(false);
         mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const handleFilterToggle = (filter: SocialFeedFilter) => {
         setFilters(prev => {
             const isSelected = prev.includes(filter);
-            return isSelected ? prev.filter(f => f !== filter) : [...prev, filter];
+            const nextFilters = isSelected
+                ? prev.filter(f => f !== filter)
+                : [...prev, filter];
+            return canonicalizeSocialFeedFilters(nextFilters);
         });
         setMoreFiltersOpen(false);
         mainContentRef.current?.scrollTo({ top: 0, behavior: 'smooth' });

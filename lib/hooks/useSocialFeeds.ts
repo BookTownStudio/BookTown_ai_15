@@ -1,4 +1,5 @@
 
+import { useMemo } from 'react';
 import { useInfiniteQuery } from '../react-query.ts';
 import type { InfiniteData } from '@tanstack/react-query';
 import { dataService } from '../../services/dataService.ts';
@@ -8,12 +9,15 @@ import {
     measureSocialAsync,
     recordSocialPerformanceMetric,
 } from '../socialPerformanceDiagnostics.ts';
+import {
+    canonicalizeSocialFeedFilters,
+    canonicalizeSocialFeedScope,
+    createSocialFeedQueryKey,
+    type SocialFeedFilter,
+    type SocialFeedScope,
+} from '../socialFeedState.ts';
 
-/**
- * Authoritative Social Feed Scopes per POST_FEED_EXECUTION_V1
- */
-export type SocialFeedScope = 'explore' | 'following' | 'books' | 'discover';
-export type SocialFeedFilter = 'media' | 'text' | 'book' | 'quote' | 'project';
+export type { SocialFeedFilter, SocialFeedScope };
 
 type SocialFeedPage = {
     meta?: SocialFeedDiagnosticsMeta;
@@ -34,8 +38,15 @@ export const useSocialFeeds = (
 ) => {
     const { user } = useAuth();
     const uid = user?.uid || 'guest';
-    
-    const queryKey = ['feed', scope, filters, uid] as const;
+    const canonicalScope = canonicalizeSocialFeedScope(scope);
+    const canonicalFilters = useMemo(
+        () => canonicalizeSocialFeedFilters(filters),
+        [filters]
+    );
+    const queryKey = useMemo(
+        () => createSocialFeedQueryKey(uid, canonicalScope, canonicalFilters),
+        [canonicalFilters, canonicalScope, uid]
+    );
 
     return useInfiniteQuery<
         SocialFeedPage,
@@ -51,10 +62,10 @@ export const useSocialFeeds = (
                 'social_feed_fetch',
                 {
                     cursor: pageParam ? 'present' : 'none',
-                    filtersCount: filters.length,
-                    scope,
+                    filtersCount: canonicalFilters.length,
+                    scope: canonicalScope,
                 },
-                () => dataService.social.getFeed(uid, scope, filters, pageParam)
+                () => dataService.social.getFeed(uid, canonicalScope, canonicalFilters, pageParam)
             );
 
             recordSocialPerformanceMetric('social_feed_fetch', {
@@ -63,7 +74,7 @@ export const useSocialFeeds = (
                 hydrationMs: page.meta?.hydrationMs ?? 0,
                 postCount: page.posts.length,
                 projectionUsageRate: page.meta?.projectionUsageRate ?? 0,
-                scope,
+                scope: canonicalScope,
                 viewerStateProjectionHitRate: page.meta?.viewerStateProjectionHitRate ?? 0,
             });
 
