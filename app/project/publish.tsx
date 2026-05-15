@@ -20,6 +20,7 @@ import { UploadIcon } from '../../components/icons/UploadIcon.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { validateReleasePreflight } from '../../lib/publishing/releasePreflight.ts';
 import { useMediaUpload } from '../../lib/hooks/useMediaUpload.ts';
+import { useProjectManuscriptSnapshot } from '../../lib/hooks/useProjectManuscriptSnapshot.ts';
 
 type PublishTarget = 'blog' | 'ebook';
 type PublicationVisibility = 'public' | 'private';
@@ -83,6 +84,7 @@ const ProjectPublishScreen: React.FC = () => {
             : undefined;
 
     const { data: project, isLoading } = useProjectDetails(projectId);
+    const { data: manuscriptSnapshot } = useProjectManuscriptSnapshot(project);
     const hasLinkedCanonicalPublication =
         !!project?.publishedBookId || !!project?.publishedPublicationId;
     const { data: publicationSettings } = useProjectPublicationSettings(
@@ -206,7 +208,7 @@ const ProjectPublishScreen: React.FC = () => {
             throw new Error(lang === 'en' ? 'Project not found.' : 'المشروع غير موجود.');
         }
 
-        const preflight = validateReleasePreflight(project.contentDoc);
+        const preflight = validateReleasePreflight(manuscriptSnapshot?.snapshot.contentDoc ?? project.contentDoc);
         if (preflight.ok === false) {
             const message = buildPreflightErrorMessage(preflight.chapterNumber);
             setPreflightError(message);

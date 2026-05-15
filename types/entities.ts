@@ -328,6 +328,9 @@ export interface WriteContentNode {
         lang?: string;
         dir?: WriteDirection;
         langManual?: boolean;
+        btAnchorId?: string;
+        btSectionId?: string;
+        btChunkId?: string;
     };
     text?: string;
     marks?: WriteMarkNode[];
@@ -339,6 +342,19 @@ export interface WriteContentDoc {
     type: 'doc';
     content: WriteContentNode[];
     plainText?: string;
+}
+
+export interface ManuscriptStorageMetadata {
+    version: 1;
+    mode: 'legacy' | 'chunked' | 'hybrid';
+    activeSectionId?: string;
+    latestRevision?: number;
+    latestSnapshotId?: string;
+    sectionCount?: number;
+    chunkCount?: number;
+    contentHash?: string;
+    migratedAt?: string;
+    updatedAt?: string;
 }
 
 export interface PublishedBook {
@@ -448,6 +464,8 @@ export interface Project {
     lastCursorBlockId?: string;
     lastCursorOffset?: number;
     lastCursorSavedAt?: string;
+    activeSectionId?: string;
+    manuscriptStorage?: ManuscriptStorageMetadata;
 }
 
 export type AttachmentTypeV1 = 

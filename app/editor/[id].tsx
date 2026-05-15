@@ -1,15 +1,11 @@
 import { devLog } from '../../lib/logging/devLog';
 import React, { useEffect, useReducer, useState, useRef, useCallback, useMemo } from 'react';
-import { Editor } from '@tiptap/react';
-import { useDebounce } from 'use-debounce';
+import { type Editor } from '@tiptap/react';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useToast } from '../../store/toast.tsx';
 import { useAuth } from '../../lib/auth.tsx';
 import { useOffline } from '../../lib/offline/OfflineProvider.tsx';
-import { useQueryClient } from '../../lib/react-query.ts';
-import { queryKeys } from '../../lib/queryKeys.ts';
-import { WriteRepository } from '../../services/writeRepository.ts';
 import Button from '../../components/ui/Button.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
@@ -21,6 +17,7 @@ import { XIcon } from '../../components/icons/XIcon.tsx';
 import FormattingToolbar from '../../components/editor/FormattingToolbar.tsx';
 import OutlinePanel, { OutlinePanelItem } from '../../components/editor/OutlinePanel.tsx';
 import TiptapEditor, { EditorChangePayload } from '../../components/editor/TiptapEditor.tsx';
+import CollaborativeCursorLayer from '../../components/editor/CollaborativeCursorLayer.tsx';
 import { useProjectDetails } from '../../lib/hooks/useProjectDetails.ts';
 import { useAutosaveProject } from '../../lib/hooks/useAutosaveProject.ts';
 import { useCreateProject } from '../../lib/hooks/useCreateProject.ts';
@@ -28,23 +25,12 @@ import { cn } from '../../lib/utils.ts';
 import { countWordsScriptAware } from '../../lib/editor/writeDocument.ts';
 import {
     captureCursorMemory,
-    cursorMemoryChanged,
     type CursorMemoryPayload,
-    resolveCursorPosition,
 } from '../../lib/editor/cursorMemory.ts';
 import {
-    createJournalEntryNodes,
-    getLatestJournalEntryMeta,
     JOURNAL_TEMPLATE_ID,
-    toJournalDateKey,
 } from '../../lib/editor/journalMode.ts';
-import {
-    writeLocalDrafts,
-    WriteDraftReason,
-    WriteDraftRecord,
-    WriteDraftSnapshot,
-} from '../../lib/editor/writeLocalDrafts.ts';
-import { Project, WriteContentDoc } from '../../types/entities.ts';
+import { Project } from '../../types/entities.ts';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { allowNextMediaRequest } from '../../lib/media/MediaGuard.ts';
 import {
@@ -56,110 +42,47 @@ import {
     type BrowserSpeechSupportInfo,
 } from '../../lib/speech/browserSpeechDictation.ts';
 import { createBlankProjectSeed, createProjectSeedFromTemplate, getWriteTemplate } from '../../lib/templates/writeTemplates.ts';
-import { getChapterBlockParagraphSelectionOffset } from '../../lib/editor/chapterNodes.ts';
-import { findProductionAgent } from '../../lib/agents/agentRegistry.tsx';
+import { writeEditorTelemetry } from '../../lib/editor/writeEditorTelemetry.ts';
+import { useWriteRenderDiagnostics } from '../../lib/editor/useWriteRenderDiagnostics.ts';
+import {
+    type AuthorityStatus,
+    type EditorSnapshot,
+    EMPTY_SNAPSHOT,
+    type RecoveryBanner,
+    type SaveIndicator,
+    buildScopeId,
+    getPerfNow,
+    getProjectCursorMemory,
+    isOfflineWriteError,
+    serializeDoc,
+    snapshotsEqual,
+    stripHtml,
+} from '../../lib/editor/editorRuntimeTypes.ts';
+import { useEditorOutlineIndexer } from '../../lib/editor/editorOutlineIndexer.ts';
+import { useEditorMentorBridge } from '../../lib/editor/useEditorMentorBridge.ts';
+import { useEditorRecoveryController } from '../../lib/editor/useEditorRecoveryController.ts';
+import { useEditorPersistenceController } from '../../lib/editor/useEditorPersistenceController.ts';
+import {
+    type DictationAnchor,
+    useEditorRuntimeController,
+} from '../../lib/editor/useEditorRuntimeController.ts';
+import { useChunkedManuscriptController } from '../../lib/editor/useChunkedManuscriptController.ts';
+import { useDynamicRuntimeWindowController } from '../../lib/editor/useDynamicRuntimeWindowController.ts';
+import { useWriteCollaborationRuntime } from '../../lib/editor/useWriteCollaborationRuntime.ts';
+import type { WriteProjectOperationAckInput } from '../../lib/editor/writeOperationalTypes.ts';
 
-type EditorSnapshot = WriteDraftSnapshot;
+const DevWritePerformanceOverlay = import.meta.env.DEV
+    ? React.lazy(() => import('../../components/editor/WritePerformanceOverlay.tsx'))
+    : null;
+
 type HistoryState = { present: EditorSnapshot };
 type HistoryAction = { type: 'SET', payload: EditorSnapshot };
 
-type AuthorityStatus = 'ephemeral' | 'materializing' | 'persistent' | 'error';
-type SaveIndicator = 'local-only' | 'unsaved' | 'saving' | 'saved' | 'offline' | 'conflict' | 'error';
 type DictationPhase = 'idle' | 'starting' | 'listening' | 'stopping';
-type RecoveryBanner =
-    | { mode: 'recovered'; draft: WriteDraftRecord }
-    | { mode: 'available'; draft: WriteDraftRecord }
-    | null;
-type DictationAnchor = {
-    from: number;
-    to: number;
-    nextPos: number;
-    replaceSelection: boolean;
-};
-
-const EMPTY_SNAPSHOT: EditorSnapshot = {
-    titleEn: '',
-    titleAr: '',
-    content: '<p></p>',
-    contentDoc: undefined,
-    wordCount: 0,
-};
 
 const historyReducer = (state: HistoryState, action: HistoryAction): HistoryState => {
     return { ...state, present: action.payload };
 };
-
-const stripHtml = (html: string): string => html.replace(/<[^>]*>/g, ' ').trim();
-const serializeDoc = (doc?: WriteContentDoc): string => JSON.stringify(doc?.content ?? []);
-
-function buildScopeId(projectId?: string, templateId?: string): string {
-    if (projectId && projectId !== 'new') {
-        return projectId;
-    }
-    return `new:${templateId || 'blank'}`;
-}
-
-function snapshotsEqual(a: EditorSnapshot, b: EditorSnapshot): boolean {
-    return (
-        a.titleEn === b.titleEn &&
-        a.titleAr === b.titleAr &&
-        a.content === b.content &&
-        a.wordCount === b.wordCount &&
-        serializeDoc(a.contentDoc) === serializeDoc(b.contentDoc)
-    );
-}
-
-function snapshotFromProject(project: Project): EditorSnapshot {
-    return {
-        titleEn: project.titleEn || '',
-        titleAr: project.titleAr || '',
-        content: project.content || '<p></p>',
-        contentDoc: project.contentDoc,
-        wordCount: project.wordCount || 0,
-    };
-}
-
-function toDraftRecord(
-    uid: string,
-    scopeId: string,
-    projectId: string | undefined,
-    serverRevision: number | null,
-    snapshot: EditorSnapshot,
-    reason: WriteDraftReason
-): WriteDraftRecord {
-    return {
-        schemaVersion: 1,
-        uid,
-        scopeId,
-        projectId,
-        serverRevision,
-        savedAt: Date.now(),
-        reason,
-        snapshot,
-    };
-}
-
-function isRevisionMismatchError(error: unknown): boolean {
-    return error instanceof Error && error.message.includes('Revision mismatch');
-}
-
-function isOfflineWriteError(error: unknown): boolean {
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-        return true;
-    }
-
-    if (!(error instanceof Error)) {
-        return false;
-    }
-
-    const message = error.message.toLowerCase();
-    return (
-        message.includes('network') ||
-        message.includes('offline') ||
-        message.includes('unavailable') ||
-        message.includes('failed to fetch')
-    );
-}
 
 function getIndicatorLabel(indicator: SaveIndicator, lang: string): string {
     if (lang === 'ar') {
@@ -198,57 +121,6 @@ function resolveDictationLanguage(editor: Editor | null, fallbackLang: string): 
 function normalizeDictationTranscript(transcript: string): string {
     const normalized = transcript.replace(/\s+/g, ' ').trim();
     return normalized ? `${normalized} ` : '';
-}
-
-function getOutlineItemDirection(node: { attrs?: Record<string, unknown> }): 'rtl' | 'ltr' | undefined {
-    const dir = node.attrs?.dir;
-    return dir === 'rtl' || dir === 'ltr' ? dir : undefined;
-}
-
-function buildCanonicalOutlineItems(editor: Editor): OutlinePanelItem[] {
-    const items: OutlinePanelItem[] = [];
-    let awaitingStructuralHeading = false;
-    let hasStructuralUnits = false;
-
-    editor.state.doc.descendants((node, pos) => {
-        if (node.type.name === 'horizontalRule') {
-            awaitingStructuralHeading = true;
-            hasStructuralUnits = true;
-            return true;
-        }
-
-        if (node.type.name !== 'heading') {
-            return true;
-        }
-
-        const label = (node.textContent || '').trim();
-        if (!label) {
-            return true;
-        }
-
-        if (awaitingStructuralHeading) {
-            items.push({
-                id: `unit_${pos}_${label.slice(0, 24)}`,
-                kind: 'chapter',
-                label,
-                pos,
-                dir: getOutlineItemDirection(node),
-            });
-            awaitingStructuralHeading = false;
-            return true;
-        }
-
-        items.push({
-            id: `heading_${pos}_${label.slice(0, 24)}`,
-            kind: hasStructuralUnits ? 'headline' : 'chapter',
-            label,
-            pos,
-            dir: getOutlineItemDirection(node),
-        });
-        return true;
-    });
-
-    return items;
 }
 
 function getDictationStatusLabel(phase: DictationPhase, lang: string): string {
@@ -319,36 +191,12 @@ function isJournalMode(params: {
     return params.project?.workType === 'journal';
 }
 
-function shouldHandleJournalInput(inputType: string): boolean {
-    return (
-        inputType === 'insertText' ||
-        inputType === 'insertCompositionText' ||
-        inputType === 'insertFromPaste'
-    );
-}
-
-function getProjectCursorMemory(project?: Project): CursorMemoryPayload | null {
-    if (!project?.lastCursorBlockId) {
-        return null;
-    }
-
-    return {
-        lastCursorBlockId: project.lastCursorBlockId,
-        lastCursorOffset:
-            typeof project.lastCursorOffset === 'number' && Number.isInteger(project.lastCursorOffset)
-                ? project.lastCursorOffset
-                : 0,
-        lastCursorSavedAt: project.lastCursorSavedAt || new Date(0).toISOString(),
-    };
-}
-
 const EditorScreen: React.FC = () => {
     const { currentView, navigate } = useNavigation();
     const { lang } = useI18n();
     const { showToast } = useToast();
     const { user } = useAuth();
     const { isOffline } = useOffline();
-    const queryClient = useQueryClient();
 
     const projectId = currentView.type === 'immersive' ? currentView.params?.projectId : undefined;
     const templateId = currentView.type === 'immersive' ? currentView.params?.templateId : undefined;
@@ -357,9 +205,6 @@ const EditorScreen: React.FC = () => {
     const uid = user?.uid;
 
     const [authorityStatus, setAuthorityStatus] = useState<AuthorityStatus>(isNewRoute ? 'ephemeral' : 'persistent');
-    const [isSaving, setIsSaving] = useState(false);
-    const [saveIssue, setSaveIssue] = useState<'none' | 'offline' | 'conflict' | 'error'>('none');
-    const [isMentorOpen, setIsMentorOpen] = useState(false);
     const [hasInteractedWithTitle, setHasInteractedWithTitle] = useState(false);
     const [isFocusMode, setIsFocusMode] = useState(false);
     const [isMobileOutlineOpen, setIsMobileOutlineOpen] = useState(false);
@@ -369,7 +214,6 @@ const EditorScreen: React.FC = () => {
     const [dictationElapsedMs, setDictationElapsedMs] = useState(0);
     const [dictationSessionLanguage, setDictationSessionLanguage] = useState<string | null>(null);
 
-    const mentor = findProductionAgent('mentor');
     const manuscriptLaneClassName = 'max-w-[780px]';
 
     const [state, dispatch] = useReducer(historyReducer, { present: EMPTY_SNAPSHOT });
@@ -378,30 +222,18 @@ const EditorScreen: React.FC = () => {
     const presentRef = useRef<EditorSnapshot>(present);
     const hasHydratedRef = useRef(false);
     const hasLocalEditsRef = useRef(false);
+    const routeMountedAtRef = useRef(getPerfNow());
+    const lastLocalEditAtRef = useRef<number | null>(null);
     const lastConfirmedSnapshotRef = useRef<EditorSnapshot>(EMPTY_SNAPSHOT);
     const currentRevisionRef = useRef<number | null>(null);
-    const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
-    const activeCursorSavePromiseRef = useRef<Promise<boolean> | null>(null);
-    const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
-    const latestAvailableDraftRef = useRef<WriteDraftRecord | null>(null);
-    const editorScrollRef = useRef<HTMLDivElement | null>(null);
     const lastPersistedCursorRef = useRef<CursorMemoryPayload | null>(null);
-    const cursorRestoreAppliedRef = useRef(false);
     const dictationSessionRef = useRef<BrowserSpeechSession | null>(null);
     const dictationAnchorRef = useRef<DictationAnchor | null>(null);
     const dictationStopRequestedRef = useRef(false);
     const dictationLastErrorRef = useRef<BrowserSpeechDictationErrorCode | null>(null);
     const suppressDictationAnchorMappingRef = useRef(false);
     const dictationLimitedModeNoticeRef = useRef(false);
-    const [cursorPersistenceSignal, setCursorPersistenceSignal] = useState(0);
-
-    const [debouncedContent] = useDebounce(present.content, 2000);
-    const [debouncedTitleEn] = useDebounce(present.titleEn, 2000);
-    const [debouncedTitleAr] = useDebounce(present.titleAr, 2000);
-    const [debouncedDocSignature] = useDebounce(serializeDoc(present.contentDoc), 2000);
-    const [debouncedCursorPersistenceSignal] = useDebounce(cursorPersistenceSignal, 1200);
-
-    const [editor, setEditor] = useState<Editor | null>(null);
+    const persistCursorMemoryRef = useRef<(() => Promise<boolean>) | null>(null);
 
     const {
         data: project,
@@ -417,26 +249,192 @@ const EditorScreen: React.FC = () => {
         [isNewRoute, project, templateId]
     );
 
+    const setSnapshot = useCallback((snapshot: EditorSnapshot) => {
+        dispatch({ type: 'SET', payload: snapshot });
+    }, []);
+
+    const {
+        latestAvailableDraftRef,
+        persistLocalDraft,
+        clearLocalDraft,
+        loadLocalDraft,
+        hydrateFromRecoveryDraft,
+        resetRecoveryController,
+    } = useEditorRecoveryController({
+        uid,
+        scopeId,
+        projectId,
+        currentRevisionRef,
+        presentRef,
+        hasLocalEditsRef,
+        setSnapshot,
+        setRecoveryBanner,
+    });
+    const {
+        loadProjectSnapshot,
+        shiftRuntimeWindow,
+        migrateLegacySnapshot,
+        saveSnapshot: saveChunkedSnapshot,
+    } = useChunkedManuscriptController({
+        uid,
+        projectId,
+    });
+    const saveManuscriptSnapshot = useCallback(async (
+        snapshot: EditorSnapshot,
+        revision: number,
+        operation?: WriteProjectOperationAckInput
+    ) => {
+        const metadata = await saveChunkedSnapshot(snapshot, revision, operation);
+        return metadata
+            ? {
+                activeSectionId: metadata.activeSectionId,
+                manuscriptStorage: metadata,
+            }
+            : null;
+    }, [saveChunkedSnapshot]);
+
+    const {
+        editor,
+        setEditor,
+        editorScrollRef,
+        handleOutlineSelect: selectOutlineItem,
+        resetRuntimeController,
+    } = useEditorRuntimeController({
+        project,
+        lang,
+        authorityStatus,
+        journalModeActive,
+        hasHydratedRef,
+        presentRef,
+        lastPersistedCursorRef,
+        dictationAnchorRef,
+        suppressDictationAnchorMappingRef,
+        persistCursorMemoryRef,
+    });
+
+    useDynamicRuntimeWindowController({
+        project,
+        editor,
+        scrollRef: editorScrollRef,
+        hasHydratedRef,
+        hasLocalEditsRef,
+        presentRef,
+        lastConfirmedSnapshotRef,
+        shiftRuntimeWindow,
+        setSnapshot,
+    });
+
+    const collaborationRuntime = useWriteCollaborationRuntime({
+        uid,
+        projectId,
+        authorityStatus,
+        isOffline,
+        editor,
+        scrollElement: editorScrollRef.current,
+        hasHydratedRef,
+        hasLocalEditsRef,
+        presentRef,
+        lastConfirmedSnapshotRef,
+        currentRevisionRef,
+        setSnapshot,
+        displayName: user?.displayName || user?.email || undefined,
+    });
+
+    const {
+        isSaving,
+        saveIssue,
+        setSaveIssue,
+        indicator,
+        persistCursorMemory,
+        reconcileConflict,
+        flushBeforeExit,
+        resetPersistenceController,
+    } = useEditorPersistenceController({
+        uid,
+        projectId,
+        lang,
+        isOffline,
+        authorityStatus,
+        editor,
+        present,
+        autosaveAsync,
+        saveManuscriptSnapshot,
+        loadManuscriptSnapshot: loadProjectSnapshot,
+        persistLocalDraft,
+        clearLocalDraft,
+        onLocalOperationCommitted: collaborationRuntime.publishLocalOperation,
+        showToast,
+        hasHydratedRef,
+        hasLocalEditsRef,
+        presentRef,
+        lastConfirmedSnapshotRef,
+        currentRevisionRef,
+        lastPersistedCursorRef,
+        lastLocalEditAtRef,
+    });
+
+    const { mentor, isMentorOpen, openMentor, closeMentor, startMentorChat } = useEditorMentorBridge({
+        currentView,
+        navigate,
+    });
+
+    useEffect(() => {
+        persistCursorMemoryRef.current = persistCursorMemory;
+    }, [persistCursorMemory]);
+
+    useWriteRenderDiagnostics('EditorScreen', {
+        authorityStatus,
+        isSaving,
+        saveIssue,
+        isMentorOpen,
+        isFocusMode,
+        isMobileOutlineOpen,
+        dictationPhase,
+        recoveryMode: recoveryBanner?.mode ?? 'none',
+        contentLength: present.content.length,
+        contentDocNodeCount: present.contentDoc?.content?.length ?? 0,
+        wordCount: present.wordCount,
+        projectId,
+        isOffline,
+    });
+
     useEffect(() => {
         presentRef.current = present;
     }, [present]);
 
     useEffect(() => {
+        writeEditorTelemetry.log('lifecycle', 'editor_route_mounted', {
+            projectId,
+            isNewRoute,
+            templateId,
+        });
+        return () => {
+            writeEditorTelemetry.timing('editor.routeLifetime', getPerfNow() - routeMountedAtRef.current, {
+                projectId,
+                isNewRoute,
+            });
+            writeEditorTelemetry.log('lifecycle', 'editor_route_unmounted', {
+                projectId,
+                isNewRoute,
+            });
+        };
+    }, []);
+
+    useEffect(() => {
+        writeEditorTelemetry.log('lifecycle', 'editor_route_reset', {
+            scopeId,
+            isNewRoute,
+        }, 'debug');
         hasHydratedRef.current = false;
         hasLocalEditsRef.current = false;
+        lastLocalEditAtRef.current = null;
         lastConfirmedSnapshotRef.current = EMPTY_SNAPSHOT;
         currentRevisionRef.current = null;
-        latestAvailableDraftRef.current = null;
-        lastPersistedCursorRef.current = null;
-        cursorRestoreAppliedRef.current = false;
-        activeSavePromiseRef.current = null;
-        activeCursorSavePromiseRef.current = null;
-        queuedSnapshotRef.current = null;
+        resetRecoveryController();
+        resetRuntimeController();
+        resetPersistenceController();
         setAuthorityStatus(isNewRoute ? 'ephemeral' : 'persistent');
-        setIsSaving(false);
-        setSaveIssue('none');
         setIsMobileOutlineOpen(false);
-        setRecoveryBanner(null);
         dictationSessionRef.current?.dispose();
         dictationSessionRef.current = null;
         dictationAnchorRef.current = null;
@@ -447,9 +445,8 @@ const EditorScreen: React.FC = () => {
         setDictationStartedAt(null);
         setDictationElapsedMs(0);
         setDictationSessionLanguage(null);
-        setCursorPersistenceSignal(0);
-        dispatch({ type: 'SET', payload: EMPTY_SNAPSHOT });
-    }, [isNewRoute, scopeId]);
+        setSnapshot(EMPTY_SNAPSHOT);
+    }, [isNewRoute, resetPersistenceController, resetRecoveryController, resetRuntimeController, scopeId, setSnapshot]);
 
     useEffect(() => {
         if (dictationPhase === 'idle' || !dictationStartedAt) {
@@ -493,402 +490,26 @@ const EditorScreen: React.FC = () => {
     }, [isMobileOutlineOpen]);
 
     useEffect(() => {
-        if (!editor) {
-            return;
-        }
-
-        const handleTransaction = ({ transaction }: { transaction: any }) => {
-            const anchor = dictationAnchorRef.current;
-            if (!anchor || !transaction?.docChanged) {
-                return;
-            }
-
-            if (suppressDictationAnchorMappingRef.current) {
-                suppressDictationAnchorMappingRef.current = false;
-                return;
-            }
-
-            anchor.from = transaction.mapping.map(anchor.from, -1);
-            anchor.to = transaction.mapping.map(anchor.to, 1);
-            anchor.nextPos = transaction.mapping.map(anchor.nextPos, 1);
-        };
-
-        editor.on('transaction', handleTransaction);
-        return () => {
-            editor.off('transaction', handleTransaction);
-        };
-    }, [editor]);
-
-    useEffect(() => {
-        if (!editor) {
-            return;
-        }
-
-        const markCursorDirty = () => {
-            setCursorPersistenceSignal((value) => value + 1);
-        };
-
-        editor.on('selectionUpdate', markCursorDirty);
-        return () => {
-            editor.off('selectionUpdate', markCursorDirty);
-        };
-    }, [editor]);
-
-    useEffect(() => {
-        if (!editor || !journalModeActive) {
-            return;
-        }
-
-        const handleBeforeInput = (event: Event) => {
-            if (!hasHydratedRef.current) {
-                return;
-            }
-
-            const inputEvent = event as InputEvent;
-            const inputType = typeof inputEvent.inputType === 'string' ? inputEvent.inputType : '';
-            if (!shouldHandleJournalInput(inputType)) {
-                return;
-            }
-
-            const today = new Date();
-            const todayKey = toJournalDateKey(today);
-            const latestEntry = getLatestJournalEntryMeta(presentRef.current.contentDoc);
-
-            if (latestEntry?.dateKey === todayKey) {
-                return;
-            }
-
-            event.preventDefault();
-
-            const locale = lang === 'ar' ? 'ar' : 'en';
-            const entryNodes = createJournalEntryNodes({ date: today, locale });
-            const insertAt = editor.state.doc.content.size;
-            const paragraphStart = insertAt + getChapterBlockParagraphSelectionOffset(entryNodes);
-
-            const insertedEntry = editor.commands.insertContentAt(insertAt, entryNodes);
-            if (!insertedEntry) {
-                return;
-            }
-
-            const textPayload =
-                typeof inputEvent.data === 'string'
-                    ? inputEvent.data
-                    : inputType === 'insertFromPaste'
-                        ? inputEvent.dataTransfer?.getData('text/plain') ?? ''
-                        : '';
-
-            const chain = editor.chain().focus().setTextSelection(paragraphStart);
-            if (textPayload) {
-                chain.insertContent(textPayload).run();
-                return;
-            }
-
-            chain.run();
-        };
-
-        editor.view.dom.addEventListener('beforeinput', handleBeforeInput);
-        return () => {
-            editor.view.dom.removeEventListener('beforeinput', handleBeforeInput);
-        };
-    }, [editor, journalModeActive, lang]);
-
-    useEffect(() => {
         if (!isNewRoute && projectId && projectId !== 'new') {
             void refetchProject();
         }
     }, [isNewRoute, projectId, refetchProject]);
 
     useEffect(() => {
-        if (!editor || !project || authorityStatus !== 'persistent' || cursorRestoreAppliedRef.current === true) {
-            return;
-        }
-
-        const cursorMemory = getProjectCursorMemory(project);
-        if (!cursorMemory) {
-            cursorRestoreAppliedRef.current = true;
-            return;
-        }
-
-        cursorRestoreAppliedRef.current = true;
-        requestAnimationFrame(() => {
-            const position = resolveCursorPosition(editor, cursorMemory);
-            if (position === null) {
-                return;
-            }
-
-            editor.chain().focus().setTextSelection(position).scrollIntoView().run();
-        });
-    }, [authorityStatus, editor, project]);
-
-    const hasDirtyChanges = snapshotsEqual(present, lastConfirmedSnapshotRef.current) === false;
-
-    const indicator: SaveIndicator = (() => {
-        if (authorityStatus === 'error') {
-            return 'error';
-        }
-        if (authorityStatus === 'materializing' || isSaving) {
-            return 'saving';
-        }
-        if (saveIssue === 'conflict') {
-            return 'conflict';
-        }
-        if (saveIssue === 'error') {
-            return 'error';
-        }
-        if (authorityStatus === 'ephemeral') {
-            return hasLocalEditsRef.current ? 'local-only' : 'saved';
-        }
-        if ((saveIssue === 'offline' || isOffline) && hasDirtyChanges) {
-            return 'offline';
-        }
-        if (hasDirtyChanges) {
-            return 'unsaved';
-        }
-        return 'saved';
-    })();
-
-    const persistLocalDraft = useCallback((snapshot: EditorSnapshot, reason: WriteDraftReason) => {
-        if (!uid) {
-            return;
-        }
-
-        writeLocalDrafts.save(
-            toDraftRecord(
-                uid,
-                scopeId,
-                projectId && projectId !== 'new' ? projectId : undefined,
-                currentRevisionRef.current,
-                snapshot,
-                reason
-            )
-        );
-    }, [projectId, scopeId, uid]);
-
-    const clearLocalDraft = useCallback(() => {
-        if (!uid) {
-            return;
-        }
-        writeLocalDrafts.clear(uid, scopeId);
-    }, [scopeId, uid]);
-
-    const updateProjectCaches = useCallback((nextProject: Project) => {
-        if (!uid) {
-            return;
-        }
-
-        queryClient.setQueryData(
-            queryKeys.user.project(uid, nextProject.id) as unknown as any[],
-            nextProject
-        );
-        queryClient.setQueryData<Project[]>(
-            queryKeys.user.projects(uid) as unknown as any[],
-            (old = []) => old.map(item => item.id === nextProject.id ? nextProject : item)
-        );
-    }, [queryClient, uid]);
-
-    const persistCursorMemory = useCallback(async (): Promise<boolean> => {
-        if (!editor || !uid || !projectId || projectId === 'new' || authorityStatus !== 'persistent' || isOffline) {
-            return false;
-        }
-
-        if (activeSavePromiseRef.current) {
-            await activeSavePromiseRef.current;
-        }
-
-        if (activeCursorSavePromiseRef.current) {
-            await activeCursorSavePromiseRef.current;
-        }
-
-        const run = async (): Promise<boolean> => {
-            const cursorMemory = captureCursorMemory(editor);
-            if (!cursorMemory || !cursorMemoryChanged(cursorMemory, lastPersistedCursorRef.current)) {
-                return false;
-            }
-
-            try {
-                const result = await autosaveAsync({
-                    projectId,
-                    expectedRevision: currentRevisionRef.current ?? 1,
-                    updates: cursorMemory,
-                });
-
-                currentRevisionRef.current = result.revision;
-                lastPersistedCursorRef.current = cursorMemory;
-                return true;
-            } catch (error) {
-                console.error('[WRITE][CURSOR_SAVE_FAILED]', {
-                    projectId,
-                    error,
-                });
-                return false;
-            }
-        };
-
-        activeCursorSavePromiseRef.current = run();
-        const success = await activeCursorSavePromiseRef.current;
-        activeCursorSavePromiseRef.current = null;
-        return success;
-    }, [authorityStatus, autosaveAsync, editor, isOffline, projectId, uid]);
-
-    const persistSnapshot = useCallback(async (
-        snapshot: EditorSnapshot,
-        options?: { expectedRevision?: number; draftReason?: WriteDraftReason }
-    ): Promise<boolean> => {
-        if (!uid || !projectId || projectId === 'new' || authorityStatus !== 'persistent') {
-            return false;
-        }
-
-        if (isOffline) {
-            persistLocalDraft(snapshot, options?.draftReason || 'offline');
-            setSaveIssue('offline');
-            return false;
-        }
-
-        if (activeCursorSavePromiseRef.current) {
-            await activeCursorSavePromiseRef.current;
-        }
-
-        if (activeSavePromiseRef.current) {
-            queuedSnapshotRef.current = {
-                snapshot,
-                expectedRevision: options?.expectedRevision,
-            };
-            return activeSavePromiseRef.current.then(async () => {
-                const queued = queuedSnapshotRef.current;
-                if (!queued) {
-                    return true;
-                }
-                queuedSnapshotRef.current = null;
-                return persistSnapshot(queued.snapshot, {
-                    expectedRevision: queued.expectedRevision,
-                    draftReason: options?.draftReason,
-                });
-            });
-        }
-
-        const run = async (): Promise<boolean> => {
-            setIsSaving(true);
-            setSaveIssue('none');
-
-            try {
-                const cursorMemory = editor ? captureCursorMemory(editor) : null;
-                const result = await autosaveAsync({
-                    projectId,
-                    expectedRevision: options?.expectedRevision ?? currentRevisionRef.current ?? 1,
-                    updates: {
-                        ...snapshot,
-                        ...(cursorMemory ?? {}),
-                    },
-                });
-
-                currentRevisionRef.current = result.revision;
-                lastConfirmedSnapshotRef.current = snapshot;
-                if (cursorMemory) {
-                    lastPersistedCursorRef.current = cursorMemory;
-                }
-                hasLocalEditsRef.current = false;
-                setSaveIssue('none');
-                clearLocalDraft();
-                return true;
-            } catch (error) {
-                if (isRevisionMismatchError(error)) {
-                    setSaveIssue('conflict');
-                    persistLocalDraft(snapshot, options?.draftReason || 'conflict');
-                    return false;
-                }
-
-                if (isOfflineWriteError(error)) {
-                    setSaveIssue('offline');
-                    persistLocalDraft(snapshot, options?.draftReason || 'offline');
-                    return false;
-                }
-
-                console.error('[WRITE][AUTOSAVE_FAILED]', error);
-                setSaveIssue('error');
-                persistLocalDraft(snapshot, options?.draftReason || 'error');
-                return false;
-            } finally {
-                setIsSaving(false);
-            }
-        };
-
-        activeSavePromiseRef.current = run();
-        const success = await activeSavePromiseRef.current;
-        activeSavePromiseRef.current = null;
-
-        if (success && queuedSnapshotRef.current) {
-            const queued = queuedSnapshotRef.current;
-            queuedSnapshotRef.current = null;
-            return persistSnapshot(queued.snapshot, {
-                expectedRevision: queued.expectedRevision,
-                draftReason: options?.draftReason,
-            });
-        }
-
-        return success;
-    }, [authorityStatus, autosaveAsync, clearLocalDraft, editor, isOffline, persistLocalDraft, projectId, uid]);
-
-    const reconcileConflict = useCallback(async () => {
-        if (!uid || !projectId || projectId === 'new') {
-            return;
-        }
-
-        setIsSaving(true);
-        try {
-            const latestProject = await WriteRepository.getProject(uid, projectId);
-            updateProjectCaches(latestProject);
-
-            const latestSnapshot = snapshotFromProject(latestProject);
-            currentRevisionRef.current = latestProject.revision ?? 1;
-            lastConfirmedSnapshotRef.current = latestSnapshot;
-
-            if (!snapshotsEqual(presentRef.current, latestSnapshot)) {
-                const reconciled = await persistSnapshot(presentRef.current, {
-                    expectedRevision: latestProject.revision ?? 1,
-                    draftReason: 'conflict',
-                });
-
-                if (!reconciled) {
-                    showToast(lang === 'en' ? 'Conflict requires another retry.' : 'يتطلب التعارض إعادة محاولة أخرى.');
-                    return;
-                }
-            } else {
-                clearLocalDraft();
-                setSaveIssue('none');
-            }
-
-            showToast(lang === 'en' ? 'Conflict reconciled.' : 'تمت المصالحة.');
-        } catch (error) {
-            console.error('[WRITE][RECONCILE_FAILED]', error);
-            setSaveIssue('error');
-            persistLocalDraft(presentRef.current, 'error');
-            showToast(lang === 'en' ? 'Failed to reconcile with server.' : 'فشلت المصالحة مع الخادم.');
-        } finally {
-            setIsSaving(false);
-        }
-    }, [clearLocalDraft, lang, persistLocalDraft, persistSnapshot, projectId, showToast, uid, updateProjectCaches]);
-
-    const hydrateFromRecoveryDraft = useCallback((draft: WriteDraftRecord, mode: RecoveryBanner['mode']) => {
-        latestAvailableDraftRef.current = draft;
-        dispatch({ type: 'SET', payload: draft.snapshot });
-        presentRef.current = draft.snapshot;
-        hasLocalEditsRef.current = true;
-        setRecoveryBanner({ mode, draft });
-        setSaveIssue(
-            draft.reason === 'offline'
-                ? 'offline'
-                : draft.reason === 'conflict'
-                    ? 'conflict'
-                    : draft.reason === 'error'
-                        ? 'error'
-                        : 'none'
-        );
-    }, []);
-
-    useEffect(() => {
         if (hasHydratedRef.current) {
             return;
         }
+
+        if (!isNewRoute && !project) {
+            return;
+        }
+
+        let cancelled = false;
+        const finishHydration = writeEditorTelemetry.startTimer('editor.hydration', {
+            scopeId,
+            isNewRoute,
+            hasProject: Boolean(project),
+        });
 
         if (isNewRoute) {
             const template = getWriteTemplate(templateId);
@@ -905,11 +526,11 @@ const EditorScreen: React.FC = () => {
 
             lastConfirmedSnapshotRef.current = baseSnapshot;
 
-            const draft = uid ? writeLocalDrafts.load(uid, scopeId) : null;
+            const draft = loadLocalDraft();
             if (draft && !snapshotsEqual(draft.snapshot, baseSnapshot)) {
-                hydrateFromRecoveryDraft(draft, 'recovered');
+                setSaveIssue(hydrateFromRecoveryDraft(draft, 'recovered'));
             } else {
-                dispatch({ type: 'SET', payload: baseSnapshot });
+                setSnapshot(baseSnapshot);
                 presentRef.current = baseSnapshot;
             }
 
@@ -917,35 +538,62 @@ const EditorScreen: React.FC = () => {
             lastPersistedCursorRef.current = null;
             hasHydratedRef.current = true;
             setAuthorityStatus('ephemeral');
+            finishHydration();
+            writeEditorTelemetry.log('hydration', 'new_project_hydrated', {
+                scopeId,
+                recoveredDraft: Boolean(draft),
+            });
             return;
         }
 
         if (project) {
-            const serverSnapshot = snapshotFromProject(project);
+            void (async () => {
+            const loaded = await loadProjectSnapshot(project);
+            if (cancelled) {
+                finishHydration();
+                return;
+            }
+            const serverSnapshot = loaded.snapshot;
             const serverRevision = project.revision ?? 1;
             currentRevisionRef.current = serverRevision;
             lastConfirmedSnapshotRef.current = serverSnapshot;
             lastPersistedCursorRef.current = getProjectCursorMemory(project);
 
-            const draft = uid ? writeLocalDrafts.load(uid, scopeId) : null;
+            const draft = loadLocalDraft();
             if (draft && !snapshotsEqual(draft.snapshot, serverSnapshot)) {
                 if ((draft.serverRevision ?? 0) >= serverRevision) {
-                    hydrateFromRecoveryDraft(draft, 'recovered');
+                    setSaveIssue(hydrateFromRecoveryDraft(draft, 'recovered'));
                 } else {
-                    dispatch({ type: 'SET', payload: serverSnapshot });
+                    setSnapshot(serverSnapshot);
                     presentRef.current = serverSnapshot;
                     latestAvailableDraftRef.current = draft;
                     setRecoveryBanner({ mode: 'available', draft });
                 }
             } else {
-                dispatch({ type: 'SET', payload: serverSnapshot });
+                setSnapshot(serverSnapshot);
                 presentRef.current = serverSnapshot;
             }
 
             hasHydratedRef.current = true;
             setAuthorityStatus('persistent');
+            finishHydration();
+            writeEditorTelemetry.log('hydration', 'project_hydrated', {
+                projectId,
+                revision: serverRevision,
+                manuscriptSource: loaded.source,
+                recoveredDraft: Boolean(draft && (draft.serverRevision ?? 0) >= serverRevision),
+                availableDraft: Boolean(draft && (draft.serverRevision ?? 0) < serverRevision),
+            });
+            if (loaded.source === 'legacy') {
+                void migrateLegacySnapshot(serverSnapshot, serverRevision);
+            }
+            })();
         }
-    }, [hydrateFromRecoveryDraft, isNewRoute, lang, project, scopeId, templateId, uid]);
+
+        return () => {
+            cancelled = true;
+        };
+    }, [hydrateFromRecoveryDraft, isNewRoute, lang, loadLocalDraft, loadProjectSnapshot, migrateLegacySnapshot, project, projectId, scopeId, setSaveIssue, setSnapshot, templateId]);
 
     useEffect(() => {
         const shouldMaterialize =
@@ -961,6 +609,10 @@ const EditorScreen: React.FC = () => {
 
         setAuthorityStatus('materializing');
         devLog('[WRITE][PHASE_2] MATERIALIZATION_STARTED: Establishing backend authority...');
+        writeEditorTelemetry.log('lifecycle', 'materialization_started', {
+            scopeId,
+            templateId,
+        });
 
         const initialSnapshot: EditorSnapshot = { ...presentRef.current };
         const initialCursorMemory = editor ? captureCursorMemory(editor) : null;
@@ -977,6 +629,10 @@ const EditorScreen: React.FC = () => {
             {
                 onSuccess: (newProject) => {
                     devLog(`[WRITE][PHASE_3] MATERIALIZATION_SUCCESS: Canonical ID verified: ${newProject.id}`);
+                    writeEditorTelemetry.log('lifecycle', 'materialization_success', {
+                        projectId: newProject.id,
+                        revision: newProject.revision ?? 1,
+                    });
                     lastConfirmedSnapshotRef.current = initialSnapshot;
                     currentRevisionRef.current = newProject.revision ?? 1;
                     lastPersistedCursorRef.current = initialCursorMemory;
@@ -984,9 +640,7 @@ const EditorScreen: React.FC = () => {
                     setAuthorityStatus('persistent');
                     setSaveIssue('none');
 
-                    if (uid) {
-                        writeLocalDrafts.clear(uid, scopeId);
-                    }
+                    clearLocalDraft();
 
                     navigate({
                         type: 'immersive',
@@ -996,6 +650,9 @@ const EditorScreen: React.FC = () => {
                 },
                 onError: (error) => {
                     console.error('[WRITE][MATERIALIZATION_FAILED]', error);
+                    writeEditorTelemetry.log('lifecycle', 'materialization_failed', {
+                        error: error instanceof Error ? error.message : String(error),
+                    }, 'warn');
                     setAuthorityStatus('ephemeral');
                     setSaveIssue(isOfflineWriteError(error) ? 'offline' : 'error');
                     persistLocalDraft(initialSnapshot, isOffline ? 'offline' : 'error');
@@ -1003,224 +660,7 @@ const EditorScreen: React.FC = () => {
                 }
             }
         );
-    }, [authorityStatus, createProject, currentView.params, editor, isNewRoute, isOffline, lang, navigate, persistLocalDraft, scopeId, showToast, templateId, uid]);
-
-    useEffect(() => {
-        const canAutosave =
-            hasHydratedRef.current &&
-            authorityStatus === 'persistent' &&
-            projectId &&
-            projectId !== 'new' &&
-            !isOffline &&
-            saveIssue !== 'conflict' &&
-            saveIssue !== 'error';
-
-        if (!canAutosave) {
-            return;
-        }
-
-        const liveDocSignature = serializeDoc(present.contentDoc);
-        const isSettled =
-            debouncedContent === present.content &&
-            debouncedTitleEn === present.titleEn &&
-            debouncedTitleAr === present.titleAr &&
-            debouncedDocSignature === liveDocSignature;
-
-        if (!isSettled) {
-            return;
-        }
-
-        const pendingSnapshot: EditorSnapshot = { ...present };
-
-        const hasDebouncedChanges =
-            pendingSnapshot.content !== lastConfirmedSnapshotRef.current.content ||
-            pendingSnapshot.titleEn !== lastConfirmedSnapshotRef.current.titleEn ||
-            pendingSnapshot.titleAr !== lastConfirmedSnapshotRef.current.titleAr ||
-            serializeDoc(pendingSnapshot.contentDoc) !== serializeDoc(lastConfirmedSnapshotRef.current.contentDoc);
-
-        if (!hasDebouncedChanges) {
-            return;
-        }
-
-        void persistSnapshot(pendingSnapshot, { draftReason: 'unsaved' });
-    }, [
-        authorityStatus,
-        debouncedContent,
-        debouncedDocSignature,
-        debouncedTitleAr,
-        debouncedTitleEn,
-        isOffline,
-        persistSnapshot,
-        present,
-        projectId,
-        saveIssue,
-    ]);
-
-    useEffect(() => {
-        if (
-            debouncedCursorPersistenceSignal === 0 ||
-            !hasHydratedRef.current ||
-            authorityStatus !== 'persistent'
-        ) {
-            return;
-        }
-
-        void persistCursorMemory();
-    }, [authorityStatus, debouncedCursorPersistenceSignal, persistCursorMemory]);
-
-    useEffect(() => {
-        if (!editor) {
-            return;
-        }
-
-        const handleBlur = () => {
-            setCursorPersistenceSignal((value) => value + 1);
-            void persistCursorMemory();
-        };
-
-        editor.on('blur', handleBlur);
-        return () => {
-            editor.off('blur', handleBlur);
-        };
-    }, [editor, persistCursorMemory]);
-
-    useEffect(() => {
-        if (!uid || !hasHydratedRef.current) {
-            return;
-        }
-
-        const shouldPersistLocally =
-            authorityStatus === 'ephemeral'
-                ? hasLocalEditsRef.current
-                : hasDirtyChanges || saveIssue !== 'none' || isSaving;
-
-        if (!shouldPersistLocally) {
-            if (authorityStatus === 'persistent') {
-                clearLocalDraft();
-            }
-            return;
-        }
-
-        const draftReason: WriteDraftReason =
-            saveIssue === 'conflict'
-                ? 'conflict'
-                : saveIssue === 'offline'
-                    ? 'offline'
-                    : saveIssue === 'error'
-                        ? 'error'
-                        : 'unsaved';
-
-        const timer = window.setTimeout(() => {
-            persistLocalDraft(presentRef.current, draftReason);
-        }, 600);
-
-        return () => window.clearTimeout(timer);
-    }, [authorityStatus, clearLocalDraft, hasDirtyChanges, isSaving, persistLocalDraft, present, saveIssue, uid]);
-
-    const flushBeforeExit = useCallback(async (): Promise<boolean> => {
-        if (!hasHydratedRef.current) {
-            return true;
-        }
-
-        const snapshot = presentRef.current;
-
-        if (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) {
-            persistLocalDraft(snapshot, 'exit');
-            showToast(lang === 'en' ? 'Draft saved locally.' : 'تم حفظ المسودة محلياً.');
-            return true;
-        }
-
-        if (authorityStatus !== 'persistent' || !projectId || projectId === 'new' || !hasDirtyChanges) {
-            if (authorityStatus === 'persistent') {
-                await persistCursorMemory();
-            }
-            return true;
-        }
-
-        if (saveIssue === 'conflict') {
-            persistLocalDraft(snapshot, 'conflict');
-            showToast(lang === 'en' ? 'Conflict kept locally. Reopen to reconcile.' : 'تم الاحتفاظ بالتعارض محلياً. أعد الفتح للمصالحة.');
-            return true;
-        }
-
-        if (isOffline) {
-            persistLocalDraft(snapshot, 'offline');
-            showToast(lang === 'en' ? 'Draft saved locally while offline.' : 'تم حفظ المسودة محلياً أثناء عدم الاتصال.');
-            return true;
-        }
-
-        const flushed = await persistSnapshot(snapshot, { draftReason: 'exit' });
-        if (!flushed) {
-            showToast(lang === 'en' ? 'Could not confirm server save. Staying in editor.' : 'تعذر تأكيد الحفظ على الخادم. ستبقى في المحرر.');
-            return false;
-        }
-
-        await persistCursorMemory();
-
-        return true;
-    }, [authorityStatus, hasDirtyChanges, isOffline, lang, persistCursorMemory, persistLocalDraft, persistSnapshot, projectId, saveIssue, showToast]);
-
-    useEffect(() => {
-        const handleBeforeUnload = (event: BeforeUnloadEvent) => {
-            if (!hasHydratedRef.current) {
-                return;
-            }
-
-            const snapshot = presentRef.current;
-            const shouldGuard =
-                (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) ||
-                (authorityStatus === 'persistent' && hasDirtyChanges);
-
-            if (!shouldGuard) {
-                return;
-            }
-
-            if (uid) {
-                persistLocalDraft(
-                    snapshot,
-                    saveIssue === 'conflict'
-                        ? 'conflict'
-                        : isOffline
-                            ? 'offline'
-                            : 'exit'
-                );
-            }
-
-            event.preventDefault();
-            event.returnValue = '';
-        };
-
-        const handlePageHide = () => {
-            if (!hasHydratedRef.current || !uid) {
-                return;
-            }
-
-            const shouldPersist =
-                (authorityStatus === 'ephemeral' && hasLocalEditsRef.current) ||
-                (authorityStatus === 'persistent' && hasDirtyChanges);
-
-            if (!shouldPersist) {
-                return;
-            }
-
-            persistLocalDraft(
-                presentRef.current,
-                saveIssue === 'conflict'
-                    ? 'conflict'
-                    : isOffline
-                        ? 'offline'
-                        : 'exit'
-            );
-        };
-
-        window.addEventListener('beforeunload', handleBeforeUnload);
-        window.addEventListener('pagehide', handlePageHide);
-
-        return () => {
-            window.removeEventListener('beforeunload', handleBeforeUnload);
-            window.removeEventListener('pagehide', handlePageHide);
-        };
-    }, [authorityStatus, hasDirtyChanges, isOffline, persistLocalDraft, saveIssue, uid]);
+    }, [authorityStatus, clearLocalDraft, createProject, currentView.params, editor, isNewRoute, isOffline, lang, navigate, persistLocalDraft, scopeId, showToast, templateId]);
 
     const handleBack = async () => {
         if (dictationPhase !== 'idle') {
@@ -1235,58 +675,47 @@ const EditorScreen: React.FC = () => {
     };
 
     const handleEditorChange = (payload: EditorChangePayload) => {
+        const finish = writeEditorTelemetry.startTimer('editor.parentChangeHandling');
         if (!hasHydratedRef.current) {
+            finish();
             return;
         }
 
+        lastLocalEditAtRef.current = getPerfNow();
         const nextSnapshot: EditorSnapshot = {
             ...presentRef.current,
             content: payload.html,
             contentDoc: payload.contentDoc,
-            wordCount: payload.wordCount,
+            wordCount: presentRef.current.isPartialManuscript
+                ? presentRef.current.wordCount
+                : payload.wordCount,
+            affectedChunkIds: payload.affectedChunkIds,
+            affectedAnchorIds: payload.affectedAnchorIds,
         };
 
         if (!hasLocalEditsRef.current && !snapshotsEqual(nextSnapshot, lastConfirmedSnapshotRef.current)) {
             hasLocalEditsRef.current = true;
         }
 
-        dispatch({ type: 'SET', payload: nextSnapshot });
+        setSnapshot(nextSnapshot);
+        writeEditorTelemetry.recordSnapshotSizes({
+            html: nextSnapshot.content,
+            plainText: payload.plainText,
+            contentDoc: nextSnapshot.contentDoc,
+            label: 'editor.parentSnapshot',
+        });
+        finish();
     };
 
+    const outlineItems = useEditorOutlineIndexer(
+        editor,
+        `${serializeDoc(present.contentDoc)}\n${present.content}`
+    );
+
     const handleOutlineSelect = useCallback((item: OutlinePanelItem) => {
-        if (!editor || !editorScrollRef.current) return;
-
-        const targetPos = Math.max(1, item.pos + 1);
-        editor.chain().focus().setTextSelection(targetPos).run();
-
-        requestAnimationFrame(() => {
-            const scrollContainer = editorScrollRef.current;
-            if (!scrollContainer) return;
-
-            try {
-                const coords = editor.view.coordsAtPos(targetPos);
-                const containerRect = scrollContainer.getBoundingClientRect();
-                const topPadding = 20;
-                const nextTop = scrollContainer.scrollTop + coords.top - containerRect.top - topPadding;
-
-                scrollContainer.scrollTo({
-                    top: Math.max(0, nextTop),
-                    behavior: 'smooth',
-                });
-            } catch (error) {
-                devLog('Outline navigation failed to resolve editor coordinates', error);
-            }
-        });
+        selectOutlineItem(item);
         setIsMobileOutlineOpen(false);
-    }, [editor]);
-
-    const outlineItems = useMemo<OutlinePanelItem[]>(() => {
-        if (!editor) {
-            return [];
-        }
-
-        return buildCanonicalOutlineItems(editor);
-    }, [editor, present.contentDoc, present.content]);
+    }, [selectOutlineItem]);
 
     const handleTitleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const nextSnapshot = { ...presentRef.current };
@@ -1298,11 +727,12 @@ const EditorScreen: React.FC = () => {
             nextSnapshot.titleAr = newTitle;
         }
 
+        lastLocalEditAtRef.current = getPerfNow();
         if (!hasLocalEditsRef.current && !snapshotsEqual(nextSnapshot, lastConfirmedSnapshotRef.current)) {
             hasLocalEditsRef.current = true;
         }
 
-        dispatch({ type: 'SET', payload: nextSnapshot });
+        setSnapshot(nextSnapshot);
     };
 
     const handleTitleFocus = (e: React.FocusEvent<HTMLInputElement>) => {
@@ -1310,7 +740,7 @@ const EditorScreen: React.FC = () => {
             const value = e.target.value;
             if (value === 'Untitled Project' || value === 'مشروع غير معنون') {
                 const nextSnapshot = { ...presentRef.current, titleEn: '', titleAr: '' };
-                dispatch({ type: 'SET', payload: nextSnapshot });
+                setSnapshot(nextSnapshot);
                 setHasInteractedWithTitle(true);
             }
         }
@@ -1322,7 +752,11 @@ const EditorScreen: React.FC = () => {
             return;
         }
 
-        hydrateFromRecoveryDraft(draft, 'recovered');
+        setSaveIssue(hydrateFromRecoveryDraft(draft, 'recovered'));
+        writeEditorTelemetry.log('recovery', 'draft_restored_from_banner', {
+            reason: draft.reason,
+            serverRevision: draft.serverRevision,
+        });
         showToast(lang === 'en' ? 'Local draft restored.' : 'تمت استعادة المسودة المحلية.');
     };
 
@@ -1479,6 +913,14 @@ const EditorScreen: React.FC = () => {
         stopDictation();
     }, [dictationPhase, startDictation, stopDictation]);
 
+    const handleProfilerRender = useCallback((
+        id: string,
+        _phase: 'mount' | 'update' | 'nested-update',
+        actualDuration: number
+    ) => {
+        writeEditorTelemetry.recordRender(id, ['react_profiler'], actualDuration);
+    }, []);
+
     if (isFetchError) {
         return (
             <div className="h-screen w-full flex flex-col items-center justify-center bg-slate-900 p-8 text-center">
@@ -1500,6 +942,7 @@ const EditorScreen: React.FC = () => {
     }
 
     return (
+        <React.Profiler id="EditorScreen.Commit" onRender={handleProfilerRender}>
         <div className="h-screen w-full flex flex-col bg-white dark:bg-slate-900">
             <header className="sticky top-0 z-20 bg-white/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
                 <LiteraryShell className="flex h-16 items-center justify-between">
@@ -1545,7 +988,7 @@ const EditorScreen: React.FC = () => {
                         >
                             <ViewListIcon className="h-5 w-5" />
                         </Button>
-                        <Button variant="ghost" onClick={() => setIsMentorOpen(true)}>
+                        <Button variant="ghost" onClick={openMentor}>
                             <BrainIcon className="h-6 w-6 text-accent" />
                         </Button>
                     </div>
@@ -1589,17 +1032,19 @@ const EditorScreen: React.FC = () => {
             )}
 
             <div className="flex-grow flex flex-col relative min-h-0">
-                <FormattingToolbar
-                    editor={editor}
-                    onToggleVoice={toggleVoice}
-                    isRecording={dictationPhase !== 'idle'}
-                    isVisible={!isFocusMode || dictationPhase !== 'idle'}
-                    innerClassName={manuscriptLaneClassName}
-                    alignToEditorColumn={!isFocusMode}
-                    dictationStatusLabel={getDictationStatusLabel(dictationPhase, lang)}
-                    dictationElapsedMs={dictationElapsedMs}
-                    dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
-                />
+                <React.Profiler id="FormattingToolbar.Commit" onRender={handleProfilerRender}>
+                    <FormattingToolbar
+                        editor={editor}
+                        onToggleVoice={toggleVoice}
+                        isRecording={dictationPhase !== 'idle'}
+                        isVisible={!isFocusMode || dictationPhase !== 'idle'}
+                        innerClassName={manuscriptLaneClassName}
+                        alignToEditorColumn={!isFocusMode}
+                        dictationStatusLabel={getDictationStatusLabel(dictationPhase, lang)}
+                        dictationElapsedMs={dictationElapsedMs}
+                        dictationLanguageLabel={getDictationLanguageLabel(dictationSessionLanguage, lang)}
+                    />
+                </React.Profiler>
 
                 {isMobileOutlineOpen ? (
                     <div className="fixed inset-0 z-40 lg:hidden">
@@ -1636,6 +1081,7 @@ const EditorScreen: React.FC = () => {
 
                 <div ref={editorScrollRef} className="flex-grow min-h-0 overflow-y-auto overscroll-y-contain">
                     <LiteraryShell className="relative min-h-full py-4">
+                        <CollaborativeCursorLayer cursors={collaborationRuntime.cursorOverlays} />
                         <div className={cn('h-full', !isFocusMode && 'lg:grid lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-6')}>
                             {!isFocusMode && (
                                 <OutlinePanel
@@ -1647,14 +1093,16 @@ const EditorScreen: React.FC = () => {
                             )}
 
                             <div className="min-h-0">
-                                <TiptapEditor
-                                    content={present.content}
-                                    contentDoc={present.contentDoc}
-                                    onChange={handleEditorChange}
-                                    onEditorReady={setEditor}
-                                    isFocusMode={isFocusMode}
-                                    langHint={lang === 'ar' ? 'ar' : 'en'}
-                                />
+                                <React.Profiler id="TiptapEditor.Commit" onRender={handleProfilerRender}>
+                                    <TiptapEditor
+                                        content={present.content}
+                                        contentDoc={present.contentDoc}
+                                        onChange={handleEditorChange}
+                                        onEditorReady={setEditor}
+                                        isFocusMode={isFocusMode}
+                                        langHint={lang === 'ar' ? 'ar' : 'en'}
+                                    />
+                                </React.Profiler>
                             </div>
                         </div>
                         <div className="h-40 md:h-56" aria-hidden="true" />
@@ -1662,27 +1110,29 @@ const EditorScreen: React.FC = () => {
                 </div>
             </div>
 
-            <Modal isOpen={isMentorOpen} onClose={() => setIsMentorOpen(false)}>
-                <div className="flex flex-col items-center text-center p-2">
-                    <div className="p-4 rounded-full bg-sky-100 dark:bg-sky-900/30 mb-4">
-                        {mentor?.icon && <mentor.icon className="h-12 w-12 text-sky-500" />}
+            <React.Profiler id="MentorModal.Commit" onRender={handleProfilerRender}>
+                <Modal isOpen={isMentorOpen} onClose={closeMentor}>
+                    <div className="flex flex-col items-center text-center p-2">
+                        <div className="p-4 rounded-full bg-sky-100 dark:bg-sky-900/30 mb-4">
+                            {mentor?.icon && <mentor.icon className="h-12 w-12 text-sky-500" />}
+                        </div>
+                        <BilingualText role="H1" className="!text-2xl mb-2">{mentor?.name}</BilingualText>
+                        <BilingualText className="text-slate-600 dark:text-slate-300 mb-6">
+                            {lang === 'en' ? mentor?.descriptionEn : mentor?.descriptionAr}
+                        </BilingualText>
+                        <Button onClick={startMentorChat} className="w-full">
+                            {lang === 'en' ? 'Chat with Mentor' : 'تحدث مع المرشد'}
+                        </Button>
                     </div>
-                    <BilingualText role="H1" className="!text-2xl mb-2">{mentor?.name}</BilingualText>
-                    <BilingualText className="text-slate-600 dark:text-slate-300 mb-6">
-                        {lang === 'en' ? mentor?.descriptionEn : mentor?.descriptionAr}
-                    </BilingualText>
-                    <Button
-                        onClick={() => {
-                            setIsMentorOpen(false);
-                            navigate({ type: 'immersive', id: 'agentChat', params: { agentId: 'mentor', from: currentView } });
-                        }}
-                        className="w-full"
-                    >
-                        {lang === 'en' ? 'Chat with Mentor' : 'تحدث مع المرشد'}
-                    </Button>
-                </div>
-            </Modal>
+                </Modal>
+            </React.Profiler>
+            {DevWritePerformanceOverlay ? (
+                <React.Suspense fallback={null}>
+                    <DevWritePerformanceOverlay />
+                </React.Suspense>
+            ) : null}
         </div>
+        </React.Profiler>
     );
 };
 

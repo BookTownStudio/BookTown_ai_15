@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback } from 'react';
+import React, { useEffect, useCallback, useRef } from 'react';
 import { useEditor, EditorContent, Editor } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import Placeholder from '@tiptap/extension-placeholder';
@@ -11,11 +11,18 @@ import {
     LanguageAwareHeading,
     LanguageAwareParagraph,
 } from './extensions/languageAwareBlocks.ts';
+import { StructuralAnchorExtension } from './extensions/structuralAnchorExtension.ts';
 import {
     countWordsScriptAware,
     toTiptapDocInput,
     toWriteContentDoc,
 } from '../../lib/editor/writeDocument.ts';
+import { writeEditorTelemetry } from '../../lib/editor/writeEditorTelemetry.ts';
+import { useWriteRenderDiagnostics } from '../../lib/editor/useWriteRenderDiagnostics.ts';
+import {
+    mapTransactionToChunkIdentity,
+    type ChunkTransactionMapping,
+} from '../../lib/editor/chunkTransactionMapping.ts';
 
 export interface EditorOutlineItem {
     id: string;
@@ -32,6 +39,8 @@ export interface EditorChangePayload {
     wordCount: number;
     plainText: string;
     outline: EditorOutlineItem[];
+    affectedChunkIds?: string[];
+    affectedAnchorIds?: string[];
 }
 
 interface TiptapEditorProps {
@@ -58,46 +67,86 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     langHint = 'en',
 }) => {
     const { isRTL } = useI18n();
+    const componentMountedAtRef = useRef(
+        typeof performance !== 'undefined' ? performance.now() : Date.now()
+    );
+
+    useWriteRenderDiagnostics('TiptapEditor', {
+        editable,
+        isFocusMode,
+        contentLength: content.length,
+        contentDocNodeCount: contentDoc?.content?.length ?? 0,
+        langHint,
+        isRTL,
+    });
 
     const buildOutline = useCallback((editorInstance: Editor): EditorOutlineItem[] => {
-        const items: EditorOutlineItem[] = [];
-        editorInstance.state.doc.descendants((node, pos) => {
-            if (node.type.name !== 'heading') {
-                return true;
-            }
+        return writeEditorTelemetry.measure('editor.outlineGeneration', () => {
+            const items: EditorOutlineItem[] = [];
+            editorInstance.state.doc.descendants((node, pos) => {
+                if (node.type.name !== 'heading') {
+                    return true;
+                }
 
-            const level = typeof node.attrs.level === 'number' ? node.attrs.level : 1;
-            const normalizedLevel: 1 | 2 | 3 = level === 1 || level === 2 || level === 3 ? level : 1;
-            const text = (node.textContent || '').trim();
-            if (!text) {
-                return true;
-            }
+                const level = typeof node.attrs.level === 'number' ? node.attrs.level : 1;
+                const normalizedLevel: 1 | 2 | 3 = level === 1 || level === 2 || level === 3 ? level : 1;
+                const text = (node.textContent || '').trim();
+                if (!text) {
+                    return true;
+                }
 
-            items.push({
-                id: `h_${pos}_${text.slice(0, 24)}`,
-                level: normalizedLevel,
-                text,
-                pos,
-                lang: typeof node.attrs.lang === 'string' ? node.attrs.lang : undefined,
-                dir: node.attrs.dir === 'rtl' || node.attrs.dir === 'ltr' ? node.attrs.dir : undefined,
+                items.push({
+                    id: `h_${pos}_${text.slice(0, 24)}`,
+                    level: normalizedLevel,
+                    text,
+                    pos,
+                    lang: typeof node.attrs.lang === 'string' ? node.attrs.lang : undefined,
+                    dir: node.attrs.dir === 'rtl' || node.attrs.dir === 'ltr' ? node.attrs.dir : undefined,
+                });
+                return true;
             });
-            return true;
-        });
 
-        return items;
+            return items;
+        });
     }, []);
 
-    const emitEditorPayload = useCallback((editorInstance: Editor) => {
-        const plainText = editorInstance.getText();
-        const contentAsJson = editorInstance.getJSON() as Record<string, unknown>;
-        const contentAsDoc = toWriteContentDoc(contentAsJson, plainText);
+    const emitEditorPayload = useCallback((
+        editorInstance: Editor,
+        transactionMapping?: ChunkTransactionMapping
+    ) => {
+        const plainText = writeEditorTelemetry.measure('editor.getText', () => editorInstance.getText());
+        const contentAsJson = writeEditorTelemetry.measure(
+            'editor.serializeJson',
+            () => editorInstance.getJSON() as Record<string, unknown>
+        );
+        const contentAsDoc = writeEditorTelemetry.measure(
+            'editor.toContentDoc',
+            () => toWriteContentDoc(contentAsJson, plainText)
+        );
+        const html = writeEditorTelemetry.measure('editor.serializeHtml', () => editorInstance.getHTML());
+        const wordCount = writeEditorTelemetry.measure(
+            'editor.wordCount',
+            () => countWordsScriptAware(plainText)
+        );
+        const outline = buildOutline(editorInstance);
+
+        writeEditorTelemetry.recordSnapshotSizes({
+            html,
+            plainText,
+            contentDoc: contentAsDoc,
+            editorJson: contentAsJson,
+            label: 'editor.snapshot',
+        });
+        writeEditorTelemetry.sampleHeap('editor');
 
         onChange({
-            html: editorInstance.getHTML(),
+            html,
             contentDoc: contentAsDoc,
-            wordCount: countWordsScriptAware(plainText),
+            wordCount,
             plainText,
-            outline: buildOutline(editorInstance),
+            outline,
+            affectedChunkIds: transactionMapping?.affectedChunkIds,
+            affectedAnchorIds: transactionMapping?.affectedAnchorIds,
         });
     }, [buildOutline, onChange]);
 
@@ -107,6 +156,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
                 heading: false,
                 paragraph: false,
             }),
+            StructuralAnchorExtension,
             LanguageAwareParagraph,
             LanguageAwareHeading.configure({ levels: [1, 2, 3] }),
             Underline,
@@ -118,19 +168,49 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         content: toTiptapDocInput(content, contentDoc),
         editable,
         onUpdate: ({ editor: editorInstance, transaction }) => {
-            if (!transaction.getMeta('autoLangTagger')) {
-                const applied = applyAutoLanguageForBlocks(editorInstance, langHint);
-                if (applied) {
-                    return;
+            const finishKeystroke = writeEditorTelemetry.startTimer('editor.keystrokeProcessing', {
+                docChanged: transaction.docChanged,
+                selectionSet: transaction.selectionSet,
+            });
+            const finishTransaction = writeEditorTelemetry.startTimer('editor.transactionHandling', {
+                docChanged: transaction.docChanged,
+                selectionSet: transaction.selectionSet,
+            });
+            try {
+                if (!transaction.getMeta('autoLangTagger')) {
+                    const applied = applyAutoLanguageForBlocks(editorInstance, langHint);
+                    if (applied) {
+                        return;
+                    }
                 }
-            }
 
-            emitEditorPayload(editorInstance);
+                const transactionMapping = transaction.docChanged
+                    ? mapTransactionToChunkIdentity(editorInstance, transaction)
+                    : undefined;
+                emitEditorPayload(editorInstance, transactionMapping);
+            } finally {
+                finishTransaction();
+                finishKeystroke();
+            }
         },
         onCreate: ({ editor: editorInstance }) => {
-            applyAutoLanguageForBlocks(editorInstance, langHint);
-            emitEditorPayload(editorInstance);
-            onEditorReady(editorInstance);
+            const mountedAt = componentMountedAtRef.current;
+            const currentTime = typeof performance !== 'undefined' ? performance.now() : Date.now();
+            writeEditorTelemetry.timing('editor.mount', currentTime - mountedAt);
+            writeEditorTelemetry.log('lifecycle', 'tiptap_created');
+            writeEditorTelemetry.measure('editor.initialLanguageDetection', () => {
+                applyAutoLanguageForBlocks(editorInstance, langHint);
+            });
+            writeEditorTelemetry.measure('editor.initialPayloadEmission', () => {
+                emitEditorPayload(editorInstance);
+            });
+            writeEditorTelemetry.measure('editor.readyCallback', () => {
+                onEditorReady(editorInstance);
+            });
+        },
+        onDestroy: () => {
+            writeEditorTelemetry.log('lifecycle', 'tiptap_destroyed');
+            writeEditorTelemetry.increment('editor.destroy');
         },
         onFocus: () => {
             onFocus?.();

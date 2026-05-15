@@ -12,6 +12,8 @@ import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import LiteraryShell from '../layout/LiteraryShell.tsx';
 import { createChapterBlockNodes, getChapterBlockParagraphSelectionOffset } from '../../lib/editor/chapterNodes.ts';
+import { writeEditorTelemetry } from '../../lib/editor/writeEditorTelemetry.ts';
+import { useWriteRenderDiagnostics } from '../../lib/editor/useWriteRenderDiagnostics.ts';
 
 // Simple Justify Icon for the alignment dropdown
 const AlignJustifyIcon = (props: React.SVGProps<SVGSVGElement>) => (
@@ -47,6 +49,15 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
     const [activeMenu, setActiveMenu] = useState<'style' | 'align' | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const isDictationActive = isRecording;
+    useWriteRenderDiagnostics('FormattingToolbar', {
+        hasEditor: Boolean(editor),
+        isRecording,
+        isVisible,
+        activeMenu,
+        dictationElapsedBucket: Math.floor(dictationElapsedMs / 1000),
+        dictationLanguageLabel,
+        alignToEditorColumn,
+    });
 
     const formatElapsed = (elapsedMs: number): string => {
         const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
@@ -94,25 +105,27 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
     };
 
     const insertChapterBlock = () => {
-        const insertFrom = editor.state.selection.from;
-        const chapterNodes = createChapterBlockNodes({
-            title: getNextChapterTitle(),
-            lang: lang === 'ar' ? 'ar' : 'en',
-            dir: lang === 'ar' ? 'rtl' : 'ltr',
+        writeEditorTelemetry.measure('editor.insertChapterBlock', () => {
+            const insertFrom = editor.state.selection.from;
+            const chapterNodes = createChapterBlockNodes({
+                title: getNextChapterTitle(),
+                lang: lang === 'ar' ? 'ar' : 'en',
+                dir: lang === 'ar' ? 'rtl' : 'ltr',
+            });
+
+            const inserted = editor
+                .chain()
+                .focus()
+                .insertContent(chapterNodes)
+                .run();
+
+            if (!inserted) {
+                return;
+            }
+
+            const paragraphSelection = insertFrom + getChapterBlockParagraphSelectionOffset(chapterNodes);
+            editor.chain().focus().setTextSelection(paragraphSelection).run();
         });
-
-        const inserted = editor
-            .chain()
-            .focus()
-            .insertContent(chapterNodes)
-            .run();
-
-        if (!inserted) {
-            return;
-        }
-
-        const paragraphSelection = insertFrom + getChapterBlockParagraphSelectionOffset(chapterNodes);
-        editor.chain().focus().setTextSelection(paragraphSelection).run();
     };
 
     return (

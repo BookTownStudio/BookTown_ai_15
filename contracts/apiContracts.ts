@@ -1121,11 +1121,127 @@ const writeProjectUpdatesSchema = z
     lastCursorBlockId: z.string().min(1).max(64).optional(),
     lastCursorOffset: z.number().int().nonnegative().optional(),
     lastCursorSavedAt: z.string().min(1).max(128).optional(),
+    activeSectionId: z.string().min(1).max(80).optional(),
+    manuscriptStorage: z
+      .object({
+        version: z.literal(1).optional(),
+        mode: z.enum(["legacy", "chunked", "hybrid"]),
+        activeSectionId: z.string().min(1).max(80).optional(),
+        latestRevision: z.number().int().positive().optional(),
+        latestSnapshotId: z.string().min(1).max(120).optional(),
+        sectionCount: z.number().int().nonnegative().optional(),
+        chunkCount: z.number().int().nonnegative().optional(),
+        contentHash: z.string().min(1).max(64).optional(),
+        migratedAt: z.string().min(1).max(128).optional(),
+        updatedAt: z.string().min(1).max(128).optional(),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
   .refine((value) => Object.keys(value).length > 0, {
     message: "At least one writable field must be provided.",
   });
+
+const writeOperationCausalitySchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    actorId: z.string().min(1).max(128),
+    deviceId: z.string().min(1).max(96),
+    sequence: z.number().int().nonnegative(),
+    parents: z.array(z.string().min(1).max(128)).max(16),
+    vectorClock: z.record(z.string(), z.number().int().nonnegative()),
+    chunkIds: z.array(z.string().min(1).max(120)).max(256),
+    baseRevision: z.number().int().positive().optional(),
+    createdAt: z.number().finite(),
+  })
+  .strict();
+
+const writeProjectOperationAckInputSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    operationId: z.string().min(1).max(128),
+    type: z.literal("chunk_snapshot_save"),
+    sequence: z.number().int().nonnegative(),
+    createdAt: z.number().finite(),
+    updatedAt: z.number().finite(),
+    expectedRevision: z.number().int().positive().optional(),
+    affectedChunkIds: z.array(z.string().min(1).max(120)).max(256).optional(),
+    mountedSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
+    causality: writeOperationCausalitySchema,
+    convergenceHash: z.string().min(1).max(128),
+  })
+  .strict();
+
+const writeProjectOperationAckResultSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    operationId: z.string().min(1).max(128),
+    status: z.enum(["acknowledged", "duplicate"]),
+    acknowledgedRevision: z.number().int().positive(),
+    checkpointId: z.string().min(1).max(128),
+    acknowledgedAt: z.string().min(1),
+    duplicate: z.boolean(),
+  })
+  .strict();
+
+const writeChunkMutationRequestSchema = z
+  .object({
+    projectId: z.string().min(1).max(120),
+    revision: z.number().int().positive(),
+    source: z.enum(["autosave", "migration", "publish", "manual"]),
+    authority: z.enum(["complete", "partial"]),
+    authoritativeSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
+    affectedChunkIds: z.array(z.string().min(1).max(120)).max(256).optional(),
+    operation: writeProjectOperationAckInputSchema.optional(),
+    snapshot: z
+      .object({
+        wordCount: z.number().int().nonnegative(),
+        contentDoc: writeContentDocSchema,
+        totalSectionCount: z.number().int().nonnegative().optional(),
+        totalChunkCount: z.number().int().nonnegative().optional(),
+      })
+      .strict(),
+  })
+  .strict();
+
+const manuscriptStorageMetadataSchema = z
+  .object({
+    version: z.literal(1),
+    mode: z.enum(["legacy", "chunked", "hybrid"]),
+    activeSectionId: z.string().min(1).max(120).optional(),
+    latestRevision: z.number().int().positive().optional(),
+    latestSnapshotId: z.string().min(1).max(160).optional(),
+    sectionCount: z.number().int().nonnegative().optional(),
+    chunkCount: z.number().int().nonnegative().optional(),
+    contentHash: z.string().min(1).max(64).optional(),
+    migratedAt: z.string().min(1).max(128).optional(),
+    updatedAt: z.string().min(1).max(128).optional(),
+  })
+  .strict();
+
+const writeChunkMutationAckResultSchema = writeProjectOperationAckResultSchema.extend({
+  chunkWriteCount: z.number().int().nonnegative(),
+  sectionWriteCount: z.number().int().nonnegative(),
+});
+
+const writeChunkMutationResponseSchema = z
+  .object({
+    metadata: manuscriptStorageMetadataSchema,
+    mutationAck: writeChunkMutationAckResultSchema.optional(),
+  })
+  .strict();
+
+const compactWriteOperationLogsResponseSchema = z
+  .object({
+    projectId: z.string().min(1),
+    operationLedgerPruned: z.number().int().nonnegative(),
+    chunkMutationLedgerPruned: z.number().int().nonnegative(),
+    collaborationOperationsPruned: z.number().int().nonnegative(),
+    presencePruned: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+  })
+  .strict();
 
 const canonicalCoverModeSchema = z.enum(["uploaded", "fallback_metadata"]);
 
@@ -3866,6 +3982,7 @@ export const apiContracts = {
           projectId: z.string().min(1),
           expectedRevision: z.number().int().positive(),
           updates: writeProjectUpdatesSchema,
+          operation: writeProjectOperationAckInputSchema.optional(),
         })
         .strict(),
       z
@@ -3873,11 +3990,34 @@ export const apiContracts = {
           projectId: z.string().min(1),
           revision: z.number().int().positive(),
           updatedAt: z.string().min(1),
+          operationAck: writeProjectOperationAckResultSchema.optional(),
         })
         .strict(),
       "httpsCallable",
       {
         callSites: ["services/firebaseProjectService.ts"],
+      }
+    ),
+
+    applyWriteChunkMutation: defineContract(
+      writeChunkMutationRequestSchema,
+      writeChunkMutationResponseSchema,
+      "httpsCallable",
+      {
+        callSites: ["services/manuscriptRepository.ts"],
+      }
+    ),
+
+    compactWriteOperationLogs: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1).max(120),
+        })
+        .strict(),
+      compactWriteOperationLogsResponseSchema,
+      "httpsCallable",
+      {
+        callSites: ["lib/editor/writeOperationRetention.ts"],
       }
     ),
 

@@ -1,4 +1,5 @@
 import { WriteContentDoc } from '../../types/entities.ts';
+import { writeEditorTelemetry } from './writeEditorTelemetry.ts';
 
 export type WriteDraftReason =
   | 'unsaved'
@@ -14,6 +15,13 @@ export interface WriteDraftSnapshot {
   content: string;
   contentDoc?: WriteContentDoc;
   wordCount: number;
+  affectedChunkIds?: string[];
+  affectedAnchorIds?: string[];
+  isPartialManuscript?: boolean;
+  mountedSectionIds?: string[];
+  activeSectionId?: string;
+  totalSectionCount?: number;
+  totalChunkCount?: number;
 }
 
 export interface WriteDraftRecord {
@@ -68,14 +76,33 @@ export const writeLocalDrafts = {
   },
 
   save(record: WriteDraftRecord): void {
-    window.localStorage.setItem(
-      getStorageKey(record.uid, record.scopeId),
-      JSON.stringify(record)
-    );
+    const serialized = JSON.stringify(record);
+    writeEditorTelemetry.recordSnapshotSizes({
+      localDraft: record,
+      contentDoc: record.snapshot.contentDoc,
+      html: record.snapshot.content,
+      label: 'editor.localDraft',
+    });
+    writeEditorTelemetry.log('recovery', 'local_draft_saved', {
+      reason: record.reason,
+      scopeId: record.scopeId,
+      bytes: serialized.length,
+    }, 'debug');
+
+    try {
+      window.localStorage.setItem(getStorageKey(record.uid, record.scopeId), serialized);
+    } catch (error) {
+      writeEditorTelemetry.log('recovery', 'local_draft_save_failed', {
+        scopeId: record.scopeId,
+        error: error instanceof Error ? error.message : String(error),
+      }, 'warn');
+      throw error;
+    }
   },
 
   clear(uid: string, scopeId: string): void {
     window.localStorage.removeItem(getStorageKey(uid, scopeId));
+    writeEditorTelemetry.log('recovery', 'local_draft_cleared', { scopeId }, 'debug');
   },
 
   migrate(uid: string, fromScopeId: string, toScopeId: string): void {

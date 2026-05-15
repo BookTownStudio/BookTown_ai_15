@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
 import { normalizeProjectManuscript } from "./publishing/normalizeProjectManuscript";
+import { loadChunkedProjectManuscript } from "./publishing/loadChunkedProjectManuscript";
 import {
   deriveEstimatedReadingMinutes,
   deriveExcerpt,
@@ -109,15 +110,18 @@ export const createProjectRelease = onCall({ cors: true }, async (request) => {
         );
       }
 
-      if (!project.contentDoc || typeof project.contentDoc !== "object") {
+      const chunkedContentDoc = await loadChunkedProjectManuscript({ uid, projectId });
+      const contentDoc = chunkedContentDoc ?? project.contentDoc;
+
+      if (!contentDoc || typeof contentDoc !== "object") {
         throw new HttpsError(
           "failed-precondition",
-          "Project contentDoc is required before creating a release."
+          "Project manuscript content is required before creating a release."
         );
       }
 
       const normalizedContent = normalizeProjectManuscript({
-        contentDoc: project.contentDoc,
+        contentDoc,
         projectTitle: deriveProjectTitle(project),
       });
 

@@ -2,6 +2,8 @@ import { wrapCallableV2 } from "../contracts/wrapCallableV2";
 import { createWriteProject as createWriteProjectRaw } from "../createWriteProject";
 import { deleteWriteProject as deleteWriteProjectRaw } from "../deleteWriteProject";
 import { updateWriteProject as updateWriteProjectRaw } from "../updateWriteProject";
+import { applyWriteChunkMutation as applyWriteChunkMutationRaw } from "../applyWriteChunkMutation";
+import { compactWriteOperationLogs as compactWriteOperationLogsRaw } from "../compactWriteOperationLogs";
 import { duplicateWriteProject as duplicateWriteProjectRaw } from "../duplicateWriteProject";
 import { publishWriteProject as publishWriteProjectRaw } from "../publishWriteProject";
 import { createProjectRelease as createProjectReleaseRaw } from "../createProjectRelease";
@@ -25,6 +27,8 @@ import { revokeWriteProjectShareLink as revokeWriteProjectShareLinkRaw } from ".
 export const createWriteProject = wrapCallableV2("createWriteProject", createWriteProjectRaw);
 export const deleteWriteProject = wrapCallableV2("deleteWriteProject", deleteWriteProjectRaw);
 export const updateWriteProject = wrapCallableV2("updateWriteProject", updateWriteProjectRaw);
+export const applyWriteChunkMutation = wrapCallableV2("applyWriteChunkMutation", applyWriteChunkMutationRaw);
+export const compactWriteOperationLogs = wrapCallableV2("compactWriteOperationLogs", compactWriteOperationLogsRaw);
 export const duplicateWriteProject = wrapCallableV2("duplicateWriteProject", duplicateWriteProjectRaw);
 export const publishWriteProject = wrapCallableV2("publishWriteProject", publishWriteProjectRaw);
 export const createProjectRelease = wrapCallableV2("createProjectRelease", createProjectReleaseRaw);

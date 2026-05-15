@@ -1,7 +1,7 @@
 import { Editor } from '@tiptap/react';
 import Heading from '@tiptap/extension-heading';
 import Paragraph from '@tiptap/extension-paragraph';
-import { detectLanguageDirection } from '../../../lib/editor/writeDocument.ts';
+import { runEditorLanguageAnalysis } from '../../../lib/editor/editorLanguageAnalysisController.ts';
 
 const baseLanguageAttrs = {
   lang: {
@@ -53,50 +53,11 @@ export const LanguageAwareHeading = Heading.extend({
   },
 });
 
-function isLanguageBlock(typeName: string): boolean {
-  return typeName === 'paragraph' || typeName === 'heading';
-}
-
 export function applyAutoLanguageForBlocks(
   editor: Editor,
   fallbackLang = 'en'
 ): boolean {
-  const { state } = editor;
-  const tr = state.tr;
-  let changed = false;
-
-  state.doc.descendants((node, pos) => {
-    if (!isLanguageBlock(node.type.name)) {
-      return true;
-    }
-
-    if (node.attrs.langManual === true) {
-      return true;
-    }
-
-    const detected = detectLanguageDirection(node.textContent || '', fallbackLang);
-    const currentLang = typeof node.attrs.lang === 'string' ? node.attrs.lang : '';
-    const currentDir = node.attrs.dir === 'rtl' || node.attrs.dir === 'ltr' ? node.attrs.dir : '';
-
-    if (currentLang !== detected.lang || currentDir !== detected.dir) {
-      tr.setNodeMarkup(pos, undefined, {
-        ...node.attrs,
-        lang: detected.lang,
-        dir: detected.dir,
-      });
-      changed = true;
-    }
-
-    return true;
-  });
-
-  if (changed) {
-    tr.setMeta('autoLangTagger', true);
-    editor.view.dispatch(tr);
-    return true;
-  }
-
-  return false;
+  return runEditorLanguageAnalysis(editor, fallbackLang);
 }
 
 export function applyManualLanguageForCurrentBlock(

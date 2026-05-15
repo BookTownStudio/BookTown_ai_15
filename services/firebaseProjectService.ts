@@ -10,8 +10,14 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref, uploadBytes } from "firebase/storage";
 import { getFirebaseDb, getFirebaseFunctions, getFirebaseStorage } from "../lib/firebase.ts";
-import { Project, PublishedBook, WriteContentDoc } from "../types/entities.ts";
-import type { ProjectDataService } from "./db.types.ts";
+import { Project, PublishedBook, WriteContentDoc, type ManuscriptStorageMetadata } from "../types/entities.ts";
+import type {
+  ProjectDataService,
+} from "./db.types.ts";
+import type {
+  WriteProjectOperationAckInput,
+  WriteProjectOperationAckResult,
+} from "../lib/editor/writeOperationalTypes.ts";
 
 type FailureEnvelope = {
   success: false;
@@ -28,7 +34,12 @@ type SuccessEnvelope<T> = {
 };
 
 type ProjectStatus = "Idea" | "Draft" | "Revision" | "Final";
-type WriteUpdateResult = { projectId: string; revision: number; updatedAt: string };
+type WriteUpdateResult = {
+  projectId: string;
+  revision: number;
+  updatedAt: string;
+  operationAck?: WriteProjectOperationAckResult;
+};
 export type ProjectReleasePreview = {
   releaseId: string;
   previewType: "blog" | "ebook";
@@ -209,6 +220,56 @@ function normalizeProjectDoc(projectId: string, payload: Record<string, unknown>
         : undefined,
     lastCursorSavedAt:
       payload.lastCursorSavedAt !== undefined ? toIso(payload.lastCursorSavedAt) : undefined,
+    activeSectionId:
+      typeof payload.activeSectionId === "string" && payload.activeSectionId.trim()
+        ? payload.activeSectionId.trim().slice(0, 80)
+        : undefined,
+    manuscriptStorage: normalizeManuscriptStorage(payload.manuscriptStorage),
+  };
+}
+
+function normalizeManuscriptStorage(value: unknown): ManuscriptStorageMetadata | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+
+  const input = value as Record<string, unknown>;
+  const mode = input.mode === "chunked" || input.mode === "hybrid" || input.mode === "legacy"
+    ? input.mode
+    : undefined;
+  if (!mode) {
+    return undefined;
+  }
+
+  return {
+    version: 1,
+    mode,
+    activeSectionId:
+      typeof input.activeSectionId === "string" && input.activeSectionId.trim()
+        ? input.activeSectionId.trim().slice(0, 80)
+        : undefined,
+    latestRevision:
+      typeof input.latestRevision === "number" && Number.isInteger(input.latestRevision) && input.latestRevision > 0
+        ? input.latestRevision
+        : undefined,
+    latestSnapshotId:
+      typeof input.latestSnapshotId === "string" && input.latestSnapshotId.trim()
+        ? input.latestSnapshotId.trim().slice(0, 120)
+        : undefined,
+    sectionCount:
+      typeof input.sectionCount === "number" && Number.isInteger(input.sectionCount) && input.sectionCount >= 0
+        ? input.sectionCount
+        : undefined,
+    chunkCount:
+      typeof input.chunkCount === "number" && Number.isInteger(input.chunkCount) && input.chunkCount >= 0
+        ? input.chunkCount
+        : undefined,
+    contentHash:
+      typeof input.contentHash === "string" && input.contentHash.trim()
+        ? input.contentHash.trim().slice(0, 64)
+        : undefined,
+    migratedAt: input.migratedAt !== undefined ? toIso(input.migratedAt) : undefined,
+    updatedAt: input.updatedAt !== undefined ? toIso(input.updatedAt) : undefined,
   };
 }
 
@@ -313,6 +374,8 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   lastCursorBlockId?: string;
   lastCursorOffset?: number;
   lastCursorSavedAt?: string;
+  activeSectionId?: string;
+  manuscriptStorage?: ManuscriptStorageMetadata;
 } {
   const updates: {
     titleEn?: string;
@@ -327,6 +390,8 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
     lastCursorBlockId?: string;
     lastCursorOffset?: number;
     lastCursorSavedAt?: string;
+    activeSectionId?: string;
+    manuscriptStorage?: ManuscriptStorageMetadata;
   } = {};
 
   if (typeof input.titleEn === "string" && input.titleEn.trim()) {
@@ -379,8 +444,84 @@ function sanitizeWriteUpdates(input: Partial<Project>): {
   if (typeof input.lastCursorSavedAt === "string" && input.lastCursorSavedAt.trim()) {
     updates.lastCursorSavedAt = input.lastCursorSavedAt.trim();
   }
+  if (typeof input.activeSectionId === "string" && input.activeSectionId.trim()) {
+    updates.activeSectionId = input.activeSectionId.trim().slice(0, 80);
+  }
+  const manuscriptStorage = normalizeManuscriptStorage(input.manuscriptStorage);
+  if (manuscriptStorage) {
+    updates.manuscriptStorage = manuscriptStorage;
+  }
 
   return updates;
+}
+
+function sanitizeStringList(values: readonly string[] | undefined, maxItems: number, maxLength: number): string[] | undefined {
+  if (!Array.isArray(values)) return undefined;
+  const normalized = Array.from(new Set(values
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .map((value) => value.trim().slice(0, maxLength))))
+    .slice(0, maxItems);
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function sanitizeOperationAckInput(
+  operation: WriteProjectOperationAckInput | undefined
+): WriteProjectOperationAckInput | undefined {
+  if (
+    !operation ||
+    operation.schemaVersion !== 1 ||
+    operation.type !== "chunk_snapshot_save" ||
+    typeof operation.operationId !== "string" ||
+    !operation.operationId.trim() ||
+    operation.operationId.includes("/") ||
+    typeof operation.sequence !== "number" ||
+    !Number.isInteger(operation.sequence) ||
+    operation.sequence < 0 ||
+    typeof operation.createdAt !== "number" ||
+    !Number.isFinite(operation.createdAt) ||
+    typeof operation.updatedAt !== "number" ||
+    !Number.isFinite(operation.updatedAt)
+  ) {
+    return undefined;
+  }
+
+  const causality = operation.causality && operation.causality.schemaVersion === 1
+    ? {
+        schemaVersion: 1 as const,
+        actorId: String(operation.causality.actorId ?? "").slice(0, 128),
+        deviceId: String(operation.causality.deviceId ?? "").slice(0, 96),
+        sequence: Number.isInteger(operation.causality.sequence) ? operation.causality.sequence : operation.sequence,
+        parents: sanitizeStringList(operation.causality.parents, 16, 128) ?? [],
+        vectorClock: Object.fromEntries(
+          Object.entries(operation.causality.vectorClock ?? {})
+            .filter(([, value]) => Number.isInteger(value) && value >= 0)
+            .slice(0, 64)
+        ),
+        chunkIds: sanitizeStringList(operation.causality.chunkIds, 256, 120) ?? [],
+        baseRevision: Number.isInteger(operation.causality.baseRevision)
+          ? operation.causality.baseRevision
+          : operation.expectedRevision,
+        createdAt: Number.isFinite(operation.causality.createdAt)
+          ? operation.causality.createdAt
+          : operation.createdAt,
+      }
+    : undefined;
+
+  return {
+    schemaVersion: 1,
+    operationId: operation.operationId.trim().slice(0, 128),
+    type: "chunk_snapshot_save",
+    sequence: operation.sequence,
+    createdAt: operation.createdAt,
+    updatedAt: operation.updatedAt,
+    expectedRevision: Number.isInteger(operation.expectedRevision) ? operation.expectedRevision : undefined,
+    affectedChunkIds: sanitizeStringList(operation.affectedChunkIds, 256, 120),
+    mountedSectionIds: sanitizeStringList(operation.mountedSectionIds, 128, 120),
+    causality,
+    convergenceHash: typeof operation.convergenceHash === "string" && operation.convergenceHash.trim()
+      ? operation.convergenceHash.trim().slice(0, 128)
+      : undefined,
+  };
 }
 
 function createOperationId(prefix: string): string {
@@ -473,12 +614,13 @@ export const firebaseProjectService: ProjectDataService = {
     uid: string,
     projectId: string,
     updates: Partial<Project>,
-    options?: { expectedRevision?: number }
+    options?: { expectedRevision?: number; operation?: WriteProjectOperationAckInput }
   ): Promise<WriteUpdateResult> {
     const sanitized = sanitizeWriteUpdates(updates);
     if (Object.keys(sanitized).length === 0) {
       throw new Error("No writable fields were provided.");
     }
+    const operation = sanitizeOperationAckInput(options?.operation);
 
     const invokeUpdate = async (expectedRevision: number) =>
       callEndpoint<
@@ -486,12 +628,14 @@ export const firebaseProjectService: ProjectDataService = {
           projectId: string;
           expectedRevision: number;
           updates: typeof sanitized;
+          operation?: WriteProjectOperationAckInput;
         },
         WriteUpdateResult
       >("updateWriteProject", {
         projectId,
         expectedRevision,
         updates: sanitized,
+        ...(operation ? { operation } : {}),
       });
 
     if (typeof options?.expectedRevision === "number" && Number.isInteger(options.expectedRevision)) {

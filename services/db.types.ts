@@ -36,6 +36,10 @@ import type {
   CanonicalCoverMode,
   CanonicalFallbackCover,
 } from '../types/entities.ts';
+import type {
+  WriteProjectOperationAckInput,
+  WriteProjectOperationAckResult,
+} from '../lib/editor/writeOperationalTypes.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import type { BookSemanticGraph } from '../types/literaryGraph.ts';
 
@@ -306,8 +310,13 @@ export interface ProjectDataService {
     uid: string,
     projectId: string,
     updates: Partial<Project>,
-    options?: { expectedRevision?: number }
-  ): Promise<{ projectId: string; revision: number; updatedAt: string }>;
+    options?: { expectedRevision?: number; operation?: WriteProjectOperationAckInput }
+  ): Promise<{
+    projectId: string;
+    revision: number;
+    updatedAt: string;
+    operationAck?: WriteProjectOperationAckResult;
+  }>;
   duplicateProject(uid: string, projectId: string): Promise<Project>;
   deleteProject(uid: string, projectId: string): Promise<void>;
   createShareLink(
