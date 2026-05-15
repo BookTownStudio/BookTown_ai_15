@@ -40,7 +40,7 @@ const ESTIMATED_VIRTUAL_POST_HEIGHT = 560;
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
     const socialRailClassName = 'app-rail social-rail--v23';
-    const socialShellClassName = `${socialRailClassName} social-feed-shell`;
+    const socialViewportClassName = `${socialRailClassName} social-feed-shell`;
 
     const [scope, setScope] = useState<SocialFeedScope>('explore');
 
@@ -471,12 +471,16 @@ const SocialScreen: React.FC = () => {
 
     const renderFeedContent = () => {
         if (isLoading && posts.length === 0) {
-            return <div className="h-[100dvh] w-full flex items-center justify-center bg-slate-900"><LoadingSpinner /></div>;
+            return (
+                <div className="flex min-h-[70dvh] w-full items-center justify-center">
+                    <LoadingSpinner />
+                </div>
+            );
         }
 
         if (isError) {
             return (
-                <div className={cn(socialRailClassName, "min-h-[70dvh] flex items-start justify-center pt-24 text-center")}>
+                <div className="flex min-h-[70dvh] w-full items-start justify-center pt-24 text-center">
                     <div className="w-full max-w-xl">
                         <ErrorState 
                             onRetry={() => refetch()} 
@@ -489,7 +493,7 @@ const SocialScreen: React.FC = () => {
         
         if (posts.length === 0) {
              return (
-                <div className={cn(socialRailClassName, "min-h-[70dvh] flex flex-col items-center justify-start text-center pt-24")}>
+                <div className="flex min-h-[70dvh] w-full flex-col items-center justify-start pt-24 text-center">
                     <div className="w-full max-w-xl">
                         <EmptyState 
                             icon={FeedIcon}
@@ -507,7 +511,6 @@ const SocialScreen: React.FC = () => {
             <VirtualizedPostFeed
                 posts={posts}
                 scrollerRef={mainContentRef}
-                className={socialShellClassName}
                 hasNextPage={hasNextPage}
                 isFetchingNextPage={isFetchingNextPage}
                 onFetchNextPage={handleFetchNextFeedPage}
@@ -627,7 +630,7 @@ const SocialScreen: React.FC = () => {
                         : "-translate-y-3 pointer-events-none opacity-0"
                 )}
             >
-                <div className={socialShellClassName}>
+                <div className={socialViewportClassName}>
                     <div
                         className="w-full flex h-14 items-center justify-center relative"
                         style={{
@@ -753,13 +756,15 @@ const SocialScreen: React.FC = () => {
                 }}
             >
                 <div className="px-0 pb-[calc(var(--bottom-nav-height,66px)+28px)] pt-[calc(var(--social-top-chrome-offset)+18px)]">
-                    {renderFeedContent()}
-                </div>
-                {isFetchingNextPage && (
-                    <div className="flex items-center justify-center py-10">
-                        <LoadingSpinner />
+                    <div className={socialViewportClassName}>
+                        {renderFeedContent()}
+                        {isFetchingNextPage && (
+                            <div className="flex w-full items-center justify-center py-10">
+                                <LoadingSpinner />
+                            </div>
+                        )}
                     </div>
-                )}
+                </div>
             </div>
 
             <div
