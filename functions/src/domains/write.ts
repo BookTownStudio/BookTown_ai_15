@@ -4,6 +4,9 @@ import { deleteWriteProject as deleteWriteProjectRaw } from "../deleteWriteProje
 import { updateWriteProject as updateWriteProjectRaw } from "../updateWriteProject";
 import { applyWriteChunkMutation as applyWriteChunkMutationRaw } from "../applyWriteChunkMutation";
 import { compactWriteOperationLogs as compactWriteOperationLogsRaw } from "../compactWriteOperationLogs";
+import { publishWriteCollaborationOperation as publishWriteCollaborationOperationRaw } from "../publishWriteCollaborationOperation";
+import { syncWriteCollaborationReplayCursor as syncWriteCollaborationReplayCursorRaw } from "../syncWriteCollaborationReplayCursor";
+import { syncWriteCollaborationPresence as syncWriteCollaborationPresenceRaw } from "../syncWriteCollaborationPresence";
 import { duplicateWriteProject as duplicateWriteProjectRaw } from "../duplicateWriteProject";
 import { publishWriteProject as publishWriteProjectRaw } from "../publishWriteProject";
 import { createProjectRelease as createProjectReleaseRaw } from "../createProjectRelease";
@@ -29,6 +32,9 @@ export const deleteWriteProject = wrapCallableV2("deleteWriteProject", deleteWri
 export const updateWriteProject = wrapCallableV2("updateWriteProject", updateWriteProjectRaw);
 export const applyWriteChunkMutation = wrapCallableV2("applyWriteChunkMutation", applyWriteChunkMutationRaw);
 export const compactWriteOperationLogs = wrapCallableV2("compactWriteOperationLogs", compactWriteOperationLogsRaw);
+export const publishWriteCollaborationOperation = wrapCallableV2("publishWriteCollaborationOperation", publishWriteCollaborationOperationRaw);
+export const syncWriteCollaborationReplayCursor = wrapCallableV2("syncWriteCollaborationReplayCursor", syncWriteCollaborationReplayCursorRaw);
+export const syncWriteCollaborationPresence = wrapCallableV2("syncWriteCollaborationPresence", syncWriteCollaborationPresenceRaw);
 export const duplicateWriteProject = wrapCallableV2("duplicateWriteProject", duplicateWriteProjectRaw);
 export const publishWriteProject = wrapCallableV2("publishWriteProject", publishWriteProjectRaw);
 export const createProjectRelease = wrapCallableV2("createProjectRelease", createProjectReleaseRaw);

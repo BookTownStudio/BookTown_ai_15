@@ -1243,6 +1243,145 @@ const compactWriteOperationLogsResponseSchema = z
   })
   .strict();
 
+const writeCollaborationOperationSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    operationId: z.string().min(1).max(128),
+    uid: z.string().min(1).max(128),
+    projectId: z.string().min(1).max(120),
+    type: z.literal("chunk_snapshot_save"),
+    status: z.literal("applied"),
+    sequence: z.number().int().nonnegative(),
+    createdAt: z.number().finite(),
+    updatedAt: z.number().finite(),
+    expectedRevision: z.number().int().positive().optional(),
+    affectedChunkIds: z.array(z.string().min(1).max(120)).max(256).optional(),
+    mountedSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
+    causality: writeOperationCausalitySchema,
+    convergenceHash: z.string().min(1).max(128).optional(),
+    conflictState: z.enum(["none", "observed", "resolved"]).optional(),
+    conflictOperationIds: z.array(z.string().min(1).max(128)).max(32).optional(),
+    convergenceCheckpointId: z.string().min(1).max(128).optional(),
+    attempts: z.number().int().nonnegative(),
+    lastError: z.string().max(512).optional(),
+    appliedAt: z.number().finite().optional(),
+    serverRevision: z.number().int().positive().optional(),
+    snapshot: z
+      .object({
+        content: z.string().optional(),
+        contentDoc: writeContentDocSchema,
+        wordCount: z.number().int().nonnegative().optional(),
+        titleEn: z.string().optional(),
+        titleAr: z.string().optional(),
+        affectedChunkIds: z.array(z.string().min(1).max(120)).max(256).optional(),
+        affectedAnchorIds: z.array(z.string().min(1).max(128)).max(512).optional(),
+        mountedSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
+        activeSectionId: z.string().min(1).max(120).optional(),
+        totalSectionCount: z.number().int().nonnegative().optional(),
+        totalChunkCount: z.number().int().nonnegative().optional(),
+        isPartialManuscript: z.boolean().optional(),
+      })
+      .passthrough(),
+  })
+  .strict();
+
+const writeCollaborationOperationRecordSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projectId: z.string().min(1).max(120),
+    ownerUid: z.string().min(1).max(128),
+    operationId: z.string().min(1).max(128),
+    actorId: z.string().min(1).max(128),
+    deviceId: z.string().min(1).max(96),
+    createdAt: z.number().finite(),
+    coordinatorSequence: z.number().int().positive(),
+    payloadBytes: z.number().int().positive().max(300000),
+    operation: writeCollaborationOperationSchema,
+    causality: writeOperationCausalitySchema,
+    convergenceHash: z.string().min(1).max(128),
+    validation: z
+      .object({
+        schemaVersion: z.literal(1),
+        validatedAt: z.unknown().optional(),
+        operationLedgerValidated: z.boolean(),
+        chunkMutationLedgerValidated: z.boolean(),
+        chunkIds: z.array(z.string().min(1).max(120)).max(256),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const writeCollaborationReplayCursorSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projectId: z.string().min(1).max(120),
+    ownerUid: z.string().min(1).max(128),
+    deviceId: z.string().min(1).max(96),
+    lastCoordinatorSequence: z.number().int().nonnegative(),
+    lastOperationId: z.string().min(1).max(128).optional(),
+    operationIds: z.array(z.string().min(1).max(128)).max(240),
+    checkpointId: z.string().min(1).max(128).optional(),
+    checkpointHash: z.string().min(1).max(128).optional(),
+    updatedAt: z.number().finite(),
+    createdAt: z.number().finite(),
+  })
+  .strict();
+
+const writeCollaborationReplayCursorResultSchema = z
+  .object({
+    cursor: writeCollaborationReplayCursorSchema,
+    records: z.array(writeCollaborationOperationRecordSchema).max(80),
+    latestCoordinatorSequence: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    windowGap: z.boolean(),
+    advanced: z.boolean(),
+    duplicate: z.boolean(),
+  })
+  .strict();
+
+const writeCollaboratorPresenceRecordSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    projectId: z.string().min(1).max(120),
+    ownerUid: z.string().min(1).max(128),
+    actorId: z.string().min(1).max(128),
+    deviceId: z.string().min(1).max(96),
+    displayName: z.string().max(80).optional(),
+    updatedAt: z.number().finite(),
+    expiresAt: z.number().finite(),
+    status: z.enum(["active", "idle"]),
+    selectionFrom: z.number().int().nonnegative().max(10000000).optional(),
+    selectionTo: z.number().int().nonnegative().max(10000000).optional(),
+    cursorBlockId: z.string().min(1).max(128).optional(),
+    cursorOffset: z.number().int().nonnegative().max(10000000).optional(),
+    anchorId: z.string().min(1).max(128).optional(),
+    chunkId: z.string().min(1).max(120).optional(),
+    sectionId: z.string().min(1).max(120).optional(),
+    mountedSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
+    presenceSequence: z.number().int().positive().optional(),
+    validation: z
+      .object({
+        schemaVersion: z.literal(1),
+        validatedAt: z.number().finite().optional(),
+        coordinatorValidated: z.boolean().optional(),
+        throttled: z.boolean().optional(),
+      })
+      .strict()
+      .optional(),
+  })
+  .strict();
+
+const writeCollaborationPresenceResultSchema = z
+  .object({
+    record: writeCollaboratorPresenceRecordSchema.optional(),
+    removed: z.boolean(),
+    throttled: z.boolean(),
+    cleanupCount: z.number().int().nonnegative(),
+    presenceSequence: z.number().int().nonnegative().optional(),
+  })
+  .strict();
+
 const canonicalCoverModeSchema = z.enum(["uploaded", "fallback_metadata"]);
 
 const canonicalFallbackCoverSchema = z
@@ -4018,6 +4157,84 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/editor/writeOperationRetention.ts"],
+      }
+    ),
+
+    publishWriteCollaborationOperation: defineContract(
+      z
+        .object({
+          projectId: z.string().min(1).max(120),
+          operation: writeCollaborationOperationSchema,
+        })
+        .strict(),
+      z
+        .object({
+          record: writeCollaborationOperationRecordSchema,
+          duplicate: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/editor/writeCollaborationTransport.ts"],
+      }
+    ),
+
+    syncWriteCollaborationReplayCursor: defineContract(
+      z
+        .discriminatedUnion("action", [
+          z
+            .object({
+              action: z.literal("recover"),
+              projectId: z.string().min(1).max(120),
+              deviceId: z.string().min(1).max(96),
+              limit: z.number().int().positive().max(80).optional(),
+            })
+            .strict(),
+          z
+            .object({
+              action: z.literal("advance"),
+              projectId: z.string().min(1).max(120),
+              deviceId: z.string().min(1).max(96),
+              upToCoordinatorSequence: z.number().int().positive(),
+              operationIds: z.array(z.string().min(1).max(128)).max(80),
+            })
+            .strict(),
+        ]),
+      writeCollaborationReplayCursorResultSchema,
+      "httpsCallable",
+      {
+        callSites: ["lib/editor/writeCollaborationTransport.ts"],
+      }
+    ),
+
+    syncWriteCollaborationPresence: defineContract(
+      z
+        .discriminatedUnion("action", [
+          z
+            .object({
+              action: z.literal("publish"),
+              projectId: z.string().min(1).max(120),
+              deviceId: z.string().min(1).max(96),
+              presence: writeCollaboratorPresenceRecordSchema
+                .omit({
+                  presenceSequence: true,
+                  validation: true,
+                })
+                .passthrough(),
+            })
+            .strict(),
+          z
+            .object({
+              action: z.literal("remove"),
+              projectId: z.string().min(1).max(120),
+              deviceId: z.string().min(1).max(96),
+            })
+            .strict(),
+        ]),
+      writeCollaborationPresenceResultSchema,
+      "httpsCallable",
+      {
+        callSites: ["lib/editor/writeCollaborationTransport.ts"],
       }
     ),
 

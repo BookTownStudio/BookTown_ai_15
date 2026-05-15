@@ -16,6 +16,7 @@ import {
 import { writeEditorTelemetry } from './writeEditorTelemetry.ts';
 import { requestWriteOperationCompaction } from './writeOperationRetention.ts';
 import { getWriteRuntimeDeviceId } from './writeRuntimeIdentity.ts';
+import { getWriteRuntimeSessionCoordinator } from './writeRuntimeSessionCoordinator.ts';
 
 export type ApplyWriteOperation = (
   operation: WriteChunkSnapshotOperation
@@ -41,13 +42,27 @@ function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function getRuntimeCoordinator(uid: string, projectId: string) {
+  return getWriteRuntimeSessionCoordinator({
+    uid,
+    projectId,
+    deviceId: getWriteRuntimeDeviceId(uid),
+  });
+}
+
+function allocateRuntimeSequence(uid: string, projectId: string): Promise<number> {
+  return getRuntimeCoordinator(uid, projectId).runWithSequenceOwnership(() => (
+    indexedDbOperationalStore.allocateSequence()
+  ));
+}
+
 export const writeOperationalSyncEngine = {
   async createCommittedChunkSnapshotOperation(params: EnqueueSnapshotOperationParams & {
     serverRevision?: number;
   }): Promise<WriteChunkSnapshotOperation> {
     const operationId = createChunkSnapshotOperationId(params);
     const now = Date.now();
-    const sequence = await indexedDbOperationalStore.allocateSequence();
+    const sequence = await allocateRuntimeSequence(params.uid, params.projectId);
     const pendingOperations = await indexedDbOperationalStore.getPending(params.uid, params.projectId);
     const causality = createOperationCausality({
       actorId: params.uid,
@@ -118,7 +133,7 @@ export const writeOperationalSyncEngine = {
     }
 
     const now = Date.now();
-    const sequence = await indexedDbOperationalStore.allocateSequence();
+    const sequence = await allocateRuntimeSequence(params.uid, params.projectId);
     const pendingOperations = await indexedDbOperationalStore.getPending(params.uid, params.projectId);
     const causality = createOperationCausality({
       actorId: params.uid,
@@ -190,6 +205,7 @@ export const writeOperationalSyncEngine = {
     projectId: string;
     applyOperation: ApplyWriteOperation;
   }): Promise<{ appliedCount: number; failedCount: number; latestRevision?: number }> {
+    const replayResult = await getRuntimeCoordinator(params.uid, params.projectId).runWithReplayOwnership(async () => {
     const finish = writeEditorTelemetry.startTimer('sync.replayCycle', {
       projectId: params.projectId,
     });
@@ -334,5 +350,8 @@ export const writeOperationalSyncEngine = {
     }, failedCount > 0 ? 'warn' : 'debug');
     finish();
     return { appliedCount, failedCount, latestRevision };
+    });
+
+    return replayResult ?? { appliedCount: 0, failedCount: 0 };
   },
 };

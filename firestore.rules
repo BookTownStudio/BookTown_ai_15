@@ -570,21 +570,17 @@ service cloud.firestore {
 
         match /collaborationOperations/{operationId} {
           allow read: if isOwner(uid);
-          allow create: if isActiveOwner(uid)
-            && request.resource.data.schemaVersion == 1
-            && request.resource.data.projectId == projectId
-            && request.resource.data.ownerUid == uid
-            && request.resource.data.operationId == operationId
-            && request.resource.data.actorId == request.auth.uid
-            && isBoundedString(request.resource.data.deviceId, 96)
-            && request.resource.data.createdAt is int
-            && request.resource.data.createdAt > 0
-            && request.resource.data.payloadBytes is int
-            && request.resource.data.payloadBytes > 0
-            && request.resource.data.payloadBytes <= 300000
-            && request.resource.data.operation is map
-            && request.resource.data.causality is map;
-          allow update, delete: if false;
+          allow create, update, delete: if false;
+        }
+
+        match /collaborationReplayCursors/{deviceId} {
+          allow read: if isOwner(uid);
+          allow create, update, delete: if false;
+        }
+
+        match /collaborationReplayCheckpoints/{checkpointId} {
+          allow read: if isOwner(uid);
+          allow create, update, delete: if false;
         }
 
         match /operationLedger/{operationId} {
@@ -609,18 +605,12 @@ service cloud.firestore {
 
         match /collaborationPresence/{presenceId} {
           allow read: if isOwner(uid);
-          allow create, update: if isActiveOwner(uid)
-            && request.resource.data.schemaVersion == 1
-            && request.resource.data.projectId == projectId
-            && request.resource.data.ownerUid == uid
-            && request.resource.data.actorId == request.auth.uid
-            && isBoundedString(request.resource.data.deviceId, 96)
-            && request.resource.data.updatedAt is int
-            && request.resource.data.updatedAt > 0
-            && request.resource.data.expiresAt is int
-            && request.resource.data.expiresAt > request.resource.data.updatedAt
-            && request.resource.data.status in ["active", "idle"];
-          allow delete: if isActiveOwner(uid);
+          allow create, update, delete: if false;
+        }
+
+        match /collaborationPresenceAuthority/{deviceId} {
+          allow read: if isOwner(uid);
+          allow create, update, delete: if false;
         }
       }
 

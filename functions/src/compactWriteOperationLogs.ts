@@ -19,17 +19,35 @@ async function pruneCollection(params: {
   orderField: string;
   retain: number;
   maxDelete: number;
+  canDelete?: (doc: FirebaseFirestore.QueryDocumentSnapshot) => boolean;
 }): Promise<number> {
   const snap = await params.collection
     .orderBy(params.orderField, "desc")
     .limit(params.retain + params.maxDelete)
     .get();
-  const staleDocs = snap.docs.slice(params.retain, params.retain + params.maxDelete);
+  const staleDocs = snap.docs
+    .slice(params.retain, params.retain + params.maxDelete)
+    .filter((docSnap) => params.canDelete?.(docSnap) ?? true);
   if (staleDocs.length === 0) return 0;
   const batch = admin.firestore().batch();
   staleDocs.forEach((entry) => batch.delete(entry.ref));
   await batch.commit();
   return staleDocs.length;
+}
+
+async function resolveReplayCursorFloor(
+  projectRef: FirebaseFirestore.DocumentReference
+): Promise<number | null> {
+  const snap = await projectRef
+    .collection("collaborationReplayCursors")
+    .orderBy("updatedAt", "desc")
+    .limit(50)
+    .get();
+  const sequences = snap.docs
+    .map((entry) => entry.get("lastCoordinatorSequence"))
+    .filter((value): value is number => typeof value === "number" && Number.isInteger(value) && value >= 0);
+  if (sequences.length === 0) return null;
+  return Math.min(...sequences);
 }
 
 async function pruneExpiredPresence(params: {
@@ -60,6 +78,7 @@ export const compactWriteOperationLogs = onCall({ cors: true }, async (request) 
 
   const startedAt = Date.now();
   try {
+    const replayCursorFloor = await resolveReplayCursorFloor(projectRef);
     const [
       operationLedgerPruned,
       chunkMutationLedgerPruned,
@@ -83,6 +102,11 @@ export const compactWriteOperationLogs = onCall({ cors: true }, async (request) 
         orderField: "createdAt",
         retain: RETAIN_COLLABORATION_OPS,
         maxDelete: MAX_DELETE_BATCH,
+        canDelete: (docSnap) => {
+          if (replayCursorFloor === null) return true;
+          const sequence = docSnap.get("coordinatorSequence");
+          return typeof sequence === "number" && Number.isInteger(sequence) && sequence <= replayCursorFloor;
+        },
       }),
       pruneExpiredPresence({
         collection: projectRef.collection("collaborationPresence"),
