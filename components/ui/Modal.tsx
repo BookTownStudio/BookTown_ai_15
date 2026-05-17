@@ -30,7 +30,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, children }) => {
     <AnimatePresence>
         {isOpen && (
             <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
             aria-labelledby="modal-title"
             role="dialog"
             aria-modal="true"
@@ -46,7 +46,7 @@ const Modal: React.FC<ModalProps> = ({ isOpen, onClose, children }) => {
 
             <motion.div
                 className={cn(
-                "relative z-10 w-full rounded-card bg-gray-100/90 dark:bg-slate-800/90 p-6 shadow-2xl shadow-black/50",
+                "relative z-10 max-h-[calc(100dvh-2rem)] w-full overflow-y-auto overscroll-y-contain rounded-card bg-gray-100/90 dark:bg-slate-800/90 p-6 shadow-2xl shadow-black/50",
                 "border border-black/5 dark:border-white/10"
                 )}
                 style={{ maxWidth: 'min(var(--app-rail-narrow, 760px), calc(100vw - 2rem))' }}

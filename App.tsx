@@ -16,6 +16,7 @@ import AttachmentViewerOverlay from './components/content/AttachmentViewerOverla
 import { cn } from './lib/utils.ts';
 import AppFrame from './components/layout/AppFrame.tsx';
 import { HomeSearchProvider } from './store/home-search.tsx';
+import { isImmersiveScreenName, isStackScreenName } from './types/navigation.ts';
 
 // Lazy Load Major Screens
 const HomeScreen = lazy(() => import('./app/tabs/home.tsx'));
@@ -30,7 +31,6 @@ const SemanticCollectionScreen = lazy(() => import('./app/discovery/semantic-col
 const BookDetailsScreen = lazy(() => import('./app/book-details.tsx'));
 const AuthorDetailsScreen = lazy(() => import('./app/author-details.tsx'));
 const QuoteDetailsScreen = lazy(() => import('./app/quote-details.tsx'));
-const PostDetailsScreen = lazy(() => import('./app/post-details.tsx'));
 const PostDiscussionScreen = lazy(() => import('./app/social/post-discussion.tsx'));
 const PostTextOverlayScreen = lazy(() => import('./app/social/post-text-overlay.tsx'));
 const VenueDetailsScreen = lazy(() => import('./app/venue-details.tsx'));
@@ -53,10 +53,8 @@ const ShelfDetailsScreen = lazy(() => import('./app/shelf-details.tsx'));
 
 // Added missing lazy loaded components for ImmersiveScreens
 const AgentChatScreen = lazy(() => import('./app/agent.tsx'));
-const LiveSearchScreen = lazy(() => import('./app/search/live.tsx'));
 const MessengerListScreen = lazy(() => import('./app/messenger/list.tsx'));
 const MessengerChatScreen = lazy(() => import('./app/messenger/[id].tsx'));
-const PeopleFlowScreen = lazy(() => import('./app/immersive/people-flow.tsx'));
 const GoodreadsImportScreen = lazy(() => import('./app/immersive/goodreads-import.tsx'));
 const DraftsScreen = lazy(() => import('./app/social/drafts.tsx'));
 const ProjectEditScreen = lazy(() => import('./app/project/edit.tsx'));
@@ -120,12 +118,13 @@ const ImmersiveScreens: React.FC = () => {
     const { currentView } = useNavigation();
     const { isAdmin } = useAuth();
     if (currentView.type !== 'immersive') return null;
+    if (!isImmersiveScreenName(currentView.id)) return null;
 
-    // Updated switch to handle all ImmersiveScreenName cases
+    // Beta governance: public and allowed internal surfaces stay renderable; disconnected
+    // legacy surfaces are intentionally absent from this switch.
     switch (currentView.id) {
         case 'postDiscussion': return <PostDiscussionScreen />;
         case 'postTextOverlay': return <PostTextOverlayScreen />;
-        case 'postDetails': return <PostDetailsScreen />;
         case 'bookDetails': return <BookDetailsScreen />;
         case 'authorDetails': return <AuthorDetailsScreen />;
         case 'quoteDetails': return <QuoteDetailsScreen />;
@@ -147,10 +146,8 @@ const ImmersiveScreens: React.FC = () => {
         case 'notificationsFeed': return <NotificationsFeedScreen />;
         case 'shelfDetails': return <ShelfDetailsScreen />;
         case 'agentChat': return <AgentChatScreen />;
-        case 'liveSearch': return <LiveSearchScreen />;
         case 'messengerList': return <MessengerListScreen />;
         case 'messengerChat': return <MessengerChatScreen />;
-        case 'peopleFlow': return <PeopleFlowScreen />;
         case 'goodreadsImport': return <GoodreadsImportScreen />;
         case 'drafts': return <DraftsScreen />;
         case 'projectEdit': return <ProjectEditScreen />;
@@ -166,6 +163,7 @@ const ImmersiveScreens: React.FC = () => {
 const StackScreens: React.FC = () => {
     const { currentView } = useNavigation();
     if (currentView.type !== 'stack') return null;
+    if (!isStackScreenName(currentView.id)) return null;
 
     switch (currentView.id) {
         case 'discovery': return <DiscoveryStackScreen />;

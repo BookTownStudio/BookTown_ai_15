@@ -6,8 +6,11 @@ import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import InputField from '../../components/ui/InputField.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
+import ErrorState from '../../components/ui/ErrorState.tsx';
+import EmptyState from '../../components/ui/EmptyState.tsx';
 import { Conversation } from '../../types/entities.ts';
 import { cn } from '../../lib/utils.ts';
+import { EmailIcon } from '../../components/icons/EmailIcon.tsx';
 
 const MESSENGER_INBOX_RAIL_CLASS = 'mx-auto w-full max-w-[760px] px-4 md:px-0';
 
@@ -120,9 +123,9 @@ const MessengerListScreen: React.FC = () => {
     );
 
     return (
-        <div className="h-screen flex flex-col">
+        <div className="h-[100dvh] flex flex-col overflow-hidden">
             <ScreenHeader titleEn="BookMessenger" titleAr="بوك ماسنجر" onBack={handleBack} />
-            <main className="flex-grow overflow-y-auto pt-20">
+            <main className="flex-grow overflow-y-auto overflow-x-hidden overscroll-y-contain pt-20 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <div className={cn(MESSENGER_INBOX_RAIL_CLASS, 'space-y-4 pb-8')}>
                      <InputField
                         id="messenger-search"
@@ -134,7 +137,12 @@ const MessengerListScreen: React.FC = () => {
                     />
                     <div className="overflow-hidden rounded-3xl border border-black/10 bg-white/40 shadow-sm dark:border-white/10 dark:bg-white/5">
                     {isLoading && <div className="flex justify-center py-8"><LoadingSpinner /></div>}
-                    {isError && <BilingualText className="text-center py-8">Error loading conversations.</BilingualText>}
+                    {isError && (
+                        <ErrorState
+                            title={lang === 'en' ? 'Conversations unavailable' : 'المحادثات غير متاحة'}
+                            message={lang === 'en' ? 'Error loading conversations.' : 'خطأ في تحميل المحادثات.'}
+                        />
+                    )}
                     {filteredConversations && filteredConversations.length > 0 && (
                         <div className="divide-y divide-black/10 dark:divide-white/10">
                             {filteredConversations.map(convo => (
@@ -142,8 +150,22 @@ const MessengerListScreen: React.FC = () => {
                             ))}
                         </div>
                     )}
-                     {!isLoading && (!filteredConversations || filteredConversations.length === 0) && (
-                         <BilingualText className="text-center py-8 text-slate-500">No conversations found.</BilingualText>
+                     {!isLoading && !isError && (!filteredConversations || filteredConversations.length === 0) && (
+                         <EmptyState
+                            icon={EmailIcon}
+                            titleEn="No conversations found"
+                            titleAr="لا توجد محادثات"
+                            messageEn={
+                                searchQuery.trim()
+                                    ? 'Try another name or message.'
+                                    : 'Your conversations will appear here.'
+                            }
+                            messageAr={
+                                searchQuery.trim()
+                                    ? 'جرّب اسماً أو رسالة أخرى.'
+                                    : 'ستظهر محادثاتك هنا.'
+                            }
+                         />
                      )}
                     </div>
                 </div>

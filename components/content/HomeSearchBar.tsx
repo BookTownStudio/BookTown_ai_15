@@ -13,6 +13,7 @@ interface HomeSearchBarProps {
   onFocus?: () => void;
   onBlur?: () => void;
   onClear?: () => void;
+  onEscape?: () => void;
   recentSearches?: string[];
   showRecentSearches?: boolean;
   onSelectRecentSearch?: (query: string) => void;
@@ -27,6 +28,7 @@ const HomeSearchBar: React.FC<HomeSearchBarProps> = ({
   onFocus,
   onBlur,
   onClear,
+  onEscape,
   recentSearches = [],
   showRecentSearches = false,
   onSelectRecentSearch,
@@ -53,6 +55,11 @@ const HomeSearchBar: React.FC<HomeSearchBarProps> = ({
         placeholder={lang === 'en' ? 'Seek a book...' : 'ابحث عن كتاب...'}
         value={value}
         onChange={e => onChange(e.target.value)}
+        onKeyDown={event => {
+          if (event.key === 'Escape') {
+            onEscape?.();
+          }
+        }}
         onFocus={onFocus}
         onBlur={onBlur}
         className={`

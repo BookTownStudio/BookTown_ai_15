@@ -35,6 +35,10 @@ const ActorAvatar: React.FC<{ uid: string; className?: string }> = ({ uid, class
     );
 };
 
+const readTargetId = (value: unknown): string => (
+    typeof value === 'string' ? value.trim() : ''
+);
+
 const NotificationCard: React.FC<{ notification: Notification | GroupedNotification }> = ({ notification }) => {
     const { lang } = useI18n();
     const { navigate, currentView, navigateToSocialPostEntry } = useNavigation();
@@ -48,44 +52,65 @@ const NotificationCard: React.FC<{ notification: Notification | GroupedNotificat
     const isUnread = !notification.read;
 
     const handlePress = () => {
-        const navigationTarget = () => {
+        const navigationTarget = (): boolean => {
             switch (notification.entityType) {
-                case 'post':
-                    if (notification.postId) {
-                        navigateToSocialPostEntry(notification.postId, {
+                case 'post': {
+                    const postId = readTargetId(notification.postId) || readTargetId(notification.entityId);
+                    if (postId) {
+                        navigateToSocialPostEntry(postId, {
                             openDiscussion: true,
                             fallbackToStandalone: true,
                         });
+                        return true;
                     }
-                    break;
-                case 'profile':
-                    navigate({ type: 'immersive', id: 'profile', params: { userId: notification.actorId, from: currentView } });
-                    break;
-                case 'book':
-                    navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: notification.entityId, from: currentView } });
-                    break;
-                case 'shelf':
-                    navigate({ type: 'immersive', id: 'shelfDetails', params: { shelfId: notification.entityId, ownerId: notification.uid, from: currentView } });
-                    break;
-                case 'conversation':
+                    console.warn('[NOTIFICATION][POST_TARGET_MISSING]', {
+                        notificationId: ids[0] || null,
+                        entityId: notification.entityId || null,
+                        postId: notification.postId || null,
+                    });
+                    return false;
+                }
+                case 'profile': {
+                    const userId = readTargetId(notification.actorId);
+                    if (!userId) return false;
+                    navigate({ type: 'immersive', id: 'profile', params: { userId, from: currentView } });
+                    return true;
+                }
+                case 'book': {
+                    const bookId = readTargetId(notification.entityId);
+                    if (!bookId) return false;
+                    navigate({ type: 'immersive', id: 'bookDetails', params: { bookId, from: currentView } });
+                    return true;
+                }
+                case 'shelf': {
+                    const shelfId = readTargetId(notification.entityId);
+                    if (!shelfId) return false;
+                    navigate({ type: 'immersive', id: 'shelfDetails', params: { shelfId, ownerId: notification.uid, from: currentView } });
+                    return true;
+                }
+                case 'conversation': {
+                    const conversationId = readTargetId(notification.entityId);
+                    if (!conversationId) return false;
                     navigate({
                         type: 'immersive',
                         id: 'messengerChat',
                         params: {
                             from: currentView,
-                            conversationId: notification.entityId,
+                            conversationId,
                             contactName: primaryActor?.name || 'Chat'
                         }
                     });
-                    break;
-                default: break;
+                    return true;
+                }
+                default:
+                    return false;
             }
         };
 
-        navigationTarget();
+        const didNavigate = navigationTarget();
 
         // NOTIFICATION_READ_STATE_V1 idempotent mutation
-        if (!notification.read) {
+        if (didNavigate && !notification.read) {
             ids.forEach(id => markRead({ notificationId: id }));
         }
     };

@@ -24,7 +24,7 @@ const PageShell = forwardRef<HTMLDivElement, PageShellProps>(({
                 "flex flex-col",
                 // Scrolling behavior
                 scrollable 
-                    ? "overflow-y-auto overflow-x-hidden scroll-smooth" 
+                    ? "overflow-y-auto overflow-x-hidden overscroll-y-contain scroll-smooth"
                     : "overflow-hidden",
                 // Mobile Safe Area handling for scrolling content
                 scrollable && "pb-[env(safe-area-inset-bottom)]",

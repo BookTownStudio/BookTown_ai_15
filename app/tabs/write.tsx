@@ -5,6 +5,9 @@ import { useI18n } from '../../store/i18n.tsx';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
 import { useUserProjects } from '../../lib/hooks/useUserProjects.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
+import ErrorState from '../../components/ui/ErrorState.tsx';
+import EmptyState from '../../components/ui/EmptyState.tsx';
+import { ProjectCardSkeleton } from '../../components/ui/Skeletons.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import ProjectCard from '../../components/content/ProjectCard.tsx';
 import TemplateCard from '../../components/content/TemplateCard.tsx';
@@ -437,19 +440,28 @@ const WriteScreen: React.FC = () => {
 
     const renderContent = () => {
         if (isLoading) {
-            return <div className="flex-grow flex items-center justify-center pt-16"><LoadingSpinner /></div>;
+            return (
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 pt-6">
+                    {[1, 2, 3].map((item) => (
+                        <ProjectCardSkeleton key={item} />
+                    ))}
+                </div>
+            );
         }
 
         if (isError) {
             return (
-                <div className="flex-grow flex flex-col items-center justify-center pt-16 text-center">
-                    <BilingualText role="H1" className="!text-2xl text-red-500">
-                        {lang === 'en' ? 'Projects Unavailable' : 'المشاريع غير متاحة'}
-                    </BilingualText>
-                    <BilingualText className="mt-2 text-slate-500 dark:text-white/60">
-                        {error instanceof Error ? error.message : (lang === 'en' ? 'Failed to load projects.' : 'فشل تحميل المشاريع.')}
-                    </BilingualText>
-                </div>
+                <ErrorState
+                    title={lang === 'en' ? 'Projects unavailable' : 'المشاريع غير متاحة'}
+                    message={
+                        error instanceof Error
+                            ? error.message
+                            : lang === 'en'
+                                ? 'Failed to load projects.'
+                                : 'فشل تحميل المشاريع.'
+                    }
+                    className="my-12"
+                />
             );
         }
 
@@ -458,14 +470,13 @@ const WriteScreen: React.FC = () => {
 
         if (writeProjects.length === 0) {
             return (
-                <div className="flex-grow flex flex-col items-center justify-center pt-16 text-center text-slate-500 dark:text-white/60">
-                    <BilingualText role="H1" className="!text-2xl">
-                        {lang === 'en' ? 'Your canvas is empty.' : 'لوحتك فارغة.'}
-                    </BilingualText>
-                    <BilingualText className="mt-2">
-                        {lang === 'en' ? 'Start a new book or pick a guided template below.' : 'ابدأ كتاباً جديداً أو اختر قالباً موجهاً في الأسفل.'}
-                    </BilingualText>
-                </div>
+                <EmptyState
+                    icon={TemplatesIcon}
+                    titleEn="Your canvas is empty."
+                    titleAr="لوحتك فارغة."
+                    messageEn="Start a new book or pick a guided template below."
+                    messageAr="ابدأ كتاباً جديداً أو اختر قالباً موجهاً في الأسفل."
+                />
             );
         }
 
@@ -495,7 +506,7 @@ const WriteScreen: React.FC = () => {
 
     return (
         <>
-            <div className="h-screen flex flex-col">
+            <div className="h-[100dvh] flex flex-col overflow-hidden">
                 {activeMenuProjectId && (
                     <div
                         className="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm"
@@ -506,7 +517,7 @@ const WriteScreen: React.FC = () => {
                     />
                 )}
                 <AppNav titleEn="Write" titleAr="اكتب" />
-                <main className="flex-grow overflow-y-auto pt-20 pb-32">
+                <main className="flex-grow overflow-y-auto overflow-x-hidden overscroll-y-contain pt-20 pb-[calc(var(--bottom-nav-height,66px)+3rem)]">
                     <LiteraryShell className="py-6">
                         <div className="flex justify-between items-center mb-8">
                             <BilingualText role="H1" className="!text-3xl !font-bold">

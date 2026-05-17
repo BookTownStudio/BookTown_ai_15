@@ -234,10 +234,10 @@ const NotificationsFeedScreen: React.FC = () => {
     const hasUnread = (unreadCount || 0) > 0;
 
     return (
-        <div className="h-screen flex flex-col bg-gray-50 dark:bg-slate-900 overflow-hidden">
+        <div className="h-[100dvh] flex flex-col bg-gray-50 dark:bg-slate-900 overflow-hidden">
             <ScreenHeader titleEn="Notifications" titleAr="الإشعارات" onBack={handleBack} />
-            <main className="flex-grow overflow-y-auto pt-20">
-                <div className="app-rail app-rail--default max-w-2xl min-h-full flex flex-col">
+            <main className="flex-grow overflow-y-auto overflow-x-hidden overscroll-y-contain pt-20 pb-[max(1rem,env(safe-area-inset-bottom))]">
+                <div className="app-rail app-rail--narrow min-h-full flex flex-col">
                     <div className="flex flex-col border-b border-black/5 dark:border-white/5 sticky top-0 bg-gray-50/95 dark:bg-slate-900/95 backdrop-blur-md z-10">
                         <div className="flex justify-between items-center p-4">
                             <BilingualText role="Caption" className="uppercase tracking-widest font-bold !text-slate-400">

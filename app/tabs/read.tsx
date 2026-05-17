@@ -13,6 +13,8 @@ import { useI18n } from '../../store/i18n.tsx';
 import { useContinueReading } from '../../lib/hooks/useContinueReading.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
+import ErrorState from '../../components/ui/ErrorState.tsx';
+import EmptyState from '../../components/ui/EmptyState.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
@@ -180,7 +182,7 @@ const ReadScreen: React.FC = () => {
 
       <main
         ref={mainContentRef}
-        className="flex-grow overflow-y-auto pt-20 pb-32"
+        className="flex-grow overflow-y-auto overflow-x-hidden overscroll-y-contain pt-20 pb-[calc(var(--bottom-nav-height,66px)+3rem)]"
       >
         <LiteraryShell>
           <header className="mb-5 flex items-center justify-between">
@@ -252,13 +254,23 @@ const ReadScreen: React.FC = () => {
               <LoadingSpinner />
             </div>
           ) : isError ? (
-            <div className="py-20 text-center text-red-400">
-              <BilingualText>
-                {lang === 'en'
+            <ErrorState
+              title={lang === 'en' ? 'Shelves unavailable' : 'الرفوف غير متاحة'}
+              message={
+                lang === 'en'
                   ? 'Error loading shelves.'
-                  : 'خطأ في تحميل الرفوف.'}
-              </BilingualText>
-            </div>
+                  : 'خطأ في تحميل الرفوف.'
+              }
+              className="my-12"
+            />
+          ) : sortedShelves.length === 0 ? (
+            <EmptyState
+              icon={ShelvesIcon}
+              titleEn="No shelves yet"
+              titleAr="لا توجد رفوف بعد"
+              messageEn="Create a shelf to start organizing your reading."
+              messageAr="أنشئ رفاً للبدء في تنظيم قراءاتك."
+            />
           ) : (
             <div className="space-y-6">
               {sortedShelves.map(shelf => (

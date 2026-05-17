@@ -1,5 +1,12 @@
 import React, { createContext, useState, useContext, useMemo, ReactNode, useCallback, useEffect } from 'react';
-import { View, TabName, NavigationParams } from '../types/navigation.ts';
+import {
+    View,
+    TabName,
+    NavigationParams,
+    isImmersiveScreenName,
+    isStackScreenName,
+    isTabName,
+} from '../types/navigation.ts';
 import { buildPublicationSlugPath, extractPublicationIdFromSlugSegment } from '../lib/publications/publicationUrl.ts';
 
 const initialResetTokens: Record<TabName, number> = {
@@ -807,6 +814,14 @@ function readHistoryViewState(state: unknown): View | null {
         maybeView.type !== 'tab' &&
         maybeView.type !== 'immersive' &&
         maybeView.type !== 'stack'
+    ) {
+        return null;
+    }
+
+    if (
+        (maybeView.type === 'tab' && !isTabName((candidate as { id?: unknown }).id)) ||
+        (maybeView.type === 'immersive' && !isImmersiveScreenName((candidate as { id?: unknown }).id)) ||
+        (maybeView.type === 'stack' && !isStackScreenName((candidate as { id?: unknown }).id))
     ) {
         return null;
     }

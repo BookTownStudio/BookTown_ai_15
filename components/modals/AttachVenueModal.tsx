@@ -20,6 +20,10 @@ const AttachVenueModal: React.FC<AttachVenueModalProps> = ({ isOpen, onClose, on
     const { lang } = useI18n();
     const [searchQuery, setSearchQuery] = useState('');
     const { data: items, isLoading } = useVenuesAndEvents(searchQuery);
+    const handleSelectVenue = (item: Venue | Event) => {
+        onSelect(item);
+        onClose();
+    };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -51,7 +55,7 @@ const AttachVenueModal: React.FC<AttachVenueModalProps> = ({ isOpen, onClose, on
                             return (
                                 <button
                                     key={item.id}
-                                    onClick={() => onSelect(item)}
+                                    onClick={() => handleSelectVenue(item)}
                                     className="w-full flex items-center gap-3 p-3 rounded-lg text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-black/5 dark:border-white/5"
                                 >
                                     <div className="w-10 h-10 rounded bg-slate-200 dark:bg-slate-700 flex items-center justify-center flex-shrink-0">

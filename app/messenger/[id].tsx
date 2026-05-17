@@ -11,6 +11,8 @@ import {
 import { useAuth } from '../../lib/auth.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
+import ErrorState from '../../components/ui/ErrorState.tsx';
+import EmptyState from '../../components/ui/EmptyState.tsx';
 import { DirectMessage, PostAttachment } from '../../types/entities.ts';
 import Button from '../../components/ui/Button.tsx';
 import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
@@ -23,6 +25,7 @@ import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
 import SelectPublicationModal from '../../components/modals/SelectPublicationModal.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { QuoteIcon } from '../../components/icons/QuoteIcon.tsx';
+import { ChatIcon } from '../../components/icons/ChatIcon.tsx';
 import type { Quote } from '../../types/entities.ts';
 import GlassCard from '../../components/ui/GlassCard.tsx';
 
@@ -448,19 +451,33 @@ const MessengerChatScreen: React.FC = () => {
     };
 
     return (
-        <div className="h-screen w-full flex flex-col bg-gray-50 dark:bg-slate-900">
+        <div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-gray-50 dark:bg-slate-900">
             <header className="fixed top-0 left-0 right-0 z-20 bg-gray-50/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-                <div className={`container mx-auto flex h-20 items-center justify-between px-4 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <div className={`app-rail app-rail--default flex h-20 items-center justify-between px-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
                     <Button variant="ghost" onClick={handleBack}><ChevronLeftIcon className="h-6 w-6" /></Button>
                     <BilingualText role="H1" className="!text-xl">{contactName}</BilingualText>
                     <div className="w-10" />
                 </div>
             </header>
 
-            <main className="flex-grow pt-20 pb-28 overflow-y-auto">
-                <div className="container mx-auto p-4 space-y-4">
+            <main className="flex-grow pt-20 pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden overscroll-y-contain">
+                <div className="app-rail app-rail--default py-4 space-y-4">
                     {isLoading && <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}
-                    {isError && <BilingualText className="text-center text-red-400">Error loading messages.</BilingualText>}
+                    {isError && (
+                        <ErrorState
+                            title={lang === 'en' ? 'Messages unavailable' : 'الرسائل غير متاحة'}
+                            message={lang === 'en' ? 'Error loading messages.' : 'خطأ في تحميل الرسائل.'}
+                        />
+                    )}
+                    {!isLoading && !isError && combinedMessages.length === 0 && (
+                        <EmptyState
+                            icon={ChatIcon}
+                            titleEn="No messages yet"
+                            titleAr="لا توجد رسائل بعد"
+                            messageEn="Start the conversation with a note or a book attachment."
+                            messageAr="ابدأ المحادثة برسالة أو مرفق كتاب."
+                        />
+                    )}
                     {combinedMessages.map(msg => (
                         <ChatBubble key={msg.id} message={msg} isMe={msg.senderId === user?.uid} />
                     ))}
@@ -468,11 +485,11 @@ const MessengerChatScreen: React.FC = () => {
                 </div>
             </main>
 
-             <footer
+            <footer
                 className="fixed bottom-0 left-0 right-0 z-10 bg-gray-50 dark:bg-slate-900 border-t border-black/10 dark:border-white/10"
                 style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}
             >
-                <div className="container mx-auto px-2 pt-2">
+                <div className="app-rail app-rail--default px-2 pt-2">
                     {attachment ? (
                         <div className="px-2 pb-2">
                             <AttachmentListV1

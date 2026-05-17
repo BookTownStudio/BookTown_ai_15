@@ -13,6 +13,9 @@ import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import { useSearchHistory } from '../../lib/hooks/useSearchHistory.ts';
 import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
 import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
+import Skeleton from '../../components/ui/Skeleton.tsx';
+import ErrorState from '../../components/ui/ErrorState.tsx';
+import EmptyState from '../../components/ui/EmptyState.tsx';
 import PageTransition from '../../components/ui/PageTransition.tsx';
 import PageShell from '../../components/layout/PageShell.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
@@ -37,6 +40,8 @@ import { useVenuesAndEvents } from '../../lib/hooks/useVenuesAndEvents.ts';
 import VenueCard from '../../components/content/VenueCard.tsx';
 import EventCard from '../../components/content/EventCard.tsx';
 import { Event, Venue } from '../../types/entities.ts';
+import { BookIcon } from '../../components/icons/BookIcon.tsx';
+import { VenuesIcon } from '../../components/icons/VenuesIcon.tsx';
 
 /* -------------------------------
    Constants
@@ -294,18 +299,16 @@ const HomeScreen: React.FC = () => {
         {(isSearchingBooks || isAnalyzingImage) && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[1, 2, 3].map(i => (
-              <div
-                key={i}
-                className="h-24 bg-slate-800 animate-pulse rounded-xl"
-              />
+              <BookCardSkeleton key={i} layout="row" />
             ))}
           </div>
         )}
 
         {!isSearchingBooks && searchError && searchQuery.trim().length >= 2 && (
-          <div className="rounded-2xl border border-red-500/20 bg-red-500/10 px-4 py-5 text-sm text-red-200">
-            {searchErrorMessage}
-          </div>
+          <ErrorState
+            title={lang === 'en' ? 'Search unavailable' : 'البحث غير متاح'}
+            message={searchErrorMessage}
+          />
         )}
 
         {!isSearchingBooks && !searchError && validResults.length > 0 && (
@@ -325,9 +328,13 @@ const HomeScreen: React.FC = () => {
         )}
 
         {!isSearchingBooks && !searchError && searchQuery.trim().length >= 2 && validResults.length === 0 && (
-          <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-5 text-sm text-white/60">
-            {lang === 'en' ? 'No books matched this search.' : 'لا توجد كتب تطابق هذا البحث.'}
-          </div>
+          <EmptyState
+            icon={BookIcon}
+            titleEn="No books found"
+            titleAr="لا توجد كتب"
+            messageEn="Try another title, author, or literary tradition."
+            messageAr="جرّب عنواناً أو مؤلفاً أو تقليداً أدبياً آخر."
+          />
         )}
       </div>
     );
@@ -341,7 +348,7 @@ const HomeScreen: React.FC = () => {
     >
       <AppNav titleEn="BookTown" titleAr="بوكتاون" />
 
-      <main className="flex-grow pt-24 pb-20">
+      <main className="flex-grow pt-24 pb-[calc(var(--bottom-nav-height,66px)+1.5rem)]">
         <LiteraryShell>
           <PageTransition className="w-full">
             <HomeSearchBar
@@ -365,6 +372,9 @@ const HomeScreen: React.FC = () => {
                 }, 120);
               }}
               onClear={() => {
+                clearSearch();
+              }}
+              onEscape={() => {
                 clearSearch();
               }}
               onMicClick={() => setIsMicModalOpen(true)}
@@ -431,13 +441,13 @@ const HomeScreen: React.FC = () => {
                       ))}
                     </motion.div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
-                      <span className="text-sm italic text-slate-500 text-center">
-                        {lang === 'en'
-                          ? 'Your active books will appear here.'
-                          : 'ستظهر كتبك النشطة هنا.'}
-                      </span>
-                    </div>
+                    <EmptyState
+                      icon={BookIcon}
+                      titleEn="No active books"
+                      titleAr="لا توجد كتب نشطة"
+                      messageEn="Your active books will appear here."
+                      messageAr="ستظهر كتبك النشطة هنا."
+                    />
                   )}
                 </CollapsibleSection>
 
@@ -453,13 +463,14 @@ const HomeScreen: React.FC = () => {
                         {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
                       </div>
                     ) : isRecommendationsError ? (
-                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-red-500/20 rounded-2xl">
-                        <span className="text-sm italic text-red-500 text-center">
-                          {lang === 'en'
+                      <ErrorState
+                        title={lang === 'en' ? 'Recommendations unavailable' : 'التوصيات غير متاحة'}
+                        message={
+                          lang === 'en'
                             ? 'Recommendations are temporarily unavailable.'
-                            : 'التوصيات غير متاحة مؤقتاً.'}
-                        </span>
-                      </div>
+                            : 'التوصيات غير متاحة مؤقتاً.'
+                        }
+                      />
                     ) : recommendedBookIds.length > 0 ? (
                       <motion.div
                         className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
@@ -481,13 +492,13 @@ const HomeScreen: React.FC = () => {
                         ))}
                       </motion.div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
-                        <span className="text-sm italic text-slate-500 text-center">
-                          {lang === 'en'
-                            ? 'Recommendations will appear here soon.'
-                            : 'ستظهر التوصيات هنا قريباً.'}
-                        </span>
-                      </div>
+                      <EmptyState
+                        icon={BookIcon}
+                        titleEn="No recommendations yet"
+                        titleAr="لا توجد توصيات بعد"
+                        messageEn="Recommendations will appear here soon."
+                        messageAr="ستظهر التوصيات هنا قريباً."
+                      />
                     )}
                   </CollapsibleSection>
                 </div>
@@ -502,7 +513,11 @@ const HomeScreen: React.FC = () => {
                     {isSpacesLoading ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
                         {[1, 2].map(i => (
-                          <div key={i} className="h-52 rounded-lg bg-slate-800 animate-pulse" />
+                          <div key={i} className="space-y-3 rounded-lg border border-white/10 p-4">
+                            <Skeleton className="h-32 w-full rounded-lg" />
+                            <Skeleton className="h-4 w-2/3" />
+                            <Skeleton className="h-3 w-1/2" />
+                          </div>
                         ))}
                       </div>
                     ) : homeSpaces.length > 0 ? (
@@ -516,13 +531,13 @@ const HomeScreen: React.FC = () => {
                         ))}
                       </div>
                     ) : (
-                      <div className="flex flex-col items-center justify-center py-12 px-6 border-2 border-dashed border-black/5 dark:border-white/5 rounded-2xl">
-                        <span className="text-sm italic text-slate-500 text-center">
-                          {lang === 'en'
-                            ? 'Bookshops, libraries, and literary events will appear here.'
-                            : 'ستظهر هنا المكتبات والفعاليات الأدبية.'}
-                        </span>
-                      </div>
+                      <EmptyState
+                        icon={VenuesIcon}
+                        titleEn="No literary spaces yet"
+                        titleAr="لا توجد مساحات أدبية بعد"
+                        messageEn="Bookshops, libraries, and literary events will appear here."
+                        messageAr="ستظهر هنا المكتبات والفعاليات الأدبية."
+                      />
                     )}
                   </CollapsibleSection>
                 </div>

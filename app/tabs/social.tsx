@@ -118,6 +118,22 @@ const SocialScreen: React.FC = () => {
     };
 
     useEffect(() => {
+        if (!isSearchOpen && !isMoreFiltersOpen) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key !== 'Escape') return;
+            if (isSearchOpen) {
+                handleCloseSearch();
+                return;
+            }
+            setMoreFiltersOpen(false);
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => document.removeEventListener('keydown', handleKeyDown);
+    }, [isMoreFiltersOpen, isSearchOpen]);
+
+    useEffect(() => {
         if (!socialPostEntry) {
             socialEntryAttemptRef.current = {
                 entryId: 0,
@@ -532,9 +548,9 @@ const SocialScreen: React.FC = () => {
             searchResults.posts.length > 0;
 
         return (
-            <div className="fixed inset-0 top-[calc(env(safe-area-inset-top)+3.25rem)] z-20 bg-black/80 backdrop-blur-xl overflow-y-auto animate-fade-in">
+            <div className="fixed inset-0 top-[calc(env(safe-area-inset-top)+3.25rem)] z-[28] bg-black/80 backdrop-blur-xl overflow-y-auto overflow-x-hidden overscroll-y-contain animate-fade-in">
                 <div
-                    className="mx-auto w-full max-w-[42rem] px-4 py-4 space-y-6 pb-24"
+                    className="mx-auto w-full max-w-[42rem] px-4 py-4 space-y-6 pb-[calc(var(--bottom-nav-height,66px)+2rem)]"
                     style={{
                         paddingLeft: 'max(14px, env(safe-area-inset-left))',
                         paddingRight: 'max(14px, env(safe-area-inset-right))'
@@ -719,7 +735,7 @@ const SocialScreen: React.FC = () => {
                                     </button>
 
                                     {isMoreFiltersOpen && (
-                                         <div className="absolute top-full right-0 mt-2 z-10 w-48">
+                                         <div className="absolute top-full right-0 mt-2 z-40 w-48 max-w-[calc(100vw-2rem)]">
                                             <GlassCard className="!p-2 !bg-slate-800 shadow-xl">
                                                 <ul className="space-y-1">
                                                     {SECONDARY_FILTERS.map(filter => (

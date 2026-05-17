@@ -24,6 +24,10 @@ const AttachQuoteModal: React.FC<AttachQuoteModalProps> = ({ isOpen, onClose, on
         undefined,
         isOpen
     );
+    const handleSelectQuote = (quote: Quote) => {
+        onSelect(quote);
+        onClose();
+    };
 
     return (
         <Modal isOpen={isOpen} onClose={onClose}>
@@ -49,7 +53,7 @@ const AttachQuoteModal: React.FC<AttachQuoteModalProps> = ({ isOpen, onClose, on
                         quotes.map(quote => (
                             <button
                                 key={quote.id}
-                                onClick={() => onSelect(quote)}
+                                onClick={() => handleSelectQuote(quote)}
                                 className="w-full p-4 rounded-lg text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-black/5 dark:border-white/5 group"
                             >
                                 <div className="flex items-start gap-3">
