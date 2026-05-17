@@ -1,14 +1,39 @@
-import React, { Suspense } from 'react';
+import React, { Suspense, useEffect } from 'react';
 import type { FontSize, FontStyle } from '../../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
+  ReaderManifestSnapshot,
   ReaderNarrationSnapshot,
   ReaderRuntimeSelection,
   ReaderTextSelection,
 } from '../../../lib/reader/runtime/contracts.ts';
+import { scheduleReaderIdleTask } from '../../../lib/reader/runtime/readerIdleScheduler.ts';
+import { markReaderTelemetry } from '../../../lib/reader/runtime/readerTelemetry.ts';
 
-const EpubViewer = React.lazy(() => import('../EpubViewer.tsx'));
-const PdfViewer = React.lazy(() => import('../PdfViewer.tsx'));
+const loadEpubViewer = () => import('../EpubViewer.tsx');
+const loadPdfViewer = () => import('../PdfViewer.tsx');
+
+const EpubViewer = React.lazy(loadEpubViewer);
+const PdfViewer = React.lazy(loadPdfViewer);
+
+function canPrewarmReaderRuntime(): boolean {
+  if (typeof navigator === 'undefined') return false;
+
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  if (typeof memory === 'number' && Number.isFinite(memory) && memory <= 4) {
+    return false;
+  }
+
+  const connection = (navigator as Navigator & {
+    connection?: { saveData?: boolean; effectiveType?: string };
+  }).connection;
+  if (connection?.saveData) return false;
+  if (connection?.effectiveType && /(^|-)2g$/.test(connection.effectiveType)) {
+    return false;
+  }
+
+  return true;
+}
 
 type ReaderTheme = 'light' | 'dark' | 'sepia';
 type ReaderMode = 'scroll' | 'page';
@@ -28,6 +53,7 @@ interface ReaderSurfaceProps {
   fontSize: FontSize;
   fontStyle: FontStyle;
   highlights?: ReaderHighlightOverlay[];
+  manifest?: ReaderManifestSnapshot | null;
   onPageChange: (currentPage: number, totalPages: number) => void;
   onPdfLoadError: (message: string) => void;
   onEpubLoadError: (message: string) => void;
@@ -49,6 +75,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   fontSize,
   fontStyle,
   highlights,
+  manifest,
   onPageChange,
   onPdfLoadError,
   onEpubLoadError,
@@ -58,6 +85,33 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   onPdfFirstPageRender,
   renderUnsupported,
 }) => {
+  useEffect(() => {
+    if (!canPrewarmReaderRuntime()) return undefined;
+
+    const cancel = scheduleReaderIdleTask(() => {
+      if (selection.engine === 'web_epub') {
+        void loadPdfViewer().then(() => {
+          markReaderTelemetry('reader_runtime_prewarm', {
+            engine: 'web_pdf',
+            source: 'reader_surface_idle',
+          });
+        });
+        return;
+      }
+
+      if (selection.engine === 'web_pdf') {
+        void loadEpubViewer().then(() => {
+          markReaderTelemetry('reader_runtime_prewarm', {
+            engine: 'web_epub',
+            source: 'reader_surface_idle',
+          });
+        });
+      }
+    }, { timeoutMs: 3000 });
+
+    return cancel;
+  }, [selection.engine]);
+
   const fallbackUi = (
     <div className="h-full w-full flex items-center justify-center text-white/60 text-sm">
       Loading reader engine...
@@ -77,6 +131,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           fontSize={fontSize}
           fontStyle={fontStyle}
           highlights={highlights}
+          manifest={manifest}
           onPageChange={onPageChange}
           onLoadError={onEpubLoadError}
           onTextSelection={onTextSelection}

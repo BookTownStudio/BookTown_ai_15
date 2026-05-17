@@ -7,6 +7,38 @@ export type ReaderEngineKind =
   | 'native_epub'
   | 'unsupported';
 
+export type ReaderManifestIndexStatus = 'pending' | 'ready';
+
+export type EpubCanonicalLocationPayload = string | unknown[];
+
+export interface ReaderManifestLocationIdentityV1 {
+  bookId: string;
+  manifestVersion: number;
+  pipelineVersion: string;
+  sourceSignatureHash: string;
+  generationChars: number;
+}
+
+export interface ReaderManifestLocationMapV1 {
+  version: 'v1';
+  mode: 'page' | 'logical';
+  checkpointUnit: 'page' | 'spine_item';
+  status?: ReaderManifestIndexStatus;
+  docPath?: string;
+  anchorSchema?: 'canonical_anchor_v1';
+  source?: 'server_precomputed' | 'runtime_generated';
+  identity?: ReaderManifestLocationIdentityV1;
+  generationChars?: number;
+  locationCount?: number;
+  payload?: EpubCanonicalLocationPayload;
+}
+
+export interface ReaderManifestIndexState {
+  status: ReaderManifestIndexStatus;
+  docPath: string;
+  schemaVersion?: 'v1';
+}
+
 export type CanonicalAnchorV1 =
   | {
       kind: 'epub_point';
@@ -50,22 +82,17 @@ export interface ReaderManifestSnapshot {
   pipelineVersion: string;
   format: ReaderFormat;
   estimatedPageCount: number | null;
-  locationMap: {
-    version: 'v1';
-    mode: 'page' | 'logical';
-    checkpointUnit: 'page' | 'spine_item';
-    status?: 'pending' | 'ready';
-    docPath?: string;
-    anchorSchema?: 'canonical_anchor_v1';
-  };
-  searchIndex: {
-    status: 'pending' | 'ready';
-    docPath: string;
-  };
-  highlightAnchors: {
-    status: 'pending' | 'ready';
-    docPath: string;
-  };
+  locationMap: ReaderManifestLocationMapV1;
+  searchIndex: ReaderManifestIndexState;
+  highlightAnchors: ReaderManifestIndexState;
+  chapterMap?: ReaderManifestIndexState;
+  sectionMap?: ReaderManifestIndexState;
+  stableAnchors?: ReaderManifestIndexState;
+  spineMap?: ReaderManifestIndexState;
+  sectionGraph?: ReaderManifestIndexState;
+  stableAnchorMap?: ReaderManifestIndexState;
+  navigationIndex?: ReaderManifestIndexState;
+  paginationHints?: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 

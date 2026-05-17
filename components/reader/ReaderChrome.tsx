@@ -65,7 +65,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                 : (lang === 'en' ? 'Start narration' : 'بدء السرد');
 
     const chromeClass = cn(
-        'fixed left-0 w-full z-20 transition-all duration-300 ease-in-out backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm',
+        'fixed left-0 w-full z-20 transition-[opacity,transform] duration-[180ms] ease-out will-change-transform backdrop-blur-xl border-black/5 dark:border-white/5 shadow-sm',
         bgStyles, textStyles,
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none'
     );
@@ -136,7 +136,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
 
                     {/* Progress Bar Visual */}
                     <div className="w-full h-1 bg-black/10 dark:bg-white/10 rounded-full overflow-hidden">
-                        <div className="h-full bg-accent transition-all duration-300 ease-out" style={{ width: `${progress}%` }} />
+                        <div className="h-full bg-accent transition-[width] duration-[180ms] ease-out" style={{ width: `${progress}%` }} />
                     </div>
 
                     <div className="flex justify-center items-center mt-1 gap-4">

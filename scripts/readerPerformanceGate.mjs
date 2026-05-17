@@ -59,10 +59,23 @@ function gzipBytes(filePath) {
 function validateReaderShellLazySplit() {
   const sourcePath = path.join(ROOT, 'components', 'reader', 'runtime', 'ReaderSurface.tsx');
   const source = fs.readFileSync(sourcePath, 'utf8');
-  if (!source.includes("React.lazy(() => import('../EpubViewer.tsx'))")) {
+  const lazyLoadsEpub =
+    source.includes("React.lazy(() => import('../EpubViewer.tsx'))") ||
+    (
+      source.includes("const loadEpubViewer = () => import('../EpubViewer.tsx')") &&
+      source.includes('React.lazy(loadEpubViewer)')
+    );
+  const lazyLoadsPdf =
+    source.includes("React.lazy(() => import('../PdfViewer.tsx'))") ||
+    (
+      source.includes("const loadPdfViewer = () => import('../PdfViewer.tsx')") &&
+      source.includes('React.lazy(loadPdfViewer)')
+    );
+
+  if (!lazyLoadsEpub) {
     throw new Error('ReaderSurface must lazy-load EpubViewer.');
   }
-  if (!source.includes("React.lazy(() => import('../PdfViewer.tsx'))")) {
+  if (!lazyLoadsPdf) {
     throw new Error('ReaderSurface must lazy-load PdfViewer.');
   }
 }
@@ -72,6 +85,52 @@ function validatePdfUsesIndexedLookup() {
   const source = fs.readFileSync(sourcePath, 'utf8');
   if (!source.includes('findPageForAnchor(') || !source.includes('buildPageOffsetIndex(')) {
     throw new Error('PdfViewer must use indexed page-offset lookup helpers.');
+  }
+}
+
+function validateEpubLocationCacheTelemetry() {
+  const sourcePath = path.join(ROOT, 'components', 'reader', 'EpubViewer.tsx');
+  const source = fs.readFileSync(sourcePath, 'utf8');
+  const manifestSource = fs.readFileSync(
+    path.join(ROOT, 'functions', 'src', 'reader', 'readerManifestService.ts'),
+    'utf8'
+  );
+  const producerSource = fs.readFileSync(
+    path.join(ROOT, 'functions', 'src', 'reader', 'canonicalEpubProducer.ts'),
+    'utf8'
+  );
+  if (!source.includes('readCachedEpubLocations(') || !source.includes('writeCachedEpubLocations(')) {
+    throw new Error('EpubViewer must use reusable EPUB location cache helpers.');
+  }
+  if (!source.includes('resolveCanonicalEpubLocationMap(')) {
+    throw new Error('EpubViewer must prefer canonical EPUB location metadata when available.');
+  }
+  if (
+    !source.includes("markReaderTelemetry('epub_locations_cache_hit'") ||
+    !source.includes("markReaderTelemetry('epub_locations_generate_time'") ||
+    !source.includes("markReaderTelemetry('epub_canonical_locations_loaded'") ||
+    !source.includes("markReaderTelemetry('epub_canonical_locations_fallback'")
+  ) {
+    throw new Error('EpubViewer must emit EPUB canonical/cache/generation telemetry.');
+  }
+  if (
+    !manifestSource.includes('spineMap') ||
+    !manifestSource.includes('sectionGraph') ||
+    !manifestSource.includes('stableAnchorMap') ||
+    !manifestSource.includes('navigationIndex') ||
+    !manifestSource.includes('paginationHints')
+  ) {
+    throw new Error('Reader manifests must expose canonical EPUB structure pointers.');
+  }
+  if (
+    !manifestSource.includes('preprocessCanonicalEpub(') ||
+    !manifestSource.includes('CANONICAL_EPUB_PREPROCESS_READY') ||
+    !producerSource.includes('preprocessCanonicalEpub') ||
+    !producerSource.includes('locationPayload') ||
+    !producerSource.includes('sectionGraph') ||
+    !producerSource.includes('stableAnchorMap')
+  ) {
+    throw new Error('Reader backend must produce canonical EPUB metadata before runtime consumption.');
   }
 }
 
@@ -144,6 +203,13 @@ function main() {
   try {
     validatePdfUsesIndexedLookup();
     pass('PdfViewer indexed lookup is enforced.');
+  } catch (error) {
+    recordFailure(String(error instanceof Error ? error.message : error));
+  }
+
+  try {
+    validateEpubLocationCacheTelemetry();
+    pass('EpubViewer location cache telemetry is enforced.');
   } catch (error) {
     recordFailure(String(error instanceof Error ? error.message : error));
   }

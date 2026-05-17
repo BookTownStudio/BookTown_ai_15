@@ -12,6 +12,18 @@ import {
   buildPageOffsetIndex,
   findPageForAnchor,
 } from '../../lib/reader/runtime/pageOffsetLocator.js';
+import { markReaderTelemetry } from '../../lib/reader/runtime/readerTelemetry.ts';
+import { scheduleReaderIdleTask } from '../../lib/reader/runtime/readerIdleScheduler.ts';
+import {
+  buildVirtualPdfPageOffsetIndex,
+  clampPdfPage,
+  estimatePdfPageStridePx,
+  PDF_SCROLL_PAGE_GAP_PX,
+  resolveAdaptivePdfWindowRadius,
+  resolvePdfPageWindow,
+} from '../../lib/reader/runtime/pdfVirtualization.ts';
+
+const PDF_ENGINE_FALLBACK_TIMEOUT_MS = 8_000;
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   'pdfjs-dist/build/pdf.worker.min.mjs',
@@ -51,8 +63,18 @@ function zoomScaleFromFontSize(fontSize: FontSize): number {
 }
 
 function clampPage(page: number, total: number): number {
-  const safeTotal = Math.max(1, Math.trunc(total));
-  return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
+  return clampPdfPage(page, total);
+}
+
+function getDeviceMemoryGb(): number | null {
+  if (typeof navigator === 'undefined') return null;
+  const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+  return typeof memory === 'number' && Number.isFinite(memory) ? memory : null;
+}
+
+function prefersReducedMotion(): boolean {
+  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false;
+  return window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
 function normalizeSelectionText(value: string): string {
@@ -333,19 +355,40 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
   const pageRefs = useRef<Array<HTMLDivElement | null>>([]);
   const pageOffsetsRef = useRef<number[]>([]);
+  const measuredPageStrideRef = useRef<number | null>(null);
   const pageNumberRef = useRef<number>(1);
   const lastWheelNavAtRef = useRef<number>(0);
+  const scrollSampleRef = useRef<{ startedAt: number; frames: number; dropped: number }>({
+    startedAt: 0,
+    frames: 0,
+    dropped: 0,
+  });
+  const lastScrollFrameAtRef = useRef<number>(0);
   const onTextSelectionRef = useRef<PdfViewerProps['onTextSelection']>(onTextSelection);
   const onNarrationSnapshotChangeRef =
     useRef<PdfViewerProps['onNarrationSnapshotChange']>(onNarrationSnapshotChange);
   const narrationFrameRef = useRef<number | null>(null);
+  const highlightHydrationCancelRef = useRef<(() => void) | null>(null);
 
   const [containerWidth, setContainerWidth] = useState<number>(0);
   const [numPages, setNumPages] = useState<number>(0);
   const [pageNumber, setPageNumber] = useState<number>(1);
+  const [virtualWindow, setVirtualWindow] = useState<{ start: number; end: number }>(() =>
+    resolvePdfPageWindow(1, 1)
+  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [useIframeFallback, setUseIframeFallback] = useState(false);
   const hasReportedFirstPageRenderRef = useRef(false);
+
+  const adaptiveWindowRadius = useMemo(
+    () =>
+      resolveAdaptivePdfWindowRadius({
+        totalPages: numPages,
+        deviceMemoryGb: getDeviceMemoryGb(),
+        reducedMotion: prefersReducedMotion(),
+      }),
+    [numPages]
+  );
 
   useEffect(() => {
     pageNumberRef.current = pageNumber;
@@ -408,29 +451,65 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     pageNumberRef.current = startPage;
     pageRefs.current = [];
     pageOffsetsRef.current = [];
+    measuredPageStrideRef.current = null;
+    setVirtualWindow(resolvePdfPageWindow(startPage, 1, adaptiveWindowRadius));
     hasReportedFirstPageRenderRef.current = false;
     onNarrationSnapshotChangeRef.current?.(null);
-  }, [url, initialPage]);
+    highlightHydrationCancelRef.current?.();
+    highlightHydrationCancelRef.current = null;
+  }, [adaptiveWindowRadius, url, initialPage]);
+
+  const basePageWidth = useMemo(() => {
+    if (!containerWidth) return undefined;
+    return Math.max(280, Math.floor(containerWidth - 32));
+  }, [containerWidth]);
+
+  const pageWidth = useMemo(() => {
+    if (!basePageWidth) return undefined;
+    const scaled = Math.floor(basePageWidth * zoomScaleFromFontSize(fontSize));
+    return Math.max(240, scaled);
+  }, [basePageWidth, fontSize]);
 
   const rebuildPageOffsets = useCallback(() => {
     if (readingMode !== 'scroll') return;
     if (numPages <= 0) return;
 
-    const offsets = buildPageOffsetIndex(pageRefs.current, numPages);
+    const estimatedStride = estimatePdfPageStridePx({
+      containerWidth,
+      measuredPageStride: measuredPageStrideRef.current,
+      pageWidth,
+    });
+    const offsets =
+      pageRefs.current.filter(Boolean).length >= numPages
+        ? buildPageOffsetIndex(pageRefs.current, numPages)
+        : buildVirtualPdfPageOffsetIndex(numPages, estimatedStride);
     if (offsets.length > 0) {
       pageOffsetsRef.current = offsets;
     }
-  }, [numPages, readingMode]);
+  }, [containerWidth, numPages, pageWidth, readingMode]);
+
+  const handleFirstPageRender = useCallback(() => {
+    if (hasReportedFirstPageRenderRef.current) return;
+    hasReportedFirstPageRenderRef.current = true;
+    markReaderTelemetry('hydration_deferred', {
+      target: 'first_interaction_noncritical_pdf_work',
+    });
+    onFirstPageRender?.();
+  }, [onFirstPageRender]);
 
   useEffect(() => {
     if (numPages > 0 || useIframeFallback) return;
     const timer = setTimeout(() => {
       setUseIframeFallback(true);
-      onLoadError?.('PDF engine fallback applied.');
-    }, 8000);
+      markReaderTelemetry('pdf_survival_fallback', {
+        reason: 'engine_startup_timeout',
+        timeoutMs: PDF_ENGINE_FALLBACK_TIMEOUT_MS,
+      });
+      handleFirstPageRender();
+    }, PDF_ENGINE_FALLBACK_TIMEOUT_MS);
 
     return () => clearTimeout(timer);
-  }, [numPages, onLoadError, useIframeFallback]);
+  }, [handleFirstPageRender, numPages, useIframeFallback]);
 
   const handleLoadSuccess = useCallback(
     ({ numPages }: { numPages: number }) => {
@@ -439,6 +518,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       const clamped = clampPage(requestedPage, numPages);
       setPageNumber(clamped);
       pageNumberRef.current = clamped;
+      const nextRadius = resolveAdaptivePdfWindowRadius({
+        totalPages: numPages,
+        deviceMemoryGb: getDeviceMemoryGb(),
+        reducedMotion: prefersReducedMotion(),
+      });
+      setVirtualWindow(resolvePdfPageWindow(clamped, numPages, nextRadius));
+      markReaderTelemetry('pdf_runtime_ready', {
+        numPages,
+        adaptiveWindowRadius: nextRadius,
+      });
       onPageChange?.(clamped, numPages);
       onDocumentLoadSuccess?.(numPages);
     },
@@ -456,19 +545,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   );
 
   const goNext = useCallback(() => {
+    const startedAt = performance.now();
     setPageNumber((p) => {
       const next = clampPage(p + 1, numPages);
       pageNumberRef.current = next;
       onPageChange?.(next, numPages);
+      markReaderTelemetry('page_turn_latency', {
+        direction: 'next',
+        latencyMs: Number((performance.now() - startedAt).toFixed(2)),
+      });
       return next;
     });
   }, [numPages, onPageChange]);
 
   const goPrev = useCallback(() => {
+    const startedAt = performance.now();
     setPageNumber((p) => {
       const prev = clampPage(p - 1, numPages);
       pageNumberRef.current = prev;
       onPageChange?.(prev, numPages);
+      markReaderTelemetry('page_turn_latency', {
+        direction: 'previous',
+        latencyMs: Number((performance.now() - startedAt).toFixed(2)),
+      });
       return prev;
     });
   }, [numPages, onPageChange]);
@@ -499,6 +598,32 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     if (numPages <= 0) return;
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
+    const now = performance.now();
+    const sample = scrollSampleRef.current;
+    if (sample.startedAt === 0) {
+      sample.startedAt = now;
+      sample.frames = 0;
+      sample.dropped = 0;
+      lastScrollFrameAtRef.current = now;
+    } else {
+      const delta = now - lastScrollFrameAtRef.current;
+      lastScrollFrameAtRef.current = now;
+      sample.frames += 1;
+      if (delta > 34) sample.dropped += 1;
+      if (now - sample.startedAt >= 1000) {
+        markReaderTelemetry('scroll_fps', {
+          fps: Number(((sample.frames * 1000) / (now - sample.startedAt)).toFixed(1)),
+        });
+        if (sample.dropped > 0) {
+          markReaderTelemetry('dropped_frames', {
+            count: sample.dropped,
+          });
+        }
+        sample.startedAt = now;
+        sample.frames = 0;
+        sample.dropped = 0;
+      }
+    }
 
     const anchor = viewport.scrollTop + viewport.clientHeight * 0.3;
     if (pageOffsetsRef.current.length !== numPages) {
@@ -509,10 +634,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     if (current !== pageNumberRef.current) {
       pageNumberRef.current = current;
       setPageNumber(current);
+      setVirtualWindow(resolvePdfPageWindow(current, numPages, adaptiveWindowRadius));
       onPageChange?.(current, numPages);
     }
     scheduleNarrationSnapshot();
-  }, [numPages, onPageChange, readingMode, rebuildPageOffsets, scheduleNarrationSnapshot]);
+  }, [adaptiveWindowRadius, numPages, onPageChange, readingMode, rebuildPageOffsets, scheduleNarrationSnapshot]);
 
   useEffect(() => {
     if (readingMode !== 'scroll') return;
@@ -523,30 +649,22 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     if (!viewport) return;
 
     const raf = window.requestAnimationFrame(() => {
-      const targetNode = pageRefs.current[targetPage - 1];
-      if (targetNode) {
-        viewport.scrollTop = Math.max(0, targetNode.offsetTop - 8);
-      }
+      const pageStride = estimatePdfPageStridePx({
+        containerWidth: viewport.clientWidth,
+        measuredPageStride: measuredPageStrideRef.current,
+        pageWidth,
+      });
+      viewport.scrollTop = Math.max(0, (targetPage - 1) * pageStride);
 
       pageNumberRef.current = targetPage;
       setPageNumber(targetPage);
+      setVirtualWindow(resolvePdfPageWindow(targetPage, numPages, adaptiveWindowRadius));
       onPageChange?.(targetPage, numPages);
       scheduleNarrationSnapshot();
     });
 
     return () => window.cancelAnimationFrame(raf);
-  }, [initialPage, numPages, onPageChange, readingMode, scheduleNarrationSnapshot, url]);
-
-  const basePageWidth = useMemo(() => {
-    if (!containerWidth) return undefined;
-    return Math.max(280, Math.floor(containerWidth - 32));
-  }, [containerWidth]);
-
-  const pageWidth = useMemo(() => {
-    if (!basePageWidth) return undefined;
-    const scaled = Math.floor(basePageWidth * zoomScaleFromFontSize(fontSize));
-    return Math.max(240, scaled);
-  }, [basePageWidth, fontSize]);
+  }, [adaptiveWindowRadius, initialPage, numPages, onPageChange, pageWidth, readingMode, scheduleNarrationSnapshot, url]);
 
   useEffect(() => {
     if (readingMode !== 'scroll') return;
@@ -559,14 +677,42 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     return () => window.cancelAnimationFrame(raf);
   }, [numPages, pageWidth, readingMode, rebuildPageOffsets, url]);
 
+  const renderedScrollPages = useMemo(() => {
+    if (readingMode !== 'scroll' || numPages <= 0) return [];
+    const pages: number[] = [];
+    for (let page = virtualWindow.start; page <= virtualWindow.end; page += 1) {
+      pages.push(page);
+    }
+    return pages;
+  }, [numPages, readingMode, virtualWindow.end, virtualWindow.start]);
+
+  const estimatedPageStride = useMemo(() => {
+    return estimatePdfPageStridePx({
+      containerWidth,
+      measuredPageStride: measuredPageStrideRef.current,
+      pageWidth,
+    });
+  }, [containerWidth, pageWidth]);
+
+  const topSpacerHeight = readingMode === 'scroll'
+    ? Math.max(0, (virtualWindow.start - 1) * estimatedPageStride)
+    : 0;
+  const bottomSpacerHeight = readingMode === 'scroll'
+    ? Math.max(0, (numPages - virtualWindow.end) * estimatedPageStride)
+    : 0;
+
+  const captureRenderedPageMetrics = useCallback((page: number, node: HTMLDivElement | null) => {
+    pageRefs.current[page - 1] = node;
+    if (!node) return;
+    const measuredHeight = Math.ceil(node.getBoundingClientRect().height);
+    if (measuredHeight > 0) {
+      measuredPageStrideRef.current = measuredHeight + PDF_SCROLL_PAGE_GAP_PX;
+      rebuildPageOffsets();
+    }
+  }, [rebuildPageOffsets]);
+
   const viewerBackground =
     theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#0b0f14';
-
-  const handleFirstPageRender = useCallback(() => {
-    if (hasReportedFirstPageRenderRef.current) return;
-    hasReportedFirstPageRenderRef.current = true;
-    onFirstPageRender?.();
-  }, [onFirstPageRender]);
 
   const captureTextSelection = useCallback(() => {
     const selection = window.getSelection();
@@ -626,7 +772,8 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   }, []);
 
   const rehydratePdfHighlights = useCallback(() => {
-    if (!containerRef.current) return;
+    const startedAt = performance.now();
+    if (!containerRef.current) return 0;
 
     const pageNodes = Array.from(
       containerRef.current.querySelectorAll('[data-reader-pdf-page]')
@@ -657,7 +804,32 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         });
       }
     }
+    return Number((performance.now() - startedAt).toFixed(2));
   }, [highlights]);
+
+  const schedulePdfHighlightHydration = useCallback(
+    (source: 'state_change' | 'page_render', timeoutMs = 900) => {
+      const startedAt = performance.now();
+      markReaderTelemetry('hydration_deferred', {
+        target: 'pdf_highlights',
+        source,
+        highlightCount: highlights.length,
+      });
+      highlightHydrationCancelRef.current?.();
+      highlightHydrationCancelRef.current = scheduleReaderIdleTask(() => {
+        highlightHydrationCancelRef.current = null;
+        const durationMs = rehydratePdfHighlights();
+        markReaderTelemetry('hydration_completed', {
+          target: 'pdf_highlights',
+          source,
+          durationMs: durationMs ?? 0,
+          delayMs: Number((performance.now() - startedAt).toFixed(2)),
+          highlightCount: highlights.length,
+        });
+      }, { timeoutMs });
+    },
+    [highlights.length, rehydratePdfHighlights]
+  );
 
   useEffect(() => {
     if (loadError || useIframeFallback) {
@@ -669,12 +841,13 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   }, [fontSize, loadError, pageNumber, readingMode, scheduleNarrationSnapshot, theme, useIframeFallback]);
 
   useEffect(() => {
-    const raf = window.requestAnimationFrame(() => {
-      rehydratePdfHighlights();
-    });
+    schedulePdfHighlightHydration('state_change');
 
-    return () => window.cancelAnimationFrame(raf);
-  }, [highlights, pageNumber, readingMode, rehydratePdfHighlights, url]);
+    return () => {
+      highlightHydrationCancelRef.current?.();
+      highlightHydrationCancelRef.current = null;
+    };
+  }, [highlights, pageNumber, readingMode, schedulePdfHighlightHydration, url]);
 
   return (
     <div
@@ -712,32 +885,35 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           >
             {readingMode === 'scroll' ? (
               <div className="w-full flex flex-col items-center">
-                {Array.from({ length: numPages }, (_, index) => {
-                  const page = index + 1;
-                  return (
-                    <div
-                      key={page}
-                      ref={(node) => {
-                        pageRefs.current[index] = node;
+                {topSpacerHeight > 0 && (
+                  <div aria-hidden="true" style={{ height: topSpacerHeight }} />
+                )}
+                {renderedScrollPages.map((page) => (
+                  <div
+                    key={page}
+                    ref={(node) => captureRenderedPageMetrics(page, node)}
+                    data-reader-pdf-page={page}
+                    className="mb-4 last:mb-0"
+                    style={{ minHeight: Math.max(320, estimatedPageStride - PDF_SCROLL_PAGE_GAP_PX) }}
+                  >
+                    <Page
+                      pageNumber={page}
+                      width={pageWidth}
+                      renderTextLayer={Math.abs(page - pageNumber) <= 1}
+                      renderAnnotationLayer={Math.abs(page - pageNumber) <= 1}
+                      onRenderSuccess={() => {
+                        handleFirstPageRender();
+                        window.requestAnimationFrame(() => {
+                          schedulePdfHighlightHydration('page_render', 700);
+                          scheduleNarrationSnapshot();
+                        });
                       }}
-                      data-reader-pdf-page={page}
-                      className="mb-4 last:mb-0"
-                    >
-                      <Page
-                        pageNumber={page}
-                        width={pageWidth}
-                        renderTextLayer
-                        renderAnnotationLayer
-                        onRenderSuccess={() => {
-                          window.requestAnimationFrame(() => {
-                            rehydratePdfHighlights();
-                            scheduleNarrationSnapshot();
-                          });
-                        }}
-                      />
-                    </div>
-                  );
-                })}
+                    />
+                  </div>
+                ))}
+                {bottomSpacerHeight > 0 && (
+                  <div aria-hidden="true" style={{ height: bottomSpacerHeight }} />
+                )}
               </div>
             ) : (
               <div data-reader-pdf-page={pageNumber}>
@@ -749,7 +925,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   onRenderSuccess={() => {
                     handleFirstPageRender();
                     window.requestAnimationFrame(() => {
-                      rehydratePdfHighlights();
+                      schedulePdfHighlightHydration('page_render', 700);
                       scheduleNarrationSnapshot();
                     });
                   }}

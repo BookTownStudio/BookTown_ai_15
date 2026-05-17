@@ -4,7 +4,6 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useNavigation } from '../store/navigation.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import { useBookCatalog } from '../lib/hooks/useBookCatalog.ts';
-import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import AppFrame from '../components/layout/AppFrame.tsx';
 import ContentRail from '../components/layout/ContentRail.tsx';
 import ReaderChrome from '../components/reader/ReaderChrome.tsx';
@@ -49,6 +48,12 @@ import type {
 } from '../lib/reader/runtime/contracts.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import type { OfflineEbookRecord } from './lib/offline/offlineManager.ts';
+import {
+  markReaderTelemetry,
+  observeReaderLayoutShifts,
+  resetReaderPerfMetrics,
+  sampleReaderMemory,
+} from '../lib/reader/runtime/readerTelemetry.ts';
 
 function inferFormatFromUrl(url: string): ReaderFormat {
   const lower = url.toLowerCase();
@@ -120,6 +125,48 @@ function renderReaderViewport(children: React.ReactNode, backgroundColor = '#000
   );
 }
 
+function renderCalmReaderLoading(params: {
+  title?: string | null;
+  theme: 'light' | 'dark' | 'sepia';
+  lang: string;
+}) {
+  const textColor =
+    params.theme === 'light'
+      ? 'text-slate-700'
+      : params.theme === 'sepia'
+        ? 'text-[#5b4630]'
+        : 'text-white/72';
+  const lineColor =
+    params.theme === 'light'
+      ? 'bg-slate-900/10'
+      : params.theme === 'sepia'
+        ? 'bg-[#5b4630]/14'
+        : 'bg-white/12';
+
+  return (
+    <div className="h-full w-full flex items-center justify-center px-8">
+      <div className="w-full max-w-[320px] space-y-5 text-center" aria-live="polite">
+        <div className="mx-auto h-1 w-24 overflow-hidden rounded-full bg-black/10 dark:bg-white/10">
+          <div className="h-full w-1/2 rounded-full bg-current opacity-30 motion-safe:animate-pulse" />
+        </div>
+        <div className={textColor}>
+          {params.title && (
+            <p className="truncate text-sm font-medium opacity-80">{params.title}</p>
+          )}
+          <p className="mt-1 text-xs opacity-60">
+            {params.lang === 'en' ? 'Restoring your place' : 'جارٍ استعادة موضع القراءة'}
+          </p>
+        </div>
+        <div className="space-y-2 opacity-60" aria-hidden="true">
+          <div className={`mx-auto h-2 w-full rounded-full ${lineColor}`} />
+          <div className={`mx-auto h-2 w-5/6 rounded-full ${lineColor}`} />
+          <div className={`mx-auto h-2 w-2/3 rounded-full ${lineColor}`} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
@@ -185,6 +232,52 @@ const ReaderScreen: React.FC = () => {
     () => Boolean(offlineRecord && isOfflineValid(offlineRecord)),
     [offlineRecord]
   );
+
+  useEffect(() => {
+    resetReaderPerfMetrics();
+    const stopObservingLayoutShifts = observeReaderLayoutShifts();
+    markReaderTelemetry('reader_open_start', {
+      bookId: bookId || null,
+    });
+    return () => {
+      stopObservingLayoutShifts();
+    };
+  }, [bookId]);
+
+  useEffect(() => {
+    markReaderTelemetry('reader_chrome_visibility', {
+      visible: isChromeVisible,
+    });
+  }, [isChromeVisible]);
+
+  useEffect(() => {
+    if (!readerSession) return;
+    markReaderTelemetry('signed_url_received', {
+      format: readerSession.format,
+    });
+  }, [readerSession]);
+
+  useEffect(() => {
+    if (!readerManifest) return;
+    markReaderTelemetry('manifest_loaded', {
+      format: readerManifest.format,
+      manifestVersion: readerManifest.version,
+      locationMapStatus: readerManifest.locationMap.status || 'pending',
+      locationMapSource: readerManifest.locationMap.source || 'runtime_generated',
+      sectionGraphStatus: readerManifest.sectionGraph?.status || 'pending',
+      stableAnchorMapStatus: readerManifest.stableAnchorMap?.status || 'pending',
+      navigationIndexStatus: readerManifest.navigationIndex?.status || 'pending',
+      searchIndexStatus: readerManifest.searchIndex.status,
+      highlightAnchorsStatus: readerManifest.highlightAnchors.status,
+    });
+  }, [readerManifest]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      sampleReaderMemory();
+    }, 15000);
+    return () => window.clearInterval(timer);
+  }, []);
   const manifestEstimatedPageCount = useMemo(() => {
     if (
       !readerManifest ||
@@ -234,9 +327,24 @@ const ReaderScreen: React.FC = () => {
     setPendingHighlightSelection(null);
   }, []);
 
+  const handlePdfDocumentLoadSuccess = useCallback((numPages: number) => {
+    markReaderTelemetry('pdf_runtime_ready', {
+      numPages,
+    });
+  }, []);
+
+  const handleFirstPageRender = useCallback(() => {
+    markReaderTelemetry('first_page_rendered');
+    markReaderTelemetry('first_interaction_ready');
+  }, []);
+
   const handleEpubLoadError = useCallback(
     (message: string) => {
       console.error('[READER][EPUB_RENDER_FAILED]', message);
+      markReaderTelemetry('render_crashes', {
+        format: 'epub',
+        message,
+      });
       setRenderError(
         lang === 'en'
           ? 'Unable to render this EPUB in-app. You can open the file directly.'
@@ -249,6 +357,10 @@ const ReaderScreen: React.FC = () => {
   const handlePdfLoadError = useCallback(
     (message: string) => {
       console.error('[READER][PDF_RENDER_FAILED]', message);
+      markReaderTelemetry('render_crashes', {
+        format: 'pdf',
+        message,
+      });
       setRenderError(
         lang === 'en'
           ? 'Unable to render this PDF in-app. You can open the file directly.'
@@ -395,6 +507,14 @@ const ReaderScreen: React.FC = () => {
     [effectiveFormat, readerManifest?.version]
   );
 
+  useEffect(() => {
+    if (effectiveFormat !== 'epub') return;
+    if (!hasObservedRuntimePagination) return;
+    markReaderTelemetry('epub_runtime_ready', {
+      totalPages,
+    });
+  }, [effectiveFormat, hasObservedRuntimePagination, totalPages]);
+
   const effectiveBookmarks = useMemo(() => {
     const merged = new Map<string, (typeof bookmarks)[number]>();
     for (const bookmark of bookmarks) {
@@ -512,6 +632,9 @@ const ReaderScreen: React.FC = () => {
         batchSize: 20,
         maxBatches: 3,
       });
+      markReaderTelemetry('offline_flush_time', {
+        source: 'bookmark_toggle',
+      });
       await refetchBookmarks();
     } catch (error) {
       console.warn('[READER][BOOKMARK_SYNC_DEFERRED]', error);
@@ -520,6 +643,7 @@ const ReaderScreen: React.FC = () => {
 
   const handleHighlightToggle = useCallback(async () => {
     if (!bookId) return;
+    const startedAt = performance.now();
     if (!pendingHighlightSelection) {
       showToast(
         lang === 'en'
@@ -572,7 +696,14 @@ const ReaderScreen: React.FC = () => {
         batchSize: 20,
         maxBatches: 3,
       });
+      markReaderTelemetry('offline_flush_time', {
+        source: 'highlight_toggle',
+      });
       await refetchHighlights();
+      markReaderTelemetry('highlight_creation_latency', {
+        latencyMs: Number((performance.now() - startedAt).toFixed(2)),
+        action: selectedHighlight ? 'delete' : 'upsert',
+      });
       setPendingHighlightSelection(null);
     } catch (error) {
       console.warn('[READER][HIGHLIGHT_SYNC_DEFERRED]', error);
@@ -856,10 +987,12 @@ const ReaderScreen: React.FC = () => {
   // -------------------------------------------------
   if (isBookLoading || (loadingSession && !hasOfflineCopy) || (isOffline && hasOfflineCopy && !offlineObjectUrl)) {
     return renderReaderViewport(
-      <div className="h-full w-full flex items-center justify-center bg-black">
-        <LoadingSpinner />
-      </div>,
-      '#000000'
+      renderCalmReaderLoading({
+        title: book ? (lang === 'en' ? book.titleEn : book.titleAr) : null,
+        theme,
+        lang,
+      }),
+      theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000'
     );
   }
 
@@ -887,10 +1020,8 @@ const ReaderScreen: React.FC = () => {
 
   if (book === null) {
     return renderReaderViewport(
-      <div className="h-full w-full flex items-center justify-center bg-black">
-        <LoadingSpinner />
-      </div>,
-      '#000000'
+      renderCalmReaderLoading({ title: null, theme, lang }),
+      theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000'
     );
   }
 
@@ -915,10 +1046,12 @@ const ReaderScreen: React.FC = () => {
 
   if (!book || !activeReaderUrl) {
     return renderReaderViewport(
-      <div className="h-full w-full flex items-center justify-center bg-black">
-        <LoadingSpinner />
-      </div>,
-      '#000000'
+      renderCalmReaderLoading({
+        title: book ? (lang === 'en' ? book.titleEn : book.titleAr) : null,
+        theme,
+        lang,
+      }),
+      theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000'
     );
   }
 
@@ -991,9 +1124,12 @@ const ReaderScreen: React.FC = () => {
             fontSize={fontSize}
             fontStyle={fontStyle}
             highlights={runtimeHighlights}
+            manifest={readerManifest}
             onPageChange={handleReaderPageChange}
             onPdfLoadError={handlePdfLoadError}
             onEpubLoadError={handleEpubLoadError}
+            onPdfDocumentLoadSuccess={handlePdfDocumentLoadSuccess}
+            onPdfFirstPageRender={handleFirstPageRender}
             onTextSelection={setPendingHighlightSelection}
             onNarrationSnapshotChange={setNarrationSnapshot}
             renderUnsupported={() =>

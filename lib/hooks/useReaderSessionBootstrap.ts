@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
 import type {
+  ReaderManifestIndexState,
   ReaderManifestSnapshot,
   ReaderSessionSnapshot,
 } from '../reader/runtime/contracts.ts';
@@ -76,6 +77,18 @@ function normalizeReaderManifest(value: unknown): ReaderManifestSnapshot | null 
     return null;
   }
 
+  const normalizeIndex = (input: unknown, fallbackDocPath: string): ReaderManifestIndexState => {
+    const raw = input as Partial<ReaderManifestIndexState> | null;
+    return {
+      status: raw?.status === 'ready' ? 'ready' : 'pending',
+      docPath:
+        typeof raw?.docPath === 'string' && raw.docPath.trim().length > 0
+          ? raw.docPath.trim()
+          : fallbackDocPath,
+      schemaVersion: raw?.schemaVersion === 'v1' ? 'v1' : undefined,
+    };
+  };
+
   return {
     bookId: manifest.bookId,
     version: Math.trunc(manifest.version),
@@ -90,6 +103,14 @@ function normalizeReaderManifest(value: unknown): ReaderManifestSnapshot | null 
     locationMap: manifest.locationMap,
     searchIndex: manifest.searchIndex,
     highlightAnchors: manifest.highlightAnchors,
+    chapterMap: normalizeIndex(manifest.chapterMap, `reader_chapter_map/${manifest.bookId}`),
+    sectionMap: normalizeIndex(manifest.sectionMap, `reader_section_map/${manifest.bookId}`),
+    stableAnchors: normalizeIndex(manifest.stableAnchors, `reader_stable_anchors/${manifest.bookId}`),
+    spineMap: normalizeIndex(manifest.spineMap, `reader_spine_map/${manifest.bookId}`),
+    sectionGraph: normalizeIndex(manifest.sectionGraph, `reader_section_graph/${manifest.bookId}`),
+    stableAnchorMap: normalizeIndex(manifest.stableAnchorMap, `reader_stable_anchor_map/${manifest.bookId}`),
+    navigationIndex: normalizeIndex(manifest.navigationIndex, `reader_navigation_index/${manifest.bookId}`),
+    paginationHints: normalizeIndex(manifest.paginationHints, `reader_pagination_hints/${manifest.bookId}`),
     generatedAtMs:
       typeof manifest.generatedAtMs === 'number' && Number.isFinite(manifest.generatedAtMs)
         ? Math.trunc(manifest.generatedAtMs)

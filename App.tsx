@@ -37,6 +37,7 @@ const VenueDetailsScreen = lazy(() => import('./app/venue-details.tsx'));
 const EditorScreen = lazy(() => import('./app/editor/[id].tsx'));
 const ReaderScreen = lazy(() => import('./app/reader.tsx'));
 const PublicationReaderScreen = lazy(() => import('./app/publication-reader.tsx'));
+const ReaderBenchmarkHarness = lazy(() => import('./components/reader/runtime/ReaderBenchmarkHarness.tsx'));
 const PostComposerScreen = lazy(() => import('./app/immersive/post-composer.tsx'));
 const DiscoveryFlowScreen = lazy(() => import('./app/discovery/flow.tsx'));
 const ProfileScreen = lazy(() => import('./app/drawer/profile.tsx'));
@@ -178,6 +179,9 @@ const AppContent: React.FC = () => {
     
     const [showSplash, setShowSplash] = useState(true);
     const [isFading, setIsFading] = useState(false);
+    const isReaderBenchmark =
+        typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('readerBenchmark') === '1';
 
     useEffect(() => {
         // Only start fading when auth is ready or has failed to load (to prevent stuck black screen)
@@ -202,6 +206,14 @@ const AppContent: React.FC = () => {
             navigate({ type: 'tab', id: 'home' });
         }
     }, [currentView, isAdmin, isAuthLoading, isGuest, navigate, user]);
+
+    if (isReaderBenchmark) {
+        return (
+            <Suspense fallback={<PageLoader />}>
+                <ReaderBenchmarkHarness />
+            </Suspense>
+        );
+    }
 
     if (showSplash) return <SplashScreen fading={isFading} />;
     

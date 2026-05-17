@@ -1,0 +1,168 @@
+{
+  "version": 1,
+  "generatedBy": "scripts/generateReaderStressCorpusFixtures.mjs",
+  "principle": "License-safe synthetic fixtures for reader runtime regression. These fixtures are not a replacement for device-lab validation against real licensed books.",
+  "budgets": {
+    "coldOpenP95Ms": 2500,
+    "firstPageRenderP95Ms": 1800,
+    "pageTurnP95Ms": 120,
+    "minScrollFps": 45,
+    "maxHeapGrowthMbPerHour": 96,
+    "offlineReplaySuccessRate": 0.995
+  },
+  "cases": [
+    {
+      "id": "small_clean_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/small-clean.epub",
+      "status": "generated",
+      "runtimePressure": "baseline_open_navigation",
+      "expectedBehavior": "Opens without fallback, renders TOC, produces stable location metadata.",
+      "budgets": { "openMs": 1500, "firstPageMs": 1000, "minFps": 55, "maxHeapMb": 96 }
+    },
+    {
+      "id": "large_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/large.epub",
+      "status": "generated_scaled",
+      "runtimePressure": "multi_spine_location_generation",
+      "expectedBehavior": "Location generation is deferred, cached after first run, and does not block first render.",
+      "budgets": { "openMs": 2200, "firstPageMs": 1300, "minFps": 50, "maxHeapMb": 160 }
+    },
+    {
+      "id": "rtl_arabic_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/rtl-arabic.epub",
+      "status": "generated",
+      "runtimePressure": "rtl_layout_text_selection",
+      "expectedBehavior": "Arabic text preserves RTL direction, selection, and highlight anchors.",
+      "budgets": { "openMs": 1800, "firstPageMs": 1200, "minFps": 50, "maxHeapMb": 128 }
+    },
+    {
+      "id": "mixed_rtl_ltr_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/mixed-rtl-ltr.epub",
+      "status": "generated",
+      "runtimePressure": "bidirectional_layout",
+      "expectedBehavior": "Mixed Arabic and English paragraphs remain readable without reflow instability.",
+      "budgets": { "openMs": 1800, "firstPageMs": 1200, "minFps": 50, "maxHeapMb": 128 }
+    },
+    {
+      "id": "image_heavy_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/image-heavy.epub",
+      "status": "generated",
+      "runtimePressure": "image_decode_reflow",
+      "expectedBehavior": "Inline images load lazily enough to preserve scroll stability.",
+      "budgets": { "openMs": 2200, "firstPageMs": 1500, "minFps": 45, "maxHeapMb": 192 }
+    },
+    {
+      "id": "malformed_spine_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/malformed-spine.epub",
+      "status": "generated_negative",
+      "runtimePressure": "invalid_spine_recovery",
+      "expectedBehavior": "Fails with a controlled reader error, no crash loop, no authoritative progress corruption.",
+      "budgets": { "openMs": 1800, "firstPageMs": 0, "minFps": 0, "maxHeapMb": 96 }
+    },
+    {
+      "id": "broken_toc_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/broken-toc.epub",
+      "status": "generated_negative",
+      "runtimePressure": "missing_navigation_fallback",
+      "expectedBehavior": "Reader opens spine content even when navigation metadata is incomplete.",
+      "budgets": { "openMs": 1800, "firstPageMs": 1200, "minFps": 50, "maxHeapMb": 128 }
+    },
+    {
+      "id": "footnote_dense_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/footnote-dense.epub",
+      "status": "generated",
+      "runtimePressure": "dense_inline_links",
+      "expectedBehavior": "Dense anchors do not create excessive DOM churn during navigation.",
+      "budgets": { "openMs": 2000, "firstPageMs": 1300, "minFps": 50, "maxHeapMb": 160 }
+    },
+    {
+      "id": "annotation_heavy_epub",
+      "format": "epub",
+      "assetPath": "public/fixtures/reader-corpus/epub/annotation-heavy.epub",
+      "status": "generated",
+      "runtimePressure": "large_highlight_overlay_count",
+      "expectedBehavior": "Highlight overlay rendering remains deterministic under high annotation count.",
+      "budgets": { "openMs": 2200, "firstPageMs": 1500, "minFps": 45, "maxHeapMb": 192 }
+    },
+    {
+      "id": "small_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/small.pdf",
+      "status": "generated",
+      "runtimePressure": "baseline_pdf_open",
+      "expectedBehavior": "First page renders and virtual window remains bounded.",
+      "budgets": { "openMs": 1500, "firstPageMs": 1000, "minFps": 55, "maxHeapMb": 96 }
+    },
+    {
+      "id": "large_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/large.pdf",
+      "status": "generated_scaled",
+      "runtimePressure": "virtualized_multi_page_scroll",
+      "expectedBehavior": "Only visible pages plus bounded overscan render during sustained scroll.",
+      "budgets": { "openMs": 2500, "firstPageMs": 1600, "minFps": 45, "maxHeapMb": 224 }
+    },
+    {
+      "id": "academic_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/academic.pdf",
+      "status": "generated",
+      "runtimePressure": "dense_text_layer",
+      "expectedBehavior": "Text layer selection remains available without eager full-document render.",
+      "budgets": { "openMs": 2200, "firstPageMs": 1500, "minFps": 45, "maxHeapMb": 192 }
+    },
+    {
+      "id": "scanned_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/scanned.pdf",
+      "status": "generated",
+      "runtimePressure": "image_page_decode",
+      "expectedBehavior": "Image-heavy pages render in the active window and detach when outside it.",
+      "budgets": { "openMs": 2400, "firstPageMs": 1700, "minFps": 40, "maxHeapMb": 224 }
+    },
+    {
+      "id": "arabic_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/arabic.pdf",
+      "status": "generated",
+      "runtimePressure": "rtl_text_layer",
+      "expectedBehavior": "Arabic text pages render without scroll anchoring instability.",
+      "budgets": { "openMs": 2200, "firstPageMs": 1500, "minFps": 45, "maxHeapMb": 192 }
+    },
+    {
+      "id": "image_heavy_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/image-heavy.pdf",
+      "status": "generated",
+      "runtimePressure": "image_decode_memory_pressure",
+      "expectedBehavior": "Canvas cleanup prevents unbounded heap growth during navigation.",
+      "budgets": { "openMs": 2500, "firstPageMs": 1800, "minFps": 40, "maxHeapMb": 256 }
+    },
+    {
+      "id": "corrupt_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/corrupt.pdf",
+      "status": "generated_negative",
+      "runtimePressure": "corrupt_file_recovery",
+      "expectedBehavior": "Fails with a controlled reader error and no replay/progress mutation.",
+      "budgets": { "openMs": 1500, "firstPageMs": 0, "minFps": 0, "maxHeapMb": 96 }
+    },
+    {
+      "id": "huge_pagecount_pdf",
+      "format": "pdf",
+      "assetPath": "public/fixtures/reader-corpus/pdf/huge-pagecount.pdf",
+      "status": "generated_scaled",
+      "runtimePressure": "large_page_index_virtualization",
+      "expectedBehavior": "Page lookup and virtualization remain bounded with high page count.",
+      "budgets": { "openMs": 2800, "firstPageMs": 1800, "minFps": 40, "maxHeapMb": 256 }
+    }
+  ]
+}

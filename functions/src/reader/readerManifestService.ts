@@ -4,6 +4,12 @@ import { admin } from "../firebaseAdmin";
 import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 import { FieldValue } from "firebase-admin/firestore";
 import { canUserReadBook } from "../rights/bookRights";
+import {
+  CANONICAL_EPUB_LOCATION_GENERATION_CHARS,
+  CANONICAL_EPUB_PIPELINE_VERSION,
+  preprocessCanonicalEpub,
+  type CanonicalEpubPreprocessResult,
+} from "./canonicalEpubProducer";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -11,7 +17,9 @@ const storage = admin.storage();
 export type ReaderManifestFormat = "pdf" | "epub" | "unknown";
 type ReaderManifestSourceType = "attachment" | "legacy_upload";
 
-const READER_MANIFEST_PIPELINE_VERSION = "reader_manifest_v1";
+const READER_MANIFEST_PIPELINE_VERSION = "reader_manifest_v2";
+const EPUB_LOCATION_GENERATION_CHARS = CANONICAL_EPUB_LOCATION_GENERATION_CHARS;
+const CANONICAL_EPUB_RETRY_AFTER_MS = 6 * 60 * 60 * 1000;
 
 interface ReaderManifestLocationMap {
   version: "v1";
@@ -20,11 +28,23 @@ interface ReaderManifestLocationMap {
   status?: "pending" | "ready";
   docPath?: string;
   anchorSchema?: "canonical_anchor_v1";
+  source?: "server_precomputed" | "runtime_generated";
+  identity?: {
+    bookId: string;
+    manifestVersion: number;
+    pipelineVersion: string;
+    sourceSignatureHash: string;
+    generationChars: number;
+  };
+  generationChars?: number;
+  locationCount?: number;
+  payload?: string | unknown[];
 }
 
 interface ReaderManifestIndexState {
   status: "pending" | "ready";
   docPath: string;
+  schemaVersion?: "v1";
 }
 
 export interface ReaderManifestInternal {
@@ -40,6 +60,14 @@ export interface ReaderManifestInternal {
   locationMap: ReaderManifestLocationMap;
   searchIndex: ReaderManifestIndexState;
   highlightAnchors: ReaderManifestIndexState;
+  chapterMap: ReaderManifestIndexState;
+  sectionMap: ReaderManifestIndexState;
+  stableAnchors: ReaderManifestIndexState;
+  spineMap: ReaderManifestIndexState;
+  sectionGraph: ReaderManifestIndexState;
+  stableAnchorMap: ReaderManifestIndexState;
+  navigationIndex: ReaderManifestIndexState;
+  paginationHints: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 
@@ -52,6 +80,14 @@ export interface ReaderManifestPublic {
   locationMap: ReaderManifestLocationMap;
   searchIndex: ReaderManifestIndexState;
   highlightAnchors: ReaderManifestIndexState;
+  chapterMap: ReaderManifestIndexState;
+  sectionMap: ReaderManifestIndexState;
+  stableAnchors: ReaderManifestIndexState;
+  spineMap: ReaderManifestIndexState;
+  sectionGraph: ReaderManifestIndexState;
+  stableAnchorMap: ReaderManifestIndexState;
+  navigationIndex: ReaderManifestIndexState;
+  paginationHints: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 
@@ -96,6 +132,76 @@ function toPositiveIntOrNull(value: unknown): number | null {
   return n > 0 ? n : null;
 }
 
+function stableManifestHash(value: string): string {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36);
+}
+
+function sanitizeIndexState(
+  raw: Record<string, unknown> | undefined,
+  fallbackDocPath: string
+): ReaderManifestIndexState {
+  return {
+    status: raw?.status === "ready" ? "ready" : "pending",
+    docPath: asNonEmptyString(raw?.docPath) || fallbackDocPath,
+    schemaVersion: raw?.schemaVersion === "v1" ? "v1" : undefined,
+  };
+}
+
+function docPathToRef(docPath: string) {
+  const [collection, docId] = docPath.split("/");
+  if (!collection || !docId || docPath.split("/").length !== 2) {
+    throw new HttpsError("internal", "Invalid reader manifest index path.");
+  }
+  return db.collection(collection).doc(docId);
+}
+
+async function persistCanonicalEpubIndexes(params: {
+  bookId: string;
+  version: number;
+  sourceSignatureHash: string;
+  manifest: Pick<
+    ReaderManifestInternal,
+    "spineMap" | "sectionGraph" | "stableAnchorMap" | "navigationIndex" | "paginationHints"
+  >;
+  produced: CanonicalEpubPreprocessResult;
+}): Promise<void> {
+  const base = {
+    bookId: params.bookId,
+    manifestVersion: params.version,
+    pipelineVersion: CANONICAL_EPUB_PIPELINE_VERSION,
+    sourceSignatureHash: params.sourceSignatureHash,
+    generatedAtMs: Date.now(),
+  };
+
+  await Promise.all([
+    docPathToRef(params.manifest.spineMap.docPath).set({
+      ...base,
+      ...params.produced.spineMap,
+    }),
+    docPathToRef(params.manifest.sectionGraph.docPath).set({
+      ...base,
+      ...params.produced.sectionGraph,
+    }),
+    docPathToRef(params.manifest.stableAnchorMap.docPath).set({
+      ...base,
+      ...params.produced.stableAnchorMap,
+    }),
+    docPathToRef(params.manifest.navigationIndex.docPath).set({
+      ...base,
+      ...params.produced.navigationIndex,
+    }),
+    docPathToRef(params.manifest.paginationHints.docPath).set({
+      ...base,
+      ...params.produced.paginationHints,
+    }),
+  ]);
+}
+
 function toPublicManifest(manifest: ReaderManifestInternal): ReaderManifestPublic {
   return {
     bookId: manifest.bookId,
@@ -106,6 +212,14 @@ function toPublicManifest(manifest: ReaderManifestInternal): ReaderManifestPubli
     locationMap: manifest.locationMap,
     searchIndex: manifest.searchIndex,
     highlightAnchors: manifest.highlightAnchors,
+    chapterMap: manifest.chapterMap,
+    sectionMap: manifest.sectionMap,
+    stableAnchors: manifest.stableAnchors,
+    spineMap: manifest.spineMap,
+    sectionGraph: manifest.sectionGraph,
+    stableAnchorMap: manifest.stableAnchorMap,
+    navigationIndex: manifest.navigationIndex,
+    paginationHints: manifest.paginationHints,
     generatedAtMs: manifest.generatedAtMs,
   };
 }
@@ -142,6 +256,14 @@ function sanitizeExistingManifest(
   const locationMapRaw = input.locationMap as Record<string, unknown> | undefined;
   const searchIndexRaw = input.searchIndex as Record<string, unknown> | undefined;
   const highlightAnchorsRaw = input.highlightAnchors as Record<string, unknown> | undefined;
+  const chapterMapRaw = input.chapterMap as Record<string, unknown> | undefined;
+  const sectionMapRaw = input.sectionMap as Record<string, unknown> | undefined;
+  const stableAnchorsRaw = input.stableAnchors as Record<string, unknown> | undefined;
+  const spineMapRaw = input.spineMap as Record<string, unknown> | undefined;
+  const sectionGraphRaw = input.sectionGraph as Record<string, unknown> | undefined;
+  const stableAnchorMapRaw = input.stableAnchorMap as Record<string, unknown> | undefined;
+  const navigationIndexRaw = input.navigationIndex as Record<string, unknown> | undefined;
+  const paginationHintsRaw = input.paginationHints as Record<string, unknown> | undefined;
 
   if (!locationMapRaw || !searchIndexRaw || !highlightAnchorsRaw) {
     return null;
@@ -155,18 +277,62 @@ function sanitizeExistingManifest(
     status: locationMapRaw.status === "ready" ? "ready" : "pending",
     docPath: asNonEmptyString(locationMapRaw.docPath) || `reader_location_map/${bookId}`,
     anchorSchema: "canonical_anchor_v1",
+    source:
+      locationMapRaw.source === "server_precomputed"
+        ? "server_precomputed"
+        : "runtime_generated",
+    generationChars:
+      typeof locationMapRaw.generationChars === "number" &&
+      Number.isFinite(locationMapRaw.generationChars) &&
+      locationMapRaw.generationChars > 0
+        ? Math.trunc(locationMapRaw.generationChars)
+        : format === "epub"
+          ? EPUB_LOCATION_GENERATION_CHARS
+          : undefined,
+    locationCount: toPositiveIntOrNull(locationMapRaw.locationCount) ?? undefined,
   };
+  const locationIdentityRaw = locationMapRaw.identity as Record<string, unknown> | undefined;
+  const sourceSignatureHash = stableManifestHash(sourceSignature);
+  if (format === "epub") {
+    locationMap.identity = {
+      bookId,
+      manifestVersion: Math.trunc(versionRaw),
+      pipelineVersion,
+      sourceSignatureHash:
+        asNonEmptyString(locationIdentityRaw?.sourceSignatureHash) || sourceSignatureHash,
+      generationChars: locationMap.generationChars || EPUB_LOCATION_GENERATION_CHARS,
+    };
+  }
+  if (
+    locationMap.source === "server_precomputed" &&
+    locationMap.status === "ready" &&
+    (typeof locationMapRaw.payload === "string" || Array.isArray(locationMapRaw.payload))
+  ) {
+    locationMap.payload = locationMapRaw.payload;
+  }
 
-  const searchIndex: ReaderManifestIndexState = {
-    status: searchIndexRaw.status === "ready" ? "ready" : "pending",
-    docPath: asNonEmptyString(searchIndexRaw.docPath) || `reader_search_index/${bookId}`,
-  };
-
-  const highlightAnchors: ReaderManifestIndexState = {
-    status: highlightAnchorsRaw.status === "ready" ? "ready" : "pending",
-    docPath:
-      asNonEmptyString(highlightAnchorsRaw.docPath) || `reader_highlight_anchors/${bookId}`,
-  };
+  const searchIndex = sanitizeIndexState(searchIndexRaw, `reader_search_index/${bookId}`);
+  const highlightAnchors = sanitizeIndexState(
+    highlightAnchorsRaw,
+    `reader_highlight_anchors/${bookId}`
+  );
+  const chapterMap = sanitizeIndexState(chapterMapRaw, `reader_chapter_map/${bookId}`);
+  const sectionMap = sanitizeIndexState(sectionMapRaw, `reader_section_map/${bookId}`);
+  const stableAnchors = sanitizeIndexState(stableAnchorsRaw, `reader_stable_anchors/${bookId}`);
+  const spineMap = sanitizeIndexState(spineMapRaw, `reader_spine_map/${bookId}`);
+  const sectionGraph = sanitizeIndexState(sectionGraphRaw, `reader_section_graph/${bookId}`);
+  const stableAnchorMap = sanitizeIndexState(
+    stableAnchorMapRaw,
+    `reader_stable_anchor_map/${bookId}`
+  );
+  const navigationIndex = sanitizeIndexState(
+    navigationIndexRaw,
+    `reader_navigation_index/${bookId}`
+  );
+  const paginationHints = sanitizeIndexState(
+    paginationHintsRaw,
+    `reader_pagination_hints/${bookId}`
+  );
 
   return {
     bookId,
@@ -181,6 +347,14 @@ function sanitizeExistingManifest(
     locationMap,
     searchIndex,
     highlightAnchors,
+    chapterMap,
+    sectionMap,
+    stableAnchors,
+    spineMap,
+    sectionGraph,
+    stableAnchorMap,
+    navigationIndex,
+    paginationHints,
     generatedAtMs: Math.trunc(generatedAtMsRaw),
   };
 }
@@ -294,7 +468,12 @@ export async function getOrBuildReaderManifest(params: {
   if (
     existing &&
     existing.sourceSignature === sourceSignature &&
-    existing.pipelineVersion === READER_MANIFEST_PIPELINE_VERSION
+    existing.pipelineVersion === READER_MANIFEST_PIPELINE_VERSION &&
+    (
+      existing.format !== "epub" ||
+      existing.locationMap.source === "server_precomputed" ||
+      Date.now() - existing.generatedAtMs < CANONICAL_EPUB_RETRY_AFTER_MS
+    )
   ) {
     return existing;
   }
@@ -302,6 +481,7 @@ export async function getOrBuildReaderManifest(params: {
   const version = existing ? existing.version + 1 : 1;
   const generatedAtMs = Date.now();
   const estimatedPageCount = toPositiveIntOrNull(book.pageCount);
+  const sourceSignatureHash = stableManifestHash(sourceSignature);
 
   const nextManifest: ReaderManifestInternal = {
     bookId,
@@ -320,17 +500,124 @@ export async function getOrBuildReaderManifest(params: {
       status: "pending",
       docPath: `reader_location_map/${bookId}`,
       anchorSchema: "canonical_anchor_v1",
+      source: "runtime_generated",
+      generationChars: format === "epub" ? EPUB_LOCATION_GENERATION_CHARS : undefined,
+      identity:
+        format === "epub"
+          ? {
+              bookId,
+              manifestVersion: version,
+              pipelineVersion: READER_MANIFEST_PIPELINE_VERSION,
+              sourceSignatureHash,
+              generationChars: EPUB_LOCATION_GENERATION_CHARS,
+            }
+          : undefined,
     },
     searchIndex: {
       status: "pending",
       docPath: `reader_search_index/${bookId}`,
+      schemaVersion: "v1",
     },
     highlightAnchors: {
       status: "pending",
       docPath: `reader_highlight_anchors/${bookId}`,
+      schemaVersion: "v1",
+    },
+    chapterMap: {
+      status: "pending",
+      docPath: `reader_chapter_map/${bookId}`,
+      schemaVersion: "v1",
+    },
+    sectionMap: {
+      status: "pending",
+      docPath: `reader_section_map/${bookId}`,
+      schemaVersion: "v1",
+    },
+    stableAnchors: {
+      status: "pending",
+      docPath: `reader_stable_anchors/${bookId}`,
+      schemaVersion: "v1",
+    },
+    spineMap: {
+      status: "pending",
+      docPath: `reader_spine_map/${bookId}`,
+      schemaVersion: "v1",
+    },
+    sectionGraph: {
+      status: "pending",
+      docPath: `reader_section_graph/${bookId}`,
+      schemaVersion: "v1",
+    },
+    stableAnchorMap: {
+      status: "pending",
+      docPath: `reader_stable_anchor_map/${bookId}`,
+      schemaVersion: "v1",
+    },
+    navigationIndex: {
+      status: "pending",
+      docPath: `reader_navigation_index/${bookId}`,
+      schemaVersion: "v1",
+    },
+    paginationHints: {
+      status: "pending",
+      docPath: `reader_pagination_hints/${bookId}`,
+      schemaVersion: "v1",
     },
     generatedAtMs,
   };
+
+  if (format === "epub" && typeof file.download === "function") {
+    try {
+      const [buffer] = await file.download();
+      const produced = await preprocessCanonicalEpub(Buffer.from(buffer), {
+        bookId,
+        generationChars: EPUB_LOCATION_GENERATION_CHARS,
+      });
+
+      if (produced.ok) {
+        nextManifest.locationMap = {
+          ...nextManifest.locationMap,
+          status: "ready",
+          source: "server_precomputed",
+          generationChars: EPUB_LOCATION_GENERATION_CHARS,
+          locationCount: produced.locationCount,
+          payload: produced.locationPayload,
+        };
+        nextManifest.spineMap.status = "ready";
+        nextManifest.sectionGraph.status = "ready";
+        nextManifest.stableAnchorMap.status = "ready";
+        nextManifest.navigationIndex.status = "ready";
+        nextManifest.paginationHints.status = "ready";
+
+        await persistCanonicalEpubIndexes({
+          bookId,
+          version,
+          sourceSignatureHash,
+          manifest: nextManifest,
+          produced,
+        });
+
+        logger.info("[READER][CANONICAL_EPUB_PREPROCESS_READY]", {
+          bookId,
+          version,
+          locationCount: produced.locationCount,
+          spineItemCount: produced.spineMap.itemCount,
+        });
+      } else {
+        logger.warn("[READER][CANONICAL_EPUB_PREPROCESS_SKIPPED]", {
+          bookId,
+          version,
+          reason: produced.reason,
+        });
+      }
+    } catch (error) {
+      logger.warn("[READER][CANONICAL_EPUB_PREPROCESS_FAILED]", {
+        bookId,
+        version,
+        error: String(error),
+      });
+    }
+  }
 
   await manifestRef.set(
     {

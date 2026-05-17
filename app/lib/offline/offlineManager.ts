@@ -16,6 +16,7 @@ export interface OfflineEbookRecord {
   expiresAt: number;
   bytes?: number;
   checksum?: string | null;
+  integrityState?: "verified" | "unverified";
   lastKnownPage?: number;
 }
 
@@ -72,6 +73,35 @@ async function requestOfflineAccess(bookId: string) {
   }>(res.data);
 }
 
+function isSha256Checksum(value: string | null | undefined): value is string {
+  return typeof value === "string" && /^[a-f0-9]{64}$/i.test(value);
+}
+
+async function computeSha256Hex(blob: Blob): Promise<string> {
+  if (!crypto?.subtle) {
+    throw new Error("Offline integrity verification is unavailable in this browser.");
+  }
+
+  const digest = await crypto.subtle.digest("SHA-256", await blob.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function assertOfflineBlobIntegrity(blob: Blob, checksum: string | null): Promise<"verified" | "unverified"> {
+  if (!checksum) return "unverified";
+  if (!isSha256Checksum(checksum)) {
+    throw new Error("Unsupported offline checksum format.");
+  }
+
+  const actual = await computeSha256Hex(blob);
+  if (actual !== checksum.toLowerCase()) {
+    throw new Error("Offline file integrity check failed.");
+  }
+
+  return "verified";
+}
+
 /**
  * downloadAndStore
  *
@@ -89,12 +119,16 @@ async function downloadAndStore(
   }
 
   const blob = await res.blob();
+  const integrityState = await assertOfflineBlobIntegrity(blob, record.checksum || null);
 
   // Cache API (preferred for large binaries)
   const cache = await caches.open(OFFLINE_NAMESPACE);
   await cache.put(buildCacheKey(record.bookId), new Response(blob));
 
-  return blob.size;
+  return {
+    bytes: blob.size,
+    integrityState,
+  };
 }
 
 /**
@@ -122,7 +156,7 @@ export async function markEbookOffline(
     lastKnownPage: 1,
   };
 
-  const bytes = await downloadAndStore(record, signedUrl);
+  const { bytes, integrityState } = await downloadAndStore(record, signedUrl);
 
   if (maxBytes && bytes > maxBytes) {
     await clearOfflineEbook(bookId);
@@ -130,6 +164,7 @@ export async function markEbookOffline(
   }
 
   record.bytes = bytes;
+  record.integrityState = integrityState;
 
   localStorage.setItem(
     buildStorageKey(bookId),
@@ -210,6 +245,14 @@ export async function getOfflineBookObjectUrl(
   }
 
   const blob = await response.blob();
+  if (isSha256Checksum(record.checksum)) {
+    try {
+      await assertOfflineBlobIntegrity(blob, record.checksum);
+    } catch (error) {
+      await clearOfflineEbook(bookId);
+      throw error;
+    }
+  }
   return URL.createObjectURL(blob);
 }
 

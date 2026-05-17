@@ -130,15 +130,22 @@ export const requestEbookOfflineAccess = onCall(
         ? Math.trunc(maxBytesRaw)
         : null;
 
+    const customMetadata =
+      fileMetadata.metadata && typeof fileMetadata.metadata === "object"
+        ? (fileMetadata.metadata as Record<string, unknown>)
+        : {};
+    const sha256Checksum =
+      typeof customMetadata.checksum === "string" &&
+      /^[a-f0-9]{64}$/i.test(customMetadata.checksum)
+        ? customMetadata.checksum.toLowerCase()
+        : null;
+
     return {
       bookId,
       format: manifest.format,
       signedUrl,
       expiresAt: expiresAt.toMillis(),
-      checksum:
-        typeof fileMetadata.md5Hash === "string" && fileMetadata.md5Hash.length > 0
-          ? fileMetadata.md5Hash
-          : null,
+      checksum: sha256Checksum,
       maxBytes,
     };
   }

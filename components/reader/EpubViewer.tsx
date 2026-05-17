@@ -2,9 +2,17 @@ import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { FontSize, FontStyle } from '../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
+  ReaderManifestSnapshot,
   ReaderNarrationSnapshot,
   ReaderTextSelection,
 } from '../../lib/reader/runtime/contracts.ts';
+import { resolveCanonicalEpubLocationMap } from '../../lib/reader/runtime/canonicalEpubStructure.ts';
+import {
+  readCachedEpubLocations,
+  writeCachedEpubLocations,
+  type EpubLocationCachePayload,
+} from '../../lib/reader/runtime/epubLocationCache.ts';
+import { markReaderTelemetry } from '../../lib/reader/runtime/readerTelemetry.ts';
 
 type ReaderTheme = 'light' | 'dark' | 'sepia';
 type ReaderMode = 'scroll' | 'page';
@@ -23,6 +31,7 @@ type EpubViewerProps = {
   fontSize?: FontSize;
   fontStyle?: FontStyle;
   highlights?: ReaderHighlightOverlay[];
+  manifest?: ReaderManifestSnapshot | null;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
   onTextSelection?: (selection: ReaderTextSelection | null) => void;
@@ -38,6 +47,8 @@ type EpubBook = {
     length: () => number;
     cfiFromPercentage: (value: number) => string;
     percentageFromCfi: (cfi: string) => number;
+    save?: () => EpubLocationCachePayload;
+    load?: (payload: EpubLocationCachePayload) => void;
   };
   renderTo: (
     element: HTMLElement,
@@ -73,6 +84,8 @@ type EpubRendition = {
   };
 
 type EpubFactory = (src: string | ArrayBuffer) => EpubBook;
+
+const EPUB_LOCATION_GENERATION_CHARS = 1200;
 
 function resolveEpubFactory(epubModule: typeof import('epubjs')): EpubFactory {
   const candidate = epubModule.default ?? epubModule;
@@ -110,6 +123,13 @@ function waitForAnimationFrame(): Promise<void> {
   return new Promise((resolve) => {
     window.requestAnimationFrame(() => resolve());
   });
+}
+
+function nowMs(): number {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
 }
 
 async function waitForStableContainer(container: HTMLElement): Promise<void> {
@@ -371,6 +391,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   fontSize = 'md',
   fontStyle = 'default',
   highlights = [],
+  manifest = null,
   onPageChange,
   onLoadError,
   onLocationChange,
@@ -494,41 +515,130 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
           typeof initialEpubCfi === 'string' && initialEpubCfi.trim().length > 0
             ? initialEpubCfi.trim()
             : null;
+        const finalizeHydratedLocations = async () => {
+          if (cancelled) return;
+
+          areLocationsReadyRef.current = true;
+          const totalLocations = Math.max(1, book.locations.length());
+          const effectiveRequestedPage =
+            readingMode === 'scroll'
+              ? Math.min(requestedPage, Math.max(1, totalLocations - 1))
+              : Math.min(requestedPage, totalLocations);
+
+          if (!startupCfi && effectiveRequestedPage > 1) {
+            const ratio =
+              totalLocations <= 1
+                ? 0
+                : clamp((effectiveRequestedPage - 1) / (totalLocations - 1), 0, 1);
+            const targetCfi = book.locations.cfiFromPercentage(ratio);
+            lastDisplayedCfiRef.current = targetCfi;
+            await rendition.display(targetCfi);
+            if (cancelled) return;
+            emitPage(effectiveRequestedPage, totalLocations);
+            return;
+          }
+
+          const currentCfi = lastDisplayedCfiRef.current;
+          if (currentCfi) {
+            const percentage = book.locations.percentageFromCfi(currentCfi);
+            const current = Math.max(
+              1,
+              Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
+            );
+            emitPage(current, totalLocations);
+          } else {
+            emitPage(1, totalLocations);
+          }
+        };
+
         const hydrateLocations = async () => {
           try {
-            await book.locations.generate(1200);
-            if (cancelled) return;
-
-            areLocationsReadyRef.current = true;
-            const totalLocations = Math.max(1, book.locations.length());
-            const effectiveRequestedPage =
-              readingMode === 'scroll'
-                ? Math.min(requestedPage, Math.max(1, totalLocations - 1))
-                : Math.min(requestedPage, totalLocations);
-
-            if (!startupCfi && effectiveRequestedPage > 1) {
-              const ratio =
-                totalLocations <= 1
-                  ? 0
-                  : clamp((effectiveRequestedPage - 1) / (totalLocations - 1), 0, 1);
-              const targetCfi = book.locations.cfiFromPercentage(ratio);
-              lastDisplayedCfiRef.current = targetCfi;
-              await rendition.display(targetCfi);
-              if (cancelled) return;
-              emitPage(effectiveRequestedPage, totalLocations);
-              return;
+            const canonicalLocations = resolveCanonicalEpubLocationMap(
+              manifest,
+              EPUB_LOCATION_GENERATION_CHARS
+            );
+            if (canonicalLocations && typeof book.locations.load === 'function') {
+              try {
+                book.locations.load(canonicalLocations.payload);
+                if (book.locations.length() > 0) {
+                  markReaderTelemetry('epub_canonical_locations_loaded', {
+                    locationCount: book.locations.length(),
+                    generationChars: canonicalLocations.generationChars,
+                    manifestVersion: canonicalLocations.identity.manifestVersion,
+                  });
+                  await finalizeHydratedLocations();
+                  return;
+                }
+              } catch (error) {
+                markReaderTelemetry('epub_canonical_locations_fallback', {
+                  reason: 'load_failed',
+                  generationChars: canonicalLocations.generationChars,
+                });
+                console.warn('[READER][EPUB_CANONICAL_LOCATIONS_LOAD_FAILED]', error);
+              }
+            } else {
+              markReaderTelemetry('epub_canonical_locations_fallback', {
+                reason: manifest?.format === 'epub' ? 'unavailable' : 'manifest_not_epub',
+                generationChars: EPUB_LOCATION_GENERATION_CHARS,
+              });
             }
 
-            const currentCfi = lastDisplayedCfiRef.current;
-            if (currentCfi) {
-              const percentage = book.locations.percentageFromCfi(currentCfi);
-              const current = Math.max(
-                1,
-                Math.round(clamp(percentage, 0, 1) * Math.max(1, totalLocations - 1)) + 1
-              );
-              emitPage(current, totalLocations);
+            const cachedLocations = readCachedEpubLocations({
+              url,
+              generationChars: EPUB_LOCATION_GENERATION_CHARS,
+              sourceIdentity: canonicalLocations?.sourceIdentity,
+            });
+
+            if (cachedLocations && typeof book.locations.load === 'function') {
+              try {
+                book.locations.load(cachedLocations.payload);
+                if (book.locations.length() > 0) {
+                  markReaderTelemetry('epub_locations_cache_hit', {
+                    locationCount: book.locations.length(),
+                    generationChars: EPUB_LOCATION_GENERATION_CHARS,
+                  });
+                  await finalizeHydratedLocations();
+                  return;
+                }
+              } catch (error) {
+                markReaderTelemetry('epub_locations_cache_miss', {
+                  reason: 'load_failed',
+                  generationChars: EPUB_LOCATION_GENERATION_CHARS,
+                });
+                console.warn('[READER][EPUB_LOCATIONS_CACHE_LOAD_FAILED]', error);
+              }
             } else {
-              emitPage(1, totalLocations);
+              markReaderTelemetry('epub_locations_cache_miss', {
+                reason: cachedLocations ? 'load_unavailable' : 'empty',
+                generationChars: EPUB_LOCATION_GENERATION_CHARS,
+              });
+            }
+
+            const generationStartedAtMs = nowMs();
+            await book.locations.generate(EPUB_LOCATION_GENERATION_CHARS);
+            if (cancelled) return;
+
+            const totalLocations = Math.max(1, book.locations.length());
+            markReaderTelemetry('epub_locations_generate_time', {
+              durationMs: Math.round(nowMs() - generationStartedAtMs),
+              locationCount: totalLocations,
+              generationChars: EPUB_LOCATION_GENERATION_CHARS,
+            });
+
+            if (typeof book.locations.save === 'function') {
+              const payload = book.locations.save();
+              writeCachedEpubLocations({
+                url,
+                generationChars: EPUB_LOCATION_GENERATION_CHARS,
+                locationCount: totalLocations,
+                payload,
+                sourceIdentity: canonicalLocations?.sourceIdentity,
+              });
+            }
+
+            await finalizeHydratedLocations();
+            if (cancelled) {
+              return;
             }
           } catch (error) {
             if (!cancelled) {
@@ -697,6 +807,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     fontStyle,
     initialEpubCfi,
     initialPage,
+    manifest,
     readingMode,
     scheduleNarrationSnapshot,
     theme,
