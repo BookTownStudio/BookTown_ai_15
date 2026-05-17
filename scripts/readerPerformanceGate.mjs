@@ -118,9 +118,13 @@ function validateEpubLocationCacheTelemetry() {
     !manifestSource.includes('sectionGraph') ||
     !manifestSource.includes('stableAnchorMap') ||
     !manifestSource.includes('navigationIndex') ||
-    !manifestSource.includes('paginationHints')
+    !manifestSource.includes('paginationHints') ||
+    !manifestSource.includes('literaryCoordinateMap') ||
+    !manifestSource.includes('passageIndex') ||
+    !manifestSource.includes('annotationIdentityIndex') ||
+    !manifestSource.includes('literaryMemoryPrimitives')
   ) {
-    throw new Error('Reader manifests must expose canonical EPUB structure pointers.');
+    throw new Error('Reader manifests must expose canonical EPUB structure and literary identity pointers.');
   }
   if (
     !manifestSource.includes('preprocessCanonicalEpub(') ||
@@ -128,9 +132,16 @@ function validateEpubLocationCacheTelemetry() {
     !producerSource.includes('preprocessCanonicalEpub') ||
     !producerSource.includes('locationPayload') ||
     !producerSource.includes('sectionGraph') ||
-    !producerSource.includes('stableAnchorMap')
+    !producerSource.includes('stableAnchorMap') ||
+    !producerSource.includes('failPreprocess') ||
+    !producerSource.includes('cfiFidelity') ||
+    !producerSource.includes('malformed_xhtml') ||
+    !producerSource.includes('CANONICAL_LITERARY_COORDINATE_SCHEMA') ||
+    !producerSource.includes('CANONICAL_PASSAGE_REFERENCE_SCHEMA') ||
+    !producerSource.includes('CANONICAL_ANNOTATION_IDENTITY_SCHEMA') ||
+    !producerSource.includes('CANONICAL_LITERARY_MEMORY_SCHEMA')
   ) {
-    throw new Error('Reader backend must produce canonical EPUB metadata before runtime consumption.');
+    throw new Error('Reader backend must produce canonical EPUB metadata and literary coordinates before runtime consumption.');
   }
 }
 

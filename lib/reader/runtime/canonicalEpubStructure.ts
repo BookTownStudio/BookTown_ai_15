@@ -12,6 +12,14 @@ export type CanonicalEpubLocationMap = {
   payload: EpubCanonicalLocationPayload;
 };
 
+export type CanonicalLiteraryCoordinateReference = {
+  schema: 'canonical_literary_coordinate_v1';
+  coordinateId: string;
+  passageId: string;
+  sectionId: string;
+  manifestVersion: number;
+};
+
 function isCanonicalLocationPayload(value: unknown): value is EpubCanonicalLocationPayload {
   return typeof value === 'string' || Array.isArray(value);
 }
@@ -46,6 +54,31 @@ export function buildCanonicalEpubLocationSourceIdentity(
     identity.sourceSignatureHash,
     identity.generationChars,
   ].join(':');
+}
+
+export function buildCanonicalLiteraryCoordinateReference(params: {
+  coordinateId: string;
+  passageId: string;
+  sectionId: string;
+  manifestVersion: number;
+}): CanonicalLiteraryCoordinateReference | null {
+  if (
+    !params.coordinateId.trim() ||
+    !params.passageId.trim() ||
+    !params.sectionId.trim() ||
+    !Number.isFinite(params.manifestVersion) ||
+    params.manifestVersion <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    schema: 'canonical_literary_coordinate_v1',
+    coordinateId: params.coordinateId,
+    passageId: params.passageId,
+    sectionId: params.sectionId,
+    manifestVersion: Math.trunc(params.manifestVersion),
+  };
 }
 
 export function resolveCanonicalEpubLocationMap(

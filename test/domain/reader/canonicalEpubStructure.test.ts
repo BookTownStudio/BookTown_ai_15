@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildCanonicalLiteraryCoordinateReference,
   buildCanonicalEpubLocationSourceIdentity,
   resolveCanonicalEpubLocationMap,
 } from '../../../lib/reader/runtime/canonicalEpubStructure.ts';
@@ -34,6 +35,10 @@ function buildManifest(overrides: Partial<ReaderManifestSnapshot> = {}): ReaderM
     },
     searchIndex: { status: 'pending', docPath: 'reader_search_index/book-1' },
     highlightAnchors: { status: 'pending', docPath: 'reader_highlight_anchors/book-1' },
+    literaryCoordinateMap: { status: 'ready', docPath: 'reader_literary_coordinate_map/book-1' },
+    passageIndex: { status: 'ready', docPath: 'reader_passage_index/book-1' },
+    annotationIdentityIndex: { status: 'ready', docPath: 'reader_annotation_identity_index/book-1' },
+    literaryMemoryPrimitives: { status: 'ready', docPath: 'reader_literary_memory_primitives/book-1' },
     generatedAtMs: 1,
     ...overrides,
   };
@@ -63,5 +68,31 @@ describe('canonical EPUB structure helpers', () => {
     ).toBeNull();
 
     expect(resolveCanonicalEpubLocationMap(buildManifest(), 800)).toBeNull();
+  });
+
+  it('builds bounded canonical literary coordinate references without runtime authority', () => {
+    expect(
+      buildCanonicalLiteraryCoordinateReference({
+        coordinateId: 'lit_coord_1',
+        passageId: 'passage_1',
+        sectionId: 'section_1',
+        manifestVersion: 3,
+      })
+    ).toEqual({
+      schema: 'canonical_literary_coordinate_v1',
+      coordinateId: 'lit_coord_1',
+      passageId: 'passage_1',
+      sectionId: 'section_1',
+      manifestVersion: 3,
+    });
+
+    expect(
+      buildCanonicalLiteraryCoordinateReference({
+        coordinateId: '',
+        passageId: 'passage_1',
+        sectionId: 'section_1',
+        manifestVersion: 3,
+      })
+    ).toBeNull();
   });
 });

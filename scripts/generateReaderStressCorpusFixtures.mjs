@@ -48,7 +48,15 @@ function buildParagraphBody(seed, count) {
   return Array.from({ length: count }, (_, index) => `<p>${escapeXml(paragraph(seed, index + 1))}</p>`).join('\n');
 }
 
-async function writeEpub({ filename, title, chapters, includeNav = true, malformedSpine = false }) {
+async function writeEpub({
+  filename,
+  title,
+  chapters,
+  includeNav = true,
+  malformedSpine = false,
+  invalidNavTree = false,
+  corruptMetadata = false,
+}) {
   const zip = new JSZip();
   zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
   zip.file(
@@ -79,7 +87,9 @@ async function writeEpub({ filename, title, chapters, includeNav = true, malform
       'OEBPS/nav.xhtml',
       chapterXhtml({
         title: 'Contents',
-        body: `<nav epub:type="toc" id="toc"><ol>${links}</ol></nav>`,
+        body: invalidNavTree
+          ? `<nav epub:type="toc" id="toc"><ol><li><a href="missing.xhtml">Missing</a><ol><li><a href="chapter-1.xhtml">Nested without close</a></li></ol></nav>`
+          : `<nav epub:type="toc" id="toc"><ol>${links}</ol></nav>`,
       })
     );
     manifestItems.push('<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>');
@@ -91,7 +101,7 @@ async function writeEpub({ filename, title, chapters, includeNav = true, malform
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
     <dc:identifier id="book-id">booktown-${escapeXml(filename)}</dc:identifier>
-    <dc:title>${escapeXml(title)}</dc:title>
+    <dc:title>${corruptMetadata ? '' : escapeXml(title)}</dc:title>
     <dc:language>en</dc:language>
   </metadata>
   <manifest>${manifestItems.join('\n')}</manifest>
@@ -105,6 +115,51 @@ async function writeEpub({ filename, title, chapters, includeNav = true, malform
     compressionOptions: { level: 6 },
   });
   fs.writeFileSync(path.join(EPUB_DIR, filename), buffer);
+}
+
+function writeCorpusManifest() {
+  const cases = [
+    ['small_clean_epub', 'epub', 'epub/small-clean.epub', 'generated', 'small clean EPUB baseline', 'opens through canonical or runtime EPUB path'],
+    ['large_epub', 'epub', 'epub/large.epub', 'generated_scaled', 'large multi-chapter EPUB location generation pressure', 'canonical path avoids repeated runtime generation where available'],
+    ['rtl_arabic_epub', 'epub', 'epub/rtl-arabic.epub', 'generated', 'RTL Arabic EPUB rendering and anchors', 'opens without layout instability'],
+    ['mixed_rtl_ltr_epub', 'epub', 'epub/mixed-rtl-ltr.epub', 'generated', 'mixed script direction anchors', 'anchors remain deterministic'],
+    ['image_heavy_epub', 'epub', 'epub/image-heavy.epub', 'generated_scaled', 'image-heavy EPUB layout pressure', 'reader remains responsive'],
+    ['malformed_spine_epub', 'epub', 'epub/malformed-spine.epub', 'generated_negative', 'spine references missing manifest items', 'canonical producer fails closed or partially recovers safely'],
+    ['broken_toc_epub', 'epub', 'epub/broken-toc.epub', 'generated_negative', 'missing navigation document', 'canonical producer degrades without poisoning manifest'],
+    ['invalid_nav_tree_epub', 'epub', 'epub/invalid-nav-tree.epub', 'generated_negative', 'invalid navigation tree references missing assets', 'navigation index degrades safely'],
+    ['malformed_xhtml_epub', 'epub', 'epub/malformed-xhtml.epub', 'generated_negative', 'dangerously malformed XHTML body', 'canonical producer blocks ready manifest promotion'],
+    ['corrupt_metadata_epub', 'epub', 'epub/corrupt-metadata.epub', 'generated_negative', 'corrupted or missing metadata fields', 'structure generation does not trust metadata blindly'],
+    ['deep_structure_epub', 'epub', 'epub/deep-structure.epub', 'generated_scaled', 'deep EPUB spine and section structure', 'canonical producer remains bounded'],
+    ['massive_epub', 'epub', 'epub/massive.epub', 'generated_scaled', 'massive EPUB preprocessing pressure', 'producer and runtime remain operationally credible'],
+    ['footnote_dense_epub', 'epub', 'epub/footnote-dense.epub', 'generated_scaled', 'footnote dense anchors', 'anchors remain deterministic'],
+    ['annotation_heavy_epub', 'epub', 'epub/annotation-heavy.epub', 'generated_scaled', 'annotation-heavy reading session', 'highlight continuity remains stable'],
+    ['small_pdf', 'pdf', 'pdf/small.pdf', 'generated', 'small PDF baseline', 'opens quickly'],
+    ['large_pdf', 'pdf', 'pdf/large.pdf', 'generated_scaled', 'large PDF scrolling', 'virtualization remains bounded'],
+    ['academic_pdf', 'pdf', 'pdf/academic.pdf', 'generated', 'academic dense PDF', 'navigation remains responsive'],
+    ['scanned_pdf', 'pdf', 'pdf/scanned.pdf', 'generated_scaled', 'scanned image PDF', 'memory remains bounded'],
+    ['arabic_pdf', 'pdf', 'pdf/arabic.pdf', 'generated', 'Arabic PDF', 'opens without crash'],
+    ['image_heavy_pdf', 'pdf', 'pdf/image-heavy.pdf', 'generated_scaled', 'image-heavy PDF', 'survives weak-device proxy'],
+    ['corrupt_pdf', 'pdf', 'pdf/corrupt.pdf', 'generated_negative', 'corrupt PDF negative case', 'fails gracefully'],
+    ['huge_pagecount_pdf', 'pdf', 'pdf/huge-pagecount.pdf', 'generated_scaled', 'huge page-count PDF', 'survival fallback reaches interaction'],
+  ].map(([id, format, assetPath, status, runtimePressure, expectedBehavior]) => ({
+    id,
+    format,
+    assetPath: `public/fixtures/reader-corpus/${assetPath}`,
+    status,
+    runtimePressure,
+    expectedBehavior,
+    budgets: {
+      openMs: id === 'huge_pagecount_pdf' ? 10000 : 3000,
+      firstPageMs: id === 'huge_pagecount_pdf' ? 10000 : 2400,
+      minFps: 45,
+      maxHeapMb: 96,
+    },
+  }));
+
+  fs.writeFileSync(
+    path.join(CORPUS_DIR, 'manifest.json'),
+    `${JSON.stringify({ version: 1, generatedAt: new Date().toISOString(), cases }, null, 2)}\n`
+  );
 }
 
 function addPdfPages(filename, title, pageCount, variant) {
@@ -227,6 +282,44 @@ async function main() {
   });
 
   await writeEpub({
+    filename: 'invalid-nav-tree.epub',
+    title: 'Invalid Navigation Tree EPUB',
+    invalidNavTree: true,
+    chapters: [{ title: 'Invalid Nav', content: chapterXhtml({ title: 'Invalid Nav', body: buildParagraphBody('invalid-nav', 36) }) }],
+  });
+
+  await writeEpub({
+    filename: 'malformed-xhtml.epub',
+    title: 'Malformed XHTML EPUB',
+    chapters: [{ title: 'Malformed XHTML', content: '<html><body><p>Broken paragraph<p>Nested break<p>Still missing closures' }],
+  });
+
+  await writeEpub({
+    filename: 'corrupt-metadata.epub',
+    title: 'Corrupt Metadata EPUB',
+    corruptMetadata: true,
+    chapters: [{ title: 'Readable Despite Metadata', content: chapterXhtml({ title: 'Readable Despite Metadata', body: buildParagraphBody('corrupt-meta', 48) }) }],
+  });
+
+  await writeEpub({
+    filename: 'deep-structure.epub',
+    title: 'Deep Structure EPUB',
+    chapters: Array.from({ length: 64 }, (_, index) => ({
+      title: `Deep Section ${index + 1}`,
+      content: chapterXhtml({ title: `Deep Section ${index + 1}`, body: buildParagraphBody(`deep-${index + 1}`, 18) }),
+    })),
+  });
+
+  await writeEpub({
+    filename: 'massive.epub',
+    title: 'Massive EPUB',
+    chapters: Array.from({ length: 40 }, (_, index) => ({
+      title: `Massive Chapter ${index + 1}`,
+      content: chapterXhtml({ title: `Massive Chapter ${index + 1}`, body: buildParagraphBody(`massive-${index + 1}`, 160) }),
+    })),
+  });
+
+  await writeEpub({
     filename: 'footnote-dense.epub',
     title: 'Footnote Dense EPUB',
     chapters: [
@@ -257,6 +350,7 @@ async function main() {
   addPdfPages('image-heavy.pdf', 'Image Heavy PDF', 48, 'image');
   addPdfPages('huge-pagecount.pdf', 'Huge Pagecount PDF', 220, 'text');
   fs.writeFileSync(path.join(PDF_DIR, 'corrupt.pdf'), 'not a valid pdf\n');
+  writeCorpusManifest();
 
   console.log(`[READER_STRESS_CORPUS] generated fixtures under ${path.relative(ROOT, CORPUS_DIR)}`);
 }

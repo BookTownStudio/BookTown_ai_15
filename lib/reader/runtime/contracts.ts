@@ -93,6 +93,10 @@ export interface ReaderManifestSnapshot {
   stableAnchorMap?: ReaderManifestIndexState;
   navigationIndex?: ReaderManifestIndexState;
   paginationHints?: ReaderManifestIndexState;
+  literaryCoordinateMap?: ReaderManifestIndexState;
+  passageIndex?: ReaderManifestIndexState;
+  annotationIdentityIndex?: ReaderManifestIndexState;
+  literaryMemoryPrimitives?: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 

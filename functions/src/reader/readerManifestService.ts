@@ -68,6 +68,10 @@ export interface ReaderManifestInternal {
   stableAnchorMap: ReaderManifestIndexState;
   navigationIndex: ReaderManifestIndexState;
   paginationHints: ReaderManifestIndexState;
+  literaryCoordinateMap: ReaderManifestIndexState;
+  passageIndex: ReaderManifestIndexState;
+  annotationIdentityIndex: ReaderManifestIndexState;
+  literaryMemoryPrimitives: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 
@@ -88,6 +92,10 @@ export interface ReaderManifestPublic {
   stableAnchorMap: ReaderManifestIndexState;
   navigationIndex: ReaderManifestIndexState;
   paginationHints: ReaderManifestIndexState;
+  literaryCoordinateMap: ReaderManifestIndexState;
+  passageIndex: ReaderManifestIndexState;
+  annotationIdentityIndex: ReaderManifestIndexState;
+  literaryMemoryPrimitives: ReaderManifestIndexState;
   generatedAtMs: number;
 }
 
@@ -166,7 +174,15 @@ async function persistCanonicalEpubIndexes(params: {
   sourceSignatureHash: string;
   manifest: Pick<
     ReaderManifestInternal,
-    "spineMap" | "sectionGraph" | "stableAnchorMap" | "navigationIndex" | "paginationHints"
+    | "spineMap"
+    | "sectionGraph"
+    | "stableAnchorMap"
+    | "navigationIndex"
+    | "paginationHints"
+    | "literaryCoordinateMap"
+    | "passageIndex"
+    | "annotationIdentityIndex"
+    | "literaryMemoryPrimitives"
   >;
   produced: CanonicalEpubPreprocessResult;
 }): Promise<void> {
@@ -199,6 +215,22 @@ async function persistCanonicalEpubIndexes(params: {
       ...base,
       ...params.produced.paginationHints,
     }),
+    docPathToRef(params.manifest.literaryCoordinateMap.docPath).set({
+      ...base,
+      ...params.produced.literaryCoordinateMap,
+    }),
+    docPathToRef(params.manifest.passageIndex.docPath).set({
+      ...base,
+      ...params.produced.passageIndex,
+    }),
+    docPathToRef(params.manifest.annotationIdentityIndex.docPath).set({
+      ...base,
+      ...params.produced.annotationIdentityIndex,
+    }),
+    docPathToRef(params.manifest.literaryMemoryPrimitives.docPath).set({
+      ...base,
+      ...params.produced.literaryMemoryPrimitives,
+    }),
   ]);
 }
 
@@ -220,6 +252,10 @@ function toPublicManifest(manifest: ReaderManifestInternal): ReaderManifestPubli
     stableAnchorMap: manifest.stableAnchorMap,
     navigationIndex: manifest.navigationIndex,
     paginationHints: manifest.paginationHints,
+    literaryCoordinateMap: manifest.literaryCoordinateMap,
+    passageIndex: manifest.passageIndex,
+    annotationIdentityIndex: manifest.annotationIdentityIndex,
+    literaryMemoryPrimitives: manifest.literaryMemoryPrimitives,
     generatedAtMs: manifest.generatedAtMs,
   };
 }
@@ -264,6 +300,10 @@ function sanitizeExistingManifest(
   const stableAnchorMapRaw = input.stableAnchorMap as Record<string, unknown> | undefined;
   const navigationIndexRaw = input.navigationIndex as Record<string, unknown> | undefined;
   const paginationHintsRaw = input.paginationHints as Record<string, unknown> | undefined;
+  const literaryCoordinateMapRaw = input.literaryCoordinateMap as Record<string, unknown> | undefined;
+  const passageIndexRaw = input.passageIndex as Record<string, unknown> | undefined;
+  const annotationIdentityIndexRaw = input.annotationIdentityIndex as Record<string, unknown> | undefined;
+  const literaryMemoryPrimitivesRaw = input.literaryMemoryPrimitives as Record<string, unknown> | undefined;
 
   if (!locationMapRaw || !searchIndexRaw || !highlightAnchorsRaw) {
     return null;
@@ -333,6 +373,19 @@ function sanitizeExistingManifest(
     paginationHintsRaw,
     `reader_pagination_hints/${bookId}`
   );
+  const literaryCoordinateMap = sanitizeIndexState(
+    literaryCoordinateMapRaw,
+    `reader_literary_coordinate_map/${bookId}`
+  );
+  const passageIndex = sanitizeIndexState(passageIndexRaw, `reader_passage_index/${bookId}`);
+  const annotationIdentityIndex = sanitizeIndexState(
+    annotationIdentityIndexRaw,
+    `reader_annotation_identity_index/${bookId}`
+  );
+  const literaryMemoryPrimitives = sanitizeIndexState(
+    literaryMemoryPrimitivesRaw,
+    `reader_literary_memory_primitives/${bookId}`
+  );
 
   return {
     bookId,
@@ -355,6 +408,10 @@ function sanitizeExistingManifest(
     stableAnchorMap,
     navigationIndex,
     paginationHints,
+    literaryCoordinateMap,
+    passageIndex,
+    annotationIdentityIndex,
+    literaryMemoryPrimitives,
     generatedAtMs: Math.trunc(generatedAtMsRaw),
   };
 }
@@ -563,6 +620,26 @@ export async function getOrBuildReaderManifest(params: {
       docPath: `reader_pagination_hints/${bookId}`,
       schemaVersion: "v1",
     },
+    literaryCoordinateMap: {
+      status: "pending",
+      docPath: `reader_literary_coordinate_map/${bookId}`,
+      schemaVersion: "v1",
+    },
+    passageIndex: {
+      status: "pending",
+      docPath: `reader_passage_index/${bookId}`,
+      schemaVersion: "v1",
+    },
+    annotationIdentityIndex: {
+      status: "pending",
+      docPath: `reader_annotation_identity_index/${bookId}`,
+      schemaVersion: "v1",
+    },
+    literaryMemoryPrimitives: {
+      status: "pending",
+      docPath: `reader_literary_memory_primitives/${bookId}`,
+      schemaVersion: "v1",
+    },
     generatedAtMs,
   };
 
@@ -588,6 +665,10 @@ export async function getOrBuildReaderManifest(params: {
         nextManifest.stableAnchorMap.status = "ready";
         nextManifest.navigationIndex.status = "ready";
         nextManifest.paginationHints.status = "ready";
+        nextManifest.literaryCoordinateMap.status = "ready";
+        nextManifest.passageIndex.status = "ready";
+        nextManifest.annotationIdentityIndex.status = "ready";
+        nextManifest.literaryMemoryPrimitives.status = "ready";
 
         await persistCanonicalEpubIndexes({
           bookId,
@@ -602,12 +683,18 @@ export async function getOrBuildReaderManifest(params: {
           version,
           locationCount: produced.locationCount,
           spineItemCount: produced.spineMap.itemCount,
+          warningCount: produced.warnings.length,
+          cfiFidelity: produced.cfiFidelity,
+          coordinateCount: produced.literaryCoordinateMap.coordinateCount,
+          passageCount: produced.passageIndex.passageCount,
         });
       } else {
         logger.warn("[READER][CANONICAL_EPUB_PREPROCESS_SKIPPED]", {
           bookId,
           version,
           reason: produced.reason,
+          classification: produced.classification,
+          warningCount: produced.warnings.length,
         });
       }
     } catch (error) {
