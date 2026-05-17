@@ -1,4 +1,9 @@
 import { type EditorSnapshot } from './editorRuntimeTypes.ts';
+import {
+  normalizeEditorSnapshotForTransport,
+  normalizeJsonPlainValue,
+  normalizeWriteOperationForTransport,
+} from './writeTransportSerialization.ts';
 
 export type WriteOperationStatus = 'pending' | 'applying' | 'applied' | 'failed';
 
@@ -83,18 +88,19 @@ export interface WriteProjectOperationAckResult {
 export function toWriteProjectOperationAckInput(
   operation: WriteChunkSnapshotOperation
 ): WriteProjectOperationAckInput {
+  const transportOperation = normalizeWriteOperationForTransport(operation);
   return {
     schemaVersion: 1,
-    operationId: operation.operationId,
-    type: operation.type,
-    sequence: operation.sequence,
-    createdAt: operation.createdAt,
-    updatedAt: operation.updatedAt,
-    expectedRevision: operation.expectedRevision,
-    affectedChunkIds: operation.affectedChunkIds,
-    mountedSectionIds: operation.mountedSectionIds,
-    causality: operation.causality,
-    convergenceHash: operation.convergenceHash,
+    operationId: transportOperation.operationId,
+    type: transportOperation.type,
+    sequence: transportOperation.sequence,
+    createdAt: transportOperation.createdAt,
+    updatedAt: transportOperation.updatedAt,
+    expectedRevision: transportOperation.expectedRevision,
+    affectedChunkIds: transportOperation.affectedChunkIds,
+    mountedSectionIds: transportOperation.mountedSectionIds,
+    causality: transportOperation.causality,
+    convergenceHash: transportOperation.convergenceHash,
   };
 }
 
@@ -112,7 +118,7 @@ function stableStringify(value: unknown): string {
 }
 
 export function createWriteOperationHash(value: unknown): string {
-  const source = stableStringify(value);
+  const source = stableStringify(normalizeJsonPlainValue(value));
   let hash = 2166136261;
   for (let index = 0; index < source.length; index += 1) {
     hash ^= source.charCodeAt(index);
@@ -127,15 +133,16 @@ export function createChunkSnapshotOperationId(params: {
   expectedRevision?: number;
   snapshot: EditorSnapshot;
 }): string {
+  const snapshot = normalizeEditorSnapshotForTransport(params.snapshot);
   return `writeop_${createWriteOperationHash({
     uid: params.uid,
     projectId: params.projectId,
     expectedRevision: params.expectedRevision ?? null,
-    content: params.snapshot.content,
-    contentDoc: params.snapshot.contentDoc,
-    titleEn: params.snapshot.titleEn,
-    titleAr: params.snapshot.titleAr,
-    affectedChunkIds: params.snapshot.affectedChunkIds ?? [],
-    mountedSectionIds: params.snapshot.mountedSectionIds ?? [],
+    content: snapshot.content,
+    contentDoc: snapshot.contentDoc,
+    titleEn: snapshot.titleEn,
+    titleAr: snapshot.titleAr,
+    affectedChunkIds: snapshot.affectedChunkIds ?? [],
+    mountedSectionIds: snapshot.mountedSectionIds ?? [],
   })}`;
 }

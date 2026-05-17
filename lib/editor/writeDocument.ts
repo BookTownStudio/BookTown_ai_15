@@ -1,4 +1,5 @@
 import { WriteContentDoc, WriteDirection } from '../../types/entities.ts';
+import { normalizeWriteContentDocForTransport } from './writeTransportSerialization.ts';
 
 const ARABIC_SCRIPT_REGEX = /[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]/;
 const LATIN_SCRIPT_REGEX = /[A-Za-z]/;
@@ -54,12 +55,12 @@ export function toWriteContentDoc(
   plainText: string
 ): WriteContentDoc {
   const content = Array.isArray(tiptapJson.content) ? tiptapJson.content : [];
-  return {
+  return normalizeWriteContentDocForTransport({
     version: 1,
     type: 'doc',
     content: content as WriteContentDoc['content'],
     plainText: plainText.slice(0, 2_000_000),
-  };
+  }) as WriteContentDoc;
 }
 
 export function isWriteContentDoc(value: unknown): value is WriteContentDoc {

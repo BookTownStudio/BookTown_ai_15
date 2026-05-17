@@ -17,6 +17,10 @@ import { writeEditorTelemetry } from './writeEditorTelemetry.ts';
 import { requestWriteOperationCompaction } from './writeOperationRetention.ts';
 import { getWriteRuntimeDeviceId } from './writeRuntimeIdentity.ts';
 import { getWriteRuntimeSessionCoordinator } from './writeRuntimeSessionCoordinator.ts';
+import {
+  normalizeEditorSnapshotForTransport,
+  normalizeWriteOperationForTransport,
+} from './writeTransportSerialization.ts';
 
 export type ApplyWriteOperation = (
   operation: WriteChunkSnapshotOperation
@@ -60,7 +64,8 @@ export const writeOperationalSyncEngine = {
   async createCommittedChunkSnapshotOperation(params: EnqueueSnapshotOperationParams & {
     serverRevision?: number;
   }): Promise<WriteChunkSnapshotOperation> {
-    const operationId = createChunkSnapshotOperationId(params);
+    const snapshot = normalizeEditorSnapshotForTransport(params.snapshot);
+    const operationId = createChunkSnapshotOperationId({ ...params, snapshot });
     const now = Date.now();
     const sequence = await allocateRuntimeSequence(params.uid, params.projectId);
     const pendingOperations = await indexedDbOperationalStore.getPending(params.uid, params.projectId);
@@ -81,9 +86,9 @@ export const writeOperationalSyncEngine = {
         createdAt: now,
         updatedAt: now,
         expectedRevision: params.expectedRevision,
-        snapshot: params.snapshot,
-        affectedChunkIds: params.snapshot.affectedChunkIds,
-        mountedSectionIds: params.snapshot.mountedSectionIds,
+        snapshot,
+        affectedChunkIds: snapshot.affectedChunkIds,
+        mountedSectionIds: snapshot.mountedSectionIds,
         attempts: 0,
       }),
       baseRevision: params.expectedRevision,
@@ -100,9 +105,9 @@ export const writeOperationalSyncEngine = {
       createdAt: now,
       updatedAt: now,
       expectedRevision: params.expectedRevision,
-      snapshot: params.snapshot,
-      affectedChunkIds: params.snapshot.affectedChunkIds,
-      mountedSectionIds: params.snapshot.mountedSectionIds,
+      snapshot,
+      affectedChunkIds: snapshot.affectedChunkIds,
+      mountedSectionIds: snapshot.mountedSectionIds,
       causality,
       convergenceHash: undefined,
       conflictState: 'none',
@@ -111,7 +116,7 @@ export const writeOperationalSyncEngine = {
       serverRevision: params.serverRevision,
     };
     operation.convergenceHash = createOperationConvergenceHash(operation);
-    return operation;
+    return normalizeWriteOperationForTransport(operation);
   },
 
   async enqueueChunkSnapshotOperation(
@@ -120,7 +125,8 @@ export const writeOperationalSyncEngine = {
     const finish = writeEditorTelemetry.startTimer('sync.operationEnqueue', {
       projectId: params.projectId,
     });
-    const operationId = createChunkSnapshotOperationId(params);
+    const snapshot = normalizeEditorSnapshotForTransport(params.snapshot);
+    const operationId = createChunkSnapshotOperationId({ ...params, snapshot });
     const existing = await indexedDbOperationalStore.get(operationId);
     if (existing?.type === 'chunk_snapshot_save') {
       writeEditorTelemetry.log('sync', 'operation_enqueue_deduped', {
@@ -152,9 +158,9 @@ export const writeOperationalSyncEngine = {
         createdAt: now,
         updatedAt: now,
         expectedRevision: params.expectedRevision,
-        snapshot: params.snapshot,
-        affectedChunkIds: params.snapshot.affectedChunkIds,
-        mountedSectionIds: params.snapshot.mountedSectionIds,
+        snapshot,
+        affectedChunkIds: snapshot.affectedChunkIds,
+        mountedSectionIds: snapshot.mountedSectionIds,
         attempts: 0,
       }),
       baseRevision: params.expectedRevision,
@@ -171,33 +177,34 @@ export const writeOperationalSyncEngine = {
       createdAt: now,
       updatedAt: now,
       expectedRevision: params.expectedRevision,
-      snapshot: params.snapshot,
-      affectedChunkIds: params.snapshot.affectedChunkIds,
-      mountedSectionIds: params.snapshot.mountedSectionIds,
+      snapshot,
+      affectedChunkIds: snapshot.affectedChunkIds,
+      mountedSectionIds: snapshot.mountedSectionIds,
       causality,
       conflictState: 'none',
       attempts: 0,
     };
     operation.convergenceHash = createOperationConvergenceHash(operation);
 
-    await indexedDbOperationalStore.put(operation);
+    const transportOperation = normalizeWriteOperationForTransport(operation);
+    await indexedDbOperationalStore.put(transportOperation);
     const pendingCount = await indexedDbOperationalStore.countPending(params.uid, params.projectId);
     writeEditorTelemetry.log('sync', 'operation_enqueued', {
       projectId: params.projectId,
       operationId,
-      sequence: operation.sequence,
+      sequence: transportOperation.sequence,
       pendingCount,
-      affectedChunkCount: operation.affectedChunkIds?.length ?? 0,
-      mountedSectionCount: operation.mountedSectionIds?.length ?? 0,
-      parentCount: operation.causality?.parents.length ?? 0,
-      vectorClockWidth: Object.keys(operation.causality?.vectorClock ?? {}).length,
+      affectedChunkCount: transportOperation.affectedChunkIds?.length ?? 0,
+      mountedSectionCount: transportOperation.mountedSectionIds?.length ?? 0,
+      parentCount: transportOperation.causality?.parents.length ?? 0,
+      vectorClockWidth: Object.keys(transportOperation.causality?.vectorClock ?? {}).length,
     }, 'debug');
     writeEditorTelemetry.gauge('sync.pendingOperationCount', pendingCount);
-    writeEditorTelemetry.gauge('sync.operationLineageParentCount', operation.causality.parents.length);
-    writeEditorTelemetry.gauge('sync.operationVectorClockWidth', Object.keys(operation.causality.vectorClock).length);
+    writeEditorTelemetry.gauge('sync.operationLineageParentCount', transportOperation.causality?.parents.length ?? 0);
+    writeEditorTelemetry.gauge('sync.operationVectorClockWidth', Object.keys(transportOperation.causality?.vectorClock ?? {}).length);
     writeEditorTelemetry.increment('sync.offlineMutation');
     finish();
-    return operation;
+    return transportOperation;
   },
 
   async replayPendingOperations(params: {

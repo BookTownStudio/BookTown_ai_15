@@ -30,6 +30,10 @@ import type {
   WriteProjectOperationAckInput,
   WriteProjectOperationAckResult,
 } from '../lib/editor/writeOperationalTypes.ts';
+import {
+  normalizeEditorSnapshotForTransport,
+  normalizeJsonPlainValue,
+} from '../lib/editor/writeTransportSerialization.ts';
 
 type CallableEnvelope<T> =
   | { success: true; data: T }
@@ -286,19 +290,23 @@ export const ManuscriptRepository = {
       throw new Error('Partial manuscript save requires an authoritative section scope.');
     }
     const startedAt = Date.now();
+    const snapshot = normalizeEditorSnapshotForTransport(params.snapshot);
+    const operation = params.operation
+      ? normalizeJsonPlainValue(params.operation)
+      : undefined;
     const result = await callChunkMutation({
       projectId: params.projectId,
       revision: params.revision,
       source: params.source,
       authority,
       authoritativeSectionIds: scopedSectionIds,
-      affectedChunkIds: params.affectedChunkIds ?? params.snapshot.affectedChunkIds,
-      operation: params.operation,
+      affectedChunkIds: params.affectedChunkIds ?? snapshot.affectedChunkIds,
+      operation,
       snapshot: {
-        wordCount: params.snapshot.wordCount,
-        contentDoc: params.snapshot.contentDoc,
-        totalSectionCount: params.snapshot.totalSectionCount,
-        totalChunkCount: params.snapshot.totalChunkCount,
+        wordCount: snapshot.wordCount,
+        contentDoc: snapshot.contentDoc,
+        totalSectionCount: snapshot.totalSectionCount,
+        totalChunkCount: snapshot.totalChunkCount,
       },
     });
     const metadata = result.metadata;

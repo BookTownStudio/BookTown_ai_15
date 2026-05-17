@@ -23,6 +23,7 @@ import {
 } from './writeOperationalTypes.ts';
 import { writeEditorTelemetry } from './writeEditorTelemetry.ts';
 import { requestWriteOperationCompaction } from './writeOperationRetention.ts';
+import { normalizeWriteOperationForTransport } from './writeTransportSerialization.ts';
 
 const MAX_LIVE_OPERATION_BATCH = 80;
 const LIVE_OPERATION_PRESSURE_THRESHOLD = 70;
@@ -129,21 +130,26 @@ export const writeCollaborationTransport = {
       throw new Error('Collaboration operation requires causality metadata.');
     }
 
-    const convergenceHash = params.operation.convergenceHash ?? createOperationConvergenceHash(params.operation);
+    const transportOperation = normalizeWriteOperationForTransport(params.operation);
+    const causality = transportOperation.causality;
+    if (!causality) {
+      throw new Error('Collaboration operation requires transport-safe causality metadata.');
+    }
+    const convergenceHash = transportOperation.convergenceHash ?? createOperationConvergenceHash(transportOperation);
     const record: WriteCollaborationOperationRecord = {
       schemaVersion: 1,
       projectId: params.projectId,
       ownerUid: params.uid,
-      operationId: params.operation.operationId,
-      actorId: params.operation.causality.actorId,
-      deviceId: params.operation.causality.deviceId,
+      operationId: transportOperation.operationId,
+      actorId: causality.actorId,
+      deviceId: causality.deviceId,
       createdAt: Date.now(),
-      payloadBytes: byteLength(params.operation),
+      payloadBytes: byteLength(transportOperation),
       operation: {
-        ...params.operation,
+        ...transportOperation,
         convergenceHash,
       },
-      causality: params.operation.causality,
+      causality,
       convergenceHash,
     };
 

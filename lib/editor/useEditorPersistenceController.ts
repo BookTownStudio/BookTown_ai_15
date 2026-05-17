@@ -31,6 +31,7 @@ import {
     type WriteProjectOperationAckResult,
     toWriteProjectOperationAckInput,
 } from './writeOperationalTypes.ts';
+import { normalizeEditorSnapshotForTransport } from './writeTransportSerialization.ts';
 
 type AutosaveProject = (variables: {
     projectId: string;
@@ -250,14 +251,15 @@ export function useEditorPersistenceController({
         snapshot: EditorSnapshot,
         options?: { expectedRevision?: number; draftReason?: WriteDraftReason }
     ): Promise<boolean> => {
+        const transportSnapshot = normalizeEditorSnapshotForTransport(snapshot);
         if (!uid || !projectId || projectId === 'new' || authorityStatus !== 'persistent') {
             return false;
         }
 
         if (isOffline) {
-            persistLocalDraft(snapshot, options?.draftReason || 'offline');
+            persistLocalDraft(transportSnapshot, options?.draftReason || 'offline');
             await enqueueOfflineSnapshotOperation(
-                snapshot,
+                transportSnapshot,
                 options?.expectedRevision ?? currentRevisionRef.current ?? 1
             );
             setSaveIssue('offline');
@@ -273,7 +275,7 @@ export function useEditorPersistenceController({
                 hasExpectedRevision: typeof options?.expectedRevision === 'number',
             }, 'debug');
             queuedSnapshotRef.current = {
-                snapshot,
+                snapshot: transportSnapshot,
                 expectedRevision: options?.expectedRevision,
             };
             return activeSavePromiseRef.current.then(async () => {
@@ -305,11 +307,11 @@ export function useEditorPersistenceController({
                         ? {
                             titleEn: snapshot.titleEn,
                             titleAr: snapshot.titleAr,
-                            ...(snapshot.isPartialManuscript ? {} : { wordCount: snapshot.wordCount }),
+                            ...(transportSnapshot.isPartialManuscript ? {} : { wordCount: transportSnapshot.wordCount }),
                             ...(cursorMemory ?? {}),
                         }
                         : {
-                            ...snapshot,
+                            ...transportSnapshot,
                             ...(cursorMemory ?? {}),
                         },
                 });
@@ -318,12 +320,12 @@ export function useEditorPersistenceController({
                         uid,
                         projectId,
                         expectedRevision: operationExpectedRevision,
-                        snapshot,
+                        snapshot: transportSnapshot,
                     })
                     : null;
                 const manuscriptMetadata = saveManuscriptSnapshot
                     ? await saveManuscriptSnapshot(
-                        snapshot,
+                        transportSnapshot,
                         result.revision,
                         committedOperation ? toWriteProjectOperationAckInput(committedOperation) : undefined
                     )
@@ -341,7 +343,7 @@ export function useEditorPersistenceController({
                 const networkMs = getPerfNow() - networkStartedAt;
 
                 currentRevisionRef.current = finalResult.revision;
-                lastConfirmedSnapshotRef.current = snapshot;
+                lastConfirmedSnapshotRef.current = transportSnapshot;
                 if (onLocalOperationCommitted && committedOperation) {
                     await onLocalOperationCommitted({
                         ...committedOperation,
@@ -363,16 +365,16 @@ export function useEditorPersistenceController({
             } catch (error) {
                 if (isRevisionMismatchError(error)) {
                     setSaveIssue('conflict');
-                    persistLocalDraft(snapshot, options?.draftReason || 'conflict');
+                    persistLocalDraft(transportSnapshot, options?.draftReason || 'conflict');
                     writeEditorTelemetry.autosaveFailure('conflict', getPerfNow() - operationStartedAt);
                     return false;
                 }
 
                 if (isOfflineWriteError(error)) {
                     setSaveIssue('offline');
-                    persistLocalDraft(snapshot, options?.draftReason || 'offline');
+                    persistLocalDraft(transportSnapshot, options?.draftReason || 'offline');
                     await enqueueOfflineSnapshotOperation(
-                        snapshot,
+                        transportSnapshot,
                         options?.expectedRevision ?? currentRevisionRef.current ?? 1
                     );
                     writeEditorTelemetry.autosaveFailure('offline', getPerfNow() - operationStartedAt);
@@ -381,7 +383,7 @@ export function useEditorPersistenceController({
 
                 console.error('[WRITE][AUTOSAVE_FAILED]', error);
                 setSaveIssue('error');
-                persistLocalDraft(snapshot, options?.draftReason || 'error');
+                persistLocalDraft(transportSnapshot, options?.draftReason || 'error');
                 writeEditorTelemetry.autosaveFailure(
                     error instanceof Error ? error.message : 'error',
                     getPerfNow() - operationStartedAt
@@ -444,19 +446,20 @@ export function useEditorPersistenceController({
         const applyOperation = async (
             operation: WriteChunkSnapshotOperation
         ): Promise<{ revision: number; updatedAt?: string }> => {
+            const operationSnapshot = normalizeEditorSnapshotForTransport(operation.snapshot);
             const cursorMemory = editor ? captureCursorMemory(editor) : null;
             const baseResult = await autosaveAsync({
                 projectId,
                 expectedRevision: currentRevisionRef.current ?? operation.expectedRevision ?? 1,
                 updates: {
-                    titleEn: operation.snapshot.titleEn,
-                    titleAr: operation.snapshot.titleAr,
-                    ...(operation.snapshot.isPartialManuscript ? {} : { wordCount: operation.snapshot.wordCount }),
+                    titleEn: operationSnapshot.titleEn,
+                    titleAr: operationSnapshot.titleAr,
+                    ...(operationSnapshot.isPartialManuscript ? {} : { wordCount: operationSnapshot.wordCount }),
                     ...(cursorMemory ?? {}),
                 },
             });
             const manuscriptMetadata = await saveManuscriptSnapshot(
-                operation.snapshot,
+                operationSnapshot,
                 baseResult.revision,
                 toWriteProjectOperationAckInput(operation)
             );
@@ -470,7 +473,7 @@ export function useEditorPersistenceController({
                 : baseResult;
 
             currentRevisionRef.current = finalResult.revision;
-            lastConfirmedSnapshotRef.current = operation.snapshot;
+            lastConfirmedSnapshotRef.current = operationSnapshot;
             if (onLocalOperationCommitted) {
                 await onLocalOperationCommitted({
                     ...operation,

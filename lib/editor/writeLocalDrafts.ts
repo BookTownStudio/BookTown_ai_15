@@ -1,5 +1,6 @@
 import { WriteContentDoc } from '../../types/entities.ts';
 import { writeEditorTelemetry } from './writeEditorTelemetry.ts';
+import { normalizeEditorSnapshotForTransport, normalizeJsonPlainValue } from './writeTransportSerialization.ts';
 
 export type WriteDraftReason =
   | 'unsaved'
@@ -76,21 +77,25 @@ export const writeLocalDrafts = {
   },
 
   save(record: WriteDraftRecord): void {
-    const serialized = JSON.stringify(record);
+    const transportRecord = normalizeJsonPlainValue({
+      ...record,
+      snapshot: normalizeEditorSnapshotForTransport(record.snapshot),
+    }) as WriteDraftRecord;
+    const serialized = JSON.stringify(transportRecord);
     writeEditorTelemetry.recordSnapshotSizes({
-      localDraft: record,
-      contentDoc: record.snapshot.contentDoc,
-      html: record.snapshot.content,
+      localDraft: transportRecord,
+      contentDoc: transportRecord.snapshot.contentDoc,
+      html: transportRecord.snapshot.content,
       label: 'editor.localDraft',
     });
     writeEditorTelemetry.log('recovery', 'local_draft_saved', {
-      reason: record.reason,
-      scopeId: record.scopeId,
+      reason: transportRecord.reason,
+      scopeId: transportRecord.scopeId,
       bytes: serialized.length,
     }, 'debug');
 
     try {
-      window.localStorage.setItem(getStorageKey(record.uid, record.scopeId), serialized);
+      window.localStorage.setItem(getStorageKey(transportRecord.uid, transportRecord.scopeId), serialized);
     } catch (error) {
       writeEditorTelemetry.log('recovery', 'local_draft_save_failed', {
         scopeId: record.scopeId,
