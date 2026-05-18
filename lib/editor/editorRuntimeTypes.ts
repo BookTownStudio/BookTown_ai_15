@@ -53,6 +53,45 @@ export function snapshotsEqual(a: EditorSnapshot, b: EditorSnapshot): boolean {
     );
 }
 
+export function hasPartialManuscriptRuntimeMetadata(snapshot: EditorSnapshot): boolean {
+    if (!snapshot.isPartialManuscript) {
+        return true;
+    }
+
+    return (
+        Array.isArray(snapshot.mountedSectionIds) &&
+        snapshot.mountedSectionIds.length > 0 &&
+        typeof snapshot.totalSectionCount === 'number' &&
+        Number.isInteger(snapshot.totalSectionCount) &&
+        snapshot.totalSectionCount >= 0 &&
+        typeof snapshot.totalChunkCount === 'number' &&
+        Number.isInteger(snapshot.totalChunkCount) &&
+        snapshot.totalChunkCount >= 0
+    );
+}
+
+export function mergeAuthoritativeRuntimeMetadata(
+    draftSnapshot: EditorSnapshot,
+    serverSnapshot: EditorSnapshot
+): EditorSnapshot | null {
+    if (!draftSnapshot.isPartialManuscript) {
+        return draftSnapshot;
+    }
+
+    if (!hasPartialManuscriptRuntimeMetadata(serverSnapshot)) {
+        return hasPartialManuscriptRuntimeMetadata(draftSnapshot) ? draftSnapshot : null;
+    }
+
+    return {
+        ...draftSnapshot,
+        isPartialManuscript: true,
+        mountedSectionIds: serverSnapshot.mountedSectionIds,
+        activeSectionId: serverSnapshot.activeSectionId,
+        totalSectionCount: serverSnapshot.totalSectionCount,
+        totalChunkCount: serverSnapshot.totalChunkCount,
+    };
+}
+
 export function snapshotFromProject(project: Project): EditorSnapshot {
     return {
         titleEn: project.titleEn || '',

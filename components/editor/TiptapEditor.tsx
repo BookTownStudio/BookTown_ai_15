@@ -55,6 +55,22 @@ interface TiptapEditorProps {
     langHint?: string;
 }
 
+const getDocContentSignature = (doc?: Pick<WriteContentDoc, 'content'> | null): string => (
+    JSON.stringify(doc?.content || [])
+);
+
+export function shouldApplyExternalEditorContent({
+    currentSignature,
+    incomingSignature,
+    recentlyEmittedSignatures,
+}: {
+    currentSignature: string;
+    incomingSignature: string;
+    recentlyEmittedSignatures: readonly string[];
+}): boolean {
+    return incomingSignature !== currentSignature && !recentlyEmittedSignatures.includes(incomingSignature);
+}
+
 const TiptapEditor: React.FC<TiptapEditorProps> = ({
     content,
     contentDoc,
@@ -70,6 +86,12 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
     const componentMountedAtRef = useRef(
         typeof performance !== 'undefined' ? performance.now() : Date.now()
     );
+    const recentlyEmittedDocSignaturesRef = useRef<string[]>([]);
+
+    const rememberLocalDocEmission = useCallback((signature: string) => {
+        const withoutDuplicate = recentlyEmittedDocSignaturesRef.current.filter((value) => value !== signature);
+        recentlyEmittedDocSignaturesRef.current = [...withoutDuplicate, signature].slice(-20);
+    }, []);
 
     useWriteRenderDiagnostics('TiptapEditor', {
         editable,
@@ -123,6 +145,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
             'editor.toContentDoc',
             () => toWriteContentDoc(contentAsJson, plainText)
         );
+        rememberLocalDocEmission(getDocContentSignature(contentAsDoc));
         const html = writeEditorTelemetry.measure('editor.serializeHtml', () => editorInstance.getHTML());
         const wordCount = writeEditorTelemetry.measure(
             'editor.wordCount',
@@ -148,7 +171,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
             affectedChunkIds: transactionMapping?.affectedChunkIds,
             affectedAnchorIds: transactionMapping?.affectedAnchorIds,
         });
-    }, [buildOutline, onChange]);
+    }, [buildOutline, onChange, rememberLocalDocEmission]);
 
     const editor = useEditor({
         extensions: [
@@ -231,10 +254,22 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         if (!editor) return;
 
         if (contentDoc?.type === 'doc') {
-            const currentContent = JSON.stringify((editor.getJSON() as Record<string, unknown>).content || []);
-            const incomingContent = JSON.stringify(contentDoc.content || []);
-            if (incomingContent !== currentContent) {
-                editor.commands.setContent({ type: 'doc', content: contentDoc.content });
+            const currentContent = getDocContentSignature(editor.getJSON() as Pick<WriteContentDoc, 'content'>);
+            const incomingContent = getDocContentSignature(contentDoc);
+            if (shouldApplyExternalEditorContent({
+                currentSignature: currentContent,
+                incomingSignature: incomingContent,
+                recentlyEmittedSignatures: recentlyEmittedDocSignaturesRef.current,
+            })) {
+                const wasFocused = editor.isFocused;
+                const previousSelection = editor.state.selection;
+                editor.commands.setContent({ type: 'doc', content: contentDoc.content }, false);
+                if (wasFocused) {
+                    const maxPosition = editor.state.doc.content.size;
+                    const from = Math.max(1, Math.min(previousSelection.from, maxPosition));
+                    const to = Math.max(from, Math.min(previousSelection.to, maxPosition));
+                    editor.commands.setTextSelection({ from, to });
+                }
             }
             return;
         }
@@ -242,7 +277,7 @@ const TiptapEditor: React.FC<TiptapEditorProps> = ({
         const currentHtml = editor.getHTML();
         const normalizedIncomingHtml = content || '<p></p>';
         if (currentHtml !== normalizedIncomingHtml) {
-            editor.commands.setContent(normalizedIncomingHtml);
+            editor.commands.setContent(normalizedIncomingHtml, false);
         }
     }, [content, contentDoc, editor]);
 

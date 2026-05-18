@@ -116,6 +116,12 @@ function createChunkHashIndex(chunks: ManuscriptChunkRecord[]): Map<string, Manu
   return index;
 }
 
+function countDraftSectionIds(sections: ManuscriptSectionRecord[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  sections.forEach((section) => counts.set(section.sectionId, (counts.get(section.sectionId) ?? 0) + 1));
+  return counts;
+}
+
 function reconcileSections(params: {
   draft: ChunkedManuscriptDraft;
   existingSections: ManuscriptSectionRecord[];
@@ -123,26 +129,42 @@ function reconcileSections(params: {
   now: string;
 }): {
   sections: ManuscriptSectionRecord[];
-  sectionIdByDraftId: Map<string, string>;
+  sectionIdByDraftIndex: Map<number, string>;
 } {
   const existingById = new Map(params.existingSections.map((section) => [section.sectionId, section]));
   const existingByHash = createSectionHashIndex(params.existingSections);
+  const draftIdCounts = countDraftSectionIds(params.draft.sections);
   const usedExistingSections = new Set<ManuscriptSectionRecord>();
   const usedSectionIds = new Set<string>();
-  const sectionIdByDraftId = new Map<string, string>();
+  const sectionIdByDraftIndex = new Map<number, string>();
 
-  const sections = params.draft.sections.map((section) => {
+  const matchedSections = params.draft.sections.map((section, index) => {
     const sameId = existingById.get(section.sectionId);
+    const draftIdIsDuplicated = (draftIdCounts.get(section.sectionId) ?? 0) > 1;
+    const hasAuthoritativeSectionIdentity = params.draft.sectionIdentityHints[index]?.hasStructuralSectionId === true;
     const matched =
       takeByContentHash(existingByHash, section.contentHash, usedExistingSections) ??
-      (sameId && !usedExistingSections.has(sameId) ? sameId : null);
+      (
+        sameId &&
+        !usedExistingSections.has(sameId) &&
+        (!draftIdIsDuplicated || hasAuthoritativeSectionIdentity)
+          ? sameId
+          : null
+      );
     if (matched) {
       usedExistingSections.add(matched);
+      usedSectionIds.add(matched.sectionId);
     }
+    return matched;
+  });
+
+  const sections = params.draft.sections.map((section, index) => {
+    const matched = matchedSections[index];
+
     const sectionId = matched
-      ? createCollisionSafeId(matched.sectionId, usedSectionIds)
+      ? matched.sectionId
       : createCollisionSafeId(section.sectionId, usedSectionIds);
-    sectionIdByDraftId.set(section.sectionId, sectionId);
+    sectionIdByDraftIndex.set(index, sectionId);
     const changed =
       !matched ||
       matched.order !== section.order ||
@@ -164,7 +186,7 @@ function reconcileSections(params: {
 
   return {
     sections,
-    sectionIdByDraftId,
+    sectionIdByDraftIndex,
   };
 }
 
@@ -174,7 +196,7 @@ export function reconcileChunkAuthority(
   const now = params.now ?? new Date().toISOString();
   const {
     sections,
-    sectionIdByDraftId,
+    sectionIdByDraftIndex,
   } = reconcileSections({
     draft: params.draft,
     existingSections: params.existingSections,
@@ -189,9 +211,13 @@ export function reconcileChunkAuthority(
   let reusedChunkIdentityCount = 0;
   let newChunkIdentityCount = 0;
 
-  const chunks = params.draft.chunks.map((chunk) => {
-    const sectionId = sectionIdByDraftId.get(chunk.sectionId) ?? chunk.sectionId;
-    const proposedKey = `${sectionId}/${chunk.chunkId}`;
+  const chunks = params.draft.chunks.map((chunk, index) => {
+    const draftSectionIndex = params.draft.chunkSectionIndexes[index] ?? 0;
+    const sectionId = sectionIdByDraftIndex.get(draftSectionIndex) ?? chunk.sectionId;
+    const baseProposedChunkId = chunk.sectionId === sectionId
+      ? chunk.chunkId
+      : `${sectionId}_chunk_${String(chunk.order + 1).padStart(4, '0')}`;
+    const proposedKey = `${sectionId}/${baseProposedChunkId}`;
     const sameKey = existingChunkByKey.get(proposedKey);
     const matched =
       takeByContentHash(existingChunkByHash, chunk.contentHash, usedExistingChunks) ??
@@ -199,7 +225,7 @@ export function reconcileChunkAuthority(
     if (matched) {
       usedExistingChunks.add(matched);
     }
-    const baseChunkId = matched?.chunkId ?? chunk.chunkId;
+    const baseChunkId = matched?.chunkId ?? baseProposedChunkId;
     const chunkId = createCollisionSafeId(`${sectionId}/${baseChunkId}`, usedChunkKeys).split('/')[1];
     const changed =
       !matched ||
@@ -267,9 +293,13 @@ export function reconcileChunkAuthority(
   )).length;
   const unchangedChunkCount = chunks.length - changedChunks.length;
   const skippedUnaffectedChunkCount = 0;
+  const activeDraftSectionIndex = Math.max(
+    0,
+    params.draft.sections.findIndex((section) => section.sectionId === params.draft.activeSectionId)
+  );
 
   return {
-    activeSectionId: sectionIdByDraftId.get(params.draft.activeSectionId) ?? sections[0]?.sectionId ?? params.draft.activeSectionId,
+    activeSectionId: sectionIdByDraftIndex.get(activeDraftSectionIndex) ?? sections[0]?.sectionId ?? params.draft.activeSectionId,
     sections,
     chunks,
     sectionUpserts,

@@ -143,6 +143,14 @@ export const createWriteProject = onCall({ cors: true }, async (request) => {
       : {}),
     isPublished: false,
     revision: 1,
+    manuscriptStorage: {
+      version: 1,
+      mode: "chunked" as const,
+      latestRevision: 1,
+      sectionCount: 0,
+      chunkCount: 0,
+      updatedAt: isoNow,
+    },
     
     // Timestamps (Authoritative Server Source)
     createdAt: now,

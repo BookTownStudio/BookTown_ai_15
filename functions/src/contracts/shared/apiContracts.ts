@@ -1032,6 +1032,9 @@ const writeContentNodeSchema: z.ZodType<unknown> = z.lazy(() =>
           dir: z.enum(["ltr", "rtl"]).optional(),
           langManual: z.boolean().optional(),
           journalEntryDate: z.string().min(1).max(64).optional(),
+          btAnchorId: z.string().min(1).max(128).optional(),
+          btSectionId: z.string().min(1).max(120).optional(),
+          btChunkId: z.string().min(1).max(120).optional(),
         })
         .strict()
         .optional(),
@@ -1194,6 +1197,14 @@ const writeChunkMutationRequestSchema = z
     authoritativeSectionIds: z.array(z.string().min(1).max(120)).max(128).optional(),
     affectedChunkIds: z.array(z.string().min(1).max(120)).max(256).optional(),
     operation: writeProjectOperationAckInputSchema.optional(),
+    metadata: z
+      .object({
+        title: z.string().max(180).optional(),
+        titleEn: z.string().max(180).optional(),
+        titleAr: z.string().max(180).optional(),
+      })
+      .strict()
+      .optional(),
     snapshot: z
       .object({
         wordCount: z.number().int().nonnegative(),
@@ -1228,6 +1239,20 @@ const writeChunkMutationAckResultSchema = writeProjectOperationAckResultSchema.e
 const writeChunkMutationResponseSchema = z
   .object({
     metadata: manuscriptStorageMetadataSchema,
+    projectPatch: z
+      .object({
+        title: z.string().max(180).optional(),
+        titleEn: z.string().max(180).optional(),
+        titleAr: z.string().max(180).optional(),
+        updatedAt: z.string().min(1).max(128),
+        revision: z.number().int().positive(),
+        wordCount: z.number().int().nonnegative(),
+        activeSectionId: z.string().min(1).max(120).optional(),
+        manuscriptStorage: manuscriptStorageMetadataSchema,
+      })
+      .strict(),
+    revision: z.number().int().positive(),
+    updatedAt: z.string().min(1).max(128),
     mutationAck: writeChunkMutationAckResultSchema.optional(),
   })
   .strict();
@@ -4083,6 +4108,7 @@ export const apiContracts = {
           typeAr: z.string().min(1),
           isPublished: z.boolean(),
           revision: z.number().int().positive(),
+          manuscriptStorage: manuscriptStorageMetadataSchema,
           source: z.string().min(1),
           version: z.number().int().positive(),
           createdAt: z.string().min(1),

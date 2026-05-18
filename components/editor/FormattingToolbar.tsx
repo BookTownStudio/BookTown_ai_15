@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils.ts';
 import { ChevronDownIcon } from '../icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import LiteraryShell from '../layout/LiteraryShell.tsx';
-import { createChapterBlockNodes, getChapterBlockParagraphSelectionOffset } from '../../lib/editor/chapterNodes.ts';
+import { createChapterBlockNodes } from '../../lib/editor/chapterNodes.ts';
 import { writeEditorTelemetry } from '../../lib/editor/writeEditorTelemetry.ts';
 import { useWriteRenderDiagnostics } from '../../lib/editor/useWriteRenderDiagnostics.ts';
 
@@ -21,6 +21,24 @@ const AlignJustifyIcon = (props: React.SVGProps<SVGSVGElement>) => (
         <line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>
     </svg>
 );
+
+function findFirstParagraphTextPosition(editor: Editor, from: number): number | null {
+    let paragraphPosition: number | null = null;
+    editor.state.doc.descendants((node, pos) => {
+        if (paragraphPosition !== null) {
+            return false;
+        }
+        if (pos < from) {
+            return true;
+        }
+        if (node.type.name === 'paragraph') {
+            paragraphPosition = pos + 1;
+            return false;
+        }
+        return true;
+    });
+    return paragraphPosition;
+}
 
 interface FormattingToolbarProps {
     editor: Editor | null;
@@ -123,8 +141,10 @@ const FormattingToolbar: React.FC<FormattingToolbarProps> = ({
                 return;
             }
 
-            const paragraphSelection = insertFrom + getChapterBlockParagraphSelectionOffset(chapterNodes);
-            editor.chain().focus().setTextSelection(paragraphSelection).run();
+            const paragraphSelection = findFirstParagraphTextPosition(editor, insertFrom);
+            if (paragraphSelection !== null) {
+                editor.chain().focus().setTextSelection(paragraphSelection).run();
+            }
         });
     };
 

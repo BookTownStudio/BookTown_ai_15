@@ -41,14 +41,265 @@ type CallableEnvelope<T> =
 
 type ChunkMutationResult = {
   metadata: ManuscriptStorageMetadata;
+  projectPatch: Partial<Project> & {
+    revision: number;
+    updatedAt: string;
+    wordCount: number;
+    manuscriptStorage: ManuscriptStorageMetadata;
+  };
+  revision: number;
+  updatedAt: string;
   mutationAck?: WriteProjectOperationAckResult & {
     chunkWriteCount: number;
     sectionWriteCount: number;
   };
 };
 
+type ChunkMutationRequest = {
+  projectId: string;
+  revision: number;
+  source: 'autosave' | 'migration' | 'publish' | 'manual';
+  authority: ManuscriptSaveAuthority;
+  authoritativeSectionIds?: string[];
+  affectedChunkIds?: string[];
+  operation?: WriteProjectOperationAckInput;
+  metadata?: {
+    title?: string;
+    titleEn?: string;
+    titleAr?: string;
+  };
+  snapshot: {
+    wordCount: number;
+    contentDoc: WriteContentDoc;
+    totalSectionCount?: number;
+    totalChunkCount?: number;
+  };
+};
+
+type StructuralPayloadSnapshot = {
+  topLevelKeys: string[];
+  nestedKeys: string[];
+  undefinedPaths: string[];
+  nullPaths: string[];
+  enumValues: Record<string, unknown>;
+  payloadHash: string;
+};
+
 function getProjectRef(uid: string, projectId: string) {
   return doc(getFirebaseDb(), 'users', uid, 'projects', projectId);
+}
+
+function pathToString(path: readonly (string | number)[]): string {
+  return path.length > 0 ? path.map(String).join('.') : '<root>';
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableStringify(entry)).join(',')}]`;
+  }
+  if (value && typeof value === 'object') {
+    return `{${Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function hashStructuralPayload(value: unknown): string {
+  const source = stableStringify(value);
+  let hash = 2166136261;
+  for (let index = 0; index < source.length; index += 1) {
+    hash ^= source.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function isSensitivePayloadPath(path: readonly (string | number)[]): boolean {
+  const joined = path.map(String).join('.').toLowerCase();
+  return (
+    joined.includes('plaintext') ||
+    joined.includes('prose') ||
+    joined.includes('body') ||
+    joined.endsWith('.content') ||
+    joined.endsWith('.text') ||
+    joined === 'text' ||
+    (joined.includes('.content.') && joined.endsWith('.text'))
+  );
+}
+
+function captureStructuralPayloadSnapshot(payload: unknown): StructuralPayloadSnapshot {
+  const nestedKeys: string[] = [];
+  const undefinedPaths: string[] = [];
+  const nullPaths: string[] = [];
+  const enumValues: Record<string, unknown> = {};
+  const visited = new WeakSet<object>();
+
+  function walk(value: unknown, path: (string | number)[]): unknown {
+    const pathName = pathToString(path);
+    if (value === undefined) {
+      undefinedPaths.push(pathName);
+      return { type: 'undefined' };
+    }
+    if (value === null) {
+      nullPaths.push(pathName);
+      return { type: 'null' };
+    }
+    if (typeof value === 'string') {
+      if (['source', 'authority', 'type', 'status', 'mode'].includes(String(path[path.length - 1]))) {
+        enumValues[pathName] = value;
+      }
+      return isSensitivePayloadPath(path)
+        ? { type: 'string', length: value.length, redacted: true }
+        : { type: 'string', length: value.length };
+    }
+    if (typeof value === 'number' || typeof value === 'boolean') {
+      return { type: typeof value, value };
+    }
+    if (Array.isArray(value)) {
+      nestedKeys.push(`${pathName}[]`);
+      if (isSensitivePayloadPath(path)) {
+        return { type: 'array', length: value.length, redacted: true };
+      }
+      return {
+        type: 'array',
+        length: value.length,
+        sample: value.slice(0, 8).map((entry, index) => walk(entry, [...path, index])),
+      };
+    }
+    if (value && typeof value === 'object') {
+      if (visited.has(value)) {
+        return { type: 'circular' };
+      }
+      visited.add(value);
+      const entries = Object.entries(value as Record<string, unknown>);
+      nestedKeys.push(...entries.map(([key]) => pathToString([...path, key])));
+      if (isSensitivePayloadPath(path)) {
+        return { type: 'object', keys: entries.map(([key]) => key), redacted: true };
+      }
+      return Object.fromEntries(entries.map(([key, entry]) => [key, walk(entry, [...path, key])]));
+    }
+    return { type: typeof value };
+  }
+
+  const structuralProjection = walk(payload, []);
+  const root = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  return {
+    topLevelKeys: Object.keys(root),
+    nestedKeys: nestedKeys.slice(0, 512),
+    undefinedPaths: undefinedPaths.slice(0, 256),
+    nullPaths: nullPaths.slice(0, 256),
+    enumValues,
+    payloadHash: hashStructuralPayload(structuralProjection),
+  };
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === 'string' && entry.trim().length > 0);
+}
+
+function logAutosaveInvariantFailure(projectId: string, reason: string, detail: Record<string, unknown>): void {
+  console.warn('[WRITE][AUTOSAVE_RUNTIME_INVARIANT_FAILURE]', {
+    projectId,
+    reason,
+    ...detail,
+  });
+  writeEditorTelemetry.log('autosave', 'runtime_invariant_failure', {
+    projectId,
+    reason,
+    ...detail,
+  }, 'warn');
+}
+
+function buildChunkMutationRequest(params: {
+  projectId: string;
+  revision: number;
+  source: 'autosave' | 'migration' | 'publish' | 'manual';
+  authority: ManuscriptSaveAuthority;
+  scopedSectionIds: string[];
+  affectedChunkIds?: string[];
+  operation?: WriteProjectOperationAckInput;
+  snapshot: EditorSnapshot;
+}): ChunkMutationRequest {
+  if (!isPositiveInteger(params.revision)) {
+    logAutosaveInvariantFailure(params.projectId, 'invalid_revision', { revision: params.revision });
+    throw new Error('Chunk mutation requires a positive integer revision.');
+  }
+
+  if (!params.snapshot.contentDoc) {
+    logAutosaveInvariantFailure(params.projectId, 'missing_content_doc', {});
+    throw new Error('Chunk mutation requires a content document.');
+  }
+
+  if (!isNonNegativeInteger(params.snapshot.wordCount)) {
+    logAutosaveInvariantFailure(params.projectId, 'invalid_word_count', { wordCount: params.snapshot.wordCount });
+    throw new Error('Chunk mutation requires a non-negative integer word count.');
+  }
+
+  if (params.authority === 'partial') {
+    if (!isStringArray(params.scopedSectionIds) || params.scopedSectionIds.length === 0) {
+      logAutosaveInvariantFailure(params.projectId, 'missing_authoritative_sections', {
+        scopedSectionIds: params.scopedSectionIds,
+      });
+      throw new Error('Partial chunk mutation requires hydrated authoritative sections.');
+    }
+
+    if (!isStringArray(params.affectedChunkIds)) {
+      logAutosaveInvariantFailure(params.projectId, 'missing_affected_chunks', {
+        affectedChunkIds: params.affectedChunkIds,
+      });
+      throw new Error('Partial chunk mutation requires hydrated affected chunk ids.');
+    }
+
+    if (!isNonNegativeInteger(params.snapshot.totalSectionCount) || !isNonNegativeInteger(params.snapshot.totalChunkCount)) {
+      logAutosaveInvariantFailure(params.projectId, 'missing_partial_runtime_counts', {
+        totalSectionCount: params.snapshot.totalSectionCount,
+        totalChunkCount: params.snapshot.totalChunkCount,
+      });
+      throw new Error('Partial chunk mutation requires hydrated manuscript runtime counts.');
+    }
+  }
+
+  if (params.source === 'autosave' && !params.operation) {
+    logAutosaveInvariantFailure(params.projectId, 'missing_operation', {});
+    throw new Error('Autosave chunk mutation requires a distributed operation.');
+  }
+
+  const request: ChunkMutationRequest = {
+    projectId: params.projectId,
+    revision: params.revision,
+    source: params.source,
+    authority: params.authority,
+    ...(params.scopedSectionIds.length > 0 ? { authoritativeSectionIds: params.scopedSectionIds } : {}),
+    ...(params.affectedChunkIds ? { affectedChunkIds: params.affectedChunkIds } : {}),
+    ...(params.operation ? { operation: params.operation } : {}),
+    metadata: {
+      title: params.snapshot.titleEn,
+      titleEn: params.snapshot.titleEn,
+      titleAr: params.snapshot.titleAr,
+    },
+    snapshot: {
+      wordCount: params.snapshot.wordCount,
+      contentDoc: params.snapshot.contentDoc,
+      ...(isNonNegativeInteger(params.snapshot.totalSectionCount)
+        ? { totalSectionCount: params.snapshot.totalSectionCount }
+        : {}),
+      ...(isNonNegativeInteger(params.snapshot.totalChunkCount)
+        ? { totalChunkCount: params.snapshot.totalChunkCount }
+        : {}),
+    },
+  };
+
+  return normalizeJsonPlainValue(request) as ChunkMutationRequest;
 }
 
 function normalizeRecord<T extends { createdAt?: string; updatedAt?: string }>(value: T): T {
@@ -117,6 +368,14 @@ function mapChunk(value: Record<string, unknown>): ManuscriptChunkRecord | null 
 }
 
 async function callChunkMutation(request: Record<string, unknown>): Promise<ChunkMutationResult> {
+  const payloadSnapshot = captureStructuralPayloadSnapshot(request);
+  console.info('[WRITE][CHUNK_MUTATION_PAYLOAD_SNAPSHOT]', {
+    callableName: 'applyWriteChunkMutation',
+    schemaName: 'writeChunkMutationRequestSchema',
+    projectId: request.projectId,
+    revisionId: request.revision,
+    payloadStructure: payloadSnapshot,
+  });
   const callable = httpsCallable<Record<string, unknown>, CallableEnvelope<ChunkMutationResult> | ChunkMutationResult>(
     getFirebaseFunctions(),
     'applyWriteChunkMutation'
@@ -127,7 +386,14 @@ async function callChunkMutation(request: Record<string, unknown>): Promise<Chun
     if ((value as CallableEnvelope<ChunkMutationResult>).success) {
       return (value as { success: true; data: ChunkMutationResult }).data;
     }
-    const error = (value as { success: false; error: { message: string } }).error;
+    const error = (value as { success: false; error: { message: string; code?: string; details?: unknown } }).error;
+    if (error.code === 'INVALID_REQUEST_SCHEMA') {
+      console.error('[WRITE][CHUNK_MUTATION_CONTRACT_REJECTION]', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+      });
+    }
     throw new Error(error.message || 'Chunk mutation failed.');
   }
   return value as ChunkMutationResult;
@@ -274,7 +540,12 @@ export const ManuscriptRepository = {
     authoritativeSectionIds?: string[];
     affectedChunkIds?: string[];
     operation?: WriteProjectOperationAckInput;
-  }): Promise<ManuscriptStorageMetadata> {
+  }): Promise<ManuscriptStorageMetadata & {
+    revision: number;
+    updatedAt: string;
+    projectPatch: ChunkMutationResult['projectPatch'];
+    operationAck?: WriteProjectOperationAckResult;
+  }> {
     const authority = params.authority ?? 'complete';
     const finish = writeEditorTelemetry.startTimer('manuscript.chunkSave', {
       projectId: params.projectId,
@@ -294,21 +565,17 @@ export const ManuscriptRepository = {
     const operation = params.operation
       ? normalizeJsonPlainValue(params.operation)
       : undefined;
-    const result = await callChunkMutation({
+    const request = buildChunkMutationRequest({
       projectId: params.projectId,
       revision: params.revision,
       source: params.source,
       authority,
-      authoritativeSectionIds: scopedSectionIds,
+      scopedSectionIds,
       affectedChunkIds: params.affectedChunkIds ?? snapshot.affectedChunkIds,
       operation,
-      snapshot: {
-        wordCount: snapshot.wordCount,
-        contentDoc: snapshot.contentDoc,
-        totalSectionCount: snapshot.totalSectionCount,
-        totalChunkCount: snapshot.totalChunkCount,
-      },
+      snapshot,
     });
+    const result = await callChunkMutation(request);
     const metadata = result.metadata;
 
     writeEditorTelemetry.log('manuscript', 'chunk_save_completed', {
@@ -336,7 +603,13 @@ export const ManuscriptRepository = {
     }
     writeEditorTelemetry.increment('manuscript.partialSave');
     finish();
-    return metadata;
+    return {
+      ...metadata,
+      revision: result.revision,
+      updatedAt: result.updatedAt,
+      projectPatch: result.projectPatch,
+      operationAck: result.mutationAck,
+    };
   },
 
   async deleteChunkedManuscript(uid: string, projectId: string): Promise<void> {

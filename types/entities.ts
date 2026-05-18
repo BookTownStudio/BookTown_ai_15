@@ -328,6 +328,7 @@ export interface WriteContentNode {
         lang?: string;
         dir?: WriteDirection;
         langManual?: boolean;
+        journalEntryDate?: string;
         btAnchorId?: string;
         btSectionId?: string;
         btChunkId?: string;

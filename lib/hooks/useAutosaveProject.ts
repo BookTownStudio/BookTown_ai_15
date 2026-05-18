@@ -2,7 +2,7 @@
 import { useMutation, useQueryClient } from '../react-query.ts';
 import { useAuth } from '../auth.tsx';
 import { dataService } from '../../services/dataService.ts';
-import { Project } from '../../types/entities.ts';
+import { type ManuscriptStorageMetadata, Project } from '../../types/entities.ts';
 import type { WriteProjectOperationAckInput } from '../editor/writeOperationalTypes.ts';
 import { queryKeys } from '../queryKeys.ts';
 import {
@@ -15,6 +15,34 @@ interface AutosaveVariables {
     expectedRevision?: number;
     updates: Partial<Project>;
     operation?: WriteProjectOperationAckInput;
+    manuscriptStorageMode?: ManuscriptStorageMetadata['mode'];
+}
+
+const CHUNK_NATIVE_BLOCKED_UPDATE_FIELDS = new Set<keyof Project>([
+    'content',
+    'contentDoc',
+    'wordCount',
+    'manuscriptStorage',
+    'activeSectionId',
+]);
+
+export function assertNoChunkNativeManuscriptUpdate(params: {
+    projectId: string;
+    updates: Partial<Project>;
+    manuscriptStorageMode?: ManuscriptStorageMetadata['mode'];
+}): void {
+    if (params.manuscriptStorageMode !== 'chunked' && params.manuscriptStorageMode !== 'hybrid') {
+        return;
+    }
+
+    const blockedFields = Object.keys(params.updates).filter((key): key is keyof Project =>
+        CHUNK_NATIVE_BLOCKED_UPDATE_FIELDS.has(key as keyof Project)
+    );
+    if (blockedFields.length === 0) {
+        return;
+    }
+
+    throw new Error(`[WRITE][DUAL_AUTHORITY_BLOCKED] updateWriteProject cannot persist chunk-native manuscript fields for ${params.projectId}: ${blockedFields.join(',')}`);
 }
 
 export const useAutosaveProject = () => {
@@ -23,7 +51,7 @@ export const useAutosaveProject = () => {
     const uid = user?.uid;
     
     return useMutation({
-        mutationFn: async ({ projectId, expectedRevision, updates, operation }: AutosaveVariables) => {
+        mutationFn: async ({ projectId, expectedRevision, updates, operation, manuscriptStorageMode }: AutosaveVariables) => {
             if (!uid) throw new Error("Not authenticated");
             
             // RULE: AUTOSAVE_HARD_GATE
@@ -32,6 +60,12 @@ export const useAutosaveProject = () => {
                 console.error("[WRITE][BLOCKED_AUTOSAVE] Attempted persistent write to ephemeral ID 'new'. Aborting.");
                 throw new Error("WRITE_PERSISTENCE_VIOLATION: Ephemeral document cannot be autosaved.");
             }
+
+            assertNoChunkNativeManuscriptUpdate({
+                projectId,
+                updates,
+                manuscriptStorageMode,
+            });
 
             writeEditorTelemetry.autosaveAttempt(getWriteTelemetryPayloadBytes({
                 projectId,

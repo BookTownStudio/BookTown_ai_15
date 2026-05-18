@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { apiContracts } from '../../../contracts/apiContracts.ts';
 import { toWriteContentDoc } from '../../../lib/editor/writeDocument.ts';
 import {
   createChunkSnapshotOperationId,
@@ -7,6 +8,7 @@ import {
 } from '../../../lib/editor/writeOperationalTypes.ts';
 import {
   normalizeEditorSnapshotForTransport,
+  normalizeWriteContentDocForTransport,
   normalizeWriteOperationForTransport,
 } from '../../../lib/editor/writeTransportSerialization.ts';
 
@@ -16,6 +18,18 @@ function nullPrototypeAttrs() {
   attrs.btAnchorId = 'anchor_1';
   attrs.btChunkId = 'chunk_1';
   attrs.btSectionId = 'section_1';
+  return attrs;
+}
+
+function nullDefaultAttrs() {
+  const attrs = Object.create(null) as Record<string, unknown>;
+  attrs.lang = 'en';
+  attrs.dir = 'ltr';
+  attrs.langManual = false;
+  attrs.btAnchorId = 'anchor_1';
+  attrs.btChunkId = null;
+  attrs.btSectionId = null;
+  attrs.journalEntryDate = null;
   return attrs;
 }
 
@@ -100,5 +114,38 @@ describe('write transport serialization hygiene', () => {
     expect(attrs.btAnchorId).toBe('anchor_1');
     expect(createWriteOperationHash(operation)).toBe(createWriteOperationHash(normalized));
     expect(JSON.stringify(normalized)).toContain('btSectionId');
+  });
+
+  it('omits ProseMirror null default attrs before callable contract validation', () => {
+    const contentDoc = normalizeWriteContentDocForTransport({
+      version: 1,
+      type: 'doc',
+      content: [
+        {
+          type: 'heading',
+          attrs: nullDefaultAttrs(),
+          content: [{ type: 'text', text: 'Contract-safe heading.' }],
+        },
+      ],
+    });
+
+    const attrs = contentDoc?.content[0]?.attrs as Record<string, unknown>;
+    expect(attrs.btAnchorId).toBe('anchor_1');
+    expect(attrs.langManual).toBe(false);
+    expect('btChunkId' in attrs).toBe(false);
+    expect('btSectionId' in attrs).toBe(false);
+    expect('journalEntryDate' in attrs).toBe(false);
+
+    const result = apiContracts.callable.applyWriteChunkMutation.requestSchema.safeParse({
+      projectId: 'project_1',
+      revision: 2,
+      source: 'autosave',
+      authority: 'complete',
+      snapshot: {
+        wordCount: 2,
+        contentDoc,
+      },
+    });
+    expect(result.success).toBe(true);
   });
 });

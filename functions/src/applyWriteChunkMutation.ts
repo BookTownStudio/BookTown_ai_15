@@ -68,6 +68,16 @@ type OperationAckInput = {
   convergenceHash: string;
 };
 
+type ChunkMutationTraceContext = {
+  uid: string;
+  projectId?: string;
+  source?: SaveSource;
+  authority?: SaveAuthority;
+  clientRevision?: number;
+  serverRevision?: unknown;
+  operation?: OperationAckInput;
+};
+
 const TARGET_CHUNK_BYTES = 120_000;
 const TARGET_CHUNK_NODE_COUNT = 80;
 const MAX_TRANSACTION_WRITES = 430;
@@ -96,6 +106,51 @@ function createHash(value: unknown): string {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function traceChunkMutation(event: string, context: ChunkMutationTraceContext, detail: Record<string, unknown> = {}): void {
+  logger.info(`[WRITE][CHUNK_MUTATION_${event}]`, {
+    uid: context.uid,
+    projectId: context.projectId,
+    source: context.source,
+    authority: context.authority,
+    clientRevision: context.clientRevision,
+    serverRevision: context.serverRevision,
+    operation: context.operation
+      ? {
+          operationId: context.operation.operationId,
+          sequence: context.operation.sequence,
+          expectedRevision: context.operation.expectedRevision,
+          causalitySequence: context.operation.causality.sequence,
+          causalityBaseRevision: context.operation.causality.baseRevision,
+          causalityParentCount: context.operation.causality.parents.length,
+          causalityChunkCount: context.operation.causality.chunkIds.length,
+          vectorClockWidth: Object.keys(context.operation.causality.vectorClock).length,
+          convergenceHash: context.operation.convergenceHash,
+        }
+      : null,
+    ...detail,
+  });
+}
+
+function traceChunkMutationRejection(
+  reason: string,
+  context: ChunkMutationTraceContext,
+  detail: Record<string, unknown> = {}
+): void {
+  logger.warn("[WRITE][CHUNK_MUTATION_SEMANTIC_REJECTION]", {
+    uid: context.uid,
+    projectId: context.projectId,
+    source: context.source,
+    authority: context.authority,
+    clientRevision: context.clientRevision,
+    serverRevision: context.serverRevision,
+    reason,
+    operationId: context.operation?.operationId,
+    operationExpectedRevision: context.operation?.expectedRevision,
+    convergenceHash: context.operation?.convergenceHash,
+    ...detail,
+  });
 }
 
 function normalizeId(value: unknown, max = 128): string | undefined {
@@ -315,6 +370,10 @@ function chunkKey(chunk: Pick<ChunkRecord, "sectionId" | "chunkId">): string {
   return `${chunk.sectionId}/${chunk.chunkId}`;
 }
 
+function createChunkId(sectionId: string, order: number): string {
+  return `${sectionId}_chunk_${String(order + 1).padStart(4, "0")}`;
+}
+
 function createDraft(params: {
   projectId: string;
   contentDoc: WriteContentDoc;
@@ -326,8 +385,13 @@ function createDraft(params: {
   const anchored = ensureStructuralAnchors(params.contentDoc, params.projectId);
   const sections: SectionRecord[] = [];
   const chunks: ChunkRecord[] = [];
+  const chunkSectionIndexes: number[] = [];
+  const sectionIdentityHints: Array<{ hasStructuralSectionId: boolean }> = [];
   splitSections(anchored.content).forEach((sectionDraft, sectionOrder) => {
     const sectionId = dominantId(sectionDraft.nodes, STRUCTURAL_SECTION_ATTR, `section_${String(sectionOrder + 1).padStart(4, "0")}`);
+    sectionIdentityHints.push({
+      hasStructuralSectionId: sectionDraft.nodes.some((node) => Boolean(getAttr(node, STRUCTURAL_SECTION_ATTR))),
+    });
     const sectionChunks = splitChunks(sectionDraft.nodes);
     const sectionHash = createHash(sectionDraft.nodes);
     sections.push({
@@ -369,6 +433,7 @@ function createDraft(params: {
         createdAt: params.now,
         updatedAt: params.now,
       });
+      chunkSectionIndexes.push(sectionOrder);
     });
   });
   const contentHash = createHash({ version: 1, type: "doc", content: chunks.flatMap((chunk) => chunk.contentDoc.content) });
@@ -377,6 +442,8 @@ function createDraft(params: {
     activeSectionId: sections[0]?.sectionId ?? "section_0001",
     sections,
     chunks,
+    chunkSectionIndexes,
+    sectionIdentityHints,
     contentHash,
     snapshot: {
       schemaVersion: 1,
@@ -452,6 +519,148 @@ function sameChunk(a: ChunkRecord, b: ChunkRecord): boolean {
     a.wordCount === b.wordCount && a.contentHash === b.contentHash;
 }
 
+function createCollisionSafeId(baseId: string, usedIds: Set<string>): string {
+  if (!usedIds.has(baseId)) {
+    usedIds.add(baseId);
+    return baseId;
+  }
+
+  let suffix = 2;
+  let candidate = `${baseId}_${suffix}`;
+  while (usedIds.has(candidate)) {
+    suffix += 1;
+    candidate = `${baseId}_${suffix}`;
+  }
+  usedIds.add(candidate);
+  return candidate;
+}
+
+function takeByContentHash<T extends { contentHash: string }>(
+  index: Map<string, T[]>,
+  contentHash: string,
+  used: Set<T>
+): T | null {
+  const candidates = index.get(contentHash) ?? [];
+  const match = candidates.find((candidate) => !used.has(candidate));
+  if (!match) return null;
+  used.add(match);
+  return match;
+}
+
+function createContentHashIndex<T extends { contentHash: string }>(records: T[]): Map<string, T[]> {
+  const index = new Map<string, T[]>();
+  records.forEach((record) => {
+    if (!record.contentHash) return;
+    index.set(record.contentHash, [...(index.get(record.contentHash) ?? []), record]);
+  });
+  return index;
+}
+
+function countDraftSectionIds(sections: SectionRecord[]): Map<string, number> {
+  const counts = new Map<string, number>();
+  sections.forEach((section) => counts.set(section.sectionId, (counts.get(section.sectionId) ?? 0) + 1));
+  return counts;
+}
+
+function reconcileSections(params: {
+  draft: ReturnType<typeof createDraft>;
+  existingSections: SectionRecord[];
+  revision: number;
+  now: string;
+}): {
+  sections: SectionRecord[];
+  sectionIdByDraftIndex: Map<number, string>;
+} {
+  const existingById = new Map(params.existingSections.map((section) => [section.sectionId, section]));
+  const existingByHash = createContentHashIndex(params.existingSections);
+  const draftIdCounts = countDraftSectionIds(params.draft.sections);
+  const usedExistingSections = new Set<SectionRecord>();
+  const usedSectionIds = new Set<string>();
+  const sectionIdByDraftIndex = new Map<number, string>();
+
+  const matchedSections = params.draft.sections.map((section, index) => {
+    const sameId = existingById.get(section.sectionId);
+    const draftIdIsDuplicated = (draftIdCounts.get(section.sectionId) ?? 0) > 1;
+    const hasAuthoritativeSectionIdentity = params.draft.sectionIdentityHints[index]?.hasStructuralSectionId === true;
+    const matched =
+      takeByContentHash(existingByHash, section.contentHash, usedExistingSections) ??
+      (
+        sameId &&
+        !usedExistingSections.has(sameId) &&
+        (!draftIdIsDuplicated || hasAuthoritativeSectionIdentity)
+          ? sameId
+          : null
+      );
+    if (matched) {
+      usedExistingSections.add(matched);
+      usedSectionIds.add(matched.sectionId);
+    }
+    return matched;
+  });
+
+  const sections = params.draft.sections.map((section, index) => {
+    const matched = matchedSections[index];
+
+    const sectionId = matched
+      ? matched.sectionId
+      : createCollisionSafeId(section.sectionId, usedSectionIds);
+    sectionIdByDraftIndex.set(index, sectionId);
+    const changed =
+      !matched ||
+      matched.order !== section.order ||
+      matched.title !== section.title ||
+      matched.kind !== section.kind ||
+      matched.chunkCount !== section.chunkCount ||
+      matched.nodeCount !== section.nodeCount ||
+      matched.wordCount !== section.wordCount ||
+      matched.contentHash !== section.contentHash;
+
+    return {
+      ...section,
+      sectionId,
+      revision: changed ? params.revision : matched?.revision ?? params.revision,
+      createdAt: matched?.createdAt ?? section.createdAt,
+      updatedAt: changed ? params.now : matched?.updatedAt ?? params.now,
+    };
+  });
+
+  return { sections, sectionIdByDraftIndex };
+}
+
+function remapChunkToSection(params: {
+  chunk: ChunkRecord;
+  sectionId: string;
+  chunkId: string;
+  revision: number;
+  now: string;
+  matched?: ChunkRecord | null;
+}): ChunkRecord {
+  const content = params.chunk.contentDoc.content.map((node) => assignChunkIdentity(node, params.sectionId, params.chunkId));
+  const contentDoc: WriteContentDoc = { version: 1, type: "doc", content };
+  const plainText = nodesText(content);
+  const contentHash = createHash(contentDoc);
+  const nextChunk = {
+    ...params.chunk,
+    sectionId: params.sectionId,
+    chunkId: params.chunkId,
+    byteSize: stableStringify(contentDoc).length,
+    plainTextSize: plainText.length,
+    wordCount: countWords(plainText),
+    contentHash,
+    anchorIds: content
+      .map((node) => typeof node.attrs?.[STRUCTURAL_ANCHOR_ATTR] === "string" ? String(node.attrs[STRUCTURAL_ANCHOR_ATTR]) : null)
+      .filter((entry): entry is string => Boolean(entry)),
+    contentDoc,
+  };
+  const changed = !params.matched || !sameChunk(params.matched, nextChunk);
+  return {
+    ...nextChunk,
+    revision: changed ? params.revision : params.matched?.revision ?? params.revision,
+    createdAt: params.matched?.createdAt ?? params.chunk.createdAt,
+    updatedAt: changed ? params.now : params.matched?.updatedAt ?? params.now,
+  };
+}
+
 function reconcile(params: {
   draft: ReturnType<typeof createDraft>;
   existingSections: SectionRecord[];
@@ -461,27 +670,40 @@ function reconcile(params: {
   authoritativeSectionIds: string[];
   now: string;
 }) {
-  const existingSectionsById = new Map(params.existingSections.map((section) => [section.sectionId, section]));
-  const sections = params.draft.sections.map((section) => {
-    const existing = existingSectionsById.get(section.sectionId);
-    const changed = !existing || !sameSection(existing, section);
-    return {
-      ...section,
-      revision: changed ? params.revision : existing.revision,
-      createdAt: existing?.createdAt ?? section.createdAt,
-      updatedAt: changed ? params.now : existing?.updatedAt ?? params.now,
-    };
+  const { sections, sectionIdByDraftIndex } = reconcileSections({
+    draft: params.draft,
+    existingSections: params.existingSections,
+    revision: params.revision,
+    now: params.now,
   });
   const existingChunksByKey = new Map(params.existingChunks.map((chunk) => [chunkKey(chunk), chunk]));
-  const chunks = params.draft.chunks.map((chunk) => {
-    const existing = existingChunksByKey.get(chunkKey(chunk));
-    const changed = !existing || !sameChunk(existing, chunk);
-    return {
-      ...chunk,
-      revision: changed ? params.revision : existing.revision,
-      createdAt: existing?.createdAt ?? chunk.createdAt,
-      updatedAt: changed ? params.now : existing?.updatedAt ?? params.now,
-    };
+  const existingChunksByHash = createContentHashIndex(params.existingChunks);
+  const usedExistingChunks = new Set<ChunkRecord>();
+  const usedChunkKeys = new Set<string>();
+  const chunks = params.draft.chunks.map((chunk, index) => {
+    const draftSectionIndex = params.draft.chunkSectionIndexes[index] ?? 0;
+    const sectionId = sectionIdByDraftIndex.get(draftSectionIndex) ?? chunk.sectionId;
+    const fallbackChunkId = chunk.sectionId === sectionId ? chunk.chunkId : createChunkId(sectionId, chunk.order);
+    const proposedChunkId = fallbackChunkId || createChunkId(sectionId, chunk.order);
+    const proposedKey = `${sectionId}/${proposedChunkId}`;
+    const sameKey = existingChunksByKey.get(proposedKey);
+    const matched =
+      takeByContentHash(existingChunksByHash, chunk.contentHash, usedExistingChunks) ??
+      (sameKey && !usedExistingChunks.has(sameKey) ? sameKey : null);
+    if (matched) {
+      usedExistingChunks.add(matched);
+    }
+    const baseChunkId = matched?.chunkId ?? proposedChunkId;
+    const safeChunkKey = createCollisionSafeId(`${sectionId}/${baseChunkId}`, usedChunkKeys);
+    const chunkId = safeChunkKey.slice(safeChunkKey.indexOf("/") + 1);
+    return remapChunkToSection({
+      chunk,
+      sectionId,
+      chunkId,
+      revision: params.revision,
+      now: params.now,
+      matched,
+    });
   });
   const nextSectionIds = new Set(sections.map((section) => section.sectionId));
   const nextChunkKeys = new Set(chunks.map(chunkKey));
@@ -492,7 +714,7 @@ function reconcile(params: {
     ? new Set(params.existingChunks.map(chunkKey))
     : new Set(params.existingChunks.filter((chunk) => authoritativeSectionSet.has(chunk.sectionId)).map(chunkKey));
   const sectionUpserts = sections.filter((section) => {
-    const existing = existingSectionsById.get(section.sectionId);
+    const existing = params.existingSections.find((entry) => entry.sectionId === section.sectionId);
     return !existing || !sameSection(existing, section);
   });
   const chunkUpserts = chunks.filter((chunk) => {
@@ -550,6 +772,28 @@ function metadataFor(params: {
   };
 }
 
+function normalizeTitleMetadata(value: unknown): { title?: string; titleEn?: string; titleAr?: string } {
+  if (!value || typeof value !== "object") {
+    return {};
+  }
+  const source = value as Record<string, unknown>;
+  const normalize = (entry: unknown): string | undefined => {
+    if (typeof entry !== "string") {
+      return undefined;
+    }
+    const trimmed = entry.trim();
+    return trimmed.length > 180 ? trimmed.slice(0, 180) : trimmed;
+  };
+  const titleEn = normalize(source.titleEn);
+  const titleAr = normalize(source.titleAr);
+  const title = normalize(source.title) ?? titleEn ?? titleAr;
+  return {
+    ...(title ? { title } : {}),
+    ...(titleEn ? { titleEn } : {}),
+    ...(titleAr ? { titleAr } : {}),
+  };
+}
+
 export const applyWriteChunkMutation = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   const uid = caller.uid;
@@ -558,8 +802,55 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
   const revision = typeof data.revision === "number" && Number.isInteger(data.revision) && data.revision > 0 ? data.revision : undefined;
   const source = data.source === "migration" || data.source === "publish" || data.source === "manual" ? data.source : "autosave";
   const authority = data.authority === "complete" ? "complete" : "partial";
-  const operation = data.operation === undefined ? undefined : normalizeOperation(data.operation, uid);
-  if (!projectId || !revision) throw new HttpsError("invalid-argument", "A valid projectId and revision are required.");
+  traceChunkMutation("HANDLER_ENTRY", {
+    uid,
+    projectId,
+    source,
+    authority,
+    clientRevision: revision,
+  }, {
+    rawSource: data.source,
+    rawAuthority: data.authority,
+    topLevelKeys: Object.keys(data),
+    hasOperation: data.operation !== undefined,
+  });
+  let operation: OperationAckInput | undefined;
+  try {
+    operation = data.operation === undefined ? undefined : normalizeOperation(data.operation, uid);
+  } catch (error) {
+    traceChunkMutationRejection("invalid_operation_metadata", {
+      uid,
+      projectId,
+      source,
+      authority,
+      clientRevision: revision,
+    }, {
+      errorCode: error instanceof HttpsError ? error.code : undefined,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
+    throw error;
+  }
+  traceChunkMutation("VALIDATOR_SUCCESS_HANDLER_NORMALIZED", {
+    uid,
+    projectId,
+    source,
+    authority,
+    clientRevision: revision,
+    operation,
+  }, {
+    provenanceClass: source === "migration" ? "migration" : "live_write",
+  });
+  if (!projectId || !revision) {
+    traceChunkMutationRejection("invalid_project_or_revision", {
+      uid,
+      projectId,
+      source,
+      authority,
+      clientRevision: revision,
+      operation,
+    });
+    throw new HttpsError("invalid-argument", "A valid projectId and revision are required.");
+  }
 
   const snapshot = data.snapshot as Record<string, unknown> | undefined;
   const contentDoc = normalizeContentDoc(snapshot?.contentDoc);
@@ -568,12 +859,41 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
     : 0;
   const authoritativeSectionIds = normalizeStringList(data.authoritativeSectionIds, 128, 120);
   const affectedChunkIds = normalizeStringList(data.affectedChunkIds, 256, 120);
+  const titleMetadata = normalizeTitleMetadata(data.metadata);
   if (authority === "partial" && authoritativeSectionIds.length === 0) {
+    traceChunkMutationRejection("partial_missing_authoritative_section_scope", {
+      uid,
+      projectId,
+      source,
+      authority,
+      clientRevision: revision,
+      operation,
+    });
     throw new HttpsError("invalid-argument", "Partial chunk mutation requires an authoritative section scope.");
   }
   if (operation?.expectedRevision && operation.expectedRevision > revision) {
+    traceChunkMutationRejection("operation_expected_revision_ahead_of_client_revision", {
+      uid,
+      projectId,
+      source,
+      authority,
+      clientRevision: revision,
+      operation,
+    });
     throw new HttpsError("failed-precondition", "Chunk mutation operation is stale for the requested revision.");
   }
+  traceChunkMutation("AUTHORITY_PROVENANCE_CHECK", {
+    uid,
+    projectId,
+    source,
+    authority,
+    clientRevision: revision,
+    operation,
+  }, {
+    authoritativeSectionCount: authoritativeSectionIds.length,
+    affectedChunkCount: affectedChunkIds.length,
+    migrationWithoutOperation: source === "migration" && !operation,
+  });
 
   const db = admin.firestore();
   const projectRef = db.collection("users").doc(uid).collection("projects").doc(projectId);
@@ -588,10 +908,41 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
         if (ledgerSnap.exists) {
           const ledger = ledgerSnap.data() as Record<string, unknown>;
           if (ledger.convergenceHash !== operation.convergenceHash) {
+            traceChunkMutationRejection("duplicate_operation_convergence_mismatch", {
+              uid,
+              projectId,
+              source,
+              authority,
+              clientRevision: revision,
+              operation,
+            }, {
+              ledgerConvergenceHash: ledger.convergenceHash,
+            });
             throw new HttpsError("already-exists", "Chunk mutation id was already acknowledged with different convergence metadata.");
           }
+          traceChunkMutation("OPERATION_DUPLICATE_ACCEPTED", {
+            uid,
+            projectId,
+            source,
+            authority,
+            clientRevision: revision,
+            operation,
+          }, {
+            acknowledgedRevision: ledger.acknowledgedRevision,
+            checkpointId: ledger.checkpointId,
+          });
           return {
             metadata: ledger.metadata as Record<string, unknown>,
+            projectPatch: (ledger.projectPatch && typeof ledger.projectPatch === "object")
+              ? ledger.projectPatch as Record<string, unknown>
+              : {
+                revision: typeof ledger.acknowledgedRevision === "number" ? ledger.acknowledgedRevision : revision,
+                updatedAt: typeof ledger.acknowledgedAt === "string" ? ledger.acknowledgedAt : now,
+                wordCount,
+                manuscriptStorage: ledger.metadata as Record<string, unknown>,
+              },
+            revision: typeof ledger.acknowledgedRevision === "number" ? ledger.acknowledgedRevision : revision,
+            updatedAt: typeof ledger.acknowledgedAt === "string" ? ledger.acknowledgedAt : now,
             mutationAck: {
               schemaVersion: 1,
               operationId: operation.operationId,
@@ -608,13 +959,46 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
       }
 
       const projectSnap = await tx.get(projectRef);
-      if (!projectSnap.exists) throw new HttpsError("not-found", "Project was not found.");
+      if (!projectSnap.exists) {
+        traceChunkMutationRejection("project_not_found", {
+          uid,
+          projectId,
+          source,
+          authority,
+          clientRevision: revision,
+          operation,
+        });
+        throw new HttpsError("not-found", "Project was not found.");
+      }
       const currentRevision = projectSnap.get("revision");
       if (typeof currentRevision === "number" && currentRevision !== revision) {
+        traceChunkMutationRejection("revision_mismatch", {
+          uid,
+          projectId,
+          source,
+          authority,
+          clientRevision: revision,
+          serverRevision: currentRevision,
+          operation,
+        }, {
+          conflictResult: "rejected",
+        });
         throw new HttpsError("failed-precondition", `Revision mismatch. Expected ${revision}, found ${currentRevision}.`);
       }
+      traceChunkMutation("REVISION_CONFLICT_CHECK", {
+        uid,
+        projectId,
+        source,
+        authority,
+        clientRevision: revision,
+        serverRevision: currentRevision,
+        operation,
+      }, {
+        conflictResult: "accepted",
+      });
 
-      const draft = createDraft({ projectId, contentDoc, wordCount, revision, source, now });
+      const nextRevision = revision + 1;
+      const draft = createDraft({ projectId, contentDoc, wordCount, revision: nextRevision, source, now });
       const scopedSectionIds = Array.from(new Set([
         ...authoritativeSectionIds,
         ...(authority === "partial" ? draft.sections.map((section) => section.sectionId) : []),
@@ -641,7 +1025,7 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
         draft,
         existingSections,
         existingChunks,
-        revision,
+        revision: nextRevision,
         authority,
         authoritativeSectionIds: scopedSectionIds,
         now,
@@ -654,12 +1038,24 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
         (writesSnapshot ? 1 : 0) +
         (operation ? 2 : 0);
       if (writeCount > MAX_TRANSACTION_WRITES) {
+        traceChunkMutationRejection("bounded_write_limit_exceeded", {
+          uid,
+          projectId,
+          source,
+          authority,
+          clientRevision: revision,
+          serverRevision: currentRevision,
+          operation,
+        }, {
+          writeCount,
+          maxTransactionWrites: MAX_TRANSACTION_WRITES,
+        });
         throw new HttpsError("resource-exhausted", "Chunk mutation exceeds bounded server write limits.");
       }
       const metadata = metadataFor({
         reconciliation,
         draft,
-        revision,
+        revision: nextRevision,
         source,
         authority,
         existingSections,
@@ -667,6 +1063,14 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
         totalSectionCount: typeof snapshot?.totalSectionCount === "number" ? snapshot.totalSectionCount : undefined,
         totalChunkCount: typeof snapshot?.totalChunkCount === "number" ? snapshot.totalChunkCount : undefined,
       });
+      const projectPatch = {
+        ...titleMetadata,
+        manuscriptStorage: metadata,
+        ...(metadata.activeSectionId ? { activeSectionId: metadata.activeSectionId } : {}),
+        wordCount,
+        revision: nextRevision,
+        updatedAt: now,
+      };
       const checkpointSnap = operation ? await tx.get(checkpointRef) : null;
       const previousIds = normalizeStringList(
         checkpointSnap?.exists ? checkpointSnap.get("operationIds") : [],
@@ -674,7 +1078,7 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
         128
       );
       const checkpointId = operation
-        ? `chunk_checkpoint_${createHash({ uid, projectId, revision, operationId: operation.operationId })}`
+        ? `chunk_checkpoint_${createHash({ uid, projectId, revision: nextRevision, operationId: operation.operationId })}`
         : undefined;
       const operationIds = operation
         ? [...previousIds, operation.operationId]
@@ -715,13 +1119,14 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
           deviceId: operation.causality.deviceId,
           sequence: operation.sequence,
           expectedRevision: operation.expectedRevision ?? null,
-          acknowledgedRevision: revision,
+          acknowledgedRevision: nextRevision,
           checkpointId: checkpointId as string,
           convergenceHash: operation.convergenceHash,
           causality: operation.causality,
           affectedChunkIds,
           mountedSectionIds: authoritativeSectionIds,
           metadata,
+          projectPatch,
           dirtyChunkCount: reconciliation.dirtyChunkCount,
           chunkWriteCount: reconciliation.chunkUpserts.length + reconciliation.chunkDeletes.length,
           sectionWriteCount: reconciliation.sectionUpserts.length + reconciliation.sectionDeletes.length,
@@ -736,7 +1141,7 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
           ownerUid: uid,
           checkpointId: checkpointId as string,
           latestOperationId: operation.operationId,
-          latestRevision: revision,
+          latestRevision: nextRevision,
           operationIds,
           operationCount: operationIds.length,
           chunkIds: Array.from(new Set([...affectedChunkIds, ...operation.causality.chunkIds])).slice(0, 256),
@@ -746,21 +1151,74 @@ export const applyWriteChunkMutation = onCall({ cors: true }, async (request) =>
           schemaVersion: 1,
           operationId: operation.operationId,
           status: "acknowledged",
-          acknowledgedRevision: revision,
+          acknowledgedRevision: nextRevision,
           checkpointId: checkpointId as string,
           acknowledgedAt: now,
           duplicate: false,
           chunkWriteCount: reconciliation.chunkUpserts.length + reconciliation.chunkDeletes.length,
           sectionWriteCount: reconciliation.sectionUpserts.length + reconciliation.sectionDeletes.length,
         };
+        traceChunkMutation("OPERATION_ACCEPTED", {
+          uid,
+          projectId,
+          source,
+          authority,
+          clientRevision: revision,
+          serverRevision: currentRevision,
+          operation,
+        }, {
+          checkpointId,
+          chunkWriteCount: reconciliation.chunkUpserts.length + reconciliation.chunkDeletes.length,
+          sectionWriteCount: reconciliation.sectionUpserts.length + reconciliation.sectionDeletes.length,
+          dirtyChunkCount: reconciliation.dirtyChunkCount,
+        });
       }
 
-      return { metadata, mutationAck };
+      traceChunkMutation("MUTATION_APPLICATION_RESULT", {
+        uid,
+        projectId,
+        source,
+        authority,
+        clientRevision: revision,
+        serverRevision: currentRevision,
+        operation,
+      }, {
+        sectionUpsertCount: reconciliation.sectionUpserts.length,
+        chunkUpsertCount: reconciliation.chunkUpserts.length,
+        sectionDeleteCount: reconciliation.sectionDeletes.length,
+        chunkDeleteCount: reconciliation.chunkDeletes.length,
+        writeCount,
+        writesSnapshot,
+        metadataMode: metadata.mode,
+        metadataSectionCount: metadata.sectionCount,
+        metadataChunkCount: metadata.chunkCount,
+        migratedAtSet: "migratedAt" in metadata,
+      });
+      tx.update(projectRef, {
+        ...titleMetadata,
+        manuscriptStorage: metadata,
+        activeSectionId: metadata.activeSectionId ?? admin.firestore.FieldValue.delete(),
+        wordCount,
+        revision: nextRevision,
+        updatedAt: admin.firestore.Timestamp.fromDate(new Date(now)),
+      });
+      return { metadata, projectPatch, revision: nextRevision, updatedAt: now, mutationAck };
     });
 
     return result;
   } catch (error) {
-    logger.error("[WRITE][CHUNK_MUTATION_FAILED]", { uid, projectId, error });
+    logger.error("[WRITE][CHUNK_MUTATION_FAILED]", {
+      uid,
+      projectId,
+      source,
+      authority,
+      clientRevision: revision,
+      operationId: operation?.operationId,
+      operationExpectedRevision: operation?.expectedRevision,
+      convergenceHash: operation?.convergenceHash,
+      errorCode: error instanceof HttpsError ? error.code : undefined,
+      errorMessage: error instanceof Error ? error.message : String(error),
+    });
     if (error instanceof HttpsError) throw error;
     throw new HttpsError("internal", "Failed to apply chunk mutation.");
   }

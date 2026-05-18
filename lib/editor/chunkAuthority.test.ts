@@ -120,4 +120,36 @@ describe('chunk authority reconciliation', () => {
       expect(chunk.chunkId).toBe(existingChunkByHash.get(chunk.contentHash)?.chunkId);
     });
   });
+
+  it('preserves existing section identity when a new chapter collides with fallback section id', () => {
+    const existingDraft = createDraft([
+      { type: 'heading', attrs: { level: 2 }, content: [{ type: 'text', text: 'Chapter One' }] },
+      paragraph('Existing body'),
+    ], 1);
+    const nextDraft = createDraft([
+      { type: 'horizontalRule' as const },
+      { type: 'heading' as const, attrs: { level: 2 }, content: [{ type: 'text' as const, text: 'Inserted Chapter' }] },
+      paragraph('Inserted body'),
+      { type: 'horizontalRule' as const },
+      ...existingDraft.contentDoc.content,
+    ], 2);
+
+    expect(nextDraft.sections.map((section) => section.sectionId)).toEqual(['section_0001', 'section_0001']);
+
+    const reconciliation = reconcileChunkAuthority({
+      draft: nextDraft,
+      existingSections: existingDraft.sections,
+      existingChunks: existingDraft.chunks,
+      revision: 2,
+      authority: 'complete',
+      now: '2026-05-15T00:00:02.000Z',
+    });
+
+    expect(new Set(reconciliation.sections.map((section) => section.sectionId)).size).toBe(2);
+    expect(reconciliation.sections.map((section) => section.title)).toEqual(['Inserted Chapter', 'Chapter One']);
+    expect(reconciliation.sections[1].sectionId).toBe(existingDraft.sections[0].sectionId);
+    expect(reconciliation.chunks.map((chunk) => chunk.sectionId)).toEqual(
+      expect.arrayContaining(reconciliation.sections.map((section) => section.sectionId))
+    );
+  });
 });

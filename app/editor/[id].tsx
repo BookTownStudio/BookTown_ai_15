@@ -54,6 +54,7 @@ import {
     getPerfNow,
     getProjectCursorMemory,
     isOfflineWriteError,
+    mergeAuthoritativeRuntimeMetadata,
     serializeDoc,
     snapshotsEqual,
     stripHtml,
@@ -275,6 +276,7 @@ const EditorScreen: React.FC = () => {
         shiftRuntimeWindow,
         migrateLegacySnapshot,
         saveSnapshot: saveChunkedSnapshot,
+        isMigrationInProgress,
     } = useChunkedManuscriptController({
         uid,
         projectId,
@@ -287,8 +289,11 @@ const EditorScreen: React.FC = () => {
         const metadata = await saveChunkedSnapshot(snapshot, revision, operation);
         return metadata
             ? {
-                activeSectionId: metadata.activeSectionId,
-                manuscriptStorage: metadata,
+                ...metadata.projectPatch,
+                activeSectionId: metadata.projectPatch.activeSectionId ?? metadata.activeSectionId,
+                manuscriptStorage: metadata.projectPatch.manuscriptStorage,
+                revision: metadata.revision,
+                updatedAt: metadata.updatedAt,
             }
             : null;
     }, [saveChunkedSnapshot]);
@@ -358,8 +363,10 @@ const EditorScreen: React.FC = () => {
         editor,
         present,
         autosaveAsync,
+        manuscriptStorageMode: project?.manuscriptStorage?.mode,
         saveManuscriptSnapshot,
         loadManuscriptSnapshot: loadProjectSnapshot,
+        isManuscriptMigrationInProgress: isMigrationInProgress,
         persistLocalDraft,
         clearLocalDraft,
         onLocalOperationCommitted: collaborationRuntime.publishLocalOperation,
@@ -562,7 +569,22 @@ const EditorScreen: React.FC = () => {
             const draft = loadLocalDraft();
             if (draft && !snapshotsEqual(draft.snapshot, serverSnapshot)) {
                 if ((draft.serverRevision ?? 0) >= serverRevision) {
-                    setSaveIssue(hydrateFromRecoveryDraft(draft, 'recovered'));
+                    const repairedSnapshot = mergeAuthoritativeRuntimeMetadata(draft.snapshot, serverSnapshot);
+                    if (repairedSnapshot) {
+                        setSaveIssue(hydrateFromRecoveryDraft({ ...draft, snapshot: repairedSnapshot }, 'recovered'));
+                    } else {
+                        writeEditorTelemetry.log('recovery', 'partial_draft_rejected_missing_runtime_metadata', {
+                            projectId,
+                            draftServerRevision: draft.serverRevision,
+                            serverRevision,
+                            draftIsPartialManuscript: draft.snapshot.isPartialManuscript,
+                            serverIsPartialManuscript: serverSnapshot.isPartialManuscript,
+                        }, 'warn');
+                        setSnapshot(serverSnapshot);
+                        presentRef.current = serverSnapshot;
+                        latestAvailableDraftRef.current = draft;
+                        setRecoveryBanner({ mode: 'available', draft });
+                    }
                 } else {
                     setSnapshot(serverSnapshot);
                     presentRef.current = serverSnapshot;

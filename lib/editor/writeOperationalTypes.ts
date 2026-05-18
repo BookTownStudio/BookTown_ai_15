@@ -71,8 +71,8 @@ export interface WriteProjectOperationAckInput {
   expectedRevision?: number;
   affectedChunkIds?: string[];
   mountedSectionIds?: string[];
-  causality?: WriteOperationCausality;
-  convergenceHash?: string;
+  causality: WriteOperationCausality;
+  convergenceHash: string;
 }
 
 export interface WriteProjectOperationAckResult {
@@ -89,7 +89,10 @@ export function toWriteProjectOperationAckInput(
   operation: WriteChunkSnapshotOperation
 ): WriteProjectOperationAckInput {
   const transportOperation = normalizeWriteOperationForTransport(operation);
-  return {
+  if (!transportOperation.causality || !transportOperation.convergenceHash) {
+    throw new Error('Write operation ack input requires causality and convergence metadata.');
+  }
+  return normalizeJsonPlainValue({
     schemaVersion: 1,
     operationId: transportOperation.operationId,
     type: transportOperation.type,
@@ -101,7 +104,7 @@ export function toWriteProjectOperationAckInput(
     mountedSectionIds: transportOperation.mountedSectionIds,
     causality: transportOperation.causality,
     convergenceHash: transportOperation.convergenceHash,
-  };
+  }) as WriteProjectOperationAckInput;
 }
 
 function stableStringify(value: unknown): string {

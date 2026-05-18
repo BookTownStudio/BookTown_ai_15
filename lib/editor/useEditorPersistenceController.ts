@@ -4,7 +4,7 @@ import { useDebounce } from 'use-debounce';
 import { useQueryClient } from '../react-query.ts';
 import { queryKeys } from '../queryKeys.ts';
 import { WriteRepository } from '../../services/writeRepository.ts';
-import { type Project } from '../../types/entities.ts';
+import { type ManuscriptStorageMetadata, type Project } from '../../types/entities.ts';
 import {
     type AuthorityStatus,
     type EditorSnapshot,
@@ -38,12 +38,106 @@ type AutosaveProject = (variables: {
     expectedRevision?: number;
     updates: Partial<Project>;
     operation?: WriteProjectOperationAckInput;
+    manuscriptStorageMode?: ManuscriptStorageMetadata['mode'];
 }) => Promise<{
     projectId: string;
     revision: number;
     updatedAt: string;
     operationAck?: WriteProjectOperationAckResult;
 }>;
+
+function withoutUndefinedProjectFields(patch: Partial<Project>): Partial<Project> {
+    return Object.fromEntries(
+        Object.entries(patch).filter(([, value]) => value !== undefined)
+    ) as Partial<Project>;
+}
+
+function logBlockedAutosave(
+    tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]' |
+        '[WRITE][AUTOSAVE_SKIPPED_EDITOR_REFRESH]' |
+        '[WRITE][AUTOSAVE_SKIPPED_RECONCILE]' |
+        '[WRITE][MIGRATION_IN_PROGRESS]',
+    projectId: string | undefined,
+    reason: string,
+    detail: Record<string, unknown> = {}
+): void {
+    console.warn(tag, {
+        projectId,
+        reason,
+        ...detail,
+    });
+    writeEditorTelemetry.log('autosave', tag.replace('[WRITE][', '').replace(']', '').toLowerCase(), {
+        projectId,
+        reason,
+        ...detail,
+    }, 'warn');
+}
+
+function getAutosaveReadinessFailure(params: {
+    hasHydrated: boolean;
+    hasEditor: boolean;
+    hasChunkRuntime: boolean;
+    snapshot: EditorSnapshot;
+}): { tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]' | '[WRITE][AUTOSAVE_SKIPPED_EDITOR_REFRESH]' | '[WRITE][AUTOSAVE_SKIPPED_RECONCILE]'; reason: string; detail?: Record<string, unknown> } | null {
+    if (!params.hasHydrated) {
+        return {
+            tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]',
+            reason: 'project_not_hydrated',
+        };
+    }
+
+    if (!params.hasEditor) {
+        return {
+            tag: '[WRITE][AUTOSAVE_SKIPPED_EDITOR_REFRESH]',
+            reason: 'editor_not_ready',
+        };
+    }
+
+    if (!params.snapshot.contentDoc) {
+        return {
+            tag: '[WRITE][AUTOSAVE_SKIPPED_EDITOR_REFRESH]',
+            reason: 'content_doc_not_ready',
+        };
+    }
+
+    if (params.snapshot.isPartialManuscript) {
+        if (!params.hasChunkRuntime) {
+            return {
+                tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]',
+                reason: 'chunk_runtime_not_ready',
+            };
+        }
+        if (!Array.isArray(params.snapshot.mountedSectionIds) || params.snapshot.mountedSectionIds.length === 0) {
+            return {
+                tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]',
+                reason: 'mounted_sections_not_ready',
+            };
+        }
+        if (!Array.isArray(params.snapshot.affectedChunkIds)) {
+            return {
+                tag: '[WRITE][AUTOSAVE_SKIPPED_RECONCILE]',
+                reason: 'affected_chunks_not_ready',
+            };
+        }
+        if (
+            typeof params.snapshot.totalSectionCount !== 'number' ||
+            !Number.isInteger(params.snapshot.totalSectionCount) ||
+            typeof params.snapshot.totalChunkCount !== 'number' ||
+            !Number.isInteger(params.snapshot.totalChunkCount)
+        ) {
+            return {
+                tag: '[WRITE][AUTOSAVE_BLOCKED_NOT_READY]',
+                reason: 'partial_runtime_counts_not_ready',
+                detail: {
+                    totalSectionCount: params.snapshot.totalSectionCount,
+                    totalChunkCount: params.snapshot.totalChunkCount,
+                },
+            };
+        }
+    }
+
+    return null;
+}
 
 interface UseEditorPersistenceControllerParams {
     uid?: string;
@@ -54,12 +148,14 @@ interface UseEditorPersistenceControllerParams {
     editor: Editor | null;
     present: EditorSnapshot;
     autosaveAsync: AutosaveProject;
+    manuscriptStorageMode?: ManuscriptStorageMetadata['mode'];
     saveManuscriptSnapshot?: (
         snapshot: EditorSnapshot,
         revision: number,
         operation?: WriteProjectOperationAckInput
     ) => Promise<Partial<Project> | null>;
-    loadManuscriptSnapshot?: (project: Project) => Promise<{ snapshot: EditorSnapshot; source: 'chunked' | 'legacy' }>;
+    loadManuscriptSnapshot?: (project: Project) => Promise<{ snapshot: EditorSnapshot; source: 'chunked' | 'legacy' | 'new' }>;
+    isManuscriptMigrationInProgress?: () => boolean;
     persistLocalDraft: (snapshot: EditorSnapshot, reason: WriteDraftReason) => void;
     clearLocalDraft: () => void;
     onLocalOperationCommitted?: (operation: WriteChunkSnapshotOperation) => void | Promise<void>;
@@ -114,8 +210,10 @@ export function useEditorPersistenceController({
     editor,
     present,
     autosaveAsync,
+    manuscriptStorageMode,
     saveManuscriptSnapshot,
     loadManuscriptSnapshot,
+    isManuscriptMigrationInProgress,
     persistLocalDraft,
     clearLocalDraft,
     onLocalOperationCommitted,
@@ -131,10 +229,12 @@ export function useEditorPersistenceController({
     const queryClient = useQueryClient();
     const [isSaving, setIsSaving] = useState(false);
     const [saveIssue, setSaveIssue] = useState<SaveIssue>('none');
+    const [confirmedSnapshotVersion, setConfirmedSnapshotVersion] = useState(0);
     const activeSavePromiseRef = useRef<Promise<boolean> | null>(null);
     const activeCursorSavePromiseRef = useRef<Promise<boolean> | null>(null);
     const activeReplayPromiseRef = useRef<Promise<void> | null>(null);
     const queuedSnapshotRef = useRef<{ snapshot: EditorSnapshot; expectedRevision?: number } | null>(null);
+    const isChunkNativeManuscript = manuscriptStorageMode === 'chunked' || manuscriptStorageMode === 'hybrid';
 
     const [debouncedContent] = useDebounce(present.content, 2000);
     const [debouncedTitleEn] = useDebounce(present.titleEn, 2000);
@@ -143,8 +243,13 @@ export function useEditorPersistenceController({
 
     const hasDirtyChanges = useMemo(
         () => snapshotsEqual(present, lastConfirmedSnapshotRef.current) === false,
-        [lastConfirmedSnapshotRef, present]
+        [confirmedSnapshotVersion, lastConfirmedSnapshotRef, present]
     );
+
+    const confirmSnapshot = useCallback((snapshotToConfirm: EditorSnapshot) => {
+        lastConfirmedSnapshotRef.current = snapshotToConfirm;
+        setConfirmedSnapshotVersion((version) => version + 1);
+    }, [lastConfirmedSnapshotRef]);
 
     const indicator = getSaveIndicator({
         authorityStatus,
@@ -155,19 +260,22 @@ export function useEditorPersistenceController({
         hasLocalEdits: hasLocalEditsRef.current,
     });
 
-    const updateProjectCaches = useCallback((nextProject: Project) => {
+    const patchProjectCaches = useCallback((targetProjectId: string, patch: Partial<Project>) => {
         if (!uid) {
             return;
         }
+        const cachePatch = withoutUndefinedProjectFields(patch);
 
         queryClient.setQueryData(
-            queryKeys.user.project(uid, nextProject.id) as unknown as any[],
-            nextProject
+            queryKeys.user.project(uid, targetProjectId) as unknown as any[],
+            (old: Project | undefined) => old ? { ...old, ...cachePatch } : old
         );
         queryClient.setQueryData<Project[]>(
             queryKeys.user.projects(uid) as unknown as any[],
-            (old = []) => old.map(item => item.id === nextProject.id ? nextProject : item)
+            (old = []) => old.map(item => item.id === targetProjectId ? { ...item, ...cachePatch } : item)
         );
+        queryClient.invalidateQueries({ queryKey: queryKeys.user.project(uid, targetProjectId) as unknown as any[] });
+        queryClient.invalidateQueries({ queryKey: queryKeys.user.projects(uid) as unknown as any[] });
     }, [queryClient, uid]);
 
     const enqueueOfflineSnapshotOperation = useCallback(async (
@@ -206,6 +314,14 @@ export function useEditorPersistenceController({
             return false;
         }
 
+        if (isChunkNativeManuscript) {
+            writeEditorTelemetry.log('autosave', 'cursor_update_project_blocked', {
+                projectId,
+                manuscriptStorageMode,
+            }, 'debug');
+            return false;
+        }
+
         if (activeSavePromiseRef.current) {
             await activeSavePromiseRef.current;
         }
@@ -226,6 +342,7 @@ export function useEditorPersistenceController({
                     projectId,
                     expectedRevision: currentRevisionRef.current ?? 1,
                     updates: cursorMemory,
+                    manuscriptStorageMode,
                 });
 
                 currentRevisionRef.current = result.revision;
@@ -245,14 +362,42 @@ export function useEditorPersistenceController({
         const success = await activeCursorSavePromiseRef.current;
         activeCursorSavePromiseRef.current = null;
         return success;
-    }, [authorityStatus, autosaveAsync, currentRevisionRef, editor, isOffline, lastPersistedCursorRef, projectId, uid]);
+    }, [authorityStatus, autosaveAsync, currentRevisionRef, editor, isChunkNativeManuscript, isOffline, lastPersistedCursorRef, manuscriptStorageMode, projectId, uid]);
 
     const persistSnapshot = useCallback(async (
         snapshot: EditorSnapshot,
         options?: { expectedRevision?: number; draftReason?: WriteDraftReason }
     ): Promise<boolean> => {
+        const liveSnapshot = snapshot;
         const transportSnapshot = normalizeEditorSnapshotForTransport(snapshot);
         if (!uid || !projectId || projectId === 'new' || authorityStatus !== 'persistent') {
+            return false;
+        }
+
+        if (isManuscriptMigrationInProgress?.()) {
+            logBlockedAutosave(
+                '[WRITE][MIGRATION_IN_PROGRESS]',
+                projectId,
+                'legacy_migration_in_progress',
+                {}
+            );
+            setSaveIssue('none');
+            return false;
+        }
+
+        const readinessFailure = getAutosaveReadinessFailure({
+            hasHydrated: hasHydratedRef.current,
+            hasEditor: Boolean(editor),
+            hasChunkRuntime: Boolean(saveManuscriptSnapshot),
+            snapshot: transportSnapshot,
+        });
+        if (readinessFailure) {
+            logBlockedAutosave(
+                readinessFailure.tag,
+                projectId,
+                readinessFailure.reason,
+                readinessFailure.detail ?? {}
+            );
             return false;
         }
 
@@ -275,7 +420,7 @@ export function useEditorPersistenceController({
                 hasExpectedRevision: typeof options?.expectedRevision === 'number',
             }, 'debug');
             queuedSnapshotRef.current = {
-                snapshot: transportSnapshot,
+                snapshot: liveSnapshot,
                 expectedRevision: options?.expectedRevision,
             };
             return activeSavePromiseRef.current.then(async () => {
@@ -285,7 +430,7 @@ export function useEditorPersistenceController({
                 }
                 queuedSnapshotRef.current = null;
                 return persistSnapshot(queued.snapshot, {
-                    expectedRevision: queued.expectedRevision,
+                    expectedRevision: currentRevisionRef.current ?? queued.expectedRevision,
                     draftReason: options?.draftReason,
                 });
             });
@@ -300,60 +445,66 @@ export function useEditorPersistenceController({
                 const cursorMemory = editor ? captureCursorMemory(editor) : null;
                 const operationExpectedRevision = options?.expectedRevision ?? currentRevisionRef.current ?? 1;
                 const networkStartedAt = getPerfNow();
-                const result = await autosaveAsync({
-                    projectId,
-                    expectedRevision: operationExpectedRevision,
-                    updates: saveManuscriptSnapshot
-                        ? {
-                            titleEn: snapshot.titleEn,
-                            titleAr: snapshot.titleAr,
-                            ...(transportSnapshot.isPartialManuscript ? {} : { wordCount: transportSnapshot.wordCount }),
-                            ...(cursorMemory ?? {}),
-                        }
-                        : {
-                            ...transportSnapshot,
-                            ...(cursorMemory ?? {}),
-                        },
-                });
-                const committedOperation = saveManuscriptSnapshot
-                    ? await writeOperationalSyncEngine.createCommittedChunkSnapshotOperation({
+                if (saveManuscriptSnapshot) {
+                    const committedOperation = await writeOperationalSyncEngine.createCommittedChunkSnapshotOperation({
                         uid,
                         projectId,
                         expectedRevision: operationExpectedRevision,
                         snapshot: transportSnapshot,
-                    })
-                    : null;
-                const manuscriptMetadata = saveManuscriptSnapshot
-                    ? await saveManuscriptSnapshot(
+                    });
+                    const manuscriptMetadata = await saveManuscriptSnapshot(
                         transportSnapshot,
-                        result.revision,
-                        committedOperation ? toWriteProjectOperationAckInput(committedOperation) : undefined
-                    )
-                    : null;
-                const finalResult = manuscriptMetadata
-                    ? await autosaveAsync({
-                        projectId,
-                        expectedRevision: result.revision,
-                        updates: manuscriptMetadata,
-                        operation: committedOperation
-                            ? toWriteProjectOperationAckInput(committedOperation)
-                            : undefined,
-                    })
-                    : result;
+                        operationExpectedRevision,
+                        toWriteProjectOperationAckInput(committedOperation)
+                    );
+                    if (!manuscriptMetadata || typeof manuscriptMetadata.revision !== 'number') {
+                        throw new Error('Chunk manuscript save did not return an authoritative revision.');
+                    }
+                    const networkMs = getPerfNow() - networkStartedAt;
+                    currentRevisionRef.current = manuscriptMetadata.revision;
+                    patchProjectCaches(projectId, {
+                        title: manuscriptMetadata.title,
+                        titleEn: manuscriptMetadata.titleEn,
+                        titleAr: manuscriptMetadata.titleAr,
+                        updatedAt: manuscriptMetadata.updatedAt,
+                        revision: manuscriptMetadata.revision,
+                        wordCount: manuscriptMetadata.wordCount,
+                        activeSectionId: manuscriptMetadata.activeSectionId,
+                        manuscriptStorage: manuscriptMetadata.manuscriptStorage,
+                    });
+                    confirmSnapshot(liveSnapshot);
+                    if (onLocalOperationCommitted) {
+                        await onLocalOperationCommitted({
+                            ...committedOperation,
+                            status: 'applied',
+                            updatedAt: Date.now(),
+                            appliedAt: Date.now(),
+                            serverRevision: manuscriptMetadata.revision,
+                        });
+                    }
+                    hasLocalEditsRef.current = false;
+                    setSaveIssue('none');
+                    clearLocalDraft();
+                    writeEditorTelemetry.autosaveSuccess(networkMs, getPerfNow() - operationStartedAt);
+                    return true;
+                }
+                const result = await autosaveAsync({
+                    projectId,
+                    expectedRevision: operationExpectedRevision,
+                    updates: {
+                        ...transportSnapshot,
+                        ...(cursorMemory ?? {}),
+                    },
+                    manuscriptStorageMode,
+                });
+                currentRevisionRef.current = result.revision;
+                if (cursorMemory) {
+                    lastPersistedCursorRef.current = cursorMemory;
+                }
                 const networkMs = getPerfNow() - networkStartedAt;
 
-                currentRevisionRef.current = finalResult.revision;
-                lastConfirmedSnapshotRef.current = transportSnapshot;
-                if (onLocalOperationCommitted && committedOperation) {
-                    await onLocalOperationCommitted({
-                        ...committedOperation,
-                        status: 'applied',
-                        updatedAt: Date.now(),
-                        appliedAt: Date.now(),
-                        serverRevision: finalResult.revision,
-                        convergenceCheckpointId: finalResult.operationAck?.checkpointId,
-                    });
-                }
+                currentRevisionRef.current = result.revision;
+                confirmSnapshot(liveSnapshot);
                 if (cursorMemory) {
                     lastPersistedCursorRef.current = cursorMemory;
                 }
@@ -402,7 +553,7 @@ export function useEditorPersistenceController({
             const queued = queuedSnapshotRef.current;
             queuedSnapshotRef.current = null;
             return persistSnapshot(queued.snapshot, {
-                expectedRevision: queued.expectedRevision,
+                expectedRevision: currentRevisionRef.current ?? queued.expectedRevision,
                 draftReason: options?.draftReason,
             });
         }
@@ -412,14 +563,19 @@ export function useEditorPersistenceController({
         authorityStatus,
         autosaveAsync,
         clearLocalDraft,
+        confirmSnapshot,
         currentRevisionRef,
         editor,
         enqueueOfflineSnapshotOperation,
         hasLocalEditsRef,
+        hasHydratedRef,
+        isChunkNativeManuscript,
         isOffline,
-        lastConfirmedSnapshotRef,
         lastPersistedCursorRef,
+        isManuscriptMigrationInProgress,
+        manuscriptStorageMode,
         onLocalOperationCommitted,
+        patchProjectCaches,
         persistLocalDraft,
         projectId,
         saveManuscriptSnapshot,
@@ -448,46 +604,34 @@ export function useEditorPersistenceController({
         ): Promise<{ revision: number; updatedAt?: string }> => {
             const operationSnapshot = normalizeEditorSnapshotForTransport(operation.snapshot);
             const cursorMemory = editor ? captureCursorMemory(editor) : null;
-            const baseResult = await autosaveAsync({
-                projectId,
-                expectedRevision: currentRevisionRef.current ?? operation.expectedRevision ?? 1,
-                updates: {
-                    titleEn: operationSnapshot.titleEn,
-                    titleAr: operationSnapshot.titleAr,
-                    ...(operationSnapshot.isPartialManuscript ? {} : { wordCount: operationSnapshot.wordCount }),
-                    ...(cursorMemory ?? {}),
-                },
-            });
+            const expectedRevision = currentRevisionRef.current ?? operation.expectedRevision ?? 1;
             const manuscriptMetadata = await saveManuscriptSnapshot(
                 operationSnapshot,
-                baseResult.revision,
+                expectedRevision,
                 toWriteProjectOperationAckInput(operation)
             );
-            const finalResult = manuscriptMetadata
-                ? await autosaveAsync({
-                    projectId,
-                    expectedRevision: baseResult.revision,
-                    updates: manuscriptMetadata,
-                    operation: toWriteProjectOperationAckInput(operation),
-                })
-                : baseResult;
+            if (!manuscriptMetadata || typeof manuscriptMetadata.revision !== 'number') {
+                throw new Error('Chunk manuscript replay did not return an authoritative revision.');
+            }
 
-            currentRevisionRef.current = finalResult.revision;
-            lastConfirmedSnapshotRef.current = operationSnapshot;
+            currentRevisionRef.current = manuscriptMetadata.revision;
+            confirmSnapshot(operationSnapshot);
             if (onLocalOperationCommitted) {
                 await onLocalOperationCommitted({
                     ...operation,
                     status: 'applied',
                     updatedAt: Date.now(),
                     appliedAt: Date.now(),
-                    serverRevision: finalResult.revision,
-                    convergenceCheckpointId: finalResult.operationAck?.checkpointId,
+                    serverRevision: manuscriptMetadata.revision,
                 });
             }
             if (cursorMemory) {
                 lastPersistedCursorRef.current = cursorMemory;
             }
-            return finalResult;
+            return {
+                revision: manuscriptMetadata.revision,
+                updatedAt: typeof manuscriptMetadata.updatedAt === 'string' ? manuscriptMetadata.updatedAt : undefined,
+            };
         };
 
         activeReplayPromiseRef.current = writeOperationalSyncEngine.replayPendingOperations({
@@ -514,11 +658,11 @@ export function useEditorPersistenceController({
         authorityStatus,
         autosaveAsync,
         clearLocalDraft,
+        confirmSnapshot,
         currentRevisionRef,
         editor,
         hasLocalEditsRef,
         isOffline,
-        lastConfirmedSnapshotRef,
         lastPersistedCursorRef,
         onLocalOperationCommitted,
         projectId,
@@ -534,13 +678,13 @@ export function useEditorPersistenceController({
         setIsSaving(true);
         try {
             const latestProject = await WriteRepository.getProject(uid, projectId);
-            updateProjectCaches(latestProject);
+            patchProjectCaches(projectId, latestProject);
 
             const latestSnapshot = loadManuscriptSnapshot
                 ? (await loadManuscriptSnapshot(latestProject)).snapshot
                 : snapshotFromProject(latestProject);
             currentRevisionRef.current = latestProject.revision ?? 1;
-            lastConfirmedSnapshotRef.current = latestSnapshot;
+            confirmSnapshot(latestSnapshot);
 
             if (!snapshotsEqual(presentRef.current, latestSnapshot)) {
                 const reconciled = await persistSnapshot(presentRef.current, {
@@ -568,9 +712,9 @@ export function useEditorPersistenceController({
         }
     }, [
         clearLocalDraft,
+        confirmSnapshot,
         currentRevisionRef,
         lang,
-        lastConfirmedSnapshotRef,
         persistLocalDraft,
         persistSnapshot,
         presentRef,
@@ -578,7 +722,7 @@ export function useEditorPersistenceController({
         loadManuscriptSnapshot,
         showToast,
         uid,
-        updateProjectCaches,
+        patchProjectCaches,
     ]);
 
     const flushBeforeExit = useCallback(async (): Promise<boolean> => {

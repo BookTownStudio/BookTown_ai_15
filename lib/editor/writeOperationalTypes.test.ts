@@ -99,4 +99,24 @@ describe('write operational types', () => {
     expect(ackInput.causality?.chunkIds).toEqual(['chunk_1']);
     expect('snapshot' in ackInput).toBe(false);
   });
+
+  it('rejects acknowledgement input without required convergence metadata', () => {
+    const operation: WriteChunkSnapshotOperation = {
+      schemaVersion: 1,
+      operationId: 'writeop_2',
+      uid: 'uid_1',
+      projectId: 'project_1',
+      type: 'chunk_snapshot_save',
+      status: 'applied',
+      sequence: 8,
+      createdAt: 200,
+      updatedAt: 210,
+      snapshot: snapshot('Beta'),
+      attempts: 0,
+    };
+
+    expect(() => toWriteProjectOperationAckInput(operation)).toThrow(
+      'Write operation ack input requires causality and convergence metadata.'
+    );
+  });
 });

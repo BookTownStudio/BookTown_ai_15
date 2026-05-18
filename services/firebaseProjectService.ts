@@ -18,6 +18,9 @@ import type {
   WriteProjectOperationAckInput,
   WriteProjectOperationAckResult,
 } from "../lib/editor/writeOperationalTypes.ts";
+import {
+  normalizeJsonPlainValue,
+} from "../lib/editor/writeTransportSerialization.ts";
 
 type FailureEnvelope = {
   success: false;
@@ -339,6 +342,14 @@ function extractSuccessData<T>(endpoint: string, payload: unknown): T {
   if (envelope.success === false && envelope.error) {
     const code = assertNonEmptyString(envelope.error.code, `${endpoint}.error.code`);
     const message = assertNonEmptyString(envelope.error.message, `${endpoint}.error.message`);
+    if (code === "INVALID_REQUEST_SCHEMA") {
+      console.error("[WRITE][CALLABLE_CONTRACT_REJECTION]", {
+        endpoint,
+        code,
+        message,
+        details: envelope.error.details,
+      });
+    }
     throw new Error(`[${code}] ${message}`);
   }
 
@@ -507,7 +518,7 @@ function sanitizeOperationAckInput(
       }
     : undefined;
 
-  return {
+  const sanitized = {
     schemaVersion: 1,
     operationId: operation.operationId.trim().slice(0, 128),
     type: "chunk_snapshot_save",
@@ -522,6 +533,11 @@ function sanitizeOperationAckInput(
       ? operation.convergenceHash.trim().slice(0, 128)
       : undefined,
   };
+  const normalized = normalizeJsonPlainValue(sanitized) as WriteProjectOperationAckInput;
+  if (!normalized.causality || !normalized.convergenceHash) {
+    return undefined;
+  }
+  return normalized;
 }
 
 function createOperationId(prefix: string): string {
@@ -599,6 +615,7 @@ export const firebaseProjectService: ProjectDataService = {
         createdAt: string;
         updatedAt: string;
         revision: number;
+        manuscriptStorage?: ManuscriptStorageMetadata;
         publishedBookId?: string;
         coverUrl?: string;
         lastCursorBlockId?: string;

@@ -1,4 +1,4 @@
-import type { WriteContentDoc } from '../../types/entities.ts';
+import type { WriteContentDoc, WriteContentNode } from '../../types/entities.ts';
 import type { EditorSnapshot } from './editorRuntimeTypes.ts';
 import type { WriteChunkSnapshotOperation } from './writeOperationalTypes.ts';
 
@@ -23,9 +23,62 @@ export function normalizeJsonPlainValue<T>(value: T): T {
 
   const output: JsonPlainObject = {};
   Object.keys(value).forEach((key) => {
-    output[key] = normalizeJsonPlainValue((value as Record<string, unknown>)[key]);
+    const normalizedEntry = normalizeJsonPlainValue((value as Record<string, unknown>)[key]);
+    if (normalizedEntry !== undefined) {
+      output[key] = normalizedEntry;
+    }
   });
   return output as T;
+}
+
+function normalizeWriteContentAttrsForTransport(
+  attrs: WriteContentNode['attrs'] | undefined
+): WriteContentNode['attrs'] | undefined {
+  if (!attrs || typeof attrs !== 'object' || Array.isArray(attrs)) {
+    return undefined;
+  }
+
+  const normalizedAttrs = normalizeJsonPlainValue(attrs) as Record<string, unknown>;
+  const output: JsonPlainObject = {};
+  Object.keys(normalizedAttrs).forEach((key) => {
+    const value = normalizedAttrs[key];
+    if (value !== null && value !== undefined) {
+      output[key] = value;
+    }
+  });
+
+  return Object.keys(output).length > 0
+    ? output as WriteContentNode['attrs']
+    : undefined;
+}
+
+function normalizeWriteContentNodeForTransport(node: WriteContentNode): WriteContentNode {
+  const normalizedNode = normalizeJsonPlainValue(node) as WriteContentNode;
+  const output: JsonPlainObject = {};
+
+  Object.keys(normalizedNode).forEach((key) => {
+    if (key === 'attrs') {
+      const attrs = normalizeWriteContentAttrsForTransport(normalizedNode.attrs);
+      if (attrs) {
+        output.attrs = attrs;
+      }
+      return;
+    }
+
+    if (key === 'content') {
+      if (Array.isArray(normalizedNode.content)) {
+        output.content = normalizedNode.content.map(normalizeWriteContentNodeForTransport);
+      }
+      return;
+    }
+
+    const value = (normalizedNode as unknown as Record<string, unknown>)[key];
+    if (value !== undefined) {
+      output[key] = value;
+    }
+  });
+
+  return output as unknown as WriteContentNode;
 }
 
 export function normalizeWriteContentDocForTransport(
@@ -35,7 +88,23 @@ export function normalizeWriteContentDocForTransport(
     return undefined;
   }
 
-  return normalizeJsonPlainValue(contentDoc);
+  const normalizedDoc = normalizeJsonPlainValue(contentDoc) as WriteContentDoc;
+  const output: JsonPlainObject = {};
+  Object.keys(normalizedDoc).forEach((key) => {
+    if (key === 'content') {
+      output.content = Array.isArray(normalizedDoc.content)
+        ? normalizedDoc.content.map(normalizeWriteContentNodeForTransport)
+        : [];
+      return;
+    }
+
+    const value = (normalizedDoc as unknown as Record<string, unknown>)[key];
+    if (value !== undefined) {
+      output[key] = value;
+    }
+  });
+
+  return output as unknown as WriteContentDoc;
 }
 
 export function normalizeEditorSnapshotForTransport<T extends EditorSnapshot>(snapshot: T): T {

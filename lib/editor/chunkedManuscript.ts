@@ -77,6 +77,8 @@ export interface ChunkedManuscriptDraft {
     activeSectionId: string;
     sections: ManuscriptSectionRecord[];
     chunks: ManuscriptChunkRecord[];
+    chunkSectionIndexes: number[];
+    sectionIdentityHints: Array<{ hasStructuralSectionId: boolean }>;
     snapshot: ManuscriptSnapshotRecord;
     contentHash: string;
     contentDoc: WriteContentDoc;
@@ -228,9 +230,14 @@ export function createChunkedManuscriptDraft(params: {
     const sectionDrafts = splitSections(anchoredContentDoc.content);
     const sections: ManuscriptSectionRecord[] = [];
     const chunks: ManuscriptChunkRecord[] = [];
+    const chunkSectionIndexes: number[] = [];
+    const sectionIdentityHints: Array<{ hasStructuralSectionId: boolean }> = [];
 
     sectionDrafts.forEach((sectionDraft, sectionOrder) => {
         const sectionId = resolveDominantSectionId(sectionDraft.nodes, createSectionId(sectionOrder));
+        sectionIdentityHints.push({
+            hasStructuralSectionId: sectionDraft.nodes.some((node) => typeof node.attrs?.btSectionId === 'string' && node.attrs.btSectionId.trim().length > 0),
+        });
         const sectionChunks = splitChunks(sectionDraft.nodes);
         const sectionText = extractNodesText(sectionDraft.nodes);
         const sectionHash = createManuscriptHash(sectionDraft.nodes);
@@ -280,6 +287,7 @@ export function createChunkedManuscriptDraft(params: {
                 createdAt: now,
                 updatedAt: now,
             });
+            chunkSectionIndexes.push(sectionOrder);
         });
     });
 
@@ -291,6 +299,8 @@ export function createChunkedManuscriptDraft(params: {
         activeSectionId: sections[0]?.sectionId ?? DEFAULT_MANUSCRIPT_SECTION_ID,
         sections,
         chunks,
+        chunkSectionIndexes,
+        sectionIdentityHints,
         contentHash,
         contentDoc,
         snapshot: {

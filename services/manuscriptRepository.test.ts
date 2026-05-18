@@ -19,6 +19,26 @@ const callableMock = vi.fn(async () => ({
         chunkCount: 2,
         updatedAt: '2026-05-15T00:00:02.000Z',
       },
+      projectPatch: {
+        title: 'Novel',
+        titleEn: 'Novel',
+        titleAr: '',
+        activeSectionId: 'section_0001',
+        wordCount: 1,
+        revision: 2,
+        updatedAt: '2026-05-15T00:00:02.000Z',
+        manuscriptStorage: {
+          version: 1,
+          mode: 'chunked',
+          activeSectionId: 'section_0001',
+          latestRevision: 2,
+          sectionCount: 2,
+          chunkCount: 2,
+          updatedAt: '2026-05-15T00:00:02.000Z',
+        },
+      },
+      revision: 2,
+      updatedAt: '2026-05-15T00:00:02.000Z',
       mutationAck: {
         schemaVersion: 1,
         operationId: 'writeop_1',
@@ -130,6 +150,29 @@ describe('ManuscriptRepository bounded partial saves', () => {
       authority: 'partial',
       authoritativeSectionIds: ['section_0001'],
       affectedChunkIds: ['section_0001_chunk_0001'],
+      operation: {
+        schemaVersion: 1,
+        operationId: 'writeop_1',
+        type: 'chunk_snapshot_save',
+        sequence: 1,
+        createdAt: 100,
+        updatedAt: 100,
+        expectedRevision: 2,
+        affectedChunkIds: ['section_0001_chunk_0001'],
+        mountedSectionIds: ['section_0001'],
+        causality: {
+          schemaVersion: 1,
+          actorId: 'uid_1',
+          deviceId: 'device_1',
+          sequence: 1,
+          parents: [],
+          vectorClock: { device_1: 1 },
+          chunkIds: ['section_0001_chunk_0001'],
+          baseRevision: 2,
+          createdAt: 100,
+        },
+        convergenceHash: 'hash_1',
+      },
     });
 
     expect(loadSections).not.toHaveBeenCalled();
@@ -144,11 +187,53 @@ describe('ManuscriptRepository bounded partial saves', () => {
       revision: 2,
       source: 'autosave',
       authority: 'partial',
+      metadata: {
+        title: 'Novel',
+        titleEn: 'Novel',
+        titleAr: '',
+      },
       authoritativeSectionIds: ['section_0001'],
       affectedChunkIds: ['section_0001_chunk_0001'],
+      operation: expect.objectContaining({
+        operationId: 'writeop_1',
+      }),
     }));
     expect(metadata.sectionCount).toBe(2);
     expect(metadata.chunkCount).toBe(fullDraft.chunks.length);
     expect(metadata.latestSnapshotId).toBeUndefined();
+  });
+
+  it('blocks autosave chunk mutations before incomplete runtime payloads reach transport', async () => {
+    const { ManuscriptRepository } = await import('./manuscriptRepository.ts');
+
+    await expect(ManuscriptRepository.saveSnapshot({
+      uid: 'uid_1',
+      projectId: 'project_1',
+      snapshot: snapshot([paragraph('First changed')], undefined, undefined),
+      revision: 2,
+      source: 'autosave',
+      authority: 'partial',
+      authoritativeSectionIds: ['section_0001'],
+      affectedChunkIds: ['section_0001_chunk_0001'],
+    })).rejects.toThrow('Partial chunk mutation requires hydrated manuscript runtime counts.');
+
+    expect(callableMock).not.toHaveBeenCalled();
+  });
+
+  it('blocks autosave chunk mutations without distributed operation metadata', async () => {
+    const { ManuscriptRepository } = await import('./manuscriptRepository.ts');
+
+    await expect(ManuscriptRepository.saveSnapshot({
+      uid: 'uid_1',
+      projectId: 'project_1',
+      snapshot: snapshot([paragraph('First changed')], 1, 1),
+      revision: 2,
+      source: 'autosave',
+      authority: 'partial',
+      authoritativeSectionIds: ['section_0001'],
+      affectedChunkIds: ['section_0001_chunk_0001'],
+    })).rejects.toThrow('Autosave chunk mutation requires a distributed operation.');
+
+    expect(callableMock).not.toHaveBeenCalled();
   });
 });
