@@ -13,14 +13,22 @@ export interface ReaderContinuityDTO {
   bookId: string;
   progress: number;
   updatedAt: Timestamp | null;
+  status_state?: ReadingContinuityState;
+  continuityLevel?: string | null;
+  sourceType?: string | null;
 }
 
 export type OfflineReaderRecordDTO = OfflineEbookRecord;
+
+export type ReadingContinuityState = "reading" | "paused" | "abandoned" | "completed";
 
 export interface ReaderInsightsDTO {
   currentlyReading?: Array<{
     bookId?: unknown;
     progress?: unknown;
     lastActiveAt?: unknown;
+    status_state?: unknown;
+    continuityLevel?: unknown;
+    sourceType?: unknown;
   }>;
 }

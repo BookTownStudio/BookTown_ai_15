@@ -52,6 +52,8 @@ import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import { acquireExternalEbookForRead } from '../lib/books/acquireExternalEbookForRead.ts';
 import type { GraphRelationshipType } from '../types/literaryGraph.ts';
+import { callCallableEndpoint } from '../lib/callable.ts';
+import { useQueryClient } from '../lib/react-query.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
@@ -148,6 +150,7 @@ const BookDetailsScreen: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
   const { mutate: toggleBook } = useToggleBookOnShelf();
+  const queryClient = useQueryClient();
 
   const params =
     currentView.type === 'immersive'
@@ -175,6 +178,7 @@ const BookDetailsScreen: React.FC = () => {
   const [acquisitionState, setAcquisitionState] = useState<AcquisitionState>('idle');
   const [acquisitionErrorMessage, setAcquisitionErrorMessage] = useState<string | null>(null);
   const [confirmedReadableAttachmentId, setConfirmedReadableAttachmentId] = useState<string | null>(null);
+  const [isManualContinuityBusy, setIsManualContinuityBusy] = useState(false);
   const ingestionStartedRef = useRef<string>('');
   const resolvedCanonicalRef = useRef<string | null>(null);
   const pendingActionRef = useRef<string>('');
@@ -188,7 +192,10 @@ const BookDetailsScreen: React.FC = () => {
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
-  const { isSavedOnPhysicalShelf = false } = useBookShelfStatus(bookId);
+  const {
+    isSavedOnPhysicalShelf = false,
+    isCurrentlyReadingFromProgress = false,
+  } = useBookShelfStatus(bookId);
   const { data: semanticGraph } = useBookSemanticGraph(bookId, {
     enabled: Boolean(bookId && book),
     limit: 12,
@@ -209,6 +216,7 @@ const BookDetailsScreen: React.FC = () => {
     setAcquisitionState('idle');
     setAcquisitionErrorMessage(null);
     setConfirmedReadableAttachmentId(null);
+    setIsManualContinuityBusy(false);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
 
   useEffect(() => {
@@ -518,6 +526,13 @@ const BookDetailsScreen: React.FC = () => {
       providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0));
   const canAttemptRead = hasReadableEbook;
   const isPreparingReadableCopy = acquisitionState === 'pending';
+  const manualContinuitySourceType: 'physical' | 'external_ebook' =
+    hasExternalHydrationCandidate ||
+    externalReadableSources.length > 0 ||
+    providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0)
+      ? 'external_ebook'
+      : 'physical';
+  const canTrackManualContinuity = Boolean(bookId && book && !hasReadableEbook && !canPrepareReadableCopy);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
@@ -632,7 +647,7 @@ const BookDetailsScreen: React.FC = () => {
   };
 
   const handleRead = async () => {
-    if (!bookId || isPreparingReadableCopy) return;
+    if (!bookId || isPreparingReadableCopy || isManualContinuityBusy) return;
 
     if (hasReadableEbook) {
       navigate({
@@ -645,6 +660,58 @@ const BookDetailsScreen: React.FC = () => {
 
     if (canPrepareReadableCopy) {
       await prepareReadableCopy(false);
+      return;
+    }
+
+    if (canTrackManualContinuity) {
+      let progress: number | undefined;
+      if (isCurrentlyReadingFromProgress) {
+        const raw = window.prompt(
+          lang === 'en'
+            ? 'Enter reading progress percentage (0-100).'
+            : 'أدخل نسبة التقدم في القراءة (0-100).'
+        );
+        if (raw === null) return;
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
+          showToast(lang === 'en' ? 'Progress must be between 0 and 100.' : 'يجب أن تكون النسبة بين 0 و100.');
+          return;
+        }
+        progress = parsed / 100;
+      }
+
+      setIsManualContinuityBusy(true);
+      try {
+        await callCallableEndpoint<
+          {
+            bookId: string;
+            sourceType: 'physical' | 'external_ebook';
+            status_state: 'reading';
+            progress?: number;
+          },
+          { ok: boolean }
+        >('recordManualReadingProgress', {
+          bookId,
+          sourceType: manualContinuitySourceType,
+          status_state: 'reading',
+          ...(typeof progress === 'number' ? { progress } : {}),
+        });
+        queryClient.invalidateQueries({ queryKey: ['currentlyReading'] });
+        showToast(
+          isCurrentlyReadingFromProgress
+            ? (lang === 'en' ? 'Reading progress updated.' : 'تم تحديث تقدم القراءة.')
+            : (lang === 'en' ? 'Added to Currently Reading.' : 'تمت الإضافة إلى تقرأ الآن.')
+        );
+      } catch (error) {
+        console.error('[BOOK_DETAILS][MANUAL_CONTINUITY_FAILED]', error);
+        showToast(
+          lang === 'en'
+            ? 'Unable to update reading progress.'
+            : 'تعذر تحديث تقدم القراءة.'
+        );
+      } finally {
+        setIsManualContinuityBusy(false);
+      }
     }
   };
 
@@ -932,26 +999,34 @@ const BookDetailsScreen: React.FC = () => {
             </button>
             <button
               onClick={handleRead}
-              disabled={isPreparingReadableCopy || (!canAttemptRead && !canPrepareReadableCopy)}
+              disabled={isPreparingReadableCopy || isManualContinuityBusy || (!canAttemptRead && !canPrepareReadableCopy && !canTrackManualContinuity)}
               className={cn(
                 'flex aspect-square items-center justify-center rounded-2xl border transition-all lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
                 canAttemptRead
                   ? 'border-accent bg-accent text-black shadow-lg shadow-accent/25 ring-1 ring-accent/40'
                   : canPrepareReadableCopy
                   ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-100'
+                  : canTrackManualContinuity
+                  ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100'
                   : 'border-white/10 bg-white/5 opacity-20'
               )}
             >
-              {isPreparingReadableCopy ? <LoadingSpinner className="!h-5 !w-5" /> : <EyeIcon className={cn('h-6 w-6', canAttemptRead && 'h-6.5 w-6.5')} />}
+              {isPreparingReadableCopy || isManualContinuityBusy ? <LoadingSpinner className="!h-5 !w-5" /> : <EyeIcon className={cn('h-6 w-6', canAttemptRead && 'h-6.5 w-6.5')} />}
               <span className={cn('hidden text-xs font-semibold tracking-wide lg:block', canAttemptRead ? 'text-black/80' : 'text-white/70')}>
                 {isPreparingReadableCopy
                   ? (lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...')
+                  : isManualContinuityBusy
+                  ? (lang === 'en' ? 'Updating...' : 'جارٍ التحديث...')
                   : canAttemptRead
                   ? (lang === 'en' ? 'Read' : 'اقرأ')
                   : acquisitionState === 'failed' && canPrepareReadableCopy
                   ? (lang === 'en' ? 'Retry ebook' : 'أعد تجهيز الكتاب الإلكتروني')
                   : canPrepareReadableCopy
                   ? (lang === 'en' ? 'Prepare ebook' : 'جهّز الكتاب الإلكتروني')
+                  : canTrackManualContinuity && isCurrentlyReadingFromProgress
+                  ? (lang === 'en' ? 'Update Progress' : 'تحديث التقدم')
+                  : canTrackManualContinuity
+                  ? (lang === 'en' ? 'Start Reading' : 'ابدأ القراءة')
                   : (lang === 'en' ? 'Unavailable' : 'غير متاح')}
               </span>
             </button>

@@ -2,6 +2,7 @@ import { wrapCallableV2 } from "../contracts/wrapCallableV2";
 import { requestEbookReadAccess as requestEbookReadAccessRaw } from "../reader/requestEbookReadAccess";
 import { acquireExternalEbookForRead as acquireExternalEbookForReadRaw } from "../library/acquireExternalEbookForRead";
 import { recordReadingProgress as recordReadingProgressRaw } from "../reader/recordReadingProgress";
+import { recordManualReadingProgress as recordManualReadingProgressRaw } from "../reader/recordManualReadingProgress";
 import { getReaderProgress as getReaderProgressRaw } from "../reader/getReaderProgress";
 import { getReaderBookmarks as getReaderBookmarksRaw } from "../reader/getReaderBookmarks";
 import { getReaderHighlights as getReaderHighlightsRaw } from "../reader/getReaderHighlights";
@@ -11,10 +12,12 @@ import { updateReadingSessionNarration as updateReadingSessionNarrationRaw } fro
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "../reader/requestEbookOfflineAccess";
 import { getReaderManifest as getReaderManifestRaw } from "../reader/getReaderManifest";
 import { syncReaderOperations as syncReaderOperationsRaw } from "../reader/syncReaderOperations";
+import { recordReaderDiagnostic as recordReaderDiagnosticRaw } from "../reader/recordReaderDiagnostic";
 
 export const requestEbookReadAccessV2 = wrapCallableV2("requestEbookReadAccess", requestEbookReadAccessRaw);
 export const acquireExternalEbookForRead = wrapCallableV2("acquireExternalEbookForRead", acquireExternalEbookForReadRaw);
 export const recordReadingProgress = wrapCallableV2("recordReadingProgress", recordReadingProgressRaw);
+export const recordManualReadingProgress = wrapCallableV2("recordManualReadingProgress", recordManualReadingProgressRaw);
 export const getReaderProgress = wrapCallableV2("getReaderProgress", getReaderProgressRaw);
 export const getReaderBookmarks = wrapCallableV2("getReaderBookmarks", getReaderBookmarksRaw);
 export const getReaderHighlights = wrapCallableV2("getReaderHighlights", getReaderHighlightsRaw);
@@ -24,3 +27,4 @@ export const updateReadingSessionNarration = wrapCallableV2("updateReadingSessio
 export const getReaderManifest = wrapCallableV2("getReaderManifest", getReaderManifestRaw);
 export const syncReaderOperations = wrapCallableV2("syncReaderOperations", syncReaderOperationsRaw);
 export const requestEbookOfflineAccess = wrapCallableV2("requestEbookOfflineAccess", requestEbookOfflineAccessRaw);
+export const recordReaderDiagnostic = wrapCallableV2("recordReaderDiagnostic", recordReaderDiagnosticRaw);

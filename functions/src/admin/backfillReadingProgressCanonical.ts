@@ -7,7 +7,7 @@ import {
   assertRoleFromClaims,
 } from "../shared/auth";
 
-type CanonicalReaderState = "not_started" | "reading" | "paused" | "completed";
+type CanonicalReaderState = "not_started" | "reading" | "paused" | "abandoned" | "completed";
 
 interface BackfillRequest {
   dryRun?: boolean;
@@ -85,6 +85,7 @@ function normalizeStatusState(raw: unknown, progress: number): CanonicalReaderSt
     normalized === "not_started" ||
     normalized === "reading" ||
     normalized === "paused" ||
+    normalized === "abandoned" ||
     normalized === "completed"
   ) {
     return normalized;

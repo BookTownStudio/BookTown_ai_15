@@ -5,6 +5,10 @@ import type {
   ReaderManifestSnapshot,
   ReaderSessionSnapshot,
 } from '../reader/runtime/contracts.ts';
+import {
+  markReaderTelemetry,
+  reportReaderDiagnostic,
+} from '../reader/runtime/readerTelemetry.ts';
 
 interface ReaderSessionBootstrapState {
   session: ReaderSessionSnapshot | null;
@@ -136,6 +140,13 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
     let active = true;
     setIsLoading(true);
     setError(null);
+    const startedAt = performance.now();
+    markReaderTelemetry('reader_bootstrap_start', { bookId });
+    void reportReaderDiagnostic({
+      eventName: 'reader_bootstrap_start',
+      severity: 'info',
+      payload: { bookId, phase: 'bootstrap' },
+    });
 
     const sessionFn = httpsCallable<{ bookId: string }, ReaderSessionSnapshot>(
       getFunctions(),
@@ -165,12 +176,85 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
                 normalizeEnvelope<ReaderManifestSnapshot>(manifestResult.value.data)
               )
             : null;
+        const durationMs = Number((performance.now() - startedAt).toFixed(2));
+
+        markReaderTelemetry('reader_bootstrap_success', {
+          bookId,
+          format: nextSession.format,
+          durationMs,
+          manifestVersion: nextManifest?.version ?? null,
+        });
+        void reportReaderDiagnostic({
+          eventName: 'reader_bootstrap_success',
+          severity: 'info',
+          payload: {
+            bookId,
+            format: nextSession.format,
+            durationMs,
+            manifestVersion: nextManifest?.version ?? null,
+          },
+        });
+
+        if (manifestResult.status === 'rejected' || !nextManifest) {
+          markReaderTelemetry('reader_manifest_failed', {
+            bookId,
+            phase: 'manifest_hydration',
+            recoverable: true,
+          });
+          void reportReaderDiagnostic({
+            eventName: 'reader_manifest_failed',
+            severity: 'warn',
+            payload: {
+              bookId,
+              phase: 'manifest_hydration',
+              recoverable: true,
+            },
+          });
+        } else if (
+          nextManifest.locationMap.status !== 'ready' ||
+          nextManifest.sectionGraph?.status !== 'ready' ||
+          nextManifest.stableAnchorMap?.status !== 'ready'
+        ) {
+          void reportReaderDiagnostic({
+            eventName: 'reader_manifest_pending',
+            severity: 'info',
+            payload: {
+              bookId,
+              format: nextManifest.format,
+              manifestVersion: nextManifest.version,
+              locationMapStatus: nextManifest.locationMap.status || 'pending',
+              sectionGraphStatus: nextManifest.sectionGraph?.status || 'pending',
+              stableAnchorMapStatus: nextManifest.stableAnchorMap?.status || 'pending',
+              navigationIndexStatus: nextManifest.navigationIndex?.status || 'pending',
+              searchIndexStatus: nextManifest.searchIndex.status,
+              highlightAnchorsStatus: nextManifest.highlightAnchors.status,
+            },
+          });
+        }
 
         setSession(nextSession);
         setManifest(nextManifest);
       })
       .catch((err: any) => {
         if (!active) return;
+        const codeMatch = typeof err?.message === 'string' ? err.message.match(/^\[([^\]]+)\]/) : null;
+        const code = codeMatch?.[1] || 'unknown';
+        markReaderTelemetry('reader_bootstrap_failed', {
+          bookId,
+          code,
+          phase: 'bootstrap',
+          durationMs: Number((performance.now() - startedAt).toFixed(2)),
+        });
+        void reportReaderDiagnostic({
+          eventName: 'reader_bootstrap_failed',
+          severity: 'error',
+          payload: {
+            bookId,
+            code,
+            phase: 'bootstrap',
+            durationMs: Number((performance.now() - startedAt).toFixed(2)),
+          },
+        });
         setError(String(err?.message || err));
         setSession(null);
         setManifest(null);

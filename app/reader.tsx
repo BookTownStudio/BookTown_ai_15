@@ -51,6 +51,7 @@ import type { OfflineEbookRecord } from './lib/offline/offlineManager.ts';
 import {
   markReaderTelemetry,
   observeReaderLayoutShifts,
+  reportReaderDiagnostic,
   resetReaderPerfMetrics,
   sampleReaderMemory,
 } from '../lib/reader/runtime/readerTelemetry.ts';
@@ -105,6 +106,15 @@ function buildHighlightId(anchor: string, page: number): string {
 function clampReaderPage(page: number, totalPages: number): number {
   const safeTotal = Math.max(1, Math.trunc(totalPages));
   return Math.min(Math.max(1, Math.trunc(page)), safeTotal);
+}
+
+function classifyReaderRuntimeFailure(message: string): string {
+  const normalized = message.toLowerCase();
+  if (normalized.includes('network') || normalized.includes('fetch')) return 'asset_fetch';
+  if (normalized.includes('zip') || normalized.includes('opf') || normalized.includes('spine')) return 'malformed_epub';
+  if (normalized.includes('password') || normalized.includes('encrypted')) return 'encrypted_document';
+  if (normalized.includes('pdf')) return 'pdf_runtime';
+  return 'render_runtime';
 }
 
 function renderReaderViewport(children: React.ReactNode, backgroundColor = '#000000') {
@@ -331,7 +341,16 @@ const ReaderScreen: React.FC = () => {
     markReaderTelemetry('pdf_runtime_ready', {
       numPages,
     });
-  }, []);
+    void reportReaderDiagnostic({
+      eventName: 'reader_runtime_ready',
+      severity: 'info',
+      payload: {
+        bookId: bookId || null,
+        format: 'pdf',
+        phase: 'document_load',
+      },
+    });
+  }, [bookId]);
 
   const handleFirstPageRender = useCallback(() => {
     markReaderTelemetry('first_page_rendered');
@@ -341,9 +360,21 @@ const ReaderScreen: React.FC = () => {
   const handleEpubLoadError = useCallback(
     (message: string) => {
       console.error('[READER][EPUB_RENDER_FAILED]', message);
+      const category = classifyReaderRuntimeFailure(message);
       markReaderTelemetry('render_crashes', {
         format: 'epub',
-        message,
+        category,
+      });
+      void reportReaderDiagnostic({
+        eventName: 'reader_runtime_failed',
+        severity: 'error',
+        payload: {
+          bookId: bookId || null,
+          format: 'epub',
+          category,
+          phase: 'render',
+          recoverable: true,
+        },
       });
       setRenderError(
         lang === 'en'
@@ -351,15 +382,27 @@ const ReaderScreen: React.FC = () => {
           : 'تعذّر عرض ملف EPUB داخل التطبيق. يمكنك فتح الملف مباشرة.'
       );
     },
-    [lang]
+    [bookId, lang]
   );
 
   const handlePdfLoadError = useCallback(
     (message: string) => {
       console.error('[READER][PDF_RENDER_FAILED]', message);
+      const category = classifyReaderRuntimeFailure(message);
       markReaderTelemetry('render_crashes', {
         format: 'pdf',
-        message,
+        category,
+      });
+      void reportReaderDiagnostic({
+        eventName: 'reader_runtime_failed',
+        severity: 'error',
+        payload: {
+          bookId: bookId || null,
+          format: 'pdf',
+          category,
+          phase: 'render',
+          recoverable: true,
+        },
       });
       setRenderError(
         lang === 'en'
@@ -367,7 +410,7 @@ const ReaderScreen: React.FC = () => {
           : 'تعذّر عرض ملف PDF داخل التطبيق. يمكنك فتح الملف مباشرة.'
       );
     },
-    [lang]
+    [bookId, lang]
   );
 
   const handleBack = useCallback(() => {
@@ -513,7 +556,16 @@ const ReaderScreen: React.FC = () => {
     markReaderTelemetry('epub_runtime_ready', {
       totalPages,
     });
-  }, [effectiveFormat, hasObservedRuntimePagination, totalPages]);
+    void reportReaderDiagnostic({
+      eventName: 'reader_runtime_ready',
+      severity: 'info',
+      payload: {
+        bookId: bookId || null,
+        format: 'epub',
+        phase: 'pagination',
+      },
+    });
+  }, [bookId, effectiveFormat, hasObservedRuntimePagination, totalPages]);
 
   const effectiveBookmarks = useMemo(() => {
     const merged = new Map<string, (typeof bookmarks)[number]>();

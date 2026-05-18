@@ -142,6 +142,9 @@ function deepClone<T>(value: T): T {
   if (value === null || value === undefined) return value;
   if (Array.isArray(value)) return value.map((item) => deepClone(item)) as T;
   if (typeof value === "object") {
+    if (typeof (value as { toMillis?: unknown }).toMillis === "function") {
+      return value;
+    }
     const obj = value as Record<string, unknown>;
     const out: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(obj)) {
@@ -270,5 +273,302 @@ describe("syncReaderOperations", () => {
     expect(result.rejected).toBe(1);
     expect(result.errors.length).toBe(1);
     expect(result.errors[0].opId).toBe("op_invalid_1");
+  });
+
+  it("accepts abandoned progress state through backend-authoritative sync", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    const start = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_start",
+            idempotencyKey: "idem_progress_start",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: Date.now(),
+            payload: {
+              percentage: 0.2,
+              lastPosition: { page: 20, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(start.rejected).toBe(0);
+
+    const abandoned = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_abandon",
+            idempotencyKey: "idem_progress_abandon",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: Date.now() + 1,
+            payload: {
+              percentage: 0.2,
+              lastPosition: { page: 20, totalPages: 100 },
+              status_state: "abandoned",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(abandoned.accepted).toBe(1);
+    expect(abandoned.applied).toBe(1);
+    expect(abandoned.rejected).toBe(0);
+
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.status_state).toBe("abandoned");
+    expect(progress?.schemaVersion).toBe(2);
+  });
+
+  it("preserves distinct queued progress operations with operation-level idempotency", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    const result = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_older",
+            idempotencyKey: "progress:book_sync:1000:op_progress_older",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 1_000,
+            payload: {
+              percentage: 0.2,
+              lastPosition: { page: 20, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+          {
+            opId: "op_progress_newer",
+            idempotencyKey: "progress:book_sync:2000:op_progress_newer",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 2_000,
+            payload: {
+              percentage: 0.35,
+              lastPosition: { page: 35, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(result.accepted).toBe(2);
+    expect(result.applied).toBe(2);
+    expect(result.rejected).toBe(0);
+
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.progress).toBe(0.35);
+    expect(progress?.lastPosition?.page).toBe(35);
+    expect(progress?.lastClientTimestampMs).toBe(2_000);
+    expect(progress?.continuityLevel).toBe("full_runtime");
+  });
+
+  it("rejects stale replay so older device progress cannot overwrite newer continuity", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    const newer = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_newer",
+            idempotencyKey: "progress:book_sync:3000:op_progress_newer",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 3_000,
+            payload: {
+              percentage: 0.6,
+              lastPosition: { page: 60, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(newer.rejected).toBe(0);
+
+    const stale = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_stale",
+            idempotencyKey: "progress:book_sync:2000:op_progress_stale",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 2_000,
+            payload: {
+              percentage: 0.4,
+              lastPosition: { page: 40, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(stale.applied).toBe(0);
+    expect(stale.rejected).toBe(1);
+    expect(stale.errors[0].code).toBe("failed-precondition");
+
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.progress).toBe(0.6);
+    expect(progress?.lastPosition?.page).toBe(60);
+  });
+
+  it("converges equal-timestamp runtime conflicts by operation id", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    const first = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_a",
+            idempotencyKey: "progress:book_sync:5000:op_progress_a",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 5_000,
+            payload: {
+              percentage: 0.5,
+              lastPosition: { page: 50, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+    expect(first.rejected).toBe(0);
+
+    const winner = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_b",
+            idempotencyKey: "progress:book_sync:5000:op_progress_b",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 5_000,
+            payload: {
+              percentage: 0.55,
+              lastPosition: { page: 55, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+    expect(winner.rejected).toBe(0);
+
+    const loser = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_a0",
+            idempotencyKey: "progress:book_sync:5000:op_progress_a0",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 5_000,
+            payload: {
+              percentage: 0.52,
+              lastPosition: { page: 52, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(loser.rejected).toBe(1);
+    expect(loser.errors[0].code).toBe("already-exists");
+
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.progress).toBe(0.55);
+    expect(progress?.lastSyncedOperationId).toBe("op_progress_b");
+  });
+
+  it("protects completed continuity from delayed reading replay", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    const completed = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_before_complete",
+            idempotencyKey: "progress:book_sync:3500:op_progress_before_complete",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 3_500,
+            payload: {
+              percentage: 0.75,
+              lastPosition: { page: 75, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+          {
+            opId: "op_progress_complete",
+            idempotencyKey: "progress:book_sync:4000:op_progress_complete",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 4_000,
+            payload: {
+              percentage: 1,
+              lastPosition: { page: 100, totalPages: 100 },
+              status_state: "completed",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(completed.rejected).toBe(0);
+
+    const stale = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_after_complete_stale",
+            idempotencyKey: "progress:book_sync:3000:op_progress_after_complete_stale",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 3_000,
+            payload: {
+              percentage: 0.75,
+              lastPosition: { page: 75, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(stale.applied).toBe(0);
+    expect(stale.rejected).toBe(1);
+
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.status_state).toBe("completed");
+    expect(progress?.progress).toBe(1);
   });
 });

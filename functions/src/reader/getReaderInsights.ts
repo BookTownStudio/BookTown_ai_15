@@ -6,12 +6,16 @@ import * as logger from "firebase-functions/logger";
 import { Timestamp } from "firebase-admin/firestore";
 
 const db = admin.firestore();
-const ACTIVE_READING_STATES = new Set([
-  "reading",
-  "paused",
-  "in_progress",
-  "currently_reading",
-]);
+const ACTIVE_READING_STATES = ["reading", "paused"] as const;
+const DEFAULT_CONTINUE_READING_LIMIT = 50;
+const MAX_CONTINUE_READING_LIMIT = 50;
+
+function toBoundedLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_CONTINUE_READING_LIMIT;
+  }
+  return Math.max(1, Math.min(MAX_CONTINUE_READING_LIMIT, Math.trunc(value)));
+}
 
 function toMillis(value: unknown): number {
   if (!value) return 0;
@@ -27,6 +31,22 @@ function toMillis(value: unknown): number {
   return 0;
 }
 
+function statusRank(value: unknown): number {
+  return value === "reading" ? 0 : value === "paused" ? 1 : 2;
+}
+
+function toUnitProgress(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return 0;
+  if (value > 1) return Math.max(0, Math.min(1, value / 100));
+  return Math.max(0, Math.min(1, value));
+}
+
+function normalizeOptionalString(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
 /**
  * getReaderInsights
  * ---------------------------------
@@ -34,24 +54,30 @@ function toMillis(value: unknown): number {
  *
  * Read-only. Derived. Deterministic.
  */
-export const getReaderInsights = onCall({ cors: true }, async (request) => {
+export const getReaderInsightsHandler = async (request: any) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Auth required.");
   }
 
   const uid = request.auth.uid;
+  const limit = toBoundedLimit(request.data?.limit);
 
   try {
     // -------------------------------------------------
-    // Reading progress aggregation
+    // Active reading projection
+    //
+    // This is the canonical Continue Reading source. It is intentionally
+    // bounded and state-scoped; shelves never gate continuity visibility.
     // -------------------------------------------------
     const progressSnap = await db
       .collection("reading_progress")
       .where("uid", "==", uid)
+      .where("status_state", "in", ACTIVE_READING_STATES)
+      .orderBy("lastActiveAt", "desc")
+      .limit(limit)
       .get();
 
     let totalReadingTimeSeconds = 0;
-    let finishedCount = 0;
 
     const currentlyReading: any[] = [];
 
@@ -64,24 +90,33 @@ export const getReaderInsights = onCall({ cors: true }, async (request) => {
 
       totalReadingTimeSeconds += data.totalActiveSeconds ?? 0;
 
-      if (statusState === "completed") {
-        finishedCount += 1;
-      }
-
-      if (ACTIVE_READING_STATES.has(statusState)) {
+      if (statusState === "reading" || statusState === "paused") {
         const lastActiveAt = data.lastActiveAt ?? data.updatedAt ?? null;
         currentlyReading.push({
           bookId: data.bookId,
-          progress: data.progress,
+          progress: toUnitProgress(data.progress),
+          status_state: statusState,
+          continuityLevel: normalizeOptionalString(data.continuityLevel),
+          sourceType: normalizeOptionalString(data.sourceType),
           lastPosition: data.lastPosition ?? null,
           lastActiveAt,
         });
       }
     });
 
-    currentlyReading.sort(
-      (a, b) => toMillis(b.lastActiveAt) - toMillis(a.lastActiveAt)
-    );
+    currentlyReading.sort((a, b) => {
+      const stateDelta = statusRank(a.status_state) - statusRank(b.status_state);
+      if (stateDelta !== 0) return stateDelta;
+      return toMillis(b.lastActiveAt) - toMillis(a.lastActiveAt);
+    });
+
+    const finishedCountSnap = await db
+      .collection("reading_progress")
+      .where("uid", "==", uid)
+      .where("status_state", "==", "completed")
+      .count()
+      .get();
+    const finishedCount = finishedCountSnap.data().count;
 
     // -------------------------------------------------
     // Streak calculation (event-derived)
@@ -152,4 +187,6 @@ export const getReaderInsights = onCall({ cors: true }, async (request) => {
       "Failed to compute reader insights."
     );
   }
-});
+};
+
+export const getReaderInsights = onCall({ cors: true }, getReaderInsightsHandler);

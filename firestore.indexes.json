@@ -529,6 +529,24 @@
       ]
     },
     {
+      "collectionGroup": "reading_progress",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "status_state",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastActiveAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "reader_events",
       "queryScope": "COLLECTION",
       "fields": [
@@ -543,6 +561,28 @@
         {
           "fieldPath": "occurredAt",
           "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "shelf_books",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "shelfId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "ownerId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "addedAt",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "bookId",
+          "order": "ASCENDING"
         }
       ]
     },

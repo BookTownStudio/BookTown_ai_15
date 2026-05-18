@@ -5,6 +5,7 @@ import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
 import {
   writeShelfBookInTransaction,
   deleteShelfBookInTransaction,
+  readShelfBookInTransaction,
 } from "./shelfBookEntry";
 
 const db = admin.firestore();
@@ -58,15 +59,6 @@ function sanitizeSnapshot(input: unknown): ShelfBookSnapshot | null {
 
 function readShelfOwnerId(shelfData: Record<string, unknown>): string {
   return sanitizeString(shelfData.ownerId, 128);
-}
-
-function readEntries(
-  shelfData: Record<string, unknown>
-): Record<string, Record<string, unknown>> {
-  if (!shelfData.entries || typeof shelfData.entries !== "object" || Array.isArray(shelfData.entries)) {
-    return {};
-  }
-  return shelfData.entries as Record<string, Record<string, unknown>>;
 }
 
 export const moveBookBetweenShelves = onCall<MoveBookBetweenShelvesRequest>(
@@ -123,11 +115,10 @@ export const moveBookBetweenShelves = onCall<MoveBookBetweenShelvesRequest>(
         shelfData: destinationData,
       });
 
-      const sourceEntries = readEntries(sourceData);
-      const sourceEntry =
-        sourceEntries[bookId] && typeof sourceEntries[bookId] === "object"
-          ? (sourceEntries[bookId] as Record<string, unknown>)
-          : null;
+      const [sourceEntry, destinationEntry] = await Promise.all([
+        readShelfBookInTransaction(tx, db, fromShelfId, bookId),
+        readShelfBookInTransaction(tx, db, toShelfId, bookId),
+      ]);
 
       if (!sourceEntry) {
         throw new HttpsError(
@@ -135,12 +126,6 @@ export const moveBookBetweenShelves = onCall<MoveBookBetweenShelvesRequest>(
           "Book is not present on the source shelf."
         );
       }
-
-      const destinationEntries = readEntries(destinationData);
-      const destinationEntry =
-        destinationEntries[bookId] && typeof destinationEntries[bookId] === "object"
-          ? (destinationEntries[bookId] as Record<string, unknown>)
-          : null;
 
       const sourceSnapshot =
         sourceEntry.snapshot && typeof sourceEntry.snapshot === "object" && !Array.isArray(sourceEntry.snapshot)

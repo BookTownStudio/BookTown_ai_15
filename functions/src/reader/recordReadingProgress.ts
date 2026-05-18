@@ -6,6 +6,7 @@ import * as logger from "firebase-functions/logger";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import {
   computeReadingProgressMutation,
+  isPersistedReadingState,
   ReadingState,
 } from "./readingProgressStateMachine";
 import {
@@ -198,7 +199,7 @@ export const recordReadingProgressHandler = async (request: any) => {
   if (
     requestedStateRaw !== undefined &&
     requestedStateRaw !== null &&
-    !["reading", "paused", "completed"].includes(requestedStateRaw)
+    !isPersistedReadingState(requestedStateRaw)
   ) {
     throw new HttpsError(
       "invalid-argument",

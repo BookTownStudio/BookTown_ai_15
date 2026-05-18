@@ -1,14 +1,29 @@
 import { Timestamp } from "firebase-admin/firestore";
 
-export type ReadingState = "not_started" | "reading" | "paused" | "completed";
-export type ReaderEvent = "read_start" | "read_pause" | "read_complete";
+export type ReadingState = "not_started" | "reading" | "paused" | "abandoned" | "completed";
+export type PersistedReadingState = Exclude<ReadingState, "not_started">;
+export type ReaderEvent =
+  | "read_start"
+  | "read_pause"
+  | "read_resume"
+  | "read_abandon"
+  | "read_complete"
+  | "reread_start";
 
 const VALID_TRANSITIONS: Record<ReadingState, ReadingState[]> = {
   not_started: ["reading"],
-  reading: ["paused", "completed"],
-  paused: ["reading", "completed"],
-  completed: [],
+  reading: ["paused", "abandoned", "completed"],
+  paused: ["reading", "abandoned", "completed"],
+  abandoned: ["reading"],
+  completed: ["reading"],
 };
+
+const PERSISTED_READING_STATES = new Set<PersistedReadingState>([
+  "reading",
+  "paused",
+  "abandoned",
+  "completed",
+]);
 
 export function assertValidTransition(from: ReadingState, to: ReadingState): void {
   if (from === to) return;
@@ -21,8 +36,35 @@ export function assertValidTransition(from: ReadingState, to: ReadingState): voi
 export function resolveReaderEvent(from: ReadingState, to: ReadingState): ReaderEvent | null {
   if (from === "not_started" && to === "reading") return "read_start";
   if (from === "reading" && to === "paused") return "read_pause";
+  if (from === "paused" && to === "reading") return "read_resume";
+  if ((from === "reading" || from === "paused") && to === "abandoned") return "read_abandon";
   if ((from === "reading" || from === "paused") && to === "completed") return "read_complete";
+  if (from === "abandoned" && to === "reading") return "read_resume";
+  if (from === "completed" && to === "reading") return "reread_start";
   return null;
+}
+
+export function isPersistedReadingState(value: unknown): value is PersistedReadingState {
+  return typeof value === "string" && PERSISTED_READING_STATES.has(value as PersistedReadingState);
+}
+
+function resolvePreviousState(previousData: Record<string, unknown>): ReadingState {
+  const raw = previousData.status_state;
+  if (isPersistedReadingState(raw)) {
+    return raw;
+  }
+  return "not_started";
+}
+
+function isTimestampLike(value: unknown): value is Timestamp {
+  return (
+    value instanceof Timestamp ||
+    (
+      typeof value === "object" &&
+      value !== null &&
+      typeof (value as { toMillis?: unknown }).toMillis === "function"
+    )
+  );
 }
 
 export interface ReadingProgressComputationInput {
@@ -55,7 +97,10 @@ export function computeReadingProgressMutation(
     previousData,
   } = input;
 
-  const previousState = (previousData.status_state as ReadingState | undefined) ?? "not_started";
+  const previousState = resolvePreviousState(previousData);
+  if (requestedStateRaw === "not_started") {
+    throw new Error("Illegal reading state transition: any -> not_started");
+  }
   const nextState = requestedStateRaw
     ? requestedStateRaw
     : previousState === "completed"
@@ -68,12 +113,19 @@ export function computeReadingProgressMutation(
     typeof previousData.totalActiveSeconds === "number"
       ? previousData.totalActiveSeconds
       : 0;
-  let sessionStartedAt = (previousData.sessionStartedAt as Timestamp | null | undefined) ?? null;
+  let sessionStartedAt = isTimestampLike(previousData.sessionStartedAt)
+    ? previousData.sessionStartedAt
+    : null;
   let sessionCount =
     typeof previousData.sessionCount === "number" ? previousData.sessionCount : 0;
 
   if (
-    (previousState === "not_started" || previousState === "paused") &&
+    (
+      previousState === "not_started" ||
+      previousState === "paused" ||
+      previousState === "abandoned" ||
+      previousState === "completed"
+    ) &&
     nextState === "reading"
   ) {
     sessionStartedAt = now;
@@ -99,6 +151,7 @@ export function computeReadingProgressMutation(
     lastActiveAt: now,
     totalActiveSeconds,
     sessionCount,
+    schemaVersion: 2,
   };
 
   if (sessionStartedAt) {
@@ -117,6 +170,18 @@ export function computeReadingProgressMutation(
     payload.completedAt = now;
   } else if (previousData.completedAt) {
     payload.completedAt = previousData.completedAt;
+  }
+
+  if (nextState === "paused") {
+    payload.pausedAt = now;
+  } else if (previousData.pausedAt) {
+    payload.pausedAt = previousData.pausedAt;
+  }
+
+  if (nextState === "abandoned") {
+    payload.abandonedAt = now;
+  } else if (previousData.abandonedAt) {
+    payload.abandonedAt = previousData.abandonedAt;
   }
 
   return {

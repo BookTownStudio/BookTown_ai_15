@@ -1685,34 +1685,27 @@ class FirebaseShelfService {
     shelfId: string,
     options?: { resolveBooks?: boolean; limit?: number }
   ): Promise<any[]> {
-    const db = getDb();
-    if (!db) return [];
-
     const boundedLimit =
       typeof options?.limit === "number" && Number.isFinite(options.limit)
         ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
         : 200;
 
-    // Authoritative read from shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
-    // Single-field index on shelfId is auto-created by Firestore.
+    // Authoritative read from shelf_books collection (SHELF_BOOKS_SCHEMA_V1)
+    // through the backend callable. Legacy nested user shelf projections are
+    // migration artifacts only and must not gate shelf membership.
     const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
     const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
 
-    const shelfBooksQuery = query(
-      collection(
-        db,
-        "users",
-        normalizedUid,
-        "shelves",
-        normalizedShelfId,
-        "books"
-      ),
-  limit(boundedLimit)
-);    const snap = await getDocs(shelfBooksQuery);
+    const response = await callEndpoint<
+      { shelfId: string; limit: number },
+      { items: Record<string, unknown>[]; hasMore: boolean; nextCursor: Record<string, unknown> | null }
+    >("listShelfEntries", {
+      shelfId: normalizedShelfId,
+      limit: boundedLimit,
+    });
 
-    const rawEntries = snap.docs
-      .map((sbDoc) => {
-        const sb = sbDoc.data();
+    const rawEntries = response.items
+      .map((sb) => {
         const bookId = typeof sb.bookId === "string" ? sb.bookId.trim() : "";
         if (!bookId) return null;
         return {

@@ -50,6 +50,15 @@ const recommendationOriginSchema = z
   })
   .strict();
 
+const readerDiagnosticPayloadSchema = z
+  .record(z.string(), z.union([
+    z.string().max(160),
+    z.number(),
+    z.boolean(),
+    z.null(),
+  ]))
+  .optional();
+
 const renderSurfaceSchema = z.enum([
   "home",
   "feed",
@@ -129,6 +138,9 @@ const readerInsightsDataSchema = z
         .object({
           bookId: z.string().min(1),
           progress: z.number().min(0).max(1),
+          status_state: z.enum(["reading", "paused"]).optional(),
+          continuityLevel: z.string().min(1).nullable().optional(),
+          sourceType: z.string().min(1).nullable().optional(),
           lastPosition: z.unknown().nullable(),
           lastActiveAt: z.unknown().optional(),
         })
@@ -582,6 +594,25 @@ const shelfSchema = z
     copiedFrom: shelfCopiedFromSchema.optional(),
     createdAt: z.string().min(1),
     updatedAt: z.string().min(1),
+  })
+  .strict();
+
+const shelfEntrySchema = z
+  .object({
+    id: z.string().min(1),
+    shelfId: z.string().min(1),
+    bookId: z.string().min(1),
+    ownerId: z.string().min(1),
+    addedAt: z.string().min(1),
+    snapshot: z.record(z.string(), z.unknown()).nullable(),
+    recommendationOrigin: z.record(z.string(), z.unknown()).optional(),
+  })
+  .strict();
+
+const shelfEntryCursorSchema = z
+  .object({
+    addedAt: z.string().min(1),
+    bookId: z.string().min(1),
   })
   .strict();
 
@@ -1568,6 +1599,30 @@ export const apiContracts = {
         .object({
           items: z.array(shelfSchema),
           hasMore: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts", "lib/hooks/useUserShelves.ts"],
+      }
+    ),
+
+    listShelfEntries: defineContract(
+      z
+        .object({
+          shelfId: z.string().min(1),
+          cursor: shelfEntryCursorSchema.optional(),
+          limit: z.number().int().min(1).max(100).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          items: z.array(shelfEntrySchema),
+          nextCursor: shelfEntryCursorSchema.nullable(),
+          hasMore: z.boolean(),
+          source: z.literal("shelf_books"),
+          membershipAuthority: z.literal("shelf_books"),
+          shelfBookDocIds: z.array(z.string().min(1)),
         })
         .strict(),
       "httpsCallable",
@@ -3179,7 +3234,8 @@ export const apiContracts = {
         z.null(),
         z
           .object({
-            bookId: z.string().min(1),
+            bookId: z.string().min(1).optional(),
+            limit: z.number().int().positive().max(50).optional(),
           })
           .strict(),
       ]),
@@ -4769,7 +4825,7 @@ export const apiContracts = {
           percentage: z.number().min(0).max(1),
           lastPosition: readerLastPositionSchema.optional(),
           lastAnchor: canonicalAnchorV1Schema.optional(),
-          status_state: z.enum(["reading", "paused", "completed"]).optional(),
+          status_state: z.enum(["reading", "paused", "abandoned", "completed"]).optional(),
           recommendationContext: recommendationOriginSchema.optional(),
         })
         .strict(),
@@ -4781,6 +4837,29 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/hooks/useReaderProgress.ts"],
+      }
+    ),
+
+    recordManualReadingProgress: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+          progress: z.number().min(0).max(1).optional(),
+          currentPage: z.number().int().positive().optional(),
+          totalPages: z.number().int().positive().optional(),
+          chapter: z.string().min(1).max(160).optional(),
+          status_state: z.enum(["reading", "paused", "abandoned", "completed"]).optional(),
+          sourceType: z.enum(["physical", "external_ebook"]),
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["app/book-details.tsx"],
       }
     ),
 
@@ -4830,6 +4909,36 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/reader/offline/useReaderSync.ts"],
+      }
+    ),
+
+    recordReaderDiagnostic: defineContract(
+      z
+        .object({
+          eventName: z.enum([
+            "reader_bootstrap_start",
+            "reader_bootstrap_success",
+            "reader_bootstrap_failed",
+            "reader_manifest_failed",
+            "reader_manifest_pending",
+            "reader_runtime_failed",
+            "reader_runtime_ready",
+            "reader_replay_flush",
+            "reader_replay_failed",
+            "reader_continuity_write_failed",
+          ]),
+          severity: z.enum(["info", "warn", "error"]).optional(),
+          payload: readerDiagnosticPayloadSchema,
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/reader/runtime/readerTelemetry.ts"],
       }
     ),
 

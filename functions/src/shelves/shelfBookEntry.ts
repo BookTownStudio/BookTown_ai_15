@@ -51,6 +51,16 @@ export function shelfBookRef(
     .doc(buildShelfBookDocId(shelfId, bookId));
 }
 
+export async function readShelfBookInTransaction(
+  tx: Transaction,
+  db: Firestore,
+  shelfId: string,
+  bookId: string
+): Promise<Record<string, unknown> | null> {
+  const snap = await tx.get(shelfBookRef(db, shelfId, bookId));
+  return snap.exists ? ((snap.data() ?? {}) as Record<string, unknown>) : null;
+}
+
 export function writeShelfBookInTransaction(
   tx: Transaction,
   db: Firestore,

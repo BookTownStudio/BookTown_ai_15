@@ -5,7 +5,7 @@ import { offlineQueue, QueueItem } from './offlineQueue.ts';
 import { useToast } from '../../store/toast.tsx';
 import { readerSyncQueue } from '../reader/offline/readerSyncQueue.ts';
 import { flushReaderOperations } from '../reader/offline/readerSyncClient.ts';
-import { markReaderTelemetry } from '../reader/runtime/readerTelemetry.ts';
+import { markReaderTelemetry, reportReaderDiagnostic } from '../reader/runtime/readerTelemetry.ts';
 
 interface OfflineContextType {
     isOffline: boolean;
@@ -81,6 +81,19 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
                     rejected: result.rejected,
                     failureRate: result.accepted > 0 ? result.rejected / result.accepted : 0,
                 });
+                void reportReaderDiagnostic({
+                    eventName: 'reader_replay_flush',
+                    severity: result.rejected > 0 ? 'warn' : 'info',
+                    payload: {
+                        accepted: result.accepted,
+                        applied: result.applied,
+                        deduped: result.deduped,
+                        rejected: result.rejected,
+                        failureRate: result.accepted > 0 ? result.rejected / result.accepted : 0,
+                        queueSize: readerQueueSize,
+                        remainingQueueSize: readerSyncQueue.count(),
+                    },
+                });
             }
         } catch (error) {
             console.warn('[OfflineProvider][READER_SYNC_FAILED]', error);
@@ -88,6 +101,15 @@ export const OfflineProvider: React.FC<{ children: ReactNode }> = ({ children })
                 accepted: readerQueueSize,
                 rejected: readerQueueSize,
                 failureRate: readerQueueSize > 0 ? 1 : 0,
+            });
+            void reportReaderDiagnostic({
+                eventName: 'reader_replay_failed',
+                severity: 'error',
+                payload: {
+                    queueSize: readerQueueSize,
+                    remainingQueueSize: readerSyncQueue.count(),
+                    phase: 'offline_replay',
+                },
             });
         } finally {
             markReaderTelemetry('offline_flush_time', {

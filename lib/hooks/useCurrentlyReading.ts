@@ -77,19 +77,42 @@ const progressToUnit = (value: unknown): number => {
   return Math.max(0, Math.min(1, value));
 };
 
+const toContinuityState = (value: unknown): CurrentlyReadingItem['status_state'] | undefined => {
+  if (
+    value === 'reading' ||
+    value === 'paused' ||
+    value === 'abandoned' ||
+    value === 'completed'
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
+const toOptionalString = (value: unknown): string | null | undefined => {
+  if (value === null) return null;
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+};
+
 export function useCurrentlyReading(
   maxItems: number = 50
 ): UseCurrentlyReadingResult {
   const { user } = useAuth();
   const enabled = !!user?.uid;
+  const boundedLimit = Math.max(1, Math.min(50, Math.trunc(maxItems)));
 
   const queryResult = useQuery({
-    queryKey: ['currentlyReading', user?.uid],
+    queryKey: ['currentlyReading', user?.uid, { limit: boundedLimit }],
     enabled,
     queryFn: async () => {
       if (!user?.uid) return [];
-      const fn = httpsCallable<void, ReaderInsightsDTO>(getFunctions(), 'getReaderInsights');
-      const res = await fn();
+      const fn = httpsCallable<{ limit: number }, ReaderInsightsDTO>(
+        getFunctions(),
+        'getReaderInsights'
+      );
+      const res = await fn({ limit: boundedLimit });
       const envelope = res.data as any;
       if (envelope?.success === false) {
         const code =
@@ -117,6 +140,9 @@ export function useCurrentlyReading(
             bookId,
             progress: progressToUnit(row?.progress),
             updatedAt: toTimestampOrNull(row?.lastActiveAt),
+            status_state: toContinuityState(row?.status_state),
+            continuityLevel: toOptionalString(row?.continuityLevel),
+            sourceType: toOptionalString(row?.sourceType),
           };
         })
         .filter((item): item is CurrentlyReadingItem => item !== null);
@@ -126,8 +152,8 @@ export function useCurrentlyReading(
   });
 
   const items = useMemo(
-    () => (queryResult.data ?? []).slice(0, Math.max(1, maxItems)),
-    [maxItems, queryResult.data]
+    () => (queryResult.data ?? []).slice(0, boundedLimit),
+    [boundedLimit, queryResult.data]
   );
 
   return {

@@ -397,7 +397,7 @@ const HomeScreen: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-12 mt-8">
-                {/* 📖 Continue Reading (canonical currently-reading shelf) */}
+                {/* Continue Reading: virtual active-reading projection */}
                 <CollapsibleSection
                   titleEn="Continue Reading"
                   titleAr="أكمل القراءة"

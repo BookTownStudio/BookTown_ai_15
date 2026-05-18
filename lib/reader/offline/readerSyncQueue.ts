@@ -21,7 +21,7 @@ function writeQueue(next: ReaderSyncOperation[]): void {
 
 function operationDeduplicationKey(op: ReaderSyncOperation): string {
   if (op.type === "upsert_progress") {
-    return `progress:${op.bookId}`;
+    return `progress:${op.bookId}:${op.clientTimestampMs}:${op.opId}`;
   }
 
   if (op.type === "upsert_highlight" || op.type === "delete_highlight") {

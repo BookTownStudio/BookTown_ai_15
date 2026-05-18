@@ -4,6 +4,7 @@ import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import {
   computeReadingProgressMutation,
+  isPersistedReadingState,
   ReadingState,
 } from "./readingProgressStateMachine";
 import {
@@ -37,6 +38,7 @@ interface ReaderSyncError {
 
 const MAX_OPS_PER_CALL = 100;
 const ID_TOKEN_PATTERN = /^[A-Za-z0-9:_-]{1,128}$/;
+const MAX_CLIENT_CLOCK_DRIFT_MS = 24 * 60 * 60 * 1000;
 
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -251,10 +253,148 @@ function sanitizeOperation(raw: unknown): ReaderSyncOperation {
 
 function resolveProgressState(payload: Record<string, unknown> | undefined): ReadingState | undefined {
   const raw = asNonEmptyString(payload?.status_state);
-  if (raw === "reading" || raw === "paused" || raw === "completed") {
+  if (isPersistedReadingState(raw)) {
     return raw;
   }
   return undefined;
+}
+
+function timestampToMillis(value: unknown): number | null {
+  if (
+    value &&
+    typeof value === "object" &&
+    typeof (value as { toMillis?: unknown }).toMillis === "function"
+  ) {
+    const millis = (value as { toMillis: () => number }).toMillis();
+    return Number.isFinite(millis) ? millis : null;
+  }
+  return null;
+}
+
+function readNumber(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function isExplicitReadingResume(
+  previousState: ReadingState,
+  requestedState: ReadingState | undefined,
+  payload: Record<string, unknown>
+): boolean {
+  const explicitReread =
+    payload.restart === true ||
+    payload.reread === true ||
+    payload.explicitReread === true;
+
+  return (
+    requestedState === "reading" &&
+    (
+      previousState === "paused" ||
+      previousState === "abandoned" ||
+      (previousState === "completed" && explicitReread)
+    )
+  );
+}
+
+function assertProgressReplayIsCurrent(params: {
+  uid: string;
+  bookId: string;
+  op: ReaderSyncOperation;
+  now: Timestamp;
+  previousData: Record<string, unknown>;
+  requestedState: ReadingState | undefined;
+  payload: Record<string, unknown>;
+}): void {
+  const { uid, bookId, op, now, previousData, requestedState, payload } = params;
+  const nowMs = now.toMillis();
+  if (op.clientTimestampMs > nowMs + MAX_CLIENT_CLOCK_DRIFT_MS) {
+    logger.warn("[READER][SYNC_OP_CLOCK_DRIFT_REJECTED]", {
+      uid,
+      bookId,
+      opId: op.opId,
+      clientTimestampMs: op.clientTimestampMs,
+      serverTimestampMs: nowMs,
+    });
+    throw new HttpsError("failed-precondition", "Replay operation timestamp is too far in the future.");
+  }
+
+  const previousState = isPersistedReadingState(previousData.status_state)
+    ? previousData.status_state
+    : "not_started";
+  const explicitResume = isExplicitReadingResume(previousState, requestedState, payload);
+  const previousClientTimestampMs = readNumber(previousData.lastClientTimestampMs);
+  const previousContinuityLevel =
+    typeof previousData.continuityLevel === "string" ? previousData.continuityLevel : null;
+  const previousOperationId =
+    typeof previousData.lastSyncedOperationId === "string" ? previousData.lastSyncedOperationId : null;
+
+  if (
+    previousClientTimestampMs !== null &&
+    op.clientTimestampMs < previousClientTimestampMs &&
+    !explicitResume
+  ) {
+    logger.info("[READER][SYNC_STALE_PROGRESS_REJECTED]", {
+      uid,
+      bookId,
+      opId: op.opId,
+      clientTimestampMs: op.clientTimestampMs,
+      previousClientTimestampMs,
+      previousState,
+      requestedState: requestedState ?? "auto",
+    });
+    throw new HttpsError("failed-precondition", "Stale progress replay rejected.");
+  }
+
+  if (
+    previousClientTimestampMs !== null &&
+    op.clientTimestampMs === previousClientTimestampMs &&
+    previousContinuityLevel === "full_runtime" &&
+    previousOperationId !== null &&
+    op.opId <= previousOperationId
+  ) {
+    logger.info("[READER][SYNC_RUNTIME_PRECISION_COLLISION_DEDUPED]", {
+      uid,
+      bookId,
+      opId: op.opId,
+      clientTimestampMs: op.clientTimestampMs,
+      previousContinuityLevel,
+      previousOperationId,
+    });
+    throw new HttpsError("already-exists", "Equivalent runtime progress operation already won.");
+  }
+
+  const completedAtMs = timestampToMillis(previousData.completedAt);
+  if (
+    previousState === "completed" &&
+    !explicitResume &&
+    completedAtMs !== null &&
+    op.clientTimestampMs <= completedAtMs
+  ) {
+    logger.info("[READER][SYNC_COMPLETION_PROTECTED]", {
+      uid,
+      bookId,
+      opId: op.opId,
+      clientTimestampMs: op.clientTimestampMs,
+      completedAtMs,
+    });
+    throw new HttpsError("failed-precondition", "Stale replay cannot overwrite completed progress.");
+  }
+
+  const abandonedAtMs = timestampToMillis(previousData.abandonedAt);
+  if (
+    previousState === "abandoned" &&
+    !explicitResume &&
+    abandonedAtMs !== null &&
+    op.clientTimestampMs <= abandonedAtMs
+  ) {
+    logger.info("[READER][SYNC_ABANDONMENT_PROTECTED]", {
+      uid,
+      bookId,
+      opId: op.opId,
+      clientTimestampMs: op.clientTimestampMs,
+      abandonedAtMs,
+    });
+    throw new HttpsError("failed-precondition", "Stale replay cannot reactivate abandoned progress.");
+  }
 }
 
 async function applyProgressOperationInTx(params: {
@@ -281,6 +421,16 @@ async function applyProgressOperationInTx(params: {
   const eventsRef = db.collection("reader_events");
   const progressSnap = await tx.get(progressRef);
   const previousData = progressSnap.exists ? progressSnap.data() || {} : {};
+  assertProgressReplayIsCurrent({
+    uid,
+    bookId: op.bookId,
+    op,
+    now,
+    previousData,
+    requestedState,
+    payload,
+  });
+
   const existingRecommendationOrigin = sanitizeRecommendationOrigin(
     previousData.recommendationOrigin
   );
@@ -307,6 +457,11 @@ async function applyProgressOperationInTx(params: {
 
   const progressPayload: Record<string, unknown> = {
     ...mutation.payload,
+    continuityLevel: "full_runtime",
+    continuitySource: "runtime",
+    lastClientTimestampMs: op.clientTimestampMs,
+    lastSyncedOperationId: op.opId,
+    lastSyncedIdempotencyKey: op.idempotencyKey,
     updatedAt: FieldValue.serverTimestamp(),
     ...(authoritativeRecommendationOrigin
       ? { recommendationOrigin: authoritativeRecommendationOrigin }
@@ -528,6 +683,10 @@ export const syncReaderOperationsHandler = async (request: any) => {
 
   const accepted = sanitizedOps.length;
   const rejected = errors.length;
+  const rejectionCodes = errors.reduce<Record<string, number>>((acc, entry) => {
+    acc[entry.code] = (acc[entry.code] || 0) + 1;
+    return acc;
+  }, {});
 
   logger.info("[READER][SYNC_OPS_RESULT]", {
     uid,
@@ -535,6 +694,7 @@ export const syncReaderOperationsHandler = async (request: any) => {
     applied,
     deduped,
     rejected,
+    rejectionCodes,
   });
 
   return {

@@ -32,12 +32,14 @@ export function enqueueProgressSyncOperation(params: {
   lastAnchor?: Record<string, unknown> | null;
   recommendationContext?: LibrarianRecommendationContext;
 }): ReaderSyncOperation {
+  const opId = generateOpId();
+  const clientTimestampMs = Date.now();
   const op: ReaderSyncOperation = {
-    opId: generateOpId(),
-    idempotencyKey: `progress:${params.bookId}`,
+    opId,
+    idempotencyKey: `progress:${params.bookId}:${clientTimestampMs}:${opId}`,
     type: "upsert_progress",
     bookId: params.bookId,
-    clientTimestampMs: Date.now(),
+    clientTimestampMs,
     payload: {
       currentPage: params.currentPage,
       totalPages: params.totalPages,
@@ -188,7 +190,11 @@ export async function flushReaderOperations(options?: {
       .filter((op) => {
         if (!failedIds.has(op.opId)) return true;
         const err = result.errors.find((entry) => entry.opId === op.opId);
-        return err?.code === "invalid-argument";
+        return (
+          err?.code === "invalid-argument" ||
+          err?.code === "failed-precondition" ||
+          err?.code === "already-exists"
+        );
       })
       .map((op) => op.opId);
 

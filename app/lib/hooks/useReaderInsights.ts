@@ -18,6 +18,9 @@ export interface ReaderInsights {
   currentlyReading: {
     bookId: string;
     progress: number;
+    status_state?: 'reading' | 'paused';
+    continuityLevel?: string | null;
+    sourceType?: string | null;
     lastPosition: any;
     lastActiveAt?: any;
   }[];

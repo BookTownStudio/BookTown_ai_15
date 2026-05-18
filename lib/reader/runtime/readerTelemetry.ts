@@ -1,5 +1,10 @@
 export type ReaderTelemetryEventName =
   | 'reader_open_start'
+  | 'reader_bootstrap_start'
+  | 'reader_bootstrap_success'
+  | 'reader_bootstrap_failed'
+  | 'reader_manifest_failed'
+  | 'reader_manifest_pending'
   | 'manifest_loaded'
   | 'signed_url_received'
   | 'epub_runtime_ready'
@@ -25,10 +30,47 @@ export type ReaderTelemetryEventName =
   | 'highlight_creation_latency'
   | 'offline_queue_size'
   | 'offline_flush_time'
+  | 'reader_replay_flush'
+  | 'reader_replay_failed'
+  | 'reader_continuity_write_failed'
   | 'sync_failure_rate'
   | 'render_crashes';
 
 type ReaderTelemetryPayload = Record<string, string | number | boolean | null | undefined>;
+type ReaderDiagnosticSeverity = 'info' | 'warn' | 'error';
+
+const MAX_EVENTS = 160;
+const MAX_DIAGNOSTIC_KEYS = 24;
+const MAX_STRING_LENGTH = 160;
+const FORBIDDEN_PAYLOAD_KEY_PATTERN = /(text|quote|note|highlight|selection|content|cfi|anchor|url|signed|storagePath)/i;
+const SAFE_DIAGNOSTIC_KEYS = new Set([
+  'bookId',
+  'format',
+  'engine',
+  'phase',
+  'category',
+  'code',
+  'severity',
+  'correlationId',
+  'manifestVersion',
+  'pipelineVersion',
+  'locationMapStatus',
+  'sectionGraphStatus',
+  'stableAnchorMapStatus',
+  'navigationIndexStatus',
+  'searchIndexStatus',
+  'highlightAnchorsStatus',
+  'accepted',
+  'applied',
+  'deduped',
+  'rejected',
+  'failureRate',
+  'durationMs',
+  'queueSize',
+  'remainingQueueSize',
+  'isOffline',
+  'recoverable',
+]);
 
 declare global {
   interface Window {
@@ -52,6 +94,7 @@ declare global {
         elapsedMs: number;
         payload?: ReaderTelemetryPayload;
       }>;
+      correlationId?: string;
     };
   }
 }
@@ -79,6 +122,7 @@ function ensurePerfMetrics(startedAtMs = nowMs()) {
       done: false,
       openStartedAtMs: startedAtMs,
       events: [],
+      correlationId: createReaderCorrelationId(),
     };
   }
   if (typeof window.__readerPerfMetrics.openStartedAtMs !== 'number') {
@@ -97,9 +141,39 @@ export function resetReaderPerfMetrics(): number {
       done: false,
       openStartedAtMs: startedAtMs,
       events: [],
+      correlationId: createReaderCorrelationId(),
     };
   }
   return startedAtMs;
+}
+
+function createReaderCorrelationId(): string {
+  const random = Math.random().toString(36).slice(2, 10);
+  return `rdiag_${Date.now().toString(36)}_${random}`;
+}
+
+function sanitizeDiagnosticPayload(
+  payload?: ReaderTelemetryPayload
+): Record<string, string | number | boolean | null> {
+  if (!payload) return {};
+  const out: Record<string, string | number | boolean | null> = {};
+  for (const [key, value] of Object.entries(payload)) {
+    if (Object.keys(out).length >= MAX_DIAGNOSTIC_KEYS) break;
+    if (!SAFE_DIAGNOSTIC_KEYS.has(key) || FORBIDDEN_PAYLOAD_KEY_PATTERN.test(key)) continue;
+    if (typeof value === 'string') {
+      out[key] = value.trim().slice(0, MAX_STRING_LENGTH);
+    } else if (typeof value === 'number' && Number.isFinite(value)) {
+      out[key] = Number.isInteger(value) ? value : Number(value.toFixed(4));
+    } else if (typeof value === 'boolean' || value === null) {
+      out[key] = value;
+    }
+  }
+  return out;
+}
+
+export function getReaderCorrelationId(): string | null {
+  const metrics = ensurePerfMetrics();
+  return metrics?.correlationId ?? null;
 }
 
 export function markReaderTelemetry(
@@ -117,6 +191,9 @@ export function markReaderTelemetry(
       elapsedMs,
       ...(payload ? { payload } : {}),
     });
+    if (metrics.events && metrics.events.length > MAX_EVENTS) {
+      metrics.events.splice(0, metrics.events.length - MAX_EVENTS);
+    }
 
     const key = PERF_KEY_BY_EVENT[name];
     if (key && typeof metrics[key] !== 'number') {
@@ -137,16 +214,56 @@ export function markReaderTelemetry(
   }
 }
 
+export async function reportReaderDiagnostic(params: {
+  eventName: Extract<
+    ReaderTelemetryEventName,
+    | 'reader_bootstrap_start'
+    | 'reader_bootstrap_success'
+    | 'reader_bootstrap_failed'
+    | 'reader_manifest_failed'
+    | 'reader_manifest_pending'
+    | 'reader_replay_flush'
+    | 'reader_replay_failed'
+    | 'reader_continuity_write_failed'
+  > | 'reader_runtime_failed' | 'reader_runtime_ready';
+  severity?: ReaderDiagnosticSeverity;
+  payload?: ReaderTelemetryPayload;
+}): Promise<void> {
+  if (typeof window === 'undefined') return;
+  const metrics = ensurePerfMetrics();
+  const correlationId = metrics?.correlationId ?? createReaderCorrelationId();
+  const sanitizedPayload = sanitizeDiagnosticPayload({
+    ...(params.payload || {}),
+    correlationId,
+  });
+
+  try {
+    const [{ getFunctions, httpsCallable }] = await Promise.all([
+      import('firebase/functions'),
+    ]);
+    const fn = httpsCallable(getFunctions(), 'recordReaderDiagnostic');
+    await fn({
+      eventName: params.eventName,
+      severity: params.severity || 'info',
+      payload: sanitizedPayload,
+    });
+  } catch (error) {
+    if (import.meta.env.DEV) {
+      console.debug('[READER_DIAGNOSTIC_REPORT_FAILED]', error);
+    }
+  }
+}
+
 export function markReaderTelemetryError(error: unknown): void {
   if (typeof window !== 'undefined') {
     const metrics = ensurePerfMetrics();
     if (metrics) {
-      metrics.error = error instanceof Error ? error.message : String(error);
+      metrics.error = error instanceof Error ? error.name || 'ReaderRuntimeError' : 'ReaderRuntimeError';
       metrics.done = true;
     }
   }
   markReaderTelemetry('render_crashes', {
-    message: error instanceof Error ? error.message : String(error),
+    category: 'render_runtime',
   });
 }
 
