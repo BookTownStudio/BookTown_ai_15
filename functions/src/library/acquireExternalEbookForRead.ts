@@ -265,16 +265,27 @@ async function persistExternalReadableSource(params: {
   const editionRef = editionId ? db.collection("editions").doc(editionId) : null;
 
   await db.runTransaction(async (tx) => {
-    const bookSnap = await tx.get(bookRef);
+    // Firestore requires every transaction read to complete before the first write.
+    // Keep optional edition reads in this prewrite phase; do not move tx.get calls
+    // into conditionals below any tx.set/update/delete.
+    const [bookSnap, editionSnap] = await Promise.all([
+      tx.get(bookRef),
+      editionRef ? tx.get(editionRef) : Promise.resolve(null),
+    ]);
     if (!bookSnap.exists) {
       throw new HttpsError("not-found", "Book not found.");
     }
 
     const existingBook = (bookSnap.data() || {}) as Record<string, unknown>;
+    const existingEdition = (editionSnap?.data() || {}) as Record<string, unknown>;
     const nextBookSources = mergeExternalReadableSources(
       readExternalReadableSources(existingBook),
       source
     );
+    const nextEditionSources = editionRef
+      ? mergeExternalReadableSources(readExternalReadableSources(existingEdition), source)
+      : null;
+
     tx.set(
       bookRef,
       {
@@ -288,13 +299,6 @@ async function persistExternalReadableSource(params: {
     );
 
     if (!editionRef) return;
-
-    const editionSnap = await tx.get(editionRef);
-    const existingEdition = (editionSnap.data() || {}) as Record<string, unknown>;
-    const nextEditionSources = mergeExternalReadableSources(
-      readExternalReadableSources(existingEdition),
-      source
-    );
     tx.set(
       editionRef,
       {
@@ -541,6 +545,8 @@ async function beginAcquisition(params: {
   const acquisitionRef = db.collection(ACQUISITION_COLLECTION).doc(docId);
 
   await db.runTransaction(async (tx) => {
+    // Firestore transaction ordering is strict: read lock state before writing
+    // the acquisition lease so retries never fail with read-after-write errors.
     const snap = await tx.get(acquisitionRef);
     const existing = asRecord(snap.data() || null);
     const state = normalizeAcquisitionState(existing?.state);
@@ -633,6 +639,8 @@ async function failAcquisition(params: {
   const acquisitionRef = db.collection(ACQUISITION_COLLECTION).doc(lock.docId);
 
   await db.runTransaction(async (tx) => {
+    // Read the current failure count before writing. Firestore does not allow
+    // tx.get calls after this transaction records the failed acquisition state.
     const snap = await tx.get(acquisitionRef);
     const existing = asRecord(snap.data() || null);
     const failures = asFiniteNumber(existing?.failureCount) || 0;
@@ -782,6 +790,9 @@ async function finalizeAcquisition(params: {
   };
 
   const result = await db.runTransaction(async (tx) => {
+    // Firestore transactions reject reads after writes. All reads used by this
+    // finalization branch must stay above the first tx.set, including reads added
+    // by future idempotency or ownership checks.
     const [bookSnap, editionSnap] = await Promise.all([tx.get(bookRef), tx.get(editionRef)]);
     if (!bookSnap.exists) {
       throw new HttpsError("not-found", "Book not found.");

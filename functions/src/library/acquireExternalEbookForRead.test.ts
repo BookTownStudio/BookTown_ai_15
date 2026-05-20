@@ -112,10 +112,16 @@ class MockCollectionRef {
 }
 
 class MockTransaction {
+  private hasWritten = false;
+
   async get(ref: MockDocRef): Promise<MockDocSnapshot> {
+    if (this.hasWritten) {
+      throw new Error("Firestore transactions require all reads to be executed before all writes.");
+    }
     return new MockDocSnapshot(ref.path);
   }
   set(ref: MockDocRef, data: Record<string, unknown>, options?: { merge?: boolean }): void {
+    this.hasWritten = true;
     setDoc(ref.path, data, Boolean(options?.merge));
   }
 }

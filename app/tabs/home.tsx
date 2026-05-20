@@ -10,6 +10,7 @@ import CollapsibleSection from '../../components/ui/CollapsibleSection.tsx';
 import HomeSearchBar from '../../components/content/HomeSearchBar.tsx';
 import CameraCaptureModal from '../../components/modals/CameraCaptureModal.tsx';
 import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
+import AddBookModal from '../../components/modals/AddBookModal.tsx';
 import { useSearchHistory } from '../../lib/hooks/useSearchHistory.ts';
 import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
 import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
@@ -35,6 +36,9 @@ import {
 } from '../../lib/books/acquireExternalEbookForRead.ts';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { SocialIcon } from '../../components/icons/SocialIcon.tsx';
+import { ChevronDownIcon } from '../../components/icons/ChevronDownIcon.tsx';
+import { BookPlusIcon } from '../../components/icons/BookPlusIcon.tsx';
+import { SurpriseIcon } from '../../components/icons/SurpriseIcon.tsx';
 import {
   HomeConsoleBookItem,
   useHomeDiscoveryConsole,
@@ -55,6 +59,29 @@ function homeBookToCardBook(item: HomeConsoleBookItem): any {
 /* -------------------------------
    Constants
 -------------------------------- */
+const DISCOVER_STREAMS = [
+  'Hidden Gems',
+  'Arab Voices',
+  'Recently Discussed',
+  'Philosophical Fiction',
+  'Forgotten Classics',
+  'Short Reflective Reads',
+] as const;
+
+type DiscoverStream = typeof DISCOVER_STREAMS[number];
+
+const CONTINUITY_STARTER_BOOK = {
+  title: 'The Prophet',
+  author: 'Kahlil Gibran',
+  query: 'The Prophet Kahlil Gibran',
+};
+
+const CONTINUITY_SURPRISE_BOOK = {
+  title: 'Pride and Prejudice',
+  author: 'Jane Austen',
+  query: 'Pride and Prejudice Jane Austen',
+};
+
 const HomeScreen: React.FC = () => {
   const { lang } = useI18n();
   const { navigate, currentView, resetTokens } = useNavigation();
@@ -77,6 +104,7 @@ const HomeScreen: React.FC = () => {
   const shellRef = useRef<HTMLDivElement | null>(null);
   const blurTimerRef = useRef<number | null>(null);
   const scrollWriteRafRef = useRef<number | null>(null);
+  const discoverMenuRef = useRef<HTMLDivElement | null>(null);
   const pendingScrollTopRef = useRef(scrollTop);
   const hasRestoredScrollRef = useRef(false);
   const previousHomeResetTokenRef = useRef(resetTokens.home);
@@ -84,7 +112,10 @@ const HomeScreen: React.FC = () => {
 
   const [isCameraOpen, setIsCameraOpen] = useState(false);
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
+  const [isAddBookModalOpen, setIsAddBookModalOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [activeDiscoverStream, setActiveDiscoverStream] = useState<DiscoverStream>('Hidden Gems');
+  const [isDiscoverStreamMenuOpen, setIsDiscoverStreamMenuOpen] = useState(false);
 
   /* -------------------------------
      Collapsible section state
@@ -102,6 +133,7 @@ const HomeScreen: React.FC = () => {
     previousHomeResetTokenRef.current = resetTokens.home;
     clearSearch();
     setBusyId(null);
+    setIsDiscoverStreamMenuOpen(false);
   }, [clearSearch, resetTokens.home]);
 
   useEffect(() => {
@@ -114,6 +146,34 @@ const HomeScreen: React.FC = () => {
       }
     };
   }, []);
+
+  useEffect(() => {
+    if (!isDiscoverStreamMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const menu = discoverMenuRef.current;
+      if (!menu || menu.contains(event.target as Node)) return;
+      setIsDiscoverStreamMenuOpen(false);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setIsDiscoverStreamMenuOpen(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isDiscoverStreamMenuOpen]);
+
+  useEffect(() => {
+    setIsDiscoverStreamMenuOpen(false);
+  }, [currentView]);
 
   useEffect(() => {
     if (hasRestoredScrollRef.current) return;
@@ -259,6 +319,13 @@ const HomeScreen: React.FC = () => {
     setSearchActive(true);
   };
 
+  const openContinuitySearch = (query: string) => {
+    setSearchQuery(query);
+    setSearchActive(true);
+    addToHistory(query);
+    setIsDiscoverStreamMenuOpen(false);
+  };
+
   const handleHomeScroll = (event: React.UIEvent<HTMLDivElement>) => {
     pendingScrollTopRef.current = event.currentTarget.scrollTop;
     if (scrollWriteRafRef.current !== null) return;
@@ -288,6 +355,7 @@ const HomeScreen: React.FC = () => {
   const readNowRow = homeConsole?.rows.find((row) => row.type === 'readNow');
   const dynamicDiscoveryRow = homeConsole?.rows.find((row) => row.type === 'dynamicDiscovery');
   const fromTheTownRow = homeConsole?.rows.find((row) => row.type === 'fromTheTown');
+  const hasContinueReadingItems = Boolean(continueReadingRow && continueReadingRow.items.length > 0);
 
   /* -------------------------------
      Render Search Results
@@ -340,6 +408,76 @@ const HomeScreen: React.FC = () => {
       </div>
     );
   };
+
+  const renderContinueReadingEmptyCards = () => (
+    <div className="flex overflow-x-auto scrollbar-hide snap-x gap-4 pt-2 pb-4">
+      <button
+        type="button"
+        className="group w-40 shrink-0 snap-start text-left sm:w-44"
+        onClick={() => setIsAddBookModalOpen(true)}
+      >
+        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-dashed border-slate-300 bg-white/60 p-4 transition group-hover:border-accent group-hover:bg-white dark:border-white/15 dark:bg-white/5 dark:group-hover:bg-white/10">
+          <BookPlusIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
+          <div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+              {lang === 'en' ? 'Add a Book' : 'أضف كتاباً'}
+            </p>
+            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
+              {lang === 'en'
+                ? 'Choose the first book to keep your place with.'
+                : 'اختر أول كتاب ليحفظ لك موضع القراءة.'}
+            </p>
+          </div>
+        </div>
+      </button>
+
+      <button
+        type="button"
+        className="group w-40 shrink-0 snap-start text-left sm:w-44"
+        onClick={() => openContinuitySearch(CONTINUITY_SURPRISE_BOOK.query)}
+      >
+        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-slate-200 bg-white/70 p-4 transition group-hover:border-accent/60 group-hover:bg-white dark:border-white/10 dark:bg-white/5 dark:group-hover:bg-white/10">
+          <SurpriseIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
+          <div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+              {lang === 'en' ? 'Surprise Me' : 'فاجئني بكتاب'}
+            </p>
+            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
+              {lang === 'en'
+                ? 'One quiet literary suggestion.'
+                : 'اقتراح أدبي هادئ واحد.'}
+            </p>
+          </div>
+        </div>
+        <p className="mt-2 line-clamp-1 text-xs font-medium text-slate-500 dark:text-white/55">
+          {CONTINUITY_SURPRISE_BOOK.title} · {CONTINUITY_SURPRISE_BOOK.author}
+        </p>
+      </button>
+
+      <button
+        type="button"
+        className="group w-40 shrink-0 snap-start text-left sm:w-44"
+        onClick={() => openContinuitySearch(CONTINUITY_STARTER_BOOK.query)}
+      >
+        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-slate-200 bg-white/70 p-4 transition group-hover:border-accent/60 group-hover:bg-white dark:border-white/10 dark:bg-white/5 dark:group-hover:bg-white/10">
+          <BookIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
+          <div>
+            <p className="text-sm font-semibold text-slate-800 dark:text-white">
+              {CONTINUITY_STARTER_BOOK.title}
+            </p>
+            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
+              {lang === 'en'
+                ? 'A calm doorway into the reading habit.'
+                : 'مدخل هادئ إلى عادة القراءة.'}
+            </p>
+          </div>
+        </div>
+        <p className="mt-2 line-clamp-1 text-xs font-medium text-slate-500 dark:text-white/55">
+          {CONTINUITY_STARTER_BOOK.author}
+        </p>
+      </button>
+    </div>
+  );
 
   return (
     <PageShell
@@ -398,59 +536,57 @@ const HomeScreen: React.FC = () => {
               </div>
             ) : (
               <div className="space-y-12 mt-8">
-                {(isHomeConsoleLoading || continueReadingRow) && (
-                  <CollapsibleSection
-                    titleEn="Continue Reading"
-                    titleAr="أكمل القراءة"
-                    isOpen={isContinueOpen}
-                    onToggle={() => setIsContinueOpen(v => !v)}
-                  >
-                    {isHomeConsoleLoading ? (
-                      <div className="flex gap-4 py-4 overflow-hidden">
-                        {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
-                      </div>
-                    ) : continueReadingRow ? (
-                      <motion.div
-                        className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
-                        variants={staggerContainer}
-                        initial="hidden"
-                        animate="show"
-                      >
-                        {continueReadingRow.items.map(item => (
-                          <motion.div
-                            key={item.bookId}
-                            variants={listItemVariants}
-                            className="cursor-pointer snap-start"
-                            onClick={() =>
-                              navigate({
-                                type: 'immersive',
-                                id: 'reader',
-                                params: {
-                                  bookId: item.bookId,
-                                  from: currentView
-                                }
-                              })
-                            }
-                          >
-                            <BookCard
-                              bookId={item.bookId}
-                              book={homeBookToCardBook(item)}
-                              layout="list"
-                              progress={Math.round((item.progress ?? 0) * 100)}
-                              className="w-40 sm:w-44"
-                            />
-                          </motion.div>
-                        ))}
-                      </motion.div>
-                    ) : null}
-                  </CollapsibleSection>
-                )}
+                <CollapsibleSection
+                  titleEn="Continue Reading"
+                  titleAr="أكمل القراءة"
+                  isOpen={isContinueOpen}
+                  onToggle={() => setIsContinueOpen(v => !v)}
+                >
+                  {isHomeConsoleLoading ? (
+                    <div className="flex gap-4 py-4 overflow-hidden">
+                      {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
+                    </div>
+                  ) : hasContinueReadingItems ? (
+                    <motion.div
+                      className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
+                      variants={staggerContainer}
+                      initial="hidden"
+                      animate="show"
+                    >
+                      {continueReadingRow!.items.map(item => (
+                        <motion.div
+                          key={item.bookId}
+                          variants={listItemVariants}
+                          className="cursor-pointer snap-start"
+                          onClick={() =>
+                            navigate({
+                              type: 'immersive',
+                              id: 'reader',
+                              params: {
+                                bookId: item.bookId,
+                                from: currentView
+                              }
+                            })
+                          }
+                        >
+                          <BookCard
+                            bookId={item.bookId}
+                            book={homeBookToCardBook(item)}
+                            layout="list"
+                            progress={Math.round((item.progress ?? 0) * 100)}
+                            className="w-40 sm:w-44"
+                          />
+                        </motion.div>
+                      ))}
+                    </motion.div>
+                  ) : renderContinueReadingEmptyCards()}
+                </CollapsibleSection>
 
                 {(
                   <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
                     <CollapsibleSection
-                      titleEn="Read Now in BookTown"
-                      titleAr="اقرأ الآن في بوكتاون"
+                      titleEn="Ready to Read"
+                      titleAr="جاهز للقراءة"
                       isOpen={isReadNowOpen}
                       onToggle={() => setIsReadNowOpen(v => !v)}
                     >
@@ -460,7 +596,7 @@ const HomeScreen: React.FC = () => {
                         </div>
                       ) : isHomeConsoleError ? (
                         <ErrorState
-                          title={lang === 'en' ? 'Read Now unavailable' : 'اقرأ الآن غير متاح'}
+                          title={lang === 'en' ? 'Ready to Read unavailable' : 'جاهز للقراءة غير متاح'}
                           message={lang === 'en' ? 'This row is temporarily unavailable.' : 'هذا الصف غير متاح مؤقتاً.'}
                         />
                       ) : (
@@ -492,12 +628,66 @@ const HomeScreen: React.FC = () => {
 
                 {(
                 <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
-                  <CollapsibleSection
-                    titleEn="Dynamic Discovery"
-                    titleAr="اكتشاف متجدد"
-                    isOpen={isRecommendationsOpen}
-                    onToggle={() => setIsRecommendationsOpen(v => !v)}
-                  >
+                  <section>
+                    <div className="flex items-center justify-between gap-3 py-2">
+                      <div ref={discoverMenuRef} className="relative">
+                        <button
+                          type="button"
+                          className="flex min-h-[36px] items-center gap-2 text-left"
+                          aria-haspopup="menu"
+                          aria-expanded={isDiscoverStreamMenuOpen}
+                          onClick={() => setIsDiscoverStreamMenuOpen(open => !open)}
+                        >
+                          <span className="text-lg font-semibold text-slate-700 dark:text-slate-300 md:text-xl">
+                            Discover
+                          </span>
+                          <span className="text-sm font-medium text-slate-500 dark:text-white/55 md:text-base">
+                            {activeDiscoverStream}
+                          </span>
+                          <ChevronDownIcon className={`h-4 w-4 text-slate-400 transition-transform duration-200 ${isDiscoverStreamMenuOpen ? 'rotate-180' : ''}`} />
+                        </button>
+                        {isDiscoverStreamMenuOpen && (
+                          <motion.div
+                            role="menu"
+                            className="absolute left-0 z-20 mt-2 w-56 rounded-lg border border-slate-200 bg-white p-1 shadow-lg dark:border-white/10 dark:bg-slate-900"
+                            initial={{ opacity: 0, y: -4, scale: 0.98 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ duration: 0.16, ease: 'easeOut' }}
+                          >
+                            {DISCOVER_STREAMS.map(stream => (
+                              <button
+                                key={stream}
+                                type="button"
+                                role="menuitemradio"
+                                aria-checked={stream === activeDiscoverStream}
+                                className={`block w-full rounded-md px-3 py-2 text-left text-sm transition ${
+                                  stream === activeDiscoverStream
+                                    ? 'bg-slate-100 text-slate-900 dark:bg-white/10 dark:text-white'
+                                    : 'text-slate-600 hover:bg-slate-50 dark:text-white/65 dark:hover:bg-white/5'
+                                }`}
+                                onClick={() => {
+                                  setActiveDiscoverStream(stream);
+                                  setIsDiscoverStreamMenuOpen(false);
+                                }}
+                              >
+                                {stream}
+                              </button>
+                            ))}
+                          </motion.div>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition hover:bg-slate-100 dark:text-white/60 dark:hover:bg-white/10"
+                        aria-label={isRecommendationsOpen ? 'Collapse Discover' : 'Expand Discover'}
+                        aria-expanded={isRecommendationsOpen}
+                        onClick={() => setIsRecommendationsOpen(v => !v)}
+                      >
+                        <ChevronDownIcon className={`h-5 w-5 transition-transform duration-300 ${isRecommendationsOpen ? 'rotate-180' : ''}`} />
+                      </button>
+                    </div>
+                    <div className={`grid transition-all duration-300 ease-in-out ${isRecommendationsOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+                      <div className="overflow-hidden pt-2">
                     {isHomeConsoleLoading ? (
                       <div className="flex gap-4 py-4 overflow-hidden">
                         {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
@@ -538,15 +728,17 @@ const HomeScreen: React.FC = () => {
                         ))}
                       </motion.div>
                     ) : null}
-                  </CollapsibleSection>
+                      </div>
+                    </div>
+                  </section>
                 </div>
                 )}
 
                 {(
                 <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
                   <CollapsibleSection
-                    titleEn="Literary Signals"
-                    titleAr="إشارات أدبية"
+                    titleEn="From the Town"
+                    titleAr="من البلدة"
                     isOpen={isTownOpen}
                     onToggle={() => setIsTownOpen(v => !v)}
                   >
@@ -562,7 +754,7 @@ const HomeScreen: React.FC = () => {
                       </div>
                     ) : isHomeConsoleError ? (
                       <ErrorState
-                        title={lang === 'en' ? 'Literary signals unavailable' : 'الإشارات الأدبية غير متاحة'}
+                        title={lang === 'en' ? 'From the Town unavailable' : 'من البلدة غير متاح'}
                         message={lang === 'en' ? 'This row is temporarily unavailable.' : 'هذا الصف غير متاح مؤقتاً.'}
                       />
                     ) : fromTheTownRow && fromTheTownRow.items.length > 0 ? (
@@ -630,6 +822,12 @@ const HomeScreen: React.FC = () => {
           }}
         />
       )}
+
+      <AddBookModal
+        isOpen={isAddBookModalOpen}
+        onClose={() => setIsAddBookModalOpen(false)}
+        targetShelfId="currently-reading"
+      />
     </PageShell>
   );
 };

@@ -4,18 +4,19 @@ import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useAuth } from '../../lib/auth.tsx';
-import { FeedbackType } from '../../types/entities.ts';
 import Button from '../../components/ui/Button.tsx';
 import InputField from '../../components/ui/InputField.tsx';
 import { useSubmitFeedback } from '../../lib/hooks/useSubmitFeedback.ts';
+import { useFeedbackAttachmentUpload, validateFeedbackAttachmentFile } from '../../lib/hooks/useFeedbackAttachmentUpload.ts';
 import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
 import ContentRail from '../../components/layout/ContentRail.tsx';
+import type { FeedbackIntentType } from '../../contracts/apiContracts.ts';
 
-const FEEDBACK_TYPES: { id: FeedbackType; en: string; ar: string }[] = [
-    { id: 'action-required', en: 'Action Required', ar: 'يتطلب إجراء' },
-    { id: 'praise-general', en: 'Praise/General', ar: 'ثناء/عام' },
+const FEEDBACK_TYPES: { id: FeedbackIntentType; en: string; ar: string }[] = [
+    { id: 'bug', en: 'Action Required', ar: 'يتطلب إجراء' },
+    { id: 'praise', en: 'Praise/General', ar: 'ثناء/عام' },
 ];
 
 const FeedbackScreen: React.FC = () => {
@@ -23,18 +24,26 @@ const FeedbackScreen: React.FC = () => {
     const { navigate } = useNavigation();
     const { user: authUser } = useAuth();
     const { mutate: submitFeedback, isPending: isSubmitting } = useSubmitFeedback();
+    const { uploadAttachments, isUploading } = useFeedbackAttachmentUpload();
 
-    const [feedbackType, setFeedbackType] = useState<FeedbackType>('action-required');
+    const [feedbackType, setFeedbackType] = useState<FeedbackIntentType>('bug');
     const [text, setText] = useState('');
     const [email, setEmail] = useState(authUser?.email || '');
     const [isSubmitted, setIsSubmitted] = useState(false);
+    const [submitError, setSubmitError] = useState<string | null>(null);
+    const [receiptId, setReceiptId] = useState<string | null>(null);
+    const [attachments, setAttachments] = useState<File[]>([]);
+    const [uploadProgress, setUploadProgress] = useState<string | null>(null);
 
     const handleBack = () => navigate({ type: 'tab', id: 'home' });
     
     const resetForm = () => {
-        setFeedbackType('action-required');
+        setFeedbackType('bug');
         setText('');
         setEmail(authUser?.email || '');
+        setSubmitError(null);
+        setAttachments([]);
+        setUploadProgress(null);
     };
 
     const handleSubmit = (e: React.FormEvent) => {
@@ -42,14 +51,32 @@ const FeedbackScreen: React.FC = () => {
         if (!text.trim()) return;
 
         submitFeedback({
-            type: feedbackType,
+            source: 'drawer',
+            intentType: feedbackType,
             text,
-            email,
-            attachments: [],
+            contactEmail: email.trim() || null,
+            clientContext: {
+                route: window.location.pathname,
+                viewId: 'feedback',
+                locale: lang,
+            },
         }, {
-            onSuccess: () => {
-                setIsSubmitted(true);
-                resetForm();
+            onSuccess: async (receipt) => {
+                try {
+                    if (attachments.length > 0) {
+                        await uploadAttachments(receipt.feedbackId, attachments, (fileName, progress) => {
+                            setUploadProgress(`${fileName}: ${progress}%`);
+                        });
+                    }
+                    setReceiptId(receipt.feedbackId);
+                    setIsSubmitted(true);
+                    resetForm();
+                } catch (error) {
+                    setSubmitError(error instanceof Error ? error.message : 'Screenshot upload failed.');
+                }
+            },
+            onError: (error) => {
+                setSubmitError(error instanceof Error ? error.message : 'Feedback submission failed.');
             }
         });
     };
@@ -67,6 +94,11 @@ const FeedbackScreen: React.FC = () => {
                         <BilingualText role="Body" className="mt-2 text-white/70">
                             {lang === 'en' ? 'We\'ve received your feedback.' : 'لقد تلقينا ملاحظاتك.'}
                         </BilingualText>
+                        {receiptId && (
+                            <BilingualText role="Caption" className="mt-3 block text-white/50">
+                                {lang === 'en' ? `Receipt: ${receiptId}` : `رقم الإيصال: ${receiptId}`}
+                            </BilingualText>
+                        )}
                         <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="mt-8">
                              {lang === 'en' ? 'Submit another response' : 'إرسال رد آخر'}
                         </Button>
@@ -119,15 +151,39 @@ const FeedbackScreen: React.FC = () => {
                         </div>
                         
                         <div>
-                            <Button type="button" variant="ghost" disabled>
+                            <label className="inline-flex cursor-pointer items-center rounded-md px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-black/5 dark:text-white/80 dark:hover:bg-white/10">
                                 <MediaIcon className="h-5 w-5 mr-2" />
-                                {lang === 'en' ? 'Image attachments unavailable' : 'مرفقات الصور غير متاحة'}
-                            </Button>
-                            <BilingualText role="Caption" className="mt-2 block text-slate-500 dark:text-white/45">
-                                {lang === 'en'
-                                    ? 'Feedback can be submitted as text until the upload pipeline is connected.'
-                                    : 'يمكن إرسال الملاحظات كنص إلى أن يتم توصيل مسار الرفع.'}
-                            </BilingualText>
+                                {lang === 'en' ? 'Attach screenshot' : 'إرفاق لقطة شاشة'}
+                                <input
+                                    type="file"
+                                    accept="image/png,image/jpeg,image/webp"
+                                    multiple
+                                    className="sr-only"
+                                    onChange={(event) => {
+                                        const selected = Array.from(event.target.files ?? []).slice(0, 3);
+                                        try {
+                                            selected.forEach(validateFeedbackAttachmentFile);
+                                            setAttachments(selected);
+                                            setSubmitError(null);
+                                        } catch (error) {
+                                            setSubmitError(error instanceof Error ? error.message : 'Invalid screenshot.');
+                                        }
+                                    }}
+                                />
+                            </label>
+                            {attachments.length > 0 && (
+                                <div className="mt-2 space-y-1 text-xs text-slate-500 dark:text-white/55">
+                                    {attachments.map((file) => (
+                                        <div key={`${file.name}:${file.size}`} className="flex items-center justify-between gap-3">
+                                            <span className="truncate">{file.name}</span>
+                                            <button type="button" onClick={() => setAttachments((current) => current.filter((item) => item !== file))}>
+                                                {lang === 'en' ? 'Remove' : 'إزالة'}
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                            {uploadProgress && <BilingualText role="Caption" className="mt-2 block text-slate-500 dark:text-white/45">{uploadProgress}</BilingualText>}
                         </div>
 
                         <InputField
@@ -137,9 +193,14 @@ const FeedbackScreen: React.FC = () => {
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                         />
+                        {submitError && (
+                            <BilingualText role="Caption" className="block text-red-500 dark:text-red-300">
+                                {submitError}
+                            </BilingualText>
+                        )}
                         
-                        <Button type="submit" className="w-full" disabled={isSubmitting || !text.trim()}>
-                            {isSubmitting ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
+                        <Button type="submit" className="w-full" disabled={isSubmitting || isUploading || !text.trim()}>
+                            {isSubmitting || isUploading ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
                         </Button>
                     </form>
                 </ContentRail>

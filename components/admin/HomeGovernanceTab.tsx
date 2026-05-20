@@ -28,6 +28,12 @@ const emptyDraft = (): AdminHomeEditorialEntry => ({
   isActive: false,
 });
 
+const rowLabels: Record<Row, string> = {
+  readNow: 'Ready to Read',
+  dynamicDiscovery: 'Discover',
+  fromTheTown: 'From the Town',
+};
+
 function toIso(value: string): string {
   const parsed = new Date(value);
   return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : value;
@@ -74,17 +80,18 @@ const HomeGovernanceTab: React.FC = () => {
   });
 
   const occupancy = useMemo(() => {
+    const readNow = entries.filter((entry) => entry.row === 'readNow' && entry.isActive).length;
     const dynamic = entries.filter((entry) => entry.row === 'dynamicDiscovery' && entry.isActive).length;
     const town = entries.filter((entry) => entry.row === 'fromTheTown' && entry.isActive).length;
-    return { dynamic, town };
+    return { readNow, dynamic, town };
   }, [entries]);
 
   const setRow = (row: Row) => {
     setDraft((current) => ({
       ...current,
       row,
-      targetType: row === 'dynamicDiscovery' ? 'book' : 'post',
-      slot: Math.min(current.slot, row === 'dynamicDiscovery' ? 1 : 2),
+      targetType: row === 'fromTheTown' ? 'post' : 'book',
+      slot: Math.min(current.slot, row === 'fromTheTown' ? 2 : 1),
     }));
   };
 
@@ -95,22 +102,23 @@ const HomeGovernanceTab: React.FC = () => {
       <section className="rounded-lg border border-white/10 bg-slate-900/70 p-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-semibold text-white">Home Governance</h2>
-            <p className="text-sm text-slate-400">Bounded editorial steering for Home discovery rows.</p>
+            <h2 className="text-lg font-semibold text-white">Home Literary Programming</h2>
+            <p className="text-sm text-slate-400">Bounded editorial occupancy for Home literary layers.</p>
           </div>
           <div className="text-sm text-slate-300">
-            Dynamic {occupancy.dynamic}/2 · Town {occupancy.town}/3
+            Ready {occupancy.readNow}/2 · Discover {occupancy.dynamic}/2 · Town {occupancy.town}/3
           </div>
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <select value={draft.row} onChange={(event) => setRow(event.target.value as Row)} className="h-12 rounded-md border border-slate-600 bg-slate-800 px-3 text-white">
-            <option value="dynamicDiscovery">Dynamic Discovery</option>
+            <option value="readNow">Ready to Read</option>
+            <option value="dynamicDiscovery">Discover</option>
             <option value="fromTheTown">From the Town</option>
           </select>
           <select value={draft.mode} onChange={(event) => setDraft({ ...draft, mode: event.target.value as Mode })} className="h-12 rounded-md border border-slate-600 bg-slate-800 px-3 text-white">
-            <option value="hard_pin">Hard pin</option>
-            <option value="soft_boost">Soft boost</option>
+            <option value="hard_pin">Editorial placement</option>
+            <option value="soft_boost">Editorial lift</option>
           </select>
           <select value={draft.targetType} onChange={(event) => setDraft({ ...draft, targetType: event.target.value as TargetType })} className="h-12 rounded-md border border-slate-600 bg-slate-800 px-3 text-white" disabled>
             <option value="book">Book</option>
@@ -146,7 +154,7 @@ const HomeGovernanceTab: React.FC = () => {
         </div>
         <div className="mt-3 text-sm text-slate-300">
           {isPreviewLoading ? <LoadingSpinner /> : preview?.rows.map((row) => (
-            <span key={row.row} className="mr-4">{row.row}: {row.editorialCount}/{row.maxEditorial}</span>
+            <span key={row.row} className="mr-4">{rowLabels[row.row]}: {row.editorialCount}/{row.maxEditorial}</span>
           ))}
         </div>
       </section>
@@ -160,7 +168,7 @@ const HomeGovernanceTab: React.FC = () => {
             <div key={entry.id} className="rounded-md border border-white/10 p-3 text-sm text-slate-200">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="font-semibold">{entry.row} · slot {entry.slot} · {entry.mode}</div>
+                  <div className="font-semibold">{rowLabels[entry.row]} · slot {entry.slot} · {entry.mode === 'hard_pin' ? 'editorial placement' : 'editorial lift'}</div>
                   <div className="text-xs text-slate-400">{entry.targetType}:{entry.targetId} · ends {entry.endAt}</div>
                 </div>
                 <div className="flex gap-2">

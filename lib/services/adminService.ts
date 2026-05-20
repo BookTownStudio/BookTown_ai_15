@@ -2,6 +2,20 @@ import { httpsCallable, type Functions } from 'firebase/functions';
 import { ref, uploadBytes } from 'firebase/storage';
 import { getFirebaseAuth, getFirebaseFunctions, getFirebaseStorage } from '../firebase.ts';
 import { callCallableEndpoint } from '../callable.ts';
+import type {
+  AdminFeedbackActivity,
+  AdminFeedbackReport,
+  AdminExportFeedbackCsvResponse,
+  AdminExportFeedbackJsonResponse,
+  AdminExportFeedbackRequest,
+  AdminGetFeedbackReportResponse,
+  AdminListFeedbackReportsRequest,
+  AdminListFeedbackReportsResponse,
+  FeedbackAttachmentMetadata,
+  FeedbackIntentType,
+  FeedbackSource,
+  FeedbackStatus,
+} from '../../contracts/apiContracts.ts';
 
 export type DeletionRequestStatus = 'pending' | 'approved' | 'rejected' | 'executed';
 export type DeletionReviewDecision = Extract<DeletionRequestStatus, 'approved' | 'rejected'>;
@@ -60,6 +74,22 @@ export type SystemHealthSnapshot = {
   latestEventCreatedAt: string | null;
   lastPostCreatedAt: string | null;
 };
+
+export type AdminFeedbackFilters = {
+  status?: FeedbackStatus;
+  source?: FeedbackSource;
+  intentType?: FeedbackIntentType;
+  createdFrom?: string;
+  createdTo?: string;
+  limit?: number;
+  cursor?: string;
+};
+
+export type AdminFeedbackPage = AdminListFeedbackReportsResponse;
+export type AdminFeedbackDetail = AdminGetFeedbackReportResponse;
+export type AdminFeedbackCsvExport = AdminExportFeedbackCsvResponse;
+export type AdminFeedbackJsonExport = AdminExportFeedbackJsonResponse;
+export type { AdminFeedbackActivity, AdminFeedbackReport, FeedbackAttachmentMetadata, FeedbackIntentType, FeedbackSource, FeedbackStatus };
 
 export type AdminUserSearchResult = {
   uid: string;
@@ -355,7 +385,7 @@ export type AdminHomeEditorialEntry = {
   id?: string;
   targetType: 'book' | 'post';
   targetId: string;
-  row: 'dynamicDiscovery' | 'fromTheTown';
+  row: 'readNow' | 'dynamicDiscovery' | 'fromTheTown';
   slot: number;
   mode: 'hard_pin' | 'soft_boost';
   boostWeight: number;
@@ -374,7 +404,7 @@ export type AdminHomeEditorialPreview = {
   region: string | null;
   language: string | null;
   rows: Array<{
-    row: 'dynamicDiscovery' | 'fromTheTown';
+    row: 'readNow' | 'dynamicDiscovery' | 'fromTheTown';
     editorialCount: number;
     maxEditorial: number;
   }>;
@@ -417,6 +447,20 @@ export const adminServiceQueryKeys = {
   systemEvents: (params: RecentSystemEventsParams = {}) =>
     ['admin', 'events', 'recent', params.limit ?? 50] as const,
   systemHealthSnapshot: ['admin', 'health', 'snapshot'] as const,
+  feedbackReports: (params: AdminFeedbackFilters = {}) =>
+    [
+      'admin',
+      'feedback',
+      'reports',
+      params.status ?? null,
+      params.source ?? null,
+      params.intentType ?? null,
+      params.createdFrom ?? null,
+      params.createdTo ?? null,
+      params.limit ?? null,
+    ] as const,
+  feedbackReport: (feedbackId: string | null | undefined) =>
+    ['admin', 'feedback', 'report', feedbackId ?? null] as const,
   spaces: (query: string) => ['admin', 'spaces', query.trim().toLowerCase()] as const,
   homeEditorial: ['admin', 'homeEditorial'] as const,
   homeEditorialPreview: (region: string, language: string) =>
@@ -2038,6 +2082,90 @@ export const adminService = {
     });
 
     return parseSystemHealthSnapshotResponse(result.data);
+  },
+
+  async listFeedbackReports(params: AdminFeedbackFilters = {}): Promise<AdminFeedbackPage> {
+    return callCallableEndpoint<AdminListFeedbackReportsRequest, AdminListFeedbackReportsResponse>(
+      'adminListFeedbackReports',
+      {
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.source ? { source: params.source } : {}),
+        ...(params.intentType ? { intentType: params.intentType } : {}),
+        ...(params.createdFrom ? { createdFrom: params.createdFrom } : {}),
+        ...(params.createdTo ? { createdTo: params.createdTo } : {}),
+        ...(params.limit ? { limit: params.limit } : {}),
+        ...(params.cursor ? { cursor: params.cursor } : {}),
+      }
+    );
+  },
+
+  async getFeedbackReport(feedbackId: string): Promise<AdminFeedbackDetail> {
+    return callCallableEndpoint<{ feedbackId: string }, AdminGetFeedbackReportResponse>(
+      'adminGetFeedbackReport',
+      { feedbackId }
+    );
+  },
+
+  async updateFeedbackStatus(feedbackId: string, status: FeedbackStatus): Promise<AdminFeedbackReport> {
+    const data = await callCallableEndpoint<
+      { feedbackId: string; status: FeedbackStatus },
+      { report: AdminFeedbackReport }
+    >(
+      'adminUpdateFeedbackStatus',
+      { feedbackId, status }
+    );
+    return data.report;
+  },
+
+  async addFeedbackNote(feedbackId: string, note: string): Promise<AdminFeedbackActivity> {
+    const data = await callCallableEndpoint<
+      { feedbackId: string; note: string },
+      { activity: AdminFeedbackActivity }
+    >(
+      'adminAddFeedbackNote',
+      { feedbackId, note }
+    );
+    return data.activity;
+  },
+
+  async exportFeedbackCsv(params: AdminFeedbackFilters & { feedbackId?: string } = {}): Promise<AdminFeedbackCsvExport> {
+    return callCallableEndpoint<AdminExportFeedbackRequest, AdminExportFeedbackCsvResponse>(
+      'adminExportFeedbackCsv',
+      {
+        ...(params.feedbackId ? { feedbackId: params.feedbackId } : {}),
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.source ? { source: params.source } : {}),
+        ...(params.intentType ? { intentType: params.intentType } : {}),
+        ...(params.createdFrom ? { createdFrom: params.createdFrom } : {}),
+        ...(params.createdTo ? { createdTo: params.createdTo } : {}),
+        ...(params.limit ? { limit: params.limit } : {}),
+      }
+    );
+  },
+
+  async exportFeedbackJson(params: AdminFeedbackFilters & { feedbackId?: string } = {}): Promise<AdminFeedbackJsonExport> {
+    return callCallableEndpoint<AdminExportFeedbackRequest, AdminExportFeedbackJsonResponse>(
+      'adminExportFeedbackJson',
+      {
+        ...(params.feedbackId ? { feedbackId: params.feedbackId } : {}),
+        ...(params.status ? { status: params.status } : {}),
+        ...(params.source ? { source: params.source } : {}),
+        ...(params.intentType ? { intentType: params.intentType } : {}),
+        ...(params.createdFrom ? { createdFrom: params.createdFrom } : {}),
+        ...(params.createdTo ? { createdTo: params.createdTo } : {}),
+        ...(params.limit ? { limit: params.limit } : {}),
+      }
+    );
+  },
+
+  async deleteFeedbackAttachment(feedbackId: string, attachmentId: string): Promise<void> {
+    await callCallableEndpoint<
+      { feedbackId: string; attachmentId: string },
+      { attachmentId: string; deleted: boolean }
+    >(
+      'adminDeleteFeedbackAttachment',
+      { feedbackId, attachmentId }
+    );
   },
 
 };

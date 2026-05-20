@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import Button from '../ui/Button.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -7,8 +7,12 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { HamburgerIcon } from '../icons/HamburgerIcon.tsx';
 import { BellIcon } from '../icons/BellIcon.tsx';
 import { EmailIcon } from '../icons/EmailIcon.tsx';
+import { FeedbackIcon } from '../icons/FeedbackIcon.tsx';
 import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
 import { useUnreadNotificationsCount } from '../../lib/hooks/useNotifications.ts';
+import { isBetaFeedbackTriggerEnabled } from '../../lib/featureFlags.ts';
+import { FeedbackContextService, type FeedbackRuntimeContext } from '../../lib/feedback/FeedbackContextService.ts';
+import BetaFeedbackModal from '../feedback/BetaFeedbackModal.tsx';
 
 interface AppNavProps {
     titleEn: string;
@@ -21,10 +25,19 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
   const { isRTL, lang } = useI18n();
   const { openDrawer, navigate, currentView } = useNavigation();
   const { data: unreadCount } = useUnreadNotificationsCount();
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackContext, setFeedbackContext] = useState<FeedbackRuntimeContext | null>(null);
 
   const showBadge = unreadCount !== undefined && unreadCount > 0;
+  const showBetaFeedback = isBetaFeedbackTriggerEnabled();
+
+  const openBetaFeedback = () => {
+    setFeedbackContext(FeedbackContextService.capture({ currentView, locale: lang }));
+    setIsFeedbackOpen(true);
+  };
 
   return (
+    <>
     <nav className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
         <div className="app-frame__inner">
             <div className={`app-rail app-rail--default flex h-20 items-center justify-between px-0 lg:grid lg:grid-cols-[1fr_auto_1fr] ${isRTL ? 'flex-row-reverse' : ''}`}>
@@ -50,6 +63,15 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
 
                 {/* Right Section */}
                 <div className={`flex items-center gap-0.5 ${isRTL ? 'flex-row-reverse lg:justify-self-start' : 'lg:justify-self-end'}`}>
+                    {showBetaFeedback && (
+                        <Button
+                            variant="icon"
+                            aria-label={lang === 'en' ? 'Beta feedback' : 'ملاحظات بيتا'}
+                            onClick={openBetaFeedback}
+                        >
+                            <FeedbackIcon className="h-6 w-6" />
+                        </Button>
+                    )}
                     <div className="relative">
                         <Button 
                             variant="icon" 
@@ -72,6 +94,14 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
             </div>
         </div>
     </nav>
+    {showBetaFeedback && (
+        <BetaFeedbackModal
+            isOpen={isFeedbackOpen}
+            onClose={() => setIsFeedbackOpen(false)}
+            context={feedbackContext}
+        />
+    )}
+    </>
   );
 };
 

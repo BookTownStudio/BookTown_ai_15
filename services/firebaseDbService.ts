@@ -20,6 +20,7 @@ import {
 } from "firebase/firestore";
 import { getDownloadURL, ref as storageRef } from "firebase/storage";
 import { httpsCallable } from "firebase/functions";
+import { callCallableEndpoint } from "../lib/callable.ts";
 
 import {
   getFirebaseDb,
@@ -54,7 +55,6 @@ import {
   BookmarkType,
   AgentSession,
   ChatMessage,
-  Feedback,
   Conversation,
   DirectMessage,
 } from "../types/entities.ts";
@@ -73,6 +73,10 @@ import {
   SPACE_SCHEMA_VERSION,
 } from "../lib/spaces/domain.ts";
 import type { LibrarianRecommendationContext } from "../types/librarian.ts";
+import type {
+  SubmitFeedbackRequest,
+  SubmitFeedbackResponse,
+} from "../contracts/apiContracts.ts";
 
 import { normalizeNotification, normalizePost } from "../lib/data-validation.ts";
 import { FirebaseUploadService } from "./firebaseUploadService.ts";
@@ -1519,25 +1523,13 @@ class FirebaseUserService {
 
   async submitFeedback(
     uid: string,
-    feedback: Omit<Feedback, "id" | "userId" | "timestamp">
-  ): Promise<void> {
-    const db = getDb();
-    if (!db) return;
-
-    const text = ensureNonEmptyString(feedback.text, "feedback.text", 4000);
-    const type = feedback.type === "praise-general" ? "praise-general" : "action-required";
-    const email = normalizeOptionalString(feedback.email, 320);
-
-    const feedbackRef = doc(collection(db, "feedback"));
-    await setDoc(feedbackRef, {
-      userId: uid,
-      text,
-      type,
-      email: email || null,
-      timestamp: new Date().toISOString(),
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    feedback: SubmitFeedbackRequest
+  ): Promise<SubmitFeedbackResponse> {
+    ensureNonEmptyString(uid, "uid", 128);
+    return callCallableEndpoint<SubmitFeedbackRequest, SubmitFeedbackResponse>(
+      "submitFeedback",
+      feedback
+    );
   }
 }
 

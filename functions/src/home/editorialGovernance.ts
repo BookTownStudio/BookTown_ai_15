@@ -4,13 +4,16 @@ import { z } from "zod";
 import { admin } from "../firebaseAdmin";
 import { assertRoleAtLeast } from "../control/assertRole";
 import { logAdminAction } from "../control/auditLogger";
+import { isPublicReadableBook } from "../catalog/catalogBookView";
+import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 
 const db = admin.firestore();
 const COLLECTION = "home_editorial_slots";
+const READ_NOW_MAX = 2;
 const DYNAMIC_MAX = 2;
 const TOWN_MAX = 3;
 
-const rowSchema = z.enum(["dynamicDiscovery", "fromTheTown"]);
+const rowSchema = z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]);
 const modeSchema = z.enum(["hard_pin", "soft_boost"]);
 const targetTypeSchema = z.enum(["book", "post"]);
 
@@ -40,13 +43,14 @@ function parseDate(value: string, field: string): Timestamp {
   return Timestamp.fromDate(date);
 }
 
-function maxSlots(row: "dynamicDiscovery" | "fromTheTown"): number {
+function maxSlots(row: "readNow" | "dynamicDiscovery" | "fromTheTown"): number {
+  if (row === "readNow") return READ_NOW_MAX;
   return row === "dynamicDiscovery" ? DYNAMIC_MAX : TOWN_MAX;
 }
 
 function assertTargetCompatible(input: EditorialInput): void {
-  if (input.row === "dynamicDiscovery" && input.targetType !== "book") {
-    throw new HttpsError("invalid-argument", "Dynamic Discovery editorial targets must be books.");
+  if ((input.row === "readNow" || input.row === "dynamicDiscovery") && input.targetType !== "book") {
+    throw new HttpsError("invalid-argument", "Ready to Read and Discover editorial targets must be books.");
   }
   if (input.row === "fromTheTown" && input.targetType !== "post") {
     throw new HttpsError("invalid-argument", "From the Town editorial targets must be posts.");
@@ -66,6 +70,15 @@ async function assertTargetExists(input: EditorialInput): Promise<void> {
   if (input.targetType === "post") {
     if (data.status !== "published" || data.visibility !== "public" || data.isDeleted === true) {
       throw new HttpsError("failed-precondition", "Editorial post target is not publicly renderable.");
+    }
+  }
+  if (input.row === "readNow") {
+    if (!isPublicReadableBook(data)) {
+      throw new HttpsError("failed-precondition", "Ready to Read editorial book is not publicly readable.");
+    }
+    const attachment = await resolveBookToEbookAttachment(input.targetId);
+    if (!attachment || !attachment.storagePath) {
+      throw new HttpsError("failed-precondition", "Ready to Read editorial book is not readable in app.");
     }
   }
 }
@@ -241,6 +254,11 @@ export const adminPreviewHomeEditorialConsole = onCall({ cors: true }, async (re
       region: region || null,
       language: language || null,
       rows: [
+        {
+          row: "readNow",
+          editorialCount: active.filter((entry) => entry.row === "readNow").length,
+          maxEditorial: READ_NOW_MAX,
+        },
         {
           row: "dynamicDiscovery",
           editorialCount: active.filter((entry) => entry.row === "dynamicDiscovery").length,

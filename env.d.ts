@@ -18,6 +18,7 @@ interface ImportMetaEnv {
   readonly VITE_FIREBASE_APP_CHECK_DEBUG_TOKEN?: string;
   // FIX: Added VITE_APP_VERSION to ensure it is recognized when accessed via import.meta.env
   readonly VITE_APP_VERSION: string;
+  readonly VITE_ENABLE_BETA_FEEDBACK_TRIGGER?: string;
 }
 
 interface ImportMeta {

@@ -7,7 +7,7 @@ The Home Discovery Console is BookTown's canonical literary continuity surface. 
 ## Non-Negotiable Boundaries
 
 - Home orchestration remains backend-owned through `getHomeDiscoveryConsole`.
-- Home renders at most four rows: Continue Reading, Read Now in BookTown, Dynamic Discovery, and From the Town.
+- Home renders at most four experiential layers: Continue Reading, Ready to Read, Discover, and From the Town.
 - Empty rows collapse server-side; reserved visual slots are prohibited.
 - Algorithmic discovery remains the primary authority.
 - Editorial content remains minority-weighted and visually identical to organic content.
@@ -33,7 +33,8 @@ Recommendations should feel like guidance from an intelligent librarian, not a b
 
 Editors steer discovery; they do not compose Home.
 
-- Dynamic Discovery supports at most two editorial entries.
+- Ready to Read supports at most two editorial entries, restricted to publicly readable in-app books.
+- Discover supports at most two editorial entries.
 - From the Town supports at most three editorial entries.
 - Expired editorial entries must disappear server-side.
 - Hard pins should remain rare and observable.

@@ -154,3 +154,39 @@ describe("getHomeDiscoveryConsole contract", () => {
     expect(parsed.success).toBe(false);
   });
 });
+
+describe("Home editorial governance contract", () => {
+  it("accepts Read Now editorial entries and preview rows", () => {
+    const entry = {
+      targetType: "book",
+      targetId: "book_readable",
+      row: "readNow",
+      slot: 0,
+      mode: "hard_pin",
+      boostWeight: 0.25,
+      startAt: new Date(0).toISOString(),
+      endAt: new Date(86_400_000).toISOString(),
+      regions: [],
+      languages: ["en"],
+      editorialReason: "Readable literary programming",
+      isActive: true,
+    };
+
+    expect(apiContracts.callable.adminUpsertHomeEditorialEntry.requestSchema.safeParse(entry).success).toBe(true);
+    expect(apiContracts.callable.adminPreviewHomeEditorialConsole.responseSchema.safeParse({
+      success: true,
+      data: {
+        preview: {
+          region: null,
+          language: null,
+          rows: [
+            { row: "readNow", editorialCount: 1, maxEditorial: 2 },
+            { row: "dynamicDiscovery", editorialCount: 0, maxEditorial: 2 },
+            { row: "fromTheTown", editorialCount: 0, maxEditorial: 3 },
+          ],
+          entries: [entry],
+        },
+      },
+    }).success).toBe(true);
+  });
+});

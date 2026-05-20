@@ -18,6 +18,7 @@ const DYNAMIC_LIMIT = 12;
 const DYNAMIC_FETCH_LIMIT = 80;
 const TOWN_LIMIT = 6;
 const TOWN_FETCH_LIMIT = 32;
+const READ_NOW_EDITORIAL_MAX = 2;
 const DYNAMIC_EDITORIAL_MAX = 2;
 const TOWN_EDITORIAL_MAX = 3;
 const MAX_AUTHOR_REPEAT_AFTER_CONTINUE = 2;
@@ -130,7 +131,7 @@ type TownCandidate = HomeTownItem & {
 };
 
 type EditorialSlot = {
-  rowType: "dynamicDiscovery" | "fromTheTown";
+  rowType: "readNow" | "dynamicDiscovery" | "fromTheTown";
   entityType: "book" | "post";
   entityId: string;
   slotKind: "hard_pin" | "soft_boost";
@@ -1055,10 +1056,11 @@ function isActiveUnexpiredSlot(data: Record<string, unknown>, now: Timestamp): b
 }
 
 async function readActiveEditorialSlots(
-  rowType: "dynamicDiscovery" | "fromTheTown",
+  rowType: "readNow" | "dynamicDiscovery" | "fromTheTown",
   diagnostics: HomeDiagnostics
 ): Promise<EditorialSlot[]> {
-  const max = rowType === "dynamicDiscovery" ? DYNAMIC_EDITORIAL_MAX
+  const max = rowType === "readNow" ? READ_NOW_EDITORIAL_MAX
+    : rowType === "dynamicDiscovery" ? DYNAMIC_EDITORIAL_MAX
     : rowType === "fromTheTown" ? TOWN_EDITORIAL_MAX
       : 0;
   if (max === 0) return [];
@@ -1106,21 +1108,30 @@ async function hydrateEditorialBooks(
   if (bookSlots.length === 0) return [];
   const snaps = await db.getAll(...bookSlots.map((slot) => db.collection("books").doc(slot.entityId)));
   diagnostics.firestoreDocumentsRead += snaps.length;
-  return snaps
-    .map((snap, index): HomeBookItem | null => {
-      if (!snap.exists) {
+  const items: HomeBookItem[] = [];
+  for (let index = 0; index < snaps.length; index += 1) {
+    const snap = snaps[index];
+    const slot = bookSlots[index];
+    if (!snap?.exists || !slot) {
+      diagnostics.invalidEditorialFiltered += 1;
+      continue;
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    if (!isPublicReadableBook(data)) {
+      diagnostics.invalidEditorialFiltered += 1;
+      continue;
+    }
+    if (slot.rowType === "readNow") {
+      const attachment = await resolveBookToEbookAttachment(snap.id);
+      if (!attachment || !attachment.storagePath) {
         diagnostics.invalidEditorialFiltered += 1;
-        return null;
+        continue;
       }
-      const data = (snap.data() ?? {}) as Record<string, unknown>;
-      if (!isPublicReadableBook(data)) {
-        diagnostics.invalidEditorialFiltered += 1;
-        return null;
-      }
-      const item = mapBookItem(snap.id, data, 100 - index);
-      return item ? { ...item, source: "editorial" as const, reason: "Selected by BookTown editors" } : null;
-    })
-    .filter((item): item is HomeBookItem => item !== null);
+    }
+    const item = mapBookItem(snap.id, data, 100 - index);
+    if (item) items.push({ ...item, source: "editorial" as const, reason: "Selected by BookTown editors" });
+  }
+  return items;
 }
 
 async function hydrateEditorialTownSignals(
@@ -1515,6 +1526,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       readNow,
       dynamicDiscovery,
       fromTheTown,
+      readNowEditorialSlots,
       dynamicEditorialSlots,
       townEditorialSlots,
     ] = await Promise.all([
@@ -1548,6 +1560,13 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       }),
       recoverable({
         uid,
+        subsystem: "read_now_editorial_slots",
+        diagnostics,
+        fallback: [] as EditorialSlot[],
+        run: () => readActiveEditorialSlots("readNow", diagnostics),
+      }),
+      recoverable({
+        uid,
         subsystem: "dynamic_editorial_slots",
         diagnostics,
         fallback: [] as EditorialSlot[],
@@ -1562,7 +1581,14 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       }),
     ]);
 
-    const [dynamicEditorialItems, townEditorialItems] = await Promise.all([
+    const [readNowEditorialItems, dynamicEditorialItems, townEditorialItems] = await Promise.all([
+      recoverable({
+        uid,
+        subsystem: "read_now_editorial_hydration",
+        diagnostics,
+        fallback: [] as HomeBookItem[],
+        run: () => hydrateEditorialBooks(readNowEditorialSlots, diagnostics),
+      }),
       recoverable({
         uid,
         subsystem: "dynamic_editorial_hydration",
@@ -1583,6 +1609,13 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
     const safeDynamicDiscovery = sanitizeBookItems(dynamicDiscovery, DYNAMIC_LIMIT);
     const safeFromTheTown = sanitizeTownItems(fromTheTown, TOWN_LIMIT);
 
+    const readNowMerged = mergeBookEditorial(
+      safeReadNow,
+      sanitizeBookItems(readNowEditorialItems, READ_NOW_EDITORIAL_MAX),
+      READ_NOW_EDITORIAL_MAX,
+      READ_NOW_LIMIT,
+      diagnostics
+    );
     const dynamicMerged = mergeBookEditorial(
       safeDynamicDiscovery,
       sanitizeBookItems(dynamicEditorialItems, DYNAMIC_EDITORIAL_MAX),
@@ -1597,7 +1630,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
     );
     const suppressed = suppressCrossRowBookDuplicates({
       continueReading: safeContinueReading,
-      readNow: safeReadNow,
+      readNow: readNowMerged.items,
       dynamicDiscovery: dynamicMerged.items,
       diagnostics,
     });
@@ -1628,7 +1661,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
         suppressed.dynamicDiscovery.length
       ).toFixed(4))
       : 0;
-    diagnostics.sourceBalance.editorial = dynamicMerged.editorialCount + townMerged.editorialCount;
+    diagnostics.sourceBalance.editorial = readNowMerged.editorialCount + dynamicMerged.editorialCount + townMerged.editorialCount;
     diagnostics.sourceBalance.readNow = suppressed.readNow.length;
     diagnostics.sourceBalance.fromTheTown = townMerged.items.filter((item) => item.source === "algorithmic").length;
     const freshness = computeRecommendationFreshness({
@@ -1657,7 +1690,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       readNow: suppressed.readNow,
       dynamicDiscovery: suppressed.dynamicDiscovery,
       fromTheTown: townMerged.items,
-      editorialCount: dynamicMerged.editorialCount + townMerged.editorialCount,
+      editorialCount: readNowMerged.editorialCount + dynamicMerged.editorialCount + townMerged.editorialCount,
       rowCount: rows.length,
     });
     Object.assign(diagnostics, qualityScores);
@@ -1671,6 +1704,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       latencyMs: Date.now() - startedAtMs,
       emptyRows: diagnostics.emptyRows,
       editorialOccupancy: {
+        readNow: readNowMerged.editorialCount,
         dynamicDiscovery: dynamicMerged.editorialCount,
         fromTheTown: townMerged.editorialCount,
       },

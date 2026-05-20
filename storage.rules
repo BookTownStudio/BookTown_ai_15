@@ -136,10 +136,11 @@ service firebase.storage {
        FEEDBACK ATTACHMENTS
        ========================= */
     match /feedback/{uid}/{allPaths=**} {
-      allow create: if isOwner(uid)
-        && request.resource.size < 10 * 1024 * 1024;
+      allow read, write: if false;
+    }
 
-      allow read: if false;
+    match /feedback_attachments/{feedbackId}/{allPaths=**} {
+      allow read, write: if false;
     }
 
     /* =========================

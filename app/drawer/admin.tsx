@@ -35,6 +35,9 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../l
 import { db } from '../../lib/firebase.ts';
 import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import {
+  type AdminFeedbackDetail,
+  type AdminFeedbackFilters,
+  type AdminFeedbackReport,
   type AdminSystemEvent,
   adminService,
   adminServiceQueryKeys,
@@ -47,6 +50,9 @@ import {
   type SystemMetricsDailyEntry,
   type SystemMetricsDailyRangeParams,
   type SystemMetricsSnapshot,
+  type FeedbackIntentType,
+  type FeedbackSource,
+  type FeedbackStatus,
 } from '../../lib/services/adminService.ts';
 
 type ControlSectionId =
@@ -822,19 +828,415 @@ const HealthTab: React.FC = () => {
 };
 
 // --- Feedback Tab ---
+const FEEDBACK_STATUS_OPTIONS: FeedbackStatus[] = ['new', 'triaged', 'in_progress', 'resolved', 'closed', 'rejected'];
+const FEEDBACK_SOURCE_OPTIONS: FeedbackSource[] = ['drawer', 'appnav_beta'];
+const FEEDBACK_INTENT_OPTIONS: FeedbackIntentType[] = [
+  'general_feedback',
+  'feature_request',
+  'bug',
+  'ux_confusion',
+  'performance_issue',
+  'beta_observation',
+  'praise',
+];
+const FEEDBACK_PAGE_SIZE = 25;
+
+function normalizeSelectValue<T extends string>(value: string): T | undefined {
+  return value ? (value as T) : undefined;
+}
+
+function previewText(value: string): string {
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  return normalized.length > 120 ? `${normalized.slice(0, 117)}...` : normalized;
+}
+
+function downloadTextFile(filename: string, mimeType: string, content: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
+function readContextString(context: unknown, key: string): string | null {
+  if (!context || typeof context !== 'object') return null;
+  const value = (context as Record<string, unknown>)[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function readEntityContext(context: unknown): { type: string | null; id: string | null } {
+  if (!context || typeof context !== 'object') return { type: null, id: null };
+  const entity = (context as Record<string, unknown>).entity;
+  if (!entity || typeof entity !== 'object') return { type: null, id: null };
+  return {
+    type: readContextString(entity, 'type'),
+    id: readContextString(entity, 'id'),
+  };
+}
+
 const FeedbackTab: React.FC = () => {
   const { lang } = useI18n();
+  const queryClient = useQueryClient();
+  const [filters, setFilters] = useState<AdminFeedbackFilters>({ limit: FEEDBACK_PAGE_SIZE });
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+  const listParams = useMemo<AdminFeedbackFilters>(
+    () => ({ ...filters, limit: FEEDBACK_PAGE_SIZE }),
+    [filters]
+  );
+
+  const {
+    data,
+    isLoading,
+    isError,
+    error,
+    isFetching,
+  } = useQuery({
+    queryKey: adminServiceQueryKeys.feedbackReports(listParams),
+    queryFn: () => adminService.listFeedbackReports(listParams),
+  });
+
+  const selectedReportId = selectedId ?? data?.reports[0]?.id ?? null;
+  const {
+    data: detail,
+    isLoading: isDetailLoading,
+    isError: isDetailError,
+    error: detailError,
+  } = useQuery<AdminFeedbackDetail>({
+    queryKey: adminServiceQueryKeys.feedbackReport(selectedReportId),
+    queryFn: () => adminService.getFeedbackReport(selectedReportId as string),
+    enabled: Boolean(selectedReportId),
+  });
+
+  const statusMutation = useMutation<AdminFeedbackReport, Error, { feedbackId: string; status: FeedbackStatus }>({
+    mutationFn: ({ feedbackId, status }) => adminService.updateFeedbackStatus(feedbackId, status),
+    onSuccess: (report) => {
+      queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.feedbackReports(listParams) });
+      queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.feedbackReport(report.id) });
+    },
+  });
+
+  const noteMutation = useMutation({
+    mutationFn: ({ feedbackId, noteText }: { feedbackId: string; noteText: string }) =>
+      adminService.addFeedbackNote(feedbackId, noteText),
+    onSuccess: (_, variables) => {
+      setNote('');
+      queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.feedbackReport(variables.feedbackId) });
+    },
+  });
+
+  const deleteAttachmentMutation = useMutation({
+    mutationFn: ({ feedbackId, attachmentId }: { feedbackId: string; attachmentId: string }) =>
+      adminService.deleteFeedbackAttachment(feedbackId, attachmentId),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.feedbackReport(variables.feedbackId) });
+    },
+  });
+
+  const exportCsvMutation = useMutation({
+    mutationFn: ({ feedbackId }: { feedbackId?: string }) =>
+      adminService.exportFeedbackCsv(feedbackId ? { feedbackId } : listParams),
+    onSuccess: (result) => {
+      downloadTextFile(result.filename, result.mimeType, result.csv);
+    },
+  });
+
+  const exportJsonMutation = useMutation({
+    mutationFn: ({ feedbackId }: { feedbackId?: string }) =>
+      adminService.exportFeedbackJson(feedbackId ? { feedbackId } : listParams),
+    onSuccess: (result) => {
+      downloadTextFile(result.filename, result.mimeType, JSON.stringify(result.export, null, 2));
+    },
+  });
+
+  const handleLoadNext = (): void => {
+    if (!data?.nextCursor) return;
+    setFilters((current) => ({ ...current, cursor: data.nextCursor ?? undefined }));
+  };
+
+  const updateFilter = <K extends keyof AdminFeedbackFilters>(key: K, value: AdminFeedbackFilters[K]): void => {
+    setSelectedId(null);
+    setFilters((current) => {
+      const next = { ...current, cursor: undefined, [key]: value };
+      if (!value) {
+        delete next[key];
+      }
+      next.limit = FEEDBACK_PAGE_SIZE;
+      return next;
+    });
+  };
+
+  const clearFilters = (): void => {
+    setSelectedId(null);
+    setFilters({ limit: FEEDBACK_PAGE_SIZE });
+  };
+
+  const report = detail?.report;
+  const entityContext = readEntityContext(report?.clientContext);
 
   return (
     <div className="space-y-4">
       <BilingualText role="H1" className="!text-2xl mb-4 hidden md:block">
         {lang === 'en' ? 'User Feedback' : 'ملاحظات المستخدمين'}
       </BilingualText>
-      <GlassCard className="!p-6 text-slate-400">
-        {lang === 'en'
-          ? 'Feedback pipeline is not available in this build.'
-          : 'قناة الملاحظات غير متاحة في هذا الإصدار.'}
+
+      <GlassCard className="!p-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <select
+            value={filters.status ?? ''}
+            onChange={(event) => updateFilter('status', normalizeSelectValue<FeedbackStatus>(event.target.value))}
+            className="bg-slate-950 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
+          >
+            <option value="">{lang === 'en' ? 'All statuses' : 'كل الحالات'}</option>
+            {FEEDBACK_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+          </select>
+          <select
+            value={filters.source ?? ''}
+            onChange={(event) => updateFilter('source', normalizeSelectValue<FeedbackSource>(event.target.value))}
+            className="bg-slate-950 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
+          >
+            <option value="">{lang === 'en' ? 'All sources' : 'كل المصادر'}</option>
+            {FEEDBACK_SOURCE_OPTIONS.map((source) => <option key={source} value={source}>{source}</option>)}
+          </select>
+          <select
+            value={filters.intentType ?? ''}
+            onChange={(event) => updateFilter('intentType', normalizeSelectValue<FeedbackIntentType>(event.target.value))}
+            className="bg-slate-950 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
+          >
+            <option value="">{lang === 'en' ? 'All intents' : 'كل الأنواع'}</option>
+            {FEEDBACK_INTENT_OPTIONS.map((intent) => <option key={intent} value={intent}>{intent}</option>)}
+          </select>
+          <Button variant="secondary" onClick={clearFilters} className="!text-xs">
+            {lang === 'en' ? 'Clear Filters' : 'مسح التصفية'}
+          </Button>
+        </div>
       </GlassCard>
+
+      {(isError || statusMutation.isError || noteMutation.isError || deleteAttachmentMutation.isError || exportCsvMutation.isError || exportJsonMutation.isError || isDetailError) && (
+        <GlassCard className="!p-4 border border-red-500/30 bg-red-500/10 text-red-300 text-sm">
+          {toErrorMessage(
+            error ?? statusMutation.error ?? noteMutation.error ?? deleteAttachmentMutation.error ?? exportCsvMutation.error ?? exportJsonMutation.error ?? detailError,
+            lang === 'en' ? 'Feedback operation failed.' : 'فشلت عملية الملاحظات.'
+          )}
+        </GlassCard>
+      )}
+
+      <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_420px] gap-4">
+        <GlassCard className="!p-4">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-sm font-semibold text-white">{lang === 'en' ? 'Feedback Queue' : 'قائمة الملاحظات'}</p>
+            <div className="flex items-center gap-2">
+              {isFetching && <span className="text-xs text-slate-400">{lang === 'en' ? 'Refreshing...' : 'جار التحديث...'}</span>}
+              <Button
+                variant="secondary"
+                className="!text-xs"
+                disabled={exportCsvMutation.isPending}
+                onClick={() => exportCsvMutation.mutate({})}
+              >
+                {exportCsvMutation.isPending ? 'CSV...' : 'CSV'}
+              </Button>
+              <Button
+                variant="secondary"
+                className="!text-xs"
+                disabled={exportJsonMutation.isPending}
+                onClick={() => exportJsonMutation.mutate({})}
+              >
+                {exportJsonMutation.isPending ? 'JSON...' : 'JSON'}
+              </Button>
+            </div>
+          </div>
+
+          {isLoading ? (
+            <div className="flex justify-center p-10"><LoadingSpinner /></div>
+          ) : data?.reports.length === 0 ? (
+            <p className="text-sm text-slate-400">{lang === 'en' ? 'No feedback reports match the current filters.' : 'لا توجد ملاحظات تطابق التصفية الحالية.'}</p>
+          ) : (
+            <div className="space-y-3">
+              <div className="overflow-x-auto">
+                <table className="min-w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-slate-400 border-b border-white/10">
+                      <th className="py-2 pr-3 font-semibold">status</th>
+                      <th className="py-2 pr-3 font-semibold">source</th>
+                      <th className="py-2 pr-3 font-semibold">intentType</th>
+                      <th className="py-2 pr-3 font-semibold">createdAt</th>
+                      <th className="py-2 pr-3 font-semibold">preview</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data?.reports.map((item) => (
+                      <tr
+                        key={item.id}
+                        className={cn(
+                          'border-b border-white/5 cursor-pointer hover:bg-white/5',
+                          selectedReportId === item.id && 'bg-accent/10'
+                        )}
+                        onClick={() => setSelectedId(item.id)}
+                      >
+                        <td className="py-2 pr-3 text-slate-200 whitespace-nowrap">{item.status}</td>
+                        <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{item.source}</td>
+                        <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{item.intentType}</td>
+                        <td className="py-2 pr-3 text-slate-300 whitespace-nowrap">{formatTimestampLabel(item.createdAt)}</td>
+                        <td className="py-2 pr-3 text-slate-300 min-w-[260px]">{previewText(item.text)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {data?.nextCursor && (
+                <div className="flex justify-center">
+                  <Button variant="secondary" onClick={handleLoadNext} className="!text-xs">
+                    {lang === 'en' ? 'Load Next Page' : 'تحميل الصفحة التالية'}
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+        </GlassCard>
+
+        <GlassCard className="!p-4">
+          {!selectedReportId ? (
+            <p className="text-sm text-slate-400">{lang === 'en' ? 'Select a feedback report.' : 'اختر ملاحظة.'}</p>
+          ) : isDetailLoading ? (
+            <div className="flex justify-center p-10"><LoadingSpinner /></div>
+          ) : report ? (
+            <div className="space-y-4 text-sm">
+              <div>
+                <p className="text-xs uppercase tracking-wide text-slate-500">Report</p>
+                <p className="text-white font-semibold break-all">{report.id}</p>
+                <p className="text-slate-400">{report.uid}</p>
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    className="!text-xs"
+                    disabled={exportCsvMutation.isPending}
+                    onClick={() => exportCsvMutation.mutate({ feedbackId: report.id })}
+                  >
+                    CSV Row
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    className="!text-xs"
+                    disabled={exportJsonMutation.isPending}
+                    onClick={() => exportJsonMutation.mutate({ feedbackId: report.id })}
+                  >
+                    JSON
+                  </Button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-slate-500">status</p><p className="text-white">{report.status}</p></div>
+                <div><p className="text-slate-500">intent</p><p className="text-white">{report.intentType}</p></div>
+                <div><p className="text-slate-500">source</p><p className="text-white">{report.source}</p></div>
+                <div><p className="text-slate-500">created</p><p className="text-white">{formatTimestampLabel(report.createdAt)}</p></div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-white/10 p-3">
+                <div><p className="text-slate-500">route</p><p className="text-white break-all">{readContextString(report.clientContext, 'route') ?? 'N/A'}</p></div>
+                <div><p className="text-slate-500">active surface</p><p className="text-white">{readContextString(report.clientContext, 'viewId') ?? 'N/A'}</p></div>
+                <div><p className="text-slate-500">entity</p><p className="text-white break-all">{entityContext.type && entityContext.id ? `${entityContext.type}:${entityContext.id}` : 'N/A'}</p></div>
+                <div><p className="text-slate-500">app/platform</p><p className="text-white">{readContextString(report.clientContext, 'appVersion') ?? 'N/A'} / {readContextString(report.clientContext, 'platform') ?? 'N/A'}</p></div>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">text</p>
+                <p className="text-slate-100 whitespace-pre-wrap break-words">{report.text}</p>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-2">Evidence</p>
+                {detail?.attachments.length === 0 ? (
+                  <p className="text-xs text-slate-400">No screenshots attached.</p>
+                ) : (
+                  <div className="space-y-3">
+                    {detail?.attachments.map((attachment) => (
+                      <div key={attachment.attachmentId} className="rounded-md border border-white/10 p-2">
+                        {attachment.downloadUrl && (
+                          <a href={attachment.downloadUrl} target="_blank" rel="noreferrer">
+                            <img
+                              src={attachment.downloadUrl}
+                              alt={attachment.fileName}
+                              className="max-h-48 w-full rounded object-contain bg-black/30"
+                            />
+                          </a>
+                        )}
+                        <div className="mt-2 flex items-center justify-between gap-3 text-xs">
+                          <span className="truncate text-slate-300">{attachment.fileName}</span>
+                          <Button
+                            variant="secondary"
+                            className="!text-xs"
+                            disabled={deleteAttachmentMutation.isPending}
+                            onClick={() => deleteAttachmentMutation.mutate({ feedbackId: report.id, attachmentId: attachment.attachmentId })}
+                          >
+                            Delete
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">clientContext</p>
+                <pre className="max-h-44 overflow-auto rounded-md bg-black/30 p-3 text-xs text-slate-300 whitespace-pre-wrap">
+                  {JSON.stringify(report.clientContext, null, 2)}
+                </pre>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-1">serverContext</p>
+                <pre className="max-h-32 overflow-auto rounded-md bg-black/30 p-3 text-xs text-slate-300 whitespace-pre-wrap">
+                  {JSON.stringify(report.serverContext, null, 2)}
+                </pre>
+              </div>
+              <div className="space-y-2">
+                <p className="text-slate-500">Update status</p>
+                <select
+                  value={report.status}
+                  disabled={statusMutation.isPending}
+                  onChange={(event) => statusMutation.mutate({ feedbackId: report.id, status: event.target.value as FeedbackStatus })}
+                  className="w-full bg-slate-950 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
+                >
+                  {FEEDBACK_STATUS_OPTIONS.map((status) => <option key={status} value={status}>{status}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <p className="text-slate-500">Internal note</p>
+                <textarea
+                  value={note}
+                  onChange={(event) => setNote(event.target.value)}
+                  rows={3}
+                  className="w-full bg-slate-950 border border-white/10 rounded-md px-3 py-2 text-sm text-white"
+                />
+                <Button
+                  variant="secondary"
+                  disabled={noteMutation.isPending || !note.trim()}
+                  onClick={() => noteMutation.mutate({ feedbackId: report.id, noteText: note })}
+                  className="!text-xs"
+                >
+                  {noteMutation.isPending ? (lang === 'en' ? 'Saving...' : 'جار الحفظ...') : (lang === 'en' ? 'Add Note' : 'إضافة ملاحظة')}
+                </Button>
+              </div>
+              <div>
+                <p className="text-slate-500 mb-2">Activity</p>
+                <div className="space-y-2">
+                  {detail?.activity.length === 0 ? (
+                    <p className="text-xs text-slate-400">No activity yet.</p>
+                  ) : detail?.activity.map((activity) => (
+                    <div key={activity.id} className="rounded-md border border-white/10 p-2">
+                      <p className="text-xs text-slate-300">{activity.type} · {formatTimestampLabel(activity.createdAt)}</p>
+                      <p className="text-xs text-slate-500">actor: {activity.actorUid}</p>
+                      <pre className="mt-1 text-xs text-slate-300 whitespace-pre-wrap break-words">
+                        {JSON.stringify(activity.payload, null, 2)}
+                      </pre>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-slate-400">{lang === 'en' ? 'Feedback report unavailable.' : 'الملاحظة غير متاحة.'}</p>
+          )}
+        </GlassCard>
+      </div>
     </div>
   );
 };

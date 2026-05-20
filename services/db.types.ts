@@ -20,7 +20,6 @@ import {
   DirectMessage,
   AgentSession,
   ChatMessage,
-  Feedback,
   PublishedBook,
   AttachmentMetadataV1,
   AttachmentV1,
@@ -42,6 +41,10 @@ import type {
 } from '../lib/editor/writeOperationalTypes.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import type { BookSemanticGraph } from '../types/literaryGraph.ts';
+import type {
+  SubmitFeedbackRequest,
+  SubmitFeedbackResponse,
+} from '../contracts/apiContracts.ts';
 
 /* =========================
    UPLOADS
@@ -292,8 +295,8 @@ export interface UserDataService {
   saveReadingProgress(uid: string, bookId: string, progress: any): Promise<void>;
   submitFeedback(
     uid: string,
-    feedback: Omit<Feedback, 'id' | 'userId' | 'timestamp'>
-  ): Promise<void>;
+    feedback: SubmitFeedbackRequest
+  ): Promise<SubmitFeedbackResponse>;
 }
 
 /* =========================

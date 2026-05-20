@@ -215,7 +215,7 @@ const adminHomeEditorialEntrySchema = z
     id: z.string().min(1).max(180).optional(),
     targetType: z.enum(["book", "post"]),
     targetId: z.string().min(1).max(180),
-    row: z.enum(["dynamicDiscovery", "fromTheTown"]),
+    row: z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]),
     slot: z.number().int().min(0).max(2),
     mode: z.enum(["hard_pin", "soft_boost"]),
     boostWeight: z.number().min(0).max(1),
@@ -1631,6 +1631,344 @@ const spaceRelationshipRefsInputSchema = z
   })
   .strict();
 
+export const feedbackSourceSchema = z.enum(["drawer", "appnav_beta"]);
+export const feedbackIntentTypeSchema = z.enum([
+  "general_feedback",
+  "feature_request",
+  "bug",
+  "ux_confusion",
+  "performance_issue",
+  "beta_observation",
+  "praise",
+]);
+export const feedbackStatusSchema = z.enum([
+  "new",
+  "triaged",
+  "in_progress",
+  "resolved",
+  "closed",
+  "rejected",
+]);
+
+const feedbackClientContextSchema = z
+  .object({
+    route: z.string().trim().min(1).max(512).optional(),
+    viewId: z.string().trim().min(1).max(120).optional(),
+    navigationType: z.string().trim().min(1).max(80).optional(),
+    activeTab: z.string().trim().min(1).max(80).optional(),
+    immersiveView: z.string().trim().min(1).max(120).optional(),
+    stackView: z.string().trim().min(1).max(120).optional(),
+    entity: z
+      .object({
+        type: z.string().trim().min(1).max(80),
+        id: z.string().trim().min(1).max(190),
+      })
+      .strict()
+      .optional(),
+    viewport: z
+      .object({
+        width: z.number().int().min(1).max(10000),
+        height: z.number().int().min(1).max(10000),
+      })
+      .strict()
+      .optional(),
+    locale: z.string().trim().min(1).max(32).optional(),
+    appVersion: z.string().trim().min(1).max(80).optional(),
+    platform: z.string().trim().min(1).max(80).optional(),
+    viewportClass: z.enum(["mobile", "tablet", "desktop"]).optional(),
+    layoutMode: z.string().trim().min(1).max(80).optional(),
+    activeFilters: z.record(z.string().max(64), z.string().max(120)).optional(),
+    openModalIds: z.array(z.string().trim().min(1).max(80)).max(8).optional(),
+  })
+  .strict();
+
+const feedbackServerContextSchema = z
+  .object({
+    authRole: z.string().trim().min(1).max(80),
+    callableRegion: z.string().trim().min(1).max(80),
+    correlationId: z.string().trim().min(1).max(128),
+    schemaVersion: z.literal(1),
+  })
+  .strict();
+
+export const feedbackReportSchema = z
+  .object({
+    id: z.string().trim().min(1).max(190),
+    uid: z.string().trim().min(1).max(128),
+    source: feedbackSourceSchema,
+    intentType: feedbackIntentTypeSchema,
+    status: feedbackStatusSchema,
+    text: z.string().trim().min(1).max(4000),
+    contactEmail: z.string().trim().email().max(320).nullable(),
+    clientContext: feedbackClientContextSchema.nullable(),
+    serverContext: feedbackServerContextSchema,
+    createdAt: z.unknown(),
+    updatedAt: z.unknown(),
+  })
+  .strict();
+
+export const submitFeedbackRequestSchema = z
+  .object({
+    source: feedbackSourceSchema,
+    intentType: feedbackIntentTypeSchema,
+    text: z.string().trim().min(1).max(4000),
+    contactEmail: z.string().trim().email().max(320).nullable().optional(),
+    clientContext: feedbackClientContextSchema.nullable().optional(),
+  })
+  .strict()
+  .superRefine((value, ctx) => {
+    const encodedLength = JSON.stringify(value.clientContext ?? {}).length;
+    if (encodedLength > 4096) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["clientContext"],
+        message: "clientContext must be 4096 bytes or less.",
+      });
+    }
+  });
+
+export const submitFeedbackResponseSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    status: feedbackStatusSchema,
+    receivedAt: z.string().datetime(),
+    correlationId: z.string().trim().min(1).max(128),
+  })
+  .strict();
+
+export type FeedbackSource = z.infer<typeof feedbackSourceSchema>;
+export type FeedbackIntentType = z.infer<typeof feedbackIntentTypeSchema>;
+export type FeedbackStatus = z.infer<typeof feedbackStatusSchema>;
+export type FeedbackReport = z.infer<typeof feedbackReportSchema>;
+export type SubmitFeedbackRequest = z.infer<typeof submitFeedbackRequestSchema>;
+export type SubmitFeedbackResponse = z.infer<typeof submitFeedbackResponseSchema>;
+
+const adminFeedbackActivityTypeSchema = z.enum(["status_changed", "note_added"]);
+const feedbackAttachmentContentTypeSchema = z.enum(["image/png", "image/jpeg", "image/webp"]);
+const feedbackAttachmentStatusSchema = z.enum(["pending", "finalized", "deleted"]);
+const feedbackAttachmentMetadataSchema = z
+  .object({
+    attachmentId: z.string().trim().min(1).max(190),
+    feedbackId: z.string().trim().min(1).max(190),
+    uid: z.string().trim().min(1).max(128),
+    fileName: z.string().trim().min(1).max(180),
+    contentType: feedbackAttachmentContentTypeSchema,
+    size: z.number().int().min(1).max(5 * 1024 * 1024),
+    storagePath: z.string().trim().min(1).max(512),
+    status: feedbackAttachmentStatusSchema,
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    finalizedAt: z.string().datetime().nullable(),
+    deletedAt: z.string().datetime().nullable(),
+    deletedBy: z.string().trim().min(1).max(128).nullable(),
+    downloadUrl: z.string().url().nullable().optional(),
+  })
+  .strict();
+
+export const createFeedbackAttachmentUploadRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    fileName: z.string().trim().min(1).max(180),
+    contentType: feedbackAttachmentContentTypeSchema,
+    size: z.number().int().min(1).max(5 * 1024 * 1024),
+  })
+  .strict();
+
+export const createFeedbackAttachmentUploadResponseSchema = z
+  .object({
+    attachmentId: z.string().trim().min(1).max(190),
+    feedbackId: z.string().trim().min(1).max(190),
+    uploadUrl: z.string().url(),
+    storagePath: z.string().trim().min(1).max(512),
+    expiresAt: z.string().datetime(),
+    maxBytes: z.literal(5 * 1024 * 1024),
+    allowedContentTypes: z.array(feedbackAttachmentContentTypeSchema).length(3),
+  })
+  .strict();
+
+export const finalizeFeedbackAttachmentRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    attachmentId: z.string().trim().min(1).max(190),
+  })
+  .strict();
+
+export const finalizeFeedbackAttachmentResponseSchema = z
+  .object({
+    attachment: feedbackAttachmentMetadataSchema,
+  })
+  .strict();
+
+export const adminDeleteFeedbackAttachmentRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    attachmentId: z.string().trim().min(1).max(190),
+  })
+  .strict();
+
+export const adminDeleteFeedbackAttachmentResponseSchema = z
+  .object({
+    attachmentId: z.string().trim().min(1).max(190),
+    deleted: z.boolean(),
+  })
+  .strict();
+
+const adminFeedbackActivitySchema = z
+  .object({
+    id: z.string().trim().min(1).max(190),
+    type: adminFeedbackActivityTypeSchema,
+    actorUid: z.string().trim().min(1).max(128),
+    createdAt: z.string().datetime(),
+    payload: z.record(z.string(), z.unknown()),
+  })
+  .strict();
+
+const adminFeedbackReportSchema = feedbackReportSchema
+  .omit({ createdAt: true, updatedAt: true })
+  .extend({
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    updatedBy: z.string().trim().min(1).max(128).nullable().optional(),
+  })
+  .strict();
+
+export const adminListFeedbackReportsRequestSchema = z
+  .object({
+    status: feedbackStatusSchema.optional(),
+    source: feedbackSourceSchema.optional(),
+    intentType: feedbackIntentTypeSchema.optional(),
+    createdFrom: z.string().datetime().optional(),
+    createdTo: z.string().datetime().optional(),
+    limit: z.number().int().min(1).max(50).optional(),
+    cursor: z.string().trim().min(1).max(1024).optional(),
+  })
+  .strict();
+
+export const adminListFeedbackReportsResponseSchema = z
+  .object({
+    reports: z.array(adminFeedbackReportSchema).max(50),
+    nextCursor: z.string().trim().min(1).max(1024).nullable(),
+  })
+  .strict();
+
+export const adminGetFeedbackReportRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+  })
+  .strict();
+
+export const adminGetFeedbackReportResponseSchema = z
+  .object({
+    report: adminFeedbackReportSchema,
+    activity: z.array(adminFeedbackActivitySchema).max(200),
+    attachments: z.array(feedbackAttachmentMetadataSchema).max(3),
+  })
+  .strict();
+
+export const adminUpdateFeedbackStatusRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    status: feedbackStatusSchema,
+  })
+  .strict();
+
+export const adminUpdateFeedbackStatusResponseSchema = z
+  .object({
+    report: adminFeedbackReportSchema,
+  })
+  .strict();
+
+export const adminAddFeedbackNoteRequestSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    note: z.string().trim().min(1).max(2000),
+  })
+  .strict();
+
+export const adminAddFeedbackNoteResponseSchema = z
+  .object({
+    activity: adminFeedbackActivitySchema,
+  })
+  .strict();
+
+const feedbackExportRowSchema = z
+  .object({
+    feedbackId: z.string().trim().min(1).max(190),
+    createdAt: z.string().datetime(),
+    updatedAt: z.string().datetime(),
+    status: feedbackStatusSchema,
+    source: feedbackSourceSchema,
+    intentType: feedbackIntentTypeSchema,
+    text: z.string(),
+    contactEmail: z.string().email().nullable(),
+    route: z.string().nullable(),
+    entityType: z.string().nullable(),
+    entityId: z.string().nullable(),
+    appVersion: z.string().nullable(),
+    platform: z.string().nullable(),
+    assignedTo: z.string().nullable(),
+  })
+  .strict();
+
+export const adminExportFeedbackRequestSchema = adminListFeedbackReportsRequestSchema
+  .omit({ limit: true, cursor: true })
+  .extend({
+    feedbackId: z.string().trim().min(1).max(190).optional(),
+    limit: z.number().int().min(1).max(5000).optional(),
+  })
+  .strict();
+
+export const adminExportFeedbackCsvResponseSchema = z
+  .object({
+    filename: z.string().trim().min(1).max(180),
+    mimeType: z.literal("text/csv; charset=utf-8"),
+    rowCount: z.number().int().nonnegative().max(5000),
+    csv: z.string(),
+    generatedAt: z.string().datetime(),
+  })
+  .strict();
+
+export const adminExportFeedbackJsonResponseSchema = z
+  .object({
+    filename: z.string().trim().min(1).max(180),
+    mimeType: z.literal("application/json; charset=utf-8"),
+    rowCount: z.number().int().nonnegative().max(5000),
+    export: z
+      .object({
+        schemaVersion: z.literal(1),
+        generatedAt: z.string().datetime(),
+        filters: adminExportFeedbackRequestSchema,
+        rows: z.array(feedbackExportRowSchema).max(5000),
+      })
+      .strict(),
+  })
+  .strict();
+
+export type AdminFeedbackActivity = z.infer<typeof adminFeedbackActivitySchema>;
+export type AdminFeedbackReport = z.infer<typeof adminFeedbackReportSchema>;
+export type FeedbackAttachment = z.infer<typeof feedbackAttachmentMetadataSchema>;
+export type FeedbackAttachmentMetadata = z.infer<typeof feedbackAttachmentMetadataSchema>;
+export type FeedbackAttachmentUploadToken = z.infer<typeof createFeedbackAttachmentUploadResponseSchema>;
+export type AdminListFeedbackReportsRequest = z.infer<typeof adminListFeedbackReportsRequestSchema>;
+export type AdminListFeedbackReportsResponse = z.infer<typeof adminListFeedbackReportsResponseSchema>;
+export type AdminGetFeedbackReportRequest = z.infer<typeof adminGetFeedbackReportRequestSchema>;
+export type AdminGetFeedbackReportResponse = z.infer<typeof adminGetFeedbackReportResponseSchema>;
+export type AdminUpdateFeedbackStatusRequest = z.infer<typeof adminUpdateFeedbackStatusRequestSchema>;
+export type AdminUpdateFeedbackStatusResponse = z.infer<typeof adminUpdateFeedbackStatusResponseSchema>;
+export type AdminAddFeedbackNoteRequest = z.infer<typeof adminAddFeedbackNoteRequestSchema>;
+export type AdminAddFeedbackNoteResponse = z.infer<typeof adminAddFeedbackNoteResponseSchema>;
+export type FeedbackExportRow = z.infer<typeof feedbackExportRowSchema>;
+export type FeedbackExportJson = z.infer<typeof adminExportFeedbackJsonResponseSchema>["export"];
+export type AdminExportFeedbackRequest = z.infer<typeof adminExportFeedbackRequestSchema>;
+export type AdminExportFeedbackCsvResponse = z.infer<typeof adminExportFeedbackCsvResponseSchema>;
+export type AdminExportFeedbackJsonResponse = z.infer<typeof adminExportFeedbackJsonResponseSchema>;
+export type CreateFeedbackAttachmentUploadRequest = z.infer<typeof createFeedbackAttachmentUploadRequestSchema>;
+export type CreateFeedbackAttachmentUploadResponse = z.infer<typeof createFeedbackAttachmentUploadResponseSchema>;
+export type FinalizeFeedbackAttachmentRequest = z.infer<typeof finalizeFeedbackAttachmentRequestSchema>;
+export type FinalizeFeedbackAttachmentResponse = z.infer<typeof finalizeFeedbackAttachmentResponseSchema>;
+export type AdminDeleteFeedbackAttachmentRequest = z.infer<typeof adminDeleteFeedbackAttachmentRequestSchema>;
+export type AdminDeleteFeedbackAttachmentResponse = z.infer<typeof adminDeleteFeedbackAttachmentResponseSchema>;
+
 const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
   requestSchema: Req,
   dataSchema: Data,
@@ -1652,6 +1990,78 @@ const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
 
 export const apiContracts = {
   callable: {
+    submitFeedback: defineContract(
+      submitFeedbackRequestSchema,
+      submitFeedbackResponseSchema,
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useSubmitFeedback.ts", "app/drawer/feedback.tsx"],
+      }
+    ),
+
+    adminListFeedbackReports: defineContract(
+      adminListFeedbackReportsRequestSchema,
+      adminListFeedbackReportsResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    adminGetFeedbackReport: defineContract(
+      adminGetFeedbackReportRequestSchema,
+      adminGetFeedbackReportResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    adminUpdateFeedbackStatus: defineContract(
+      adminUpdateFeedbackStatusRequestSchema,
+      adminUpdateFeedbackStatusResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    adminAddFeedbackNote: defineContract(
+      adminAddFeedbackNoteRequestSchema,
+      adminAddFeedbackNoteResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    adminExportFeedbackCsv: defineContract(
+      adminExportFeedbackRequestSchema,
+      adminExportFeedbackCsvResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    adminExportFeedbackJson: defineContract(
+      adminExportFeedbackRequestSchema,
+      adminExportFeedbackJsonResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
+    createFeedbackAttachmentUpload: defineContract(
+      createFeedbackAttachmentUploadRequestSchema,
+      createFeedbackAttachmentUploadResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/hooks/useFeedbackAttachmentUpload.ts"] }
+    ),
+
+    finalizeFeedbackAttachment: defineContract(
+      finalizeFeedbackAttachmentRequestSchema,
+      finalizeFeedbackAttachmentResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/hooks/useFeedbackAttachmentUpload.ts"] }
+    ),
+
+    adminDeleteFeedbackAttachment: defineContract(
+      adminDeleteFeedbackAttachmentRequestSchema,
+      adminDeleteFeedbackAttachmentResponseSchema,
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "app/drawer/admin.tsx"] }
+    ),
+
     getHomeDiscoveryConsole: defineContract(
       z.object({}).strict(),
       z
@@ -1719,7 +2129,7 @@ export const apiContracts = {
               region: z.string().nullable(),
               language: z.string().nullable(),
               rows: z.array(z.object({
-                row: z.enum(["dynamicDiscovery", "fromTheTown"]),
+                row: z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]),
                 editorialCount: z.number().int().nonnegative(),
                 maxEditorial: z.number().int().positive(),
               }).strict()),
