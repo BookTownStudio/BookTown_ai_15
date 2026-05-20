@@ -351,6 +351,36 @@ export type AdminSeedSpaceResult = {
   managedByUid: string | null;
 };
 
+export type AdminHomeEditorialEntry = {
+  id?: string;
+  targetType: 'book' | 'post';
+  targetId: string;
+  row: 'dynamicDiscovery' | 'fromTheTown';
+  slot: number;
+  mode: 'hard_pin' | 'soft_boost';
+  boostWeight: number;
+  startAt: string;
+  endAt: string;
+  regions: string[];
+  languages: string[];
+  editorialReason: string;
+  createdBy?: string;
+  createdAt?: string | null;
+  updatedAt?: string | null;
+  isActive: boolean;
+};
+
+export type AdminHomeEditorialPreview = {
+  region: string | null;
+  language: string | null;
+  rows: Array<{
+    row: 'dynamicDiscovery' | 'fromTheTown';
+    editorialCount: number;
+    maxEditorial: number;
+  }>;
+  entries: AdminHomeEditorialEntry[];
+};
+
 export const adminServiceQueryKeys = {
   deletionRequests: ['admin', 'deletionRequests'] as const,
   authors: (params: { query?: string | null; status?: string | null; limit?: number | null } = {}) =>
@@ -388,6 +418,9 @@ export const adminServiceQueryKeys = {
     ['admin', 'events', 'recent', params.limit ?? 50] as const,
   systemHealthSnapshot: ['admin', 'health', 'snapshot'] as const,
   spaces: (query: string) => ['admin', 'spaces', query.trim().toLowerCase()] as const,
+  homeEditorial: ['admin', 'homeEditorial'] as const,
+  homeEditorialPreview: (region: string, language: string) =>
+    ['admin', 'homeEditorial', 'preview', region.trim().toLowerCase(), language.trim().toLowerCase()] as const,
 };
 
 type DeletionRequestDoc = {
@@ -1396,6 +1429,51 @@ export const adminService = {
       'adminAssignSpaceStewardship',
       params
     );
+  },
+
+  async listHomeEditorialEntries(): Promise<AdminHomeEditorialEntry[]> {
+    const data = await callCallableEndpoint<Record<string, never>, { entries: AdminHomeEditorialEntry[] }>(
+      'adminListHomeEditorialEntries',
+      {}
+    );
+    return Array.isArray(data.entries) ? data.entries : [];
+  },
+
+  async upsertHomeEditorialEntry(payload: AdminHomeEditorialEntry): Promise<AdminHomeEditorialEntry> {
+    const data = await callCallableEndpoint<AdminHomeEditorialEntry, { entry: AdminHomeEditorialEntry }>(
+      'adminUpsertHomeEditorialEntry',
+      payload
+    );
+    return data.entry;
+  },
+
+  async disableHomeEditorialEntry(id: string): Promise<void> {
+    const normalizedId = id.trim();
+    if (!normalizedId) throw new Error('Editorial entry ID is required.');
+    await callCallableEndpoint<{ id: string }, { id: string; disabled: boolean }>(
+      'adminDisableHomeEditorialEntry',
+      { id: normalizedId }
+    );
+  },
+
+  async deleteHomeEditorialEntry(id: string): Promise<void> {
+    const normalizedId = id.trim();
+    if (!normalizedId) throw new Error('Editorial entry ID is required.');
+    await callCallableEndpoint<{ id: string }, { id: string; deleted: boolean }>(
+      'adminDeleteHomeEditorialEntry',
+      { id: normalizedId }
+    );
+  },
+
+  async previewHomeEditorialConsole(params: { region?: string; language?: string } = {}): Promise<AdminHomeEditorialPreview> {
+    const data = await callCallableEndpoint<
+      { region?: string; language?: string },
+      { preview: AdminHomeEditorialPreview }
+    >('adminPreviewHomeEditorialConsole', {
+      ...(params.region?.trim() ? { region: params.region.trim() } : {}),
+      ...(params.language?.trim() ? { language: params.language.trim() } : {}),
+    });
+    return data.preview;
   },
 
   async discoverAuthorCandidates(query: string, limit = 12): Promise<AdminAuthorImportCandidate[]> {

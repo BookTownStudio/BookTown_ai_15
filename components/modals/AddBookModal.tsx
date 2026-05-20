@@ -156,11 +156,53 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
   const handleAdd = async (result: SearchResultDTO) => {
     if (!targetShelfId || busyId) return;
     if (isProgressManagedShelf) {
-      showToast(
-        lang === 'en'
-          ? 'Reading continuity is managed automatically.'
-          : 'يتم إدارة استمرارية القراءة تلقائياً.'
-      );
+      try {
+        setBusyId(result.id);
+        trackSearchClick({
+          query: searchQuery,
+          clickedRank: clickedRankFor(result.id),
+          result: {
+            ...result,
+            bookId: result.bookId || result.externalId || result.id,
+          },
+        });
+
+        const canonicalBookId = await resolveCanonicalBookId(result);
+        if (!canonicalBookId) {
+          showToast(
+            lang === 'en'
+              ? 'This book is unavailable right now.'
+              : 'هذا الكتاب غير متاح حالياً.'
+          );
+          return;
+        }
+
+        const canonicalNavResult: SearchResultDTO = {
+          ...result,
+          resultType: 'canonical',
+          bookId: canonicalBookId,
+        };
+
+        navigate({
+          type: 'immersive',
+          id: 'bookDetails',
+          params: buildBookDetailsParams(canonicalNavResult, currentView, {
+            searchQuery: searchQuery.trim(),
+            clickedRank: clickedRankFor(result.id),
+            clickTracked: true,
+          }),
+        });
+        onClose();
+      } catch (err) {
+        console.error('[AddBookModal][CURRENTLY_READING_ENTRY_FAILED]', err);
+        showToast(
+          lang === 'en'
+            ? 'Unable to open this book right now.'
+            : 'تعذر فتح هذا الكتاب حالياً.'
+        );
+      } finally {
+        setBusyId(null);
+      }
       return;
     }
 

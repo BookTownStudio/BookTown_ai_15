@@ -131,14 +131,18 @@ export const useUserShelves = (ownerId?: string) => {
 export const useShelfEntries = (
   shelfId: string | undefined,
   ownerId?: string,
-  options?: { resolveBooks?: boolean; limit?: number }
+  options?: { resolveBooks?: boolean; limit?: number; enabled?: boolean }
 ) => {
   const { effectiveUid, isAuthReady } = useAuth() as any;
 
   const finalUid = ownerId || effectiveUid;
 
   // 🔒 FINAL FIX: block until auth fully ready
-  const enabled = (isAuthReady ?? true) && !!finalUid && !!shelfId;
+  const enabled =
+    (options?.enabled ?? true) &&
+    (isAuthReady ?? true) &&
+    !!finalUid &&
+    !!shelfId;
 
   return useQuery<(ShelfEntry & { book?: Book })[]>({
     queryKey: [

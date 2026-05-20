@@ -1,6 +1,66 @@
 {
   "indexes": [
     {
+      "collectionGroup": "home_editorial_slots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "row",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "slot",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "home_editorial_slots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "row",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "slot",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "home_editorial_slots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "row",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "isActive",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "home_editorial_slots",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "rowType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "position",
+          "order": "ASCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "activity_log",
       "queryScope": "COLLECTION",
       "fields": [

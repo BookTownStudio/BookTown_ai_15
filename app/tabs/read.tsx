@@ -7,18 +7,16 @@ import React, {
   useCallback
 } from 'react';
 import AppNav from '../../components/navigation/AppNav.tsx';
-import BookCard from '../../components/content/BookCard.tsx';
 import ShelfCarousel from '../../components/content/ShelfCarousel.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useContinueReading } from '../../lib/hooks/useContinueReading.ts';
 import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
+import { useAuth } from '../../lib/auth.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import ErrorState from '../../components/ui/ErrorState.tsx';
-import EmptyState from '../../components/ui/EmptyState.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
-import { ShelvesIcon } from '../../components/icons/ShelvesIcon.tsx';
 import AddBookModal from '../../components/modals/AddBookModal.tsx';
 import CreateShelfModal from '../../components/modals/CreateShelfModal.tsx';
 import EditShelfModal from '../../components/modals/EditShelfModal.tsx';
@@ -36,12 +34,18 @@ import {
   isSystemShelf,
 } from '../../lib/shelves/systemShelves.ts';
 
+const VIRTUAL_CURRENTLY_READING_SHELF_ID = 'currently-reading';
+
 const ReadScreen: React.FC = () => {
   const { lang } = useI18n();
+  const { effectiveUid } = useAuth();
   const { data: shelves, isLoading, isError } = useUserShelves();
   const { data: userStats } = useUserStats();
-  const { navigate, currentView, resetTokens } = useNavigation();
-  const { items: continueReadingItems } = useContinueReading(8);
+  const { resetTokens } = useNavigation();
+  const {
+    items: continueReadingItems,
+    isLoading: isContinueReadingLoading,
+  } = useContinueReading(8);
 
   useRecommendedShelves();
 
@@ -94,6 +98,9 @@ const ReadScreen: React.FC = () => {
     if (!shelves) return;
     setOpenShelves(prev => {
       const next: Record<string, boolean> = { ...prev };
+      if (next[VIRTUAL_CURRENTLY_READING_SHELF_ID] === undefined) {
+        next[VIRTUAL_CURRENTLY_READING_SHELF_ID] = true;
+      }
       shelves.forEach(s => {
         if (next[s.id] === undefined) {
           next[s.id] = false;
@@ -166,6 +173,31 @@ const ReadScreen: React.FC = () => {
     });
   }, [shelves]);
 
+  const virtualCurrentlyReadingShelf = useMemo<Shelf>(() => ({
+    id: VIRTUAL_CURRENTLY_READING_SHELF_ID,
+    ownerId: effectiveUid || '',
+    titleEn: 'Currently Reading',
+    titleAr: 'تقرأ الآن',
+    bookIds: continueReadingItems.map(item => item.bookId),
+    bookCount: continueReadingItems.length,
+    isSystem: true,
+    isVirtual: true,
+    isDeletable: false,
+    isEditable: false,
+  }), [continueReadingItems, effectiveUid]);
+
+  const virtualCurrentlyReadingEntries = useMemo(
+    () =>
+      continueReadingItems.map(item => ({
+        bookId: item.bookId,
+        addedAt: item.updatedAt
+          ? item.updatedAt.toDate().toISOString()
+          : new Date(0).toISOString(),
+        progress: Math.round(item.progress * 100),
+      })),
+    [continueReadingItems]
+  );
+
   const bookCount = userStats?.booksRead ?? 0;
   const shelfCount = userStats?.shelvesCreated ?? sortedShelves.length;
 
@@ -210,69 +242,59 @@ const ReadScreen: React.FC = () => {
             </Button>
           </header>
 
-          {continueReadingItems.length > 0 && (
-            <section className="mb-8">
-              <div className="mb-4">
-                <BilingualText
-                  role="H2"
-                  className="!text-lg md:!text-xl font-semibold"
-                >
-                  {lang === 'en' ? 'Currently Reading' : 'تقرأ الآن'}
-                </BilingualText>
-              </div>
-
-              <div className="flex overflow-x-auto scrollbar-hide snap-x pt-1 pb-2">
-                {continueReadingItems.map(item => (
-                  <div
-                    key={item.bookId}
-                    className="cursor-pointer snap-start text-left"
-                    onClick={() =>
-                      navigate({
-                        type: 'immersive',
-                        id: 'reader',
-                        params: {
-                          bookId: item.bookId,
-                          from: currentView
-                        }
-                      })
-                    }
-                  >
-                    <BookCard
-                      bookId={item.bookId}
-                      layout="list"
-                      progress={Math.round(item.progress * 100)}
-                      className="w-40 sm:w-44"
-                    />
-                  </div>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {isLoading ? (
-            <div className="flex justify-center py-20">
-              <LoadingSpinner />
-            </div>
-          ) : isError ? (
-            <ErrorState
-              title={lang === 'en' ? 'Shelves unavailable' : 'الرفوف غير متاحة'}
-              message={
-                lang === 'en'
-                  ? 'Error loading shelves.'
-                  : 'خطأ في تحميل الرفوف.'
+          <div className="space-y-6">
+            <ShelfCarousel
+              key={VIRTUAL_CURRENTLY_READING_SHELF_ID}
+              shelf={virtualCurrentlyReadingShelf}
+              entriesOverride={virtualCurrentlyReadingEntries}
+              isLoadingOverride={isContinueReadingLoading}
+              entriesAreVirtual
+              isMenuOpen={
+                activeMenuShelfId === VIRTUAL_CURRENTLY_READING_SHELF_ID
               }
-              className="my-12"
+              onToggleMenu={() =>
+                handleToggleMenu(VIRTUAL_CURRENTLY_READING_SHELF_ID)
+              }
+              onAddBookRequest={handleOpenAddBookModal}
+              onToggle={() =>
+                setOpenShelves(prev => ({
+                  ...prev,
+                  [VIRTUAL_CURRENTLY_READING_SHELF_ID]:
+                    !(prev[VIRTUAL_CURRENTLY_READING_SHELF_ID] ?? true)
+                }))
+              }
+              onToggleLayout={() =>
+                setShelfLayouts(prev => ({
+                  ...prev,
+                  [VIRTUAL_CURRENTLY_READING_SHELF_ID]:
+                    prev[VIRTUAL_CURRENTLY_READING_SHELF_ID] === 'list'
+                      ? 'carousel'
+                      : 'list'
+                }))
+              }
+              isOpen={openShelves[VIRTUAL_CURRENTLY_READING_SHELF_ID] ?? true}
+              layout={
+                shelfLayouts[VIRTUAL_CURRENTLY_READING_SHELF_ID] || 'carousel'
+              }
+              isDeletable={false}
             />
-          ) : sortedShelves.length === 0 ? (
-            <EmptyState
-              icon={ShelvesIcon}
-              titleEn="No shelves yet"
-              titleAr="لا توجد رفوف بعد"
-              messageEn="Create a shelf to start organizing your reading."
-              messageAr="أنشئ رفاً للبدء في تنظيم قراءاتك."
-            />
-          ) : (
-            <div className="space-y-6">
+
+            {isLoading ? (
+              <div className="flex justify-center py-20">
+                <LoadingSpinner />
+              </div>
+            ) : isError ? (
+              <ErrorState
+                title={lang === 'en' ? 'Shelves unavailable' : 'الرفوف غير متاحة'}
+                message={
+                  lang === 'en'
+                    ? 'Error loading shelves.'
+                    : 'خطأ في تحميل الرفوف.'
+                }
+                className="my-12"
+              />
+            ) : (
+              <>
               {sortedShelves.map(shelf => (
                 <ShelfCarousel
                   key={shelf.id}
@@ -304,8 +326,9 @@ const ReadScreen: React.FC = () => {
                   isDeletable={!isSystemShelf(shelf)}
                 />
               ))}
-            </div>
-          )}
+              </>
+            )}
+          </div>
         </LiteraryShell>
       </main>
 

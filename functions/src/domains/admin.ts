@@ -19,6 +19,13 @@ import {
   adminSearchSpaces as adminSearchSpacesRaw,
   adminSeedSpace as adminSeedSpaceRaw,
 } from "../admin/spacesAuthority";
+import {
+  adminDeleteHomeEditorialEntry as adminDeleteHomeEditorialEntryRaw,
+  adminDisableHomeEditorialEntry as adminDisableHomeEditorialEntryRaw,
+  adminListHomeEditorialEntries as adminListHomeEditorialEntriesRaw,
+  adminPreviewHomeEditorialConsole as adminPreviewHomeEditorialConsoleRaw,
+  adminUpsertHomeEditorialEntry as adminUpsertHomeEditorialEntryRaw,
+} from "../home/editorialGovernance";
 
 export const backfillDerivedStats = wrapCallableV2("backfillDerivedStats", backfillDerivedStatsRaw);
 export const backfillReadingProgressCanonical = wrapCallableV2("backfillReadingProgressCanonical", backfillReadingProgressCanonicalRaw);
@@ -36,6 +43,11 @@ export const adminSeedCanonicalBatch = wrapCallableV2("adminSeedCanonicalBatch",
 export const adminSearchSpaces = wrapCallableV2("adminSearchSpaces", adminSearchSpacesRaw);
 export const adminSeedSpace = wrapCallableV2("adminSeedSpace", adminSeedSpaceRaw);
 export const adminAssignSpaceStewardship = wrapCallableV2("adminAssignSpaceStewardship", adminAssignSpaceStewardshipRaw);
+export const adminListHomeEditorialEntries = wrapCallableV2("adminListHomeEditorialEntries", adminListHomeEditorialEntriesRaw);
+export const adminUpsertHomeEditorialEntry = wrapCallableV2("adminUpsertHomeEditorialEntry", adminUpsertHomeEditorialEntryRaw);
+export const adminDisableHomeEditorialEntry = wrapCallableV2("adminDisableHomeEditorialEntry", adminDisableHomeEditorialEntryRaw);
+export const adminDeleteHomeEditorialEntry = wrapCallableV2("adminDeleteHomeEditorialEntry", adminDeleteHomeEditorialEntryRaw);
+export const adminPreviewHomeEditorialConsole = wrapCallableV2("adminPreviewHomeEditorialConsole", adminPreviewHomeEditorialConsoleRaw);
 
 export { scheduledNotificationCleanup } from "../admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "../admin/cleanupAttachments";

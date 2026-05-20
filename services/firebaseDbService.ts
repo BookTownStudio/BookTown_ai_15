@@ -1687,13 +1687,13 @@ class FirebaseShelfService {
   ): Promise<any[]> {
     const boundedLimit =
       typeof options?.limit === "number" && Number.isFinite(options.limit)
-        ? Math.max(1, Math.min(200, Math.trunc(options.limit)))
-        : 200;
+        ? Math.max(1, Math.min(100, Math.trunc(options.limit)))
+        : 100;
 
     // Authoritative read from shelf_books collection (SHELF_BOOKS_SCHEMA_V1)
     // through the backend callable. Legacy nested user shelf projections are
     // migration artifacts only and must not gate shelf membership.
-    const normalizedUid = ensureNonEmptyString(uid, "uid", 128);
+    ensureNonEmptyString(uid, "uid", 128);
     const normalizedShelfId = ensureNonEmptyString(shelfId, "shelfId", 190);
 
     const response = await callEndpoint<

@@ -28,6 +28,7 @@ import { cn } from '../../lib/utils.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import CatalogAuthorityTab from '../../components/admin/CatalogAuthorityTab.tsx';
 import SpacesAuthorityTab from '../../components/admin/SpacesAuthorityTab.tsx';
+import HomeGovernanceTab from '../../components/admin/HomeGovernanceTab.tsx';
 
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
@@ -1274,11 +1275,7 @@ const ControlCenterScreen: React.FC = () => {
                 <SpacesAuthorityTab />
               )}
               {activeSection === 'curation' && (
-                <PlaceholderTab
-                  title={lang === 'en' ? 'Curation' : 'التنسيق'}
-                  subtitle={lang === 'en' ? 'Editorial curation workflows.' : 'سير عمل التنسيق التحريري.'}
-                  icon={StarIcon}
-                />
+                <HomeGovernanceTab />
               )}
               {activeSection === 'marketplace' && <MarketplaceTab />}
               {activeSection === 'system_jobs' && (

@@ -2,7 +2,7 @@ import { devLog } from '../../lib/logging/devLog';
 import React, { useRef, useMemo, useCallback } from 'react';
 import BookCard from './BookCard.tsx';
 import { useI18n } from '../../store/i18n.tsx';
-import { Shelf } from '../../types/entities.ts';
+import { Book, Shelf, ShelfEntry } from '../../types/entities.ts';
 import { useShelfEntries } from '../../lib/hooks/useUserShelves.ts';
 import { useNavigation } from '../../store/navigation.tsx';
 import AddBookCard from './AddBookCard.tsx';
@@ -15,6 +15,9 @@ import { TrashIcon } from '../icons/TrashIcon.tsx';
 interface ShelfCarouselProps {
   shelf: Shelf;
   id?: string;
+  entriesOverride?: (ShelfEntry & { book?: Book })[];
+  isLoadingOverride?: boolean;
+  isErrorOverride?: boolean;
   isMenuOpen?: boolean;
   onToggleMenu?: () => void;
   onAddBookRequest?: (shelfId: string) => void;
@@ -28,6 +31,7 @@ interface ShelfCarouselProps {
   layout: 'carousel' | 'list';
   isDeletable?: boolean;
   ebookOnly?: boolean;
+  entriesAreVirtual?: boolean;
 }
 
 const noop = () => {};
@@ -35,6 +39,9 @@ const noop = () => {};
 const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   shelf,
   id,
+  entriesOverride,
+  isLoadingOverride,
+  isErrorOverride,
   isMenuOpen = false,
   onToggleMenu = noop,
   onAddBookRequest,
@@ -47,7 +54,8 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   onToggleLayout,
   layout,
   isDeletable = false,
-  ebookOnly = false
+  ebookOnly = false,
+  entriesAreVirtual = false
 }) => {
   const { lang } = useI18n();
   const { navigate, currentView } = useNavigation();
@@ -55,10 +63,14 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   /**
    * 🔒 AUTHORITATIVE Shelf Content Fetch
    */
-  const { data: entries = [], isLoading } = useShelfEntries(
+  const { data: entries = [], isLoading, isError } = useShelfEntries(
     shelf.id,
-    shelf.ownerId
+    shelf.ownerId,
+    { enabled: !entriesOverride }
   );
+  const effectiveEntries = entriesOverride ?? entries;
+  const effectiveIsLoading = isLoadingOverride ?? isLoading;
+  const effectiveIsError = isErrorOverride ?? isError;
 
   const { mutate: removeBook, isPending: isRemoving } =
     useRemoveBookFromShelf();
@@ -69,11 +81,11 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
    * Canonical filtering logic
    */
   const filteredEntries = useMemo(() => {
-    if (!ebookOnly) return entries;
-    return entries.filter(e =>
+    if (!ebookOnly) return effectiveEntries;
+    return effectiveEntries.filter(e =>
       Boolean(e.book?.ebookAttachmentId || e.book?.isEbookAvailable)
     );
-  }, [entries, ebookOnly]);
+  }, [effectiveEntries, ebookOnly]);
 
   /* ------------------------
      Navigation
@@ -150,13 +162,21 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
             <AddBookCard onClick={() => onAddBookRequest!(shelf.id)} />
           )}
 
-          {isLoading &&
+          {effectiveIsLoading &&
             Array.from({ length: 3 }).map((_, i) => (
               <div
                 key={i}
                 className="w-32 h-48 bg-slate-800 animate-pulse rounded-xl mr-4 flex-shrink-0"
               />
             ))}
+
+          {!effectiveIsLoading && effectiveIsError && (
+            <div className="py-4 px-2 text-xs text-amber-400">
+              {lang === 'en'
+                ? 'Shelf books are temporarily unavailable.'
+                : 'كتب هذا الرف غير متاحة مؤقتًا.'}
+            </div>
+          )}
 
           {filteredEntries.map((entry, index) => (
             <div
@@ -172,13 +192,14 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
               <BookCard
                 bookId={entry.bookId}
                 book={entry.book as any}
-                shelfId={shelf.id}
+                shelfId={entriesAreVirtual ? undefined : shelf.id}
                 layout="list"
+                progress={entry.progress}
               />
             </div>
           ))}
 
-          {!isLoading && filteredEntries.length === 0 && !canAddBooks && (
+          {!effectiveIsLoading && filteredEntries.length === 0 && !canAddBooks && (
             <div className="py-4 px-2 text-xs italic text-slate-500">
               {lang === 'en'
                 ? 'No books on this shelf.'
@@ -195,13 +216,21 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
           <AddBookRow onClick={() => onAddBookRequest!(shelf.id)} />
         )}
 
-        {isLoading &&
+        {effectiveIsLoading &&
           Array.from({ length: 3 }).map((_, i) => (
             <div
               key={`row-skeleton-${i}`}
               className="h-24 w-full bg-slate-800 animate-pulse rounded-lg"
             />
           ))}
+
+        {!effectiveIsLoading && effectiveIsError && (
+          <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-3 text-xs text-amber-300">
+            {lang === 'en'
+              ? 'Shelf books are temporarily unavailable.'
+              : 'كتب هذا الرف غير متاحة مؤقتًا.'}
+          </div>
+        )}
 
         {filteredEntries.map((entry, index) => (
           <div key={entry.bookId} className="flex items-center gap-2 group">
@@ -217,12 +246,13 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
               <BookCard
                 bookId={entry.bookId}
                 book={entry.book as any}
-                shelfId={shelf.id}
+                shelfId={entriesAreVirtual ? undefined : shelf.id}
                 layout="row"
+                progress={entry.progress}
               />
             </div>
 
-            {canRemoveBooks && (
+            {canRemoveBooks && !entriesAreVirtual && (
               <Button
                 variant="icon"
                 onClick={e => handleRemoveBook(e, entry.bookId)}
@@ -239,7 +269,8 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   }, [
     layout,
     filteredEntries,
-    isLoading,
+    effectiveIsLoading,
+    effectiveIsError,
     onAddBookRequest,
     onDeleteRequest,
     handleDragStart,
@@ -250,7 +281,8 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
     handleRemoveBook,
     isRemoving,
     lang,
-    shelf.id
+    shelf.id,
+    entriesAreVirtual
   ]);
 
   return (
@@ -276,7 +308,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
         onDuplicateRequest={onDuplicateRequest}
         onToggleLayout={onToggleLayout}
         isDeletable={isDeletable}
-        isLoading={isLoading}
+        isLoading={effectiveIsLoading}
         books={[]}
       />
 

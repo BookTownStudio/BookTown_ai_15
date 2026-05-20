@@ -26,6 +26,7 @@ export * from "./domains/attachments";
 export * from "./domains/spaces";
 export * from "./domains/admin";
 export * from "./domains/ai";
+export * from "./domains/home";
 export * from "./domains/ssr";
 
 // Triggers

@@ -153,6 +153,84 @@ const readerInsightsDataSchema = z
   })
   .strict();
 
+const homeBookItemSchema = z
+  .object({
+    kind: z.literal("book"),
+    bookId: z.string().min(1).max(180),
+    title: z.string().min(1).max(240),
+    author: z.string().min(1).max(240),
+    coverUrl: z.string().max(2048),
+    source: z.enum(["algorithmic", "editorial"]),
+    score: z.number(),
+    progress: z.number().min(0).max(1).optional(),
+    reason: z.string().max(160).optional(),
+  })
+  .strict();
+
+const homeTownSignalItemSchema = z
+  .object({
+    kind: z.literal("townSignal"),
+    signalType: z.enum(["post", "quote", "shelf", "reflection", "author", "literaryMoment"]),
+    signalId: z.string().min(1).max(180),
+    postId: z.string().min(1).max(180).optional(),
+    title: z.string().min(1).max(240),
+    subtitle: z.string().max(240),
+    source: z.enum(["algorithmic", "editorial"]),
+    score: z.number(),
+    reason: z.string().max(160).optional(),
+  })
+  .strict();
+
+const homeConsoleRowSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("continueReading"),
+      items: z.array(homeBookItemSchema).min(1).max(8),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("readNow"),
+      items: z.array(homeBookItemSchema).min(1).max(12),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("dynamicDiscovery"),
+      items: z.array(homeBookItemSchema).min(1).max(12),
+      editorialCount: z.number().int().min(0).max(2),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("fromTheTown"),
+      items: z.array(homeTownSignalItemSchema).min(1).max(6),
+      editorialCount: z.number().int().min(0).max(3),
+    })
+    .strict(),
+]);
+
+const adminHomeEditorialEntrySchema = z
+  .object({
+    id: z.string().min(1).max(180).optional(),
+    targetType: z.enum(["book", "post"]),
+    targetId: z.string().min(1).max(180),
+    row: z.enum(["dynamicDiscovery", "fromTheTown"]),
+    slot: z.number().int().min(0).max(2),
+    mode: z.enum(["hard_pin", "soft_boost"]),
+    boostWeight: z.number().min(0).max(1),
+    startAt: z.string().min(1).max(80),
+    endAt: z.string().min(1).max(80),
+    regions: z.array(z.string().min(1).max(24)).max(16),
+    languages: z.array(z.string().min(1).max(12)).max(12),
+    editorialReason: z.string().min(1).max(500),
+    createdBy: z.string().min(1).max(180).optional(),
+    createdAt: z.string().nullable().optional(),
+    updatedAt: z.string().nullable().optional(),
+    isActive: z.boolean(),
+  })
+  .strict();
+
 const canonicalAnchorV1Schema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -1574,6 +1652,22 @@ const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
 
 export const apiContracts = {
   callable: {
+    getHomeDiscoveryConsole: defineContract(
+      z.object({}).strict(),
+      z
+        .object({
+          rows: z.array(homeConsoleRowSchema).max(4),
+          generatedAt: z.string().min(1),
+          ttlSeconds: z.number().int().nonnegative(),
+          governanceVersion: z.string().min(1),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useHomeDiscoveryConsole.ts", "app/tabs/home.tsx"],
+      }
+    ),
+
     createDefaultShelves: defineContract(
       z.unknown(),
       z
@@ -1586,6 +1680,56 @@ export const apiContracts = {
       {
         callSites: [],
       }
+    ),
+
+    adminListHomeEditorialEntries: defineContract(
+      z.object({}).strict(),
+      z.object({ entries: z.array(adminHomeEditorialEntrySchema).max(100) }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts"] }
+    ),
+
+    adminUpsertHomeEditorialEntry: defineContract(
+      adminHomeEditorialEntrySchema.omit({ createdBy: true, createdAt: true, updatedAt: true }),
+      z.object({ entry: adminHomeEditorialEntrySchema }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts"] }
+    ),
+
+    adminDisableHomeEditorialEntry: defineContract(
+      z.object({ id: z.string().min(1).max(180) }).strict(),
+      z.object({ id: z.string().min(1).max(180), disabled: z.boolean() }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts"] }
+    ),
+
+    adminDeleteHomeEditorialEntry: defineContract(
+      z.object({ id: z.string().min(1).max(180) }).strict(),
+      z.object({ id: z.string().min(1).max(180), deleted: z.boolean() }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts"] }
+    ),
+
+    adminPreviewHomeEditorialConsole: defineContract(
+      z.object({ region: z.string().max(24).optional(), language: z.string().max(12).optional() }).strict(),
+      z
+        .object({
+          preview: z
+            .object({
+              region: z.string().nullable(),
+              language: z.string().nullable(),
+              rows: z.array(z.object({
+                row: z.enum(["dynamicDiscovery", "fromTheTown"]),
+                editorialCount: z.number().int().nonnegative(),
+                maxEditorial: z.number().int().positive(),
+              }).strict()),
+              entries: z.array(adminHomeEditorialEntrySchema).max(100),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts"] }
     ),
 
     listUserShelves: defineContract(

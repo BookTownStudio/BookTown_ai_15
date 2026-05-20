@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "production-truth:check": "node scripts/enforceProductionTruth.mjs",
+    "production-truth:check": "node scripts/enforceProductionTruth.mjs && node scripts/betaReadinessGuardrails.mjs",
     "typecheck:runtime": "tsc --noEmit -p tsconfig.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "typecheck:fixtures": "tsc --noEmit -p tsconfig.fixtures.json",
