@@ -134,12 +134,23 @@ describe("Social navigation entry contract", () => {
       disconnect() {}
       unobserve() {}
     }
+    class MockResizeObserver {
+      observe() {}
+      disconnect() {}
+      unobserve() {}
+    }
 
     vi.stubGlobal("IntersectionObserver", MockIntersectionObserver);
+    vi.stubGlobal("ResizeObserver", MockResizeObserver);
     Object.defineProperty(window, "IntersectionObserver", {
       configurable: true,
       writable: true,
       value: MockIntersectionObserver,
+    });
+    Object.defineProperty(window, "ResizeObserver", {
+      configurable: true,
+      writable: true,
+      value: MockResizeObserver,
     });
     Element.prototype.scrollIntoView = vi.fn();
   });

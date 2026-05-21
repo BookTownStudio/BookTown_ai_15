@@ -8,6 +8,7 @@ const {
   navigateMock,
   useSocialFeedsMock,
   useSocialSearchMock,
+  launchFeedbackMock,
 } = vi.hoisted(() => ({
   currentViewState: {
     type: "tab",
@@ -17,6 +18,7 @@ const {
   navigateMock: vi.fn(),
   useSocialFeedsMock: vi.fn(),
   useSocialSearchMock: vi.fn(),
+  launchFeedbackMock: vi.fn(),
 }));
 
 vi.mock("../../store/i18n.tsx", () => ({
@@ -50,6 +52,14 @@ vi.mock("../../lib/auth.tsx", () => ({
   useAuth: () => ({
     user: { uid: "viewer-1" },
   }),
+}));
+
+vi.mock("../../lib/featureFlags.ts", () => ({
+  isBetaFeedbackTriggerEnabled: vi.fn(() => false),
+}));
+
+vi.mock("../../lib/feedback/useFeedbackLauncher.ts", () => ({
+  useFeedbackLauncher: () => launchFeedbackMock,
 }));
 
 vi.mock("use-debounce", () => ({
@@ -106,10 +116,14 @@ function latestFeedArgs(): unknown[] {
 }
 
 describe("Social filter state", () => {
-  beforeEach(() => {
+  beforeEach(async () => {
+    const flags = await import("../../lib/featureFlags.ts");
+    vi.mocked(flags.isBetaFeedbackTriggerEnabled).mockReturnValue(false);
     navigateMock.mockReset();
     useSocialFeedsMock.mockReset();
     useSocialSearchMock.mockReset();
+    launchFeedbackMock.mockReset();
+    currentViewState.params = {};
 
     useSocialFeedsMock.mockReturnValue({
       data: {
@@ -185,6 +199,30 @@ describe("Social filter state", () => {
 
     await waitFor(() => {
       expect(latestFeedArgs()).toEqual(["books", []]);
+    });
+  });
+
+  it("launches canonical feedback from the Social rail with return state when enabled", async () => {
+    const flags = await import("../../lib/featureFlags.ts");
+    vi.mocked(flags.isBetaFeedbackTriggerEnabled).mockReturnValue(true);
+
+    render(<SocialScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));
+
+    expect(launchFeedbackMock).toHaveBeenCalledWith({
+      launchSource: "social",
+      from: {
+        type: "tab",
+        id: "social",
+        params: {
+          feedbackReturnState: {
+            scope: "explore",
+            filters: [],
+            scrollTop: 0,
+          },
+        },
+      },
     });
   });
 });

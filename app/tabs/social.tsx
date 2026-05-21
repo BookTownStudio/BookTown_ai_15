@@ -27,6 +27,9 @@ import Button from '../../components/ui/Button.tsx';
 import { Post } from '../../types/entities.ts';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
 import { canonicalizeSocialFeedFilters } from '../../lib/socialFeedState.ts';
+import { isBetaFeedbackTriggerEnabled } from '../../lib/featureFlags.ts';
+import { useFeedbackLauncher } from '../../lib/feedback/useFeedbackLauncher.ts';
+import { MessageSquareWarningIcon } from '../../components/icons/MessageSquareWarningIcon.tsx';
 
 // Simple text icon for the filters
 const TextIcon = (props: any) => (
@@ -38,14 +41,46 @@ const TextIcon = (props: any) => (
 const MAX_SOCIAL_ENTRY_FETCH_ATTEMPTS = 2;
 const ESTIMATED_VIRTUAL_POST_HEIGHT = 560;
 
+function readFeedbackReturnState(view: unknown): { scope?: SocialFeedScope; filters?: SocialFeedFilter[]; scrollTop?: number } {
+    const params = view && typeof view === 'object' && 'params' in view
+        ? (view as { params?: Record<string, unknown> }).params
+        : undefined;
+    const state = params?.feedbackReturnState;
+    if (!state || typeof state !== 'object') return {};
+
+    const record = state as Record<string, unknown>;
+    return {
+        scope: record.scope === 'following' || record.scope === 'explore' || record.scope === 'books'
+            ? record.scope
+            : undefined,
+        filters: Array.isArray(record.filters)
+            ? canonicalizeSocialFeedFilters(record.filters.filter((item): item is SocialFeedFilter =>
+                item === 'media' || item === 'text' || item === 'book' || item === 'quote' || item === 'project'
+            ))
+            : undefined,
+        scrollTop: typeof record.scrollTop === 'number' && Number.isFinite(record.scrollTop)
+            ? Math.max(0, record.scrollTop)
+            : undefined,
+    };
+}
+
 const SocialScreen: React.FC = () => {
     const { lang } = useI18n();
     const socialRailClassName = 'app-rail social-rail--v23';
     const socialViewportClassName = `${socialRailClassName} social-feed-shell`;
+    const {
+        navigate,
+        currentView,
+        resetTokens,
+        scrollToPost,
+        clearScrollToPost,
+        socialPostEntry,
+        clearSocialPostEntry,
+    } = useNavigation();
+    const initialFeedbackReturnState = readFeedbackReturnState(currentView);
+    const [scope, setScope] = useState<SocialFeedScope>(initialFeedbackReturnState.scope ?? 'explore');
 
-    const [scope, setScope] = useState<SocialFeedScope>('explore');
-
-    const [filters, setFilters] = useState<SocialFeedFilter[]>([]);
+    const [filters, setFilters] = useState<SocialFeedFilter[]>(initialFeedbackReturnState.filters ?? []);
     
     const { 
         data, 
@@ -57,16 +92,8 @@ const SocialScreen: React.FC = () => {
         refetch
     } = useSocialFeeds(scope, filters);
     
-    const {
-        navigate,
-        currentView,
-        resetTokens,
-        scrollToPost,
-        clearScrollToPost,
-        socialPostEntry,
-        clearSocialPostEntry,
-    } = useNavigation();
     const mainContentRef = useRef<HTMLDivElement>(null);
+    const restoredFeedbackScrollRef = useRef(false);
     const isInitialMount = useRef(true);
     const [isMoreFiltersOpen, setMoreFiltersOpen] = useState(false);
     const moreFiltersRef = useRef<HTMLDivElement>(null);
@@ -86,6 +113,8 @@ const SocialScreen: React.FC = () => {
         fallbackTriggered: false,
     });
     const { user } = useAuth();
+    const launchFeedback = useFeedbackLauncher();
+    const showBetaFeedback = isBetaFeedbackTriggerEnabled();
 
     const {
         results: searchResults,
@@ -433,6 +462,33 @@ const SocialScreen: React.FC = () => {
         navigate({ type: 'immersive', id: 'postComposer', params: { from: currentView } });
     }, [currentView, navigate]);
 
+    const handleLaunchFeedback = useCallback(() => {
+        launchFeedback({
+            launchSource: 'social',
+            from: {
+                type: 'tab',
+                id: 'social',
+                params: {
+                    ...(currentView.type === 'tab' && currentView.id === 'social' ? currentView.params : {}),
+                    feedbackReturnState: {
+                        scope,
+                        filters,
+                        scrollTop: mainContentRef.current?.scrollTop ?? 0,
+                    },
+                },
+            },
+        });
+    }, [currentView, filters, launchFeedback, scope]);
+
+    useEffect(() => {
+        if (restoredFeedbackScrollRef.current) return;
+        const scrollTop = readFeedbackReturnState(currentView).scrollTop;
+        if (scrollTop === undefined || !mainContentRef.current || isLoading) return;
+
+        restoredFeedbackScrollRef.current = true;
+        mainContentRef.current.scrollTo({ top: scrollTop, behavior: 'auto' });
+    }, [currentView, isLoading]);
+
     const handleScopeChange = (newScope: SocialFeedScope) => {
         setScope(newScope);
         setFilters([]);
@@ -694,6 +750,20 @@ const SocialScreen: React.FC = () => {
                                     >
                                         <SearchIcon className="h-3.5 w-3.5" />
                                     </button>
+
+                                    {showBetaFeedback && (
+                                        <>
+                                            <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
+                                            <button
+                                                onClick={handleLaunchFeedback}
+                                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#E9A93D] transition-colors hover:bg-white/[0.12] hover:text-[#f0b957] active:scale-95"
+                                                aria-label={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                                                title={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                                            >
+                                                <MessageSquareWarningIcon className="h-3.5 w-3.5" />
+                                            </button>
+                                        </>
+                                    )}
 
                                     <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
 

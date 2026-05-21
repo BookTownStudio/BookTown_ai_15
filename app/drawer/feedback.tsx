@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -9,19 +9,37 @@ import InputField from '../../components/ui/InputField.tsx';
 import { useSubmitFeedback } from '../../lib/hooks/useSubmitFeedback.ts';
 import { useFeedbackAttachmentUpload, validateFeedbackAttachmentFile } from '../../lib/hooks/useFeedbackAttachmentUpload.ts';
 import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
-import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
 import ContentRail from '../../components/layout/ContentRail.tsx';
 import type { FeedbackIntentType } from '../../contracts/apiContracts.ts';
+import {
+    FEEDBACK_SOFT_COOLDOWN_MS,
+    getFeedbackCooldownMessage,
+    getFeedbackCooldownRemainingMs,
+    isFeedbackCooldownActive,
+    isFeedbackCooldownError,
+    markFeedbackSubmitted,
+} from '../../lib/feedback/feedbackCooldown.ts';
+import { FeedbackContextService } from '../../lib/feedback/FeedbackContextService.ts';
+import type { FeedbackRuntimeContext } from '../../lib/feedback/FeedbackContextService.ts';
+import type { FeedbackSource } from '../../contracts/apiContracts.ts';
 
 const FEEDBACK_TYPES: { id: FeedbackIntentType; en: string; ar: string }[] = [
     { id: 'bug', en: 'Action Required', ar: 'يتطلب إجراء' },
     { id: 'praise', en: 'Praise/General', ar: 'ثناء/عام' },
 ];
 
+function isFeedbackRuntimeContext(value: unknown): value is FeedbackRuntimeContext {
+    return Boolean(value) && typeof value === 'object';
+}
+
+function resolveFeedbackSource(value: unknown): FeedbackSource {
+    return value === 'appnav_beta' ? 'appnav_beta' : 'drawer';
+}
+
 const FeedbackScreen: React.FC = () => {
     const { lang } = useI18n();
-    const { navigate } = useNavigation();
+    const { navigate, currentView } = useNavigation();
     const { user: authUser } = useAuth();
     const { mutate: submitFeedback, isPending: isSubmitting } = useSubmitFeedback();
     const { uploadAttachments, isUploading } = useFeedbackAttachmentUpload();
@@ -34,8 +52,28 @@ const FeedbackScreen: React.FC = () => {
     const [receiptId, setReceiptId] = useState<string | null>(null);
     const [attachments, setAttachments] = useState<File[]>([]);
     const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+    const [cooldownRemainingMs, setCooldownRemainingMs] = useState(() => getFeedbackCooldownRemainingMs());
 
-    const handleBack = () => navigate({ type: 'tab', id: 'home' });
+    useEffect(() => {
+        const syncCooldown = () => setCooldownRemainingMs(getFeedbackCooldownRemainingMs());
+        syncCooldown();
+        const timer = window.setInterval(syncCooldown, 1000);
+        return () => window.clearInterval(timer);
+    }, []);
+
+    const returnView = currentView.type === 'immersive' && currentView.id === 'feedback'
+        ? currentView.params?.from
+        : undefined;
+    const isContextualLaunch = Boolean(returnView);
+    const feedbackSource = currentView.type === 'immersive' && currentView.id === 'feedback'
+        ? resolveFeedbackSource(currentView.params?.feedbackSource)
+        : 'drawer';
+    const launchContext = currentView.type === 'immersive' && currentView.id === 'feedback' && isFeedbackRuntimeContext(currentView.params?.feedbackContext)
+        ? currentView.params.feedbackContext
+        : null;
+
+    const returnToPreviousSurface = () => navigate(returnView || { type: 'tab', id: 'home' });
+    const handleBack = () => returnToPreviousSurface();
     
     const resetForm = () => {
         setFeedbackType('bug');
@@ -49,26 +87,34 @@ const FeedbackScreen: React.FC = () => {
     const handleSubmit = (e: React.FormEvent) => {
         e.preventDefault();
         if (!text.trim()) return;
+        if (isFeedbackCooldownActive()) {
+            setSubmitError(getFeedbackCooldownMessage(lang));
+            setCooldownRemainingMs(getFeedbackCooldownRemainingMs());
+            return;
+        }
 
         submitFeedback({
-            source: 'drawer',
+            source: feedbackSource,
             intentType: feedbackType,
             text,
             contactEmail: email.trim() || null,
-            clientContext: {
-                route: window.location.pathname,
-                viewId: 'feedback',
-                locale: lang,
-            },
+            clientContext: launchContext ?? FeedbackContextService.capture({ currentView, locale: lang }),
         }, {
             onSuccess: async (receipt) => {
                 try {
+                    markFeedbackSubmitted();
+                    setCooldownRemainingMs(FEEDBACK_SOFT_COOLDOWN_MS);
                     if (attachments.length > 0) {
                         await uploadAttachments(receipt.feedbackId, attachments, (fileName, progress) => {
                             setUploadProgress(`${fileName}: ${progress}%`);
                         });
                     }
                     setReceiptId(receipt.feedbackId);
+                    if (isContextualLaunch) {
+                        resetForm();
+                        returnToPreviousSurface();
+                        return;
+                    }
                     setIsSubmitted(true);
                     resetForm();
                 } catch (error) {
@@ -76,10 +122,15 @@ const FeedbackScreen: React.FC = () => {
                 }
             },
             onError: (error) => {
-                setSubmitError(error instanceof Error ? error.message : 'Feedback submission failed.');
+                setSubmitError(isFeedbackCooldownError(error)
+                    ? getFeedbackCooldownMessage(lang)
+                    : error instanceof Error ? error.message : 'Feedback submission failed.');
+                setCooldownRemainingMs(getFeedbackCooldownRemainingMs());
             }
         });
     };
+
+    const isCooldownActive = cooldownRemainingMs > 0;
     
     if (isSubmitted) {
         return (
@@ -92,15 +143,22 @@ const FeedbackScreen: React.FC = () => {
                             {lang === 'en' ? 'Thank You!' : 'شكراً لك!'}
                         </BilingualText>
                         <BilingualText role="Body" className="mt-2 text-white/70">
-                            {lang === 'en' ? 'We\'ve received your feedback.' : 'لقد تلقينا ملاحظاتك.'}
+                            {lang === 'en' ? 'Feedback received! Thanks for helping us build.' : 'تم استلام ملاحظاتك! شكراً لمساعدتنا في البناء.'}
                         </BilingualText>
                         {receiptId && (
                             <BilingualText role="Caption" className="mt-3 block text-white/50">
                                 {lang === 'en' ? `Receipt: ${receiptId}` : `رقم الإيصال: ${receiptId}`}
                             </BilingualText>
                         )}
-                        <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="mt-8">
-                             {lang === 'en' ? 'Submit another response' : 'إرسال رد آخر'}
+                        {isCooldownActive && (
+                            <BilingualText role="Caption" className="mt-4 block text-white/55">
+                                {getFeedbackCooldownMessage(lang)}
+                            </BilingualText>
+                        )}
+                        <Button variant="ghost" onClick={() => setIsSubmitted(false)} className="mt-8" disabled={isCooldownActive}>
+                             {lang === 'en'
+                                ? (isCooldownActive ? `Submit another response in ${Math.ceil(cooldownRemainingMs / 1000)}s` : 'Submit another response')
+                                : (isCooldownActive ? `إرسال رد آخر خلال ${Math.ceil(cooldownRemainingMs / 1000)}ث` : 'إرسال رد آخر')}
                         </Button>
                     </ContentRail>
                 </main>
@@ -200,7 +258,7 @@ const FeedbackScreen: React.FC = () => {
                         )}
                         
                         <Button type="submit" className="w-full" disabled={isSubmitting || isUploading || !text.trim()}>
-                            {isSubmitting || isUploading ? <LoadingSpinner /> : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
+                            {isSubmitting || isUploading ? (lang === 'en' ? 'Sending...' : 'جارٍ الإرسال...') : (lang === 'en' ? 'Submit Feedback' : 'إرسال الملاحظات')}
                         </Button>
                     </form>
                 </ContentRail>

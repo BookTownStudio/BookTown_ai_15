@@ -271,14 +271,12 @@ describe("submitFeedback callable", () => {
     expect(listCollectionDocs("feedback_reports")).toHaveLength(0);
   });
 
-  it("enforces burst quota per user", async () => {
+  it("enforces the 60-second soft cooldown per user", async () => {
     const { submitFeedback } = await import("../domains/feedback");
-    for (let index = 0; index < 3; index += 1) {
-      store.set(`feedback_reports/existing-${index}`, {
-        uid: "user-1",
-        createdAt: new MockTimestamp(nowMillis - 60_000),
-      });
-    }
+    store.set("feedback_reports/existing-1", {
+      uid: "user-1",
+      createdAt: new MockTimestamp(nowMillis - 30_000),
+    });
 
     const result = await submitFeedback.run(request("user-1", validPayload())) as Record<string, unknown>;
 
@@ -288,7 +286,26 @@ describe("submitFeedback callable", () => {
         code: "RESOURCE_EXHAUSTED",
       },
     });
-    expect(listCollectionDocs("feedback_reports")).toHaveLength(3);
+    expect(listCollectionDocs("feedback_reports")).toHaveLength(1);
+  });
+
+  it("allows another submission after the 60-second soft cooldown expires", async () => {
+    const { submitFeedback } = await import("../domains/feedback");
+    store.set("feedback_reports/existing-1", {
+      uid: "user-1",
+      createdAt: new MockTimestamp(nowMillis - 61_000),
+    });
+
+    const result = await submitFeedback.run(request("user-1", validPayload())) as Record<string, unknown>;
+
+    expect(result).toMatchObject({
+      success: true,
+      data: {
+        feedbackId: "feedback-1",
+        status: "new",
+      },
+    });
+    expect(listCollectionDocs("feedback_reports")).toHaveLength(2);
   });
 
   it("keeps direct client writes blocked in Firestore rules", () => {

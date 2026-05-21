@@ -6,8 +6,8 @@ import { generateCorrelationId, getHeaderValue } from "../contracts/correlation"
 import type { SubmitFeedbackRequest, SubmitFeedbackResponse } from "../contracts/shared/apiContracts";
 
 const FEEDBACK_COLLECTION = "feedback_reports";
-const MAX_PER_24_HOURS = 10;
-const MAX_PER_5_MINUTES = 3;
+const MAX_PER_SOFT_COOLDOWN_WINDOW = 1;
+const SOFT_COOLDOWN_SECONDS = 60;
 const SCHEMA_VERSION = 1;
 const CALLABLE_REGION = "default";
 
@@ -29,8 +29,7 @@ export const submitFeedback = onCall({ cors: true }, async (request): Promise<Su
   const payload = request.data as SubmitFeedbackRequest;
   const now = admin.firestore.Timestamp.now();
   const receivedAt = now.toDate().toISOString();
-  const dayAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 24 * 60 * 60 * 1000);
-  const fiveMinutesAgo = admin.firestore.Timestamp.fromMillis(now.toMillis() - 5 * 60 * 1000);
+  const cooldownWindowStart = admin.firestore.Timestamp.fromMillis(now.toMillis() - SOFT_COOLDOWN_SECONDS * 1000);
   const correlationId = resolveCorrelationId(
     request.rawRequest?.headers as Record<string, unknown> | undefined
   );
@@ -39,33 +38,19 @@ export const submitFeedback = onCall({ cors: true }, async (request): Promise<Su
   try {
     const result = await db.runTransaction(async (transaction) => {
       const collectionRef = db.collection(FEEDBACK_COLLECTION);
-      const dayQuery = collectionRef.where("uid", "==", uid).where("createdAt", ">", dayAgo);
-      const burstQuery = collectionRef.where("uid", "==", uid).where("createdAt", ">", fiveMinutesAgo);
-      const [daySnap, burstSnap] = await Promise.all([
-        transaction.get(dayQuery),
-        transaction.get(burstQuery),
-      ]);
+      const cooldownQuery = collectionRef.where("uid", "==", uid).where("createdAt", ">", cooldownWindowStart);
+      const cooldownSnap = await transaction.get(cooldownQuery);
 
-      if (daySnap.size >= MAX_PER_24_HOURS) {
+      if (cooldownSnap.size >= MAX_PER_SOFT_COOLDOWN_WINDOW) {
         logger.warn("[FEEDBACK][QUOTA_EXCEEDED]", {
           uid,
           correlationId,
-          window: "24h",
-          count: daySnap.size,
-          limit: MAX_PER_24_HOURS,
+          window: `${SOFT_COOLDOWN_SECONDS}s`,
+          count: cooldownSnap.size,
+          limit: MAX_PER_SOFT_COOLDOWN_WINDOW,
+          policy: "soft_cooldown",
         });
-        throw new HttpsError("resource-exhausted", "FEEDBACK_DAILY_QUOTA_EXCEEDED");
-      }
-
-      if (burstSnap.size >= MAX_PER_5_MINUTES) {
-        logger.warn("[FEEDBACK][QUOTA_EXCEEDED]", {
-          uid,
-          correlationId,
-          window: "5m",
-          count: burstSnap.size,
-          limit: MAX_PER_5_MINUTES,
-        });
-        throw new HttpsError("resource-exhausted", "FEEDBACK_BURST_QUOTA_EXCEEDED");
+        throw new HttpsError("resource-exhausted", "FEEDBACK_SOFT_COOLDOWN_ACTIVE");
       }
 
       const feedbackRef = collectionRef.doc();
@@ -116,7 +101,12 @@ export const submitFeedback = onCall({ cors: true }, async (request): Promise<Su
       correlationId,
       source: payload.source,
       intentType: payload.intentType,
-      error: error instanceof Error ? error.message : String(error),
+      errorName: error instanceof Error ? error.name : typeof error,
+      errorCode: error && typeof error === "object" && "code" in error
+        ? String((error as { code?: unknown }).code)
+        : null,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorStack: error instanceof Error ? error.stack : null,
     });
     throw new HttpsError("internal", "FEEDBACK_SUBMISSION_FAILED");
   }

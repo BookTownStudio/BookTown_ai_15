@@ -896,6 +896,9 @@ const FeedbackTab: React.FC = () => {
   } = useQuery({
     queryKey: adminServiceQueryKeys.feedbackReports(listParams),
     queryFn: () => adminService.listFeedbackReports(listParams),
+    refetchInterval: 15000,
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
   });
 
   const selectedReportId = selectedId ?? data?.reports[0]?.id ?? null;
