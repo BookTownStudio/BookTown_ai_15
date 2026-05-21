@@ -28,13 +28,18 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
 
   const showBadge = unreadCount !== undefined && unreadCount > 0;
   const showBetaFeedback = isBetaFeedbackTriggerEnabled();
+  const showLeftFeedback =
+    showBetaFeedback &&
+    !showBackButton &&
+    currentView.type === 'tab' &&
+    (currentView.id === 'home' || currentView.id === 'read' || currentView.id === 'discover' || currentView.id === 'write');
 
   return (
     <nav className="fixed top-0 left-0 right-0 z-20 bg-gray-50/50 dark:bg-slate-900/50 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
         <div className="app-frame__inner">
             <div className={`app-rail app-rail--default flex h-20 items-center justify-between px-0 lg:grid lg:grid-cols-[1fr_auto_1fr] ${isRTL ? 'flex-row-reverse' : ''}`}>
                 {/* Left Section */}
-                <div className={isRTL ? 'lg:justify-self-end' : 'lg:justify-self-start'}>
+                <div className={`flex items-center gap-0.5 ${isRTL ? 'flex-row-reverse lg:justify-self-end' : 'lg:justify-self-start'}`}>
                     {showBackButton ? (
                         <Button variant="icon" aria-label={lang === 'en' ? 'Go back' : 'رجوع'} onClick={onBack}>
                             <ChevronLeftIcon className="h-6 w-6" />
@@ -42,6 +47,17 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
                     ) : (
                         <Button variant="icon" aria-label={lang === 'en' ? 'Open menu' : 'افتح القائمة'} onClick={openDrawer}>
                             <HamburgerIcon className="h-6 w-6" />
+                        </Button>
+                    )}
+                    {showLeftFeedback && (
+                        <Button
+                            variant="icon"
+                            className="text-[#E9A93D] hover:text-[#f0b957]"
+                            aria-label={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                            title={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                            onClick={() => launchFeedback({ launchSource: 'appnav' })}
+                        >
+                            <MessageSquareWarningIcon className="h-6 w-6" />
                         </Button>
                     )}
                 </div>
@@ -55,17 +71,6 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
 
                 {/* Right Section */}
                 <div className={`flex items-center gap-0.5 ${isRTL ? 'flex-row-reverse lg:justify-self-start' : 'lg:justify-self-end'}`}>
-                    {showBetaFeedback && (
-                        <Button
-                            variant="icon"
-                            className="text-[#E9A93D] hover:text-[#f0b957]"
-                            aria-label={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
-                            title={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
-                            onClick={() => launchFeedback({ launchSource: 'appnav' })}
-                        >
-                            <MessageSquareWarningIcon className="h-6 w-6" />
-                        </Button>
-                    )}
                     <div className="relative">
                         <Button 
                             variant="icon" 

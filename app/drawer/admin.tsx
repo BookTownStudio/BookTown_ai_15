@@ -29,6 +29,15 @@ import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import CatalogAuthorityTab from '../../components/admin/CatalogAuthorityTab.tsx';
 import SpacesAuthorityTab from '../../components/admin/SpacesAuthorityTab.tsx';
 import HomeGovernanceTab from '../../components/admin/HomeGovernanceTab.tsx';
+import { useUserProfile } from '../../lib/hooks/useUserProfile.ts';
+import {
+  applyRealtimeReports,
+  mergeRealtimeActivityDetail,
+  mergeRealtimeReportDetail,
+  subscribeToFeedbackActivity,
+  subscribeToFeedbackReport,
+  subscribeToFeedbackReports,
+} from '../../lib/feedback/adminFeedbackRealtime.ts';
 
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
@@ -37,6 +46,7 @@ import { collection, getDocs, orderBy, query } from 'firebase/firestore';
 import {
   type AdminFeedbackDetail,
   type AdminFeedbackFilters,
+  type AdminFeedbackPage,
   type AdminFeedbackReport,
   type AdminSystemEvent,
   adminService,
@@ -901,6 +911,28 @@ const FeedbackTab: React.FC = () => {
     refetchOnWindowFocus: true,
   });
 
+  useEffect(() => {
+    const unsubscribe = subscribeToFeedbackReports(
+      db.raw,
+      listParams,
+      (reports) => {
+        queryClient.setQueryData<AdminFeedbackPage>(
+          adminServiceQueryKeys.feedbackReports(listParams),
+          (current) => applyRealtimeReports(current, reports)
+        );
+      },
+      (realtimeError) => {
+        console.warn('[ADMIN_FEEDBACK][REALTIME_LIST_FAILED]', {
+          message: realtimeError.message,
+        });
+      }
+    );
+
+    return () => {
+      unsubscribe?.();
+    };
+  }, [listParams, queryClient]);
+
   const selectedReportId = selectedId ?? data?.reports[0]?.id ?? null;
   const {
     data: detail,
@@ -912,6 +944,49 @@ const FeedbackTab: React.FC = () => {
     queryFn: () => adminService.getFeedbackReport(selectedReportId as string),
     enabled: Boolean(selectedReportId),
   });
+
+  useEffect(() => {
+    if (!selectedReportId) return undefined;
+
+    const unsubscribeReport = subscribeToFeedbackReport(
+      db.raw,
+      selectedReportId,
+      (nextReport) => {
+        queryClient.setQueryData<AdminFeedbackDetail>(
+          adminServiceQueryKeys.feedbackReport(selectedReportId),
+          (current) => mergeRealtimeReportDetail(current, nextReport)
+        );
+      },
+      (realtimeError) => {
+        console.warn('[ADMIN_FEEDBACK][REALTIME_DETAIL_FAILED]', {
+          feedbackId: selectedReportId,
+          message: realtimeError.message,
+        });
+      }
+    );
+
+    const unsubscribeActivity = subscribeToFeedbackActivity(
+      db.raw,
+      selectedReportId,
+      (activity) => {
+        queryClient.setQueryData<AdminFeedbackDetail>(
+          adminServiceQueryKeys.feedbackReport(selectedReportId),
+          (current) => mergeRealtimeActivityDetail(current, activity)
+        );
+      },
+      (realtimeError) => {
+        console.warn('[ADMIN_FEEDBACK][REALTIME_ACTIVITY_FAILED]', {
+          feedbackId: selectedReportId,
+          message: realtimeError.message,
+        });
+      }
+    );
+
+    return () => {
+      unsubscribeReport();
+      unsubscribeActivity();
+    };
+  }, [queryClient, selectedReportId]);
 
   const statusMutation = useMutation<AdminFeedbackReport, Error, { feedbackId: string; status: FeedbackStatus }>({
     mutationFn: ({ feedbackId, status }) => adminService.updateFeedbackStatus(feedbackId, status),
@@ -977,6 +1052,7 @@ const FeedbackTab: React.FC = () => {
   };
 
   const report = detail?.report;
+  const { data: senderProfile } = useUserProfile(report?.uid);
   const entityContext = readEntityContext(report?.clientContext);
 
   return (
@@ -1109,7 +1185,6 @@ const FeedbackTab: React.FC = () => {
               <div>
                 <p className="text-xs uppercase tracking-wide text-slate-500">Report</p>
                 <p className="text-white font-semibold break-all">{report.id}</p>
-                <p className="text-slate-400">{report.uid}</p>
                 <div className="mt-3 flex gap-2">
                   <Button
                     variant="secondary"
@@ -1134,6 +1209,15 @@ const FeedbackTab: React.FC = () => {
                 <div><p className="text-slate-500">intent</p><p className="text-white">{report.intentType}</p></div>
                 <div><p className="text-slate-500">source</p><p className="text-white">{report.source}</p></div>
                 <div><p className="text-slate-500">created</p><p className="text-white">{formatTimestampLabel(report.createdAt)}</p></div>
+              </div>
+              <div className="rounded-md border border-white/10 p-3">
+                <p className="text-xs uppercase tracking-wide text-slate-500 mb-2">Sender</p>
+                <div className="space-y-1">
+                  <p className="text-white font-semibold">{senderProfile?.name || report.contactEmail || report.uid}</p>
+                  {senderProfile?.handle && <p className="text-slate-300">{senderProfile.handle}</p>}
+                  <p className="text-slate-400 break-all">uid: {report.uid}</p>
+                  <p className="text-slate-400 break-all">email: {report.contactEmail ?? 'N/A'}</p>
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 rounded-md border border-white/10 p-3">
                 <div><p className="text-slate-500">route</p><p className="text-white break-all">{readContextString(report.clientContext, 'route') ?? 'N/A'}</p></div>

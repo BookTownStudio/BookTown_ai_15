@@ -208,7 +208,13 @@ describe("Social filter state", () => {
 
     render(<SocialScreen />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Send feedback" }));
+    const feedbackButtons = screen.getAllByRole("button", { name: "Send feedback" });
+    expect(feedbackButtons).toHaveLength(1);
+    expect(feedbackButtons[0].closest('[role="tablist"]')).toBeNull();
+    expect(feedbackButtons[0].className).toContain("inline-flex");
+    expect(feedbackButtons[0].className).not.toContain("md:hidden");
+
+    fireEvent.click(feedbackButtons[0]);
 
     expect(launchFeedbackMock).toHaveBeenCalledWith({
       launchSource: "social",

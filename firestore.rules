@@ -1118,10 +1118,12 @@ service cloud.firestore {
        FEEDBACK REPORTS (SERVER AUTHORITATIVE)
        ========================= */
     match /feedback_reports/{feedbackId} {
-      allow read, create, update, delete: if false;
+      allow get, list: if isAdminUser();
+      allow create, update, delete: if false;
 
       match /activity/{activityId} {
-        allow read, create, update, delete: if false;
+        allow get, list: if isAdminUser();
+        allow create, update, delete: if false;
       }
     }
 

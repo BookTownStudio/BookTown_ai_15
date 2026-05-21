@@ -737,7 +737,7 @@ const SocialScreen: React.FC = () => {
                                 </div>
                             </div>
                         ) : (
-                            <div className="flex items-center justify-center animate-fade-in-up w-full">
+                            <div className="flex items-center justify-center gap-2 animate-fade-in-up w-full">
                                 <div
                                     ref={moreFiltersRef}
                                     className="relative inline-flex max-w-full items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.06] px-1.5 py-1 backdrop-blur-sm md:bg-white/[0.07]"
@@ -750,20 +750,6 @@ const SocialScreen: React.FC = () => {
                                     >
                                         <SearchIcon className="h-3.5 w-3.5" />
                                     </button>
-
-                                    {showBetaFeedback && (
-                                        <>
-                                            <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
-                                            <button
-                                                onClick={handleLaunchFeedback}
-                                                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[#E9A93D] transition-colors hover:bg-white/[0.12] hover:text-[#f0b957] active:scale-95"
-                                                aria-label={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
-                                                title={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
-                                            >
-                                                <MessageSquareWarningIcon className="h-3.5 w-3.5" />
-                                            </button>
-                                        </>
-                                    )}
 
                                     <div className="h-4.5 w-px shrink-0 bg-white/[0.08]" aria-hidden="true" />
 
@@ -827,6 +813,16 @@ const SocialScreen: React.FC = () => {
                                         </div>
                                     )}
                                 </div>
+                                {showBetaFeedback && (
+                                    <button
+                                        onClick={handleLaunchFeedback}
+                                        className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-[#E9A93D]/20 bg-white/[0.05] text-[#E9A93D] backdrop-blur-sm transition-colors hover:bg-white/[0.10] hover:text-[#f0b957] active:scale-95"
+                                        aria-label={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                                        title={lang === 'en' ? 'Send feedback' : 'إرسال ملاحظات'}
+                                    >
+                                        <MessageSquareWarningIcon className="h-4 w-4" />
+                                    </button>
+                                )}
                             </div>
                         )}
                     </div>

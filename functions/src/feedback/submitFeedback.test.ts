@@ -308,12 +308,13 @@ describe("submitFeedback callable", () => {
     expect(listCollectionDocs("feedback_reports")).toHaveLength(2);
   });
 
-  it("keeps direct client writes blocked in Firestore rules", () => {
+  it("keeps direct client writes blocked while allowing admin realtime reads in Firestore rules", () => {
     const repoRoot = path.resolve(process.cwd(), "..");
     const rules = fs.readFileSync(path.join(repoRoot, "firestore.rules"), "utf8");
     const start = rules.indexOf("match /feedback_reports/{feedbackId}");
     expect(start).toBeGreaterThanOrEqual(0);
     const block = rules.slice(start, start + 400);
-    expect(block).toContain("allow read, create, update, delete: if false");
+    expect(block).toContain("allow get, list: if isAdminUser()");
+    expect(block).toContain("allow create, update, delete: if false");
   });
 });

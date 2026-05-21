@@ -458,6 +458,7 @@ export const adminServiceQueryKeys = {
       params.createdFrom ?? null,
       params.createdTo ?? null,
       params.limit ?? null,
+      params.cursor ?? null,
     ] as const,
   feedbackReport: (feedbackId: string | null | undefined) =>
     ['admin', 'feedback', 'report', feedbackId ?? null] as const,

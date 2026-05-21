@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import AppNav from "./AppNav.tsx";
 
 const launchFeedback = vi.fn();
+const currentView = { type: "tab", id: "home", params: {} };
 
 vi.mock("../../lib/featureFlags.ts", () => ({
   isBetaFeedbackTriggerEnabled: vi.fn(() => false),
@@ -17,7 +18,7 @@ vi.mock("../../store/navigation.tsx", () => ({
   useNavigation: () => ({
     openDrawer: vi.fn(),
     navigate: vi.fn(),
-    currentView: { type: "immersive", id: "bookDetails", params: { bookId: "book-1" } },
+    currentView,
   }),
 }));
 
@@ -36,6 +37,9 @@ vi.mock("../../lib/feedback/useFeedbackLauncher.ts", () => ({
 describe("AppNav feedback entry", () => {
   beforeEach(async () => {
     launchFeedback.mockReset();
+    currentView.type = "tab";
+    currentView.id = "home";
+    currentView.params = {};
     const flags = await import("../../lib/featureFlags.ts");
     vi.mocked(flags.isBetaFeedbackTriggerEnabled).mockReturnValue(false);
   });
@@ -54,5 +58,17 @@ describe("AppNav feedback entry", () => {
     fireEvent.click(screen.getByLabelText("Send feedback"));
 
     await waitFor(() => expect(launchFeedback).toHaveBeenCalledWith({ launchSource: "appnav" }));
+  });
+
+  it("does not render AppNav feedback outside the main tab cluster", async () => {
+    const flags = await import("../../lib/featureFlags.ts");
+    vi.mocked(flags.isBetaFeedbackTriggerEnabled).mockReturnValue(true);
+    currentView.type = "tab";
+    currentView.id = "social";
+
+    render(<AppNav titleEn="BookTown" titleAr="بوكتاون" />);
+
+    expect(screen.queryByLabelText("Send feedback")).not.toBeInTheDocument();
+    currentView.id = "home";
   });
 });
