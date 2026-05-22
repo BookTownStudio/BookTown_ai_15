@@ -28,6 +28,7 @@ import {
   updateShelf as updateShelfRaw,
   deleteShelf as deleteShelfRaw,
 } from "../shelves/manageShelves";
+import { getBookSemanticGraph as getBookSemanticGraphRaw } from "../catalog/bookSemanticGraph";
 
 export const ingestAuthor = wrapCallableV2("ingestAuthor", ingestAuthorRaw);
 export const discoverAuthors = wrapCallableV2("discoverAuthors", discoverAuthorsRaw);
@@ -55,4 +56,4 @@ export const createShelf = wrapCallableV2("createShelf", createShelfRaw);
 export const updateShelf = wrapCallableV2("updateShelf", updateShelfRaw);
 export const deleteShelf = wrapCallableV2("deleteShelf", deleteShelfRaw);
 export { syncBookSearchIndex } from "../library/search/syncBookSearchIndex";
-export { getBookSemanticGraph } from "../catalog/bookSemanticGraph";
+export const getBookSemanticGraph = wrapCallableV2("getBookSemanticGraph", getBookSemanticGraphRaw);

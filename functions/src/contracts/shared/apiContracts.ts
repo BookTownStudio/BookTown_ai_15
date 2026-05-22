@@ -216,6 +216,14 @@ const adminHomeEditorialEntrySchema = z
     targetType: z.enum(["book", "post"]),
     targetId: z.string().min(1).max(180),
     row: z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]),
+    streamKey: z.enum([
+      "hiddenGems",
+      "arabVoices",
+      "recentlyDiscussed",
+      "philosophicalFiction",
+      "forgottenClassics",
+      "shortReflectiveReads",
+    ]).optional(),
     slot: z.number().int().min(0).max(2),
     mode: z.enum(["hard_pin", "soft_boost"]),
     boostWeight: z.number().min(0).max(1),
@@ -228,6 +236,36 @@ const adminHomeEditorialEntrySchema = z
     createdAt: z.string().nullable().optional(),
     updatedAt: z.string().nullable().optional(),
     isActive: z.boolean(),
+  })
+  .strict();
+
+const adminHomeTargetSchema = z
+  .object({
+    targetType: z.enum(["book", "post"]),
+    targetId: z.string().min(1).max(180),
+    label: z.string().min(1).max(300),
+    subtitle: z.string().max(300),
+    source: z.enum(["canonical_search", "canonical_resolver"]),
+    preview: z.record(z.string(), z.unknown()).nullable(),
+    eligibility: z.record(z.string(), z.unknown()),
+    blocking: z.array(z.string().max(300)).max(12),
+    warnings: z.array(z.string().max(300)).max(12),
+  })
+  .strict();
+
+const adminHomePlacementPreviewSchema = z
+  .object({
+    target: z.record(z.string(), z.unknown()).nullable(),
+    eligibility: z.record(z.string(), z.unknown()),
+    blocking: z.array(z.string().max(300)).max(16),
+    warnings: z.array(z.string().max(300)).max(16),
+    occupancy: z.record(z.string(), z.unknown()),
+    conflicts: z.record(z.string(), z.unknown()),
+    schedule: z.object({
+      startAt: z.string().min(1),
+      endAt: z.string().min(1),
+    }).strict(),
+    canActivate: z.boolean(),
   })
   .strict();
 
@@ -2078,6 +2116,15 @@ export const apiContracts = {
       }
     ),
 
+    selectHomeContinuityBook: defineContract(
+      z.object({ mode: z.enum(["surprise", "starter"]) }).strict(),
+      catalogBookSchema,
+      "httpsCallable",
+      {
+        callSites: ["app/tabs/home.tsx"],
+      }
+    ),
+
     createDefaultShelves: defineContract(
       z.unknown(),
       z
@@ -2097,6 +2144,57 @@ export const apiContracts = {
       z.object({ entries: z.array(adminHomeEditorialEntrySchema).max(100) }).strict(),
       "httpsCallable",
       { callSites: ["lib/services/adminService.ts"] }
+    ),
+
+    adminSearchHomeTargets: defineContract(
+      z.object({
+        query: z.string().min(1).max(300),
+        row: z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]),
+        streamKey: z.enum([
+          "hiddenGems",
+          "arabVoices",
+          "recentlyDiscussed",
+          "philosophicalFiction",
+          "forgottenClassics",
+          "shortReflectiveReads",
+        ]).optional(),
+        limit: z.number().int().min(1).max(12).optional(),
+      }).strict(),
+      z.object({ targets: z.array(adminHomeTargetSchema).max(12) }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
+    ),
+
+    adminResolveHomeTarget: defineContract(
+      z.object({
+        input: z.string().min(1).max(500).optional(),
+        candidate: z.object({
+          targetType: z.enum(["book", "post"]),
+          targetId: z.string().min(1).max(180),
+        }).strict().optional(),
+        row: z.enum(["readNow", "dynamicDiscovery", "fromTheTown"]),
+        streamKey: z.enum([
+          "hiddenGems",
+          "arabVoices",
+          "recentlyDiscussed",
+          "philosophicalFiction",
+          "forgottenClassics",
+          "shortReflectiveReads",
+        ]).optional(),
+        targetType: z.enum(["book", "post"]).optional(),
+      }).strict().refine((value) => Boolean(value.input || value.candidate), {
+        message: "Provide a target input or canonical candidate.",
+      }),
+      z.object({ target: adminHomeTargetSchema.nullable() }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
+    ),
+
+    adminPreviewHomePlacement: defineContract(
+      adminHomeEditorialEntrySchema.omit({ createdBy: true, createdAt: true, updatedAt: true }),
+      z.object({ preview: adminHomePlacementPreviewSchema }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
     ),
 
     adminUpsertHomeEditorialEntry: defineContract(
@@ -2133,6 +2231,21 @@ export const apiContracts = {
                 editorialCount: z.number().int().nonnegative(),
                 maxEditorial: z.number().int().positive(),
               }).strict()),
+              streams: z.array(z.object({
+                streamKey: z.enum([
+                  "hiddenGems",
+                  "arabVoices",
+                  "recentlyDiscussed",
+                  "philosophicalFiction",
+                  "forgottenClassics",
+                  "shortReflectiveReads",
+                ]),
+                streamLabel: z.string().nullable(),
+                editorialCount: z.number().int().nonnegative(),
+                featuredCount: z.number().int().nonnegative(),
+                maxEditorial: z.number().int().positive(),
+                maxFeatured: z.number().int().positive(),
+              }).strict()).max(6).optional(),
               entries: z.array(adminHomeEditorialEntrySchema).max(100),
             })
             .strict(),

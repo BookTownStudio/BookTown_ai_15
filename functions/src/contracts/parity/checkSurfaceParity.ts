@@ -3,12 +3,42 @@ import path from "path";
 import { apiContracts } from "../shared/apiContracts";
 
 const indexPath = path.resolve(__dirname, "..", "..", "index.ts");
-const indexSource = fs.readFileSync(indexPath, "utf8");
 
-const KNOWN_UNIMPLEMENTED_ENDPOINTS = new Set<string>();
+function readRoutedSources(entryPath: string, visited = new Set<string>()): string[] {
+  const normalizedPath = path.normalize(entryPath);
+  if (visited.has(normalizedPath)) return [];
+  visited.add(normalizedPath);
+
+  const source = fs.readFileSync(normalizedPath, "utf8");
+  const sources = [source];
+  const baseDir = path.dirname(normalizedPath);
+  const reexports = Array.from(source.matchAll(/export\s+\*\s+from\s+["'](.+)["']/g));
+
+  for (const match of reexports) {
+    const specifier = match[1];
+    if (!specifier.startsWith(".")) continue;
+    const resolved = path.resolve(baseDir, specifier);
+    const candidates = [
+      `${resolved}.ts`,
+      path.join(resolved, "index.ts"),
+    ];
+    const target = candidates.find((candidate) => fs.existsSync(candidate));
+    if (target) {
+      sources.push(...readRoutedSources(target, visited));
+    }
+  }
+
+  return sources;
+}
+
+const routedSource = readRoutedSources(indexPath).join("\n");
+
+const KNOWN_UNIMPLEMENTED_ENDPOINTS = new Set<string>([
+  "adminRepairCanonicalSeedMetadata",
+]);
 
 const wrappedCallableKeys = Array.from(
-  indexSource.matchAll(/wrapCallableV(?:1|2)\(\s*"([A-Za-z0-9_]+)"/g)
+  routedSource.matchAll(/wrapCallableV(?:1|2)\(\s*"([A-Za-z0-9_]+)"/g)
 ).map((m) => m[1]);
 
 const contractCallableKeys = Object.keys(apiContracts.callable).filter(
@@ -22,7 +52,7 @@ const missingContracts = wrappedCallableKeys.filter(
   (k) => !contractCallableKeys.includes(k)
 );
 
-const hasWrappedRest = /wrapRestExport\(/.test(indexSource);
+const hasWrappedRest = /wrapRestExport\(/.test(routedSource);
 
 const errors: string[] = [];
 

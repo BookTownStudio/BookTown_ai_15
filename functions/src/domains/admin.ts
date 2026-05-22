@@ -24,6 +24,9 @@ import {
   adminDisableHomeEditorialEntry as adminDisableHomeEditorialEntryRaw,
   adminListHomeEditorialEntries as adminListHomeEditorialEntriesRaw,
   adminPreviewHomeEditorialConsole as adminPreviewHomeEditorialConsoleRaw,
+  adminPreviewHomePlacement as adminPreviewHomePlacementRaw,
+  adminResolveHomeTarget as adminResolveHomeTargetRaw,
+  adminSearchHomeTargets as adminSearchHomeTargetsRaw,
   adminUpsertHomeEditorialEntry as adminUpsertHomeEditorialEntryRaw,
 } from "../home/editorialGovernance";
 
@@ -48,6 +51,9 @@ export const adminUpsertHomeEditorialEntry = wrapCallableV2("adminUpsertHomeEdit
 export const adminDisableHomeEditorialEntry = wrapCallableV2("adminDisableHomeEditorialEntry", adminDisableHomeEditorialEntryRaw);
 export const adminDeleteHomeEditorialEntry = wrapCallableV2("adminDeleteHomeEditorialEntry", adminDeleteHomeEditorialEntryRaw);
 export const adminPreviewHomeEditorialConsole = wrapCallableV2("adminPreviewHomeEditorialConsole", adminPreviewHomeEditorialConsoleRaw);
+export const adminSearchHomeTargets = wrapCallableV2("adminSearchHomeTargets", adminSearchHomeTargetsRaw);
+export const adminResolveHomeTarget = wrapCallableV2("adminResolveHomeTarget", adminResolveHomeTargetRaw);
+export const adminPreviewHomePlacement = wrapCallableV2("adminPreviewHomePlacement", adminPreviewHomePlacementRaw);
 
 export { scheduledNotificationCleanup } from "../admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "../admin/cleanupAttachments";

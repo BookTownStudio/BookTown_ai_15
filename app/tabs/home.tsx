@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
+import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
@@ -22,6 +23,7 @@ import PageShell from '../../components/layout/PageShell.tsx';
 import LiteraryShell from '../../components/layout/LiteraryShell.tsx';
 import { useToast } from '../../store/toast.tsx';
 import SearchResultCard from '../../components/content/SearchResultCard.tsx';
+import CanonicalCoverArtwork from '../../components/content/CanonicalCoverArtwork.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
 import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
@@ -30,6 +32,7 @@ import { trackSearchClick } from '../../services/searchTelemetryService.ts';
 import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
 import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
 import { useHomeSearchState } from '../../store/home-search.tsx';
+import { callCallableEndpoint } from '../../lib/callable.ts';
 import {
   acquireExternalEbookForRead,
   buildAcquireExternalReadParams,
@@ -37,8 +40,7 @@ import {
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { SocialIcon } from '../../components/icons/SocialIcon.tsx';
 import { ChevronDownIcon } from '../../components/icons/ChevronDownIcon.tsx';
-import { BookPlusIcon } from '../../components/icons/BookPlusIcon.tsx';
-import { SurpriseIcon } from '../../components/icons/SurpriseIcon.tsx';
+import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
 import {
   HomeConsoleBookItem,
   useHomeDiscoveryConsole,
@@ -70,16 +72,20 @@ const DISCOVER_STREAMS = [
 
 type DiscoverStream = typeof DISCOVER_STREAMS[number];
 
-const CONTINUITY_STARTER_BOOK = {
-  title: 'The Prophet',
-  author: 'Kahlil Gibran',
-  query: 'The Prophet Kahlil Gibran',
-};
-
-const CONTINUITY_SURPRISE_BOOK = {
-  title: 'Pride and Prejudice',
-  author: 'Jane Austen',
-  query: 'Pride and Prejudice Jane Austen',
+type ContinuityBookSelection = {
+  id: string;
+  titleEn: string;
+  titleAr: string;
+  authorEn: string;
+  authorAr: string;
+  coverUrl: string;
+  coverMode?: 'uploaded' | 'fallback_metadata';
+  fallbackCover?: {
+    title: string;
+    author?: string;
+    theme: 'ink' | 'emerald' | 'gold' | 'plum';
+  };
+  isEbookAvailable: boolean;
 };
 
 const HomeScreen: React.FC = () => {
@@ -319,11 +325,61 @@ const HomeScreen: React.FC = () => {
     setSearchActive(true);
   };
 
-  const openContinuitySearch = (query: string) => {
-    setSearchQuery(query);
-    setSearchActive(true);
-    addToHistory(query);
-    setIsDiscoverStreamMenuOpen(false);
+  const selectContinuityBook = async (mode: 'surprise' | 'starter') => {
+    return callCallableEndpoint<{ mode: 'surprise' | 'starter' }, ContinuityBookSelection>(
+      'selectHomeContinuityBook',
+      { mode }
+    );
+  };
+
+  const handleSurpriseMe = async () => {
+    if (busyId) return;
+    try {
+      setBusyId('continue-reading-surprise');
+      const book = await selectContinuityBook('surprise');
+      navigate({
+        type: 'immersive',
+        id: 'bookDetails',
+        params: {
+          bookId: book.id,
+          from: currentView,
+        },
+      });
+    } catch (err) {
+      console.error('[HOME][SURPRISE_SELECTION_FAILED]', err);
+      showToast(
+        lang === 'en'
+          ? 'A literary surprise is unavailable right now.'
+          : 'المفاجأة الأدبية غير متاحة حالياً.'
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleOpenStarterBook = async () => {
+    if (busyId) return;
+    try {
+      setBusyId('continue-reading-starter');
+      const book = await selectContinuityBook('starter');
+      navigate({
+        type: 'immersive',
+        id: 'reader',
+        params: {
+          bookId: book.id,
+          from: currentView,
+        },
+      });
+    } catch (err) {
+      console.error('[HOME][STARTER_READER_OPEN_FAILED]', err);
+      showToast(
+        lang === 'en'
+          ? 'This starter book cannot be opened right now.'
+          : 'تعذر فتح كتاب البداية حالياً.'
+      );
+    } finally {
+      setBusyId(null);
+    }
   };
 
   const handleHomeScroll = (event: React.UIEvent<HTMLDivElement>) => {
@@ -410,72 +466,70 @@ const HomeScreen: React.FC = () => {
   };
 
   const renderContinueReadingEmptyCards = () => (
-    <div className="flex overflow-x-auto scrollbar-hide snap-x gap-4 pt-2 pb-4">
+    <div className="flex overflow-x-auto scrollbar-hide snap-x pt-4 pb-2 px-1">
       <button
         type="button"
-        className="group w-40 shrink-0 snap-start text-left sm:w-44"
+        className="group mr-4 w-32 flex-shrink-0 snap-start text-left"
         onClick={() => setIsAddBookModalOpen(true)}
+        aria-label={lang === 'en' ? 'Add a book to Continue Reading' : 'أضف كتاباً إلى أكمل القراءة'}
       >
-        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-dashed border-slate-300 bg-white/60 p-4 transition group-hover:border-accent group-hover:bg-white dark:border-white/15 dark:bg-white/5 dark:group-hover:bg-white/10">
-          <BookPlusIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
-          <div>
-            <p className="text-sm font-semibold text-slate-800 dark:text-white">
-              {lang === 'en' ? 'Add a Book' : 'أضف كتاباً'}
-            </p>
-            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
-              {lang === 'en'
-                ? 'Choose the first book to keep your place with.'
-                : 'اختر أول كتاب ليحفظ لك موضع القراءة.'}
-            </p>
-          </div>
+        <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-card border-2 border-dashed border-slate-600 text-slate-600 transition-all duration-300 hover:border-accent hover:bg-slate-200/50 hover:text-accent dark:border-white/30 dark:text-white/40 dark:hover:bg-white/5">
+          <PlusIcon className="h-10 w-10" />
+          <p className="mt-1 text-xs font-semibold text-inherit">
+            {lang === 'en' ? 'Add Book' : 'أضف كتاب'}
+          </p>
         </div>
       </button>
 
       <button
         type="button"
-        className="group w-40 shrink-0 snap-start text-left sm:w-44"
-        onClick={() => openContinuitySearch(CONTINUITY_SURPRISE_BOOK.query)}
+        className="group mr-4 w-32 flex-shrink-0 snap-start text-left"
+        onClick={handleSurpriseMe}
+        aria-label={lang === 'en' ? 'Surprise me with one book' : 'فاجئني بكتاب واحد'}
       >
-        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-slate-200 bg-white/70 p-4 transition group-hover:border-accent/60 group-hover:bg-white dark:border-white/10 dark:bg-white/5 dark:group-hover:bg-white/10">
-          <SurpriseIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
-          <div>
-            <p className="text-sm font-semibold text-slate-800 dark:text-white">
-              {lang === 'en' ? 'Surprise Me' : 'فاجئني بكتاب'}
-            </p>
-            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
-              {lang === 'en'
-                ? 'One quiet literary suggestion.'
-                : 'اقتراح أدبي هادئ واحد.'}
-            </p>
+        <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border border-sky-200/15 bg-gradient-to-br from-sky-500 via-sky-700 to-slate-700 shadow-md transition duration-300 group-hover:border-sky-100/30 dark:border-white/10">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,_rgba(255,255,255,0.18),_transparent_28%),radial-gradient(circle_at_72%_78%,_rgba(186,230,253,0.16),_transparent_30%)]" />
+          <div className="relative z-10 h-20 w-20 opacity-85">
+            <DotLottieReact
+              src="/animations/sparkling-gift.lottie"
+              autoplay
+              loop
+              className="h-full w-full"
+              renderConfig={{ autoResize: true }}
+            />
           </div>
+          <p className="relative z-10 mt-5 text-center text-sm font-bold text-white/90">
+            {lang === 'en' ? 'Surprise Me' : 'فاجئني'}
+          </p>
         </div>
-        <p className="mt-2 line-clamp-1 text-xs font-medium text-slate-500 dark:text-white/55">
-          {CONTINUITY_SURPRISE_BOOK.title} · {CONTINUITY_SURPRISE_BOOK.author}
-        </p>
       </button>
 
-      <button
-        type="button"
-        className="group w-40 shrink-0 snap-start text-left sm:w-44"
-        onClick={() => openContinuitySearch(CONTINUITY_STARTER_BOOK.query)}
+      <div
+        role="button"
+        tabIndex={0}
+        className="mr-4 w-32 flex-shrink-0 cursor-pointer snap-start"
+        onClick={handleOpenStarterBook}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            void handleOpenStarterBook();
+          }
+        }}
+        aria-label={lang === 'en' ? 'Open starter book' : 'افتح كتاب البداية'}
       >
-        <div className="flex aspect-[2/3] w-full flex-col justify-between rounded-lg border border-slate-200 bg-white/70 p-4 transition group-hover:border-accent/60 group-hover:bg-white dark:border-white/10 dark:bg-white/5 dark:group-hover:bg-white/10">
-          <BookIcon className="h-7 w-7 text-slate-500 dark:text-white/60" />
-          <div>
-            <p className="text-sm font-semibold text-slate-800 dark:text-white">
-              {CONTINUITY_STARTER_BOOK.title}
-            </p>
-            <p className="mt-1 text-xs leading-snug text-slate-500 dark:text-white/55">
-              {lang === 'en'
-                ? 'A calm doorway into the reading habit.'
-                : 'مدخل هادئ إلى عادة القراءة.'}
-            </p>
-          </div>
+        <div className="relative aspect-[2/3] w-full overflow-hidden rounded-card bg-slate-800 shadow-md">
+          <CanonicalCoverArtwork
+            title="The Prophet"
+            author="Kahlil Gibran"
+            variant="posterCompact"
+            fallbackCover={{
+              title: 'The Prophet',
+              author: 'Kahlil Gibran',
+              theme: 'ink',
+            }}
+          />
         </div>
-        <p className="mt-2 line-clamp-1 text-xs font-medium text-slate-500 dark:text-white/55">
-          {CONTINUITY_STARTER_BOOK.author}
-        </p>
-      </button>
+      </div>
     </div>
   );
 

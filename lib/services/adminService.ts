@@ -386,6 +386,7 @@ export type AdminHomeEditorialEntry = {
   targetType: 'book' | 'post';
   targetId: string;
   row: 'readNow' | 'dynamicDiscovery' | 'fromTheTown';
+  streamKey?: HomeDiscoverStreamKey;
   slot: number;
   mode: 'hard_pin' | 'soft_boost';
   boostWeight: number;
@@ -400,6 +401,40 @@ export type AdminHomeEditorialEntry = {
   isActive: boolean;
 };
 
+export type HomeDiscoverStreamKey =
+  | 'hiddenGems'
+  | 'arabVoices'
+  | 'recentlyDiscussed'
+  | 'philosophicalFiction'
+  | 'forgottenClassics'
+  | 'shortReflectiveReads';
+
+export type AdminHomeTargetPreview = {
+  targetType: 'book' | 'post';
+  targetId: string;
+  label: string;
+  subtitle: string;
+  source: 'canonical_search' | 'canonical_resolver';
+  preview: Record<string, unknown> | null;
+  eligibility: Record<string, unknown>;
+  blocking: string[];
+  warnings: string[];
+};
+
+export type AdminHomePlacementPreview = {
+  target: Record<string, unknown> | null;
+  eligibility: Record<string, unknown>;
+  blocking: string[];
+  warnings: string[];
+  occupancy: Record<string, unknown>;
+  conflicts: Record<string, unknown>;
+  schedule: {
+    startAt: string;
+    endAt: string;
+  };
+  canActivate: boolean;
+};
+
 export type AdminHomeEditorialPreview = {
   region: string | null;
   language: string | null;
@@ -407,6 +442,14 @@ export type AdminHomeEditorialPreview = {
     row: 'readNow' | 'dynamicDiscovery' | 'fromTheTown';
     editorialCount: number;
     maxEditorial: number;
+  }>;
+  streams?: Array<{
+    streamKey: HomeDiscoverStreamKey;
+    streamLabel: string | null;
+    editorialCount: number;
+    featuredCount: number;
+    maxEditorial: number;
+    maxFeatured: number;
   }>;
   entries: AdminHomeEditorialEntry[];
 };
@@ -1490,6 +1533,60 @@ export const adminService = {
       payload
     );
     return data.entry;
+  },
+
+  async searchHomeTargets(params: {
+    query: string;
+    row: AdminHomeEditorialEntry['row'];
+    streamKey?: HomeDiscoverStreamKey;
+    limit?: number;
+  }): Promise<AdminHomeTargetPreview[]> {
+    const data = await callCallableEndpoint<
+      {
+        query: string;
+        row: AdminHomeEditorialEntry['row'];
+        streamKey?: HomeDiscoverStreamKey;
+        limit?: number;
+      },
+      { targets: AdminHomeTargetPreview[] }
+    >('adminSearchHomeTargets', {
+      query: params.query.trim(),
+      row: params.row,
+      ...(params.streamKey ? { streamKey: params.streamKey } : {}),
+      ...(params.limit ? { limit: params.limit } : {}),
+    });
+    return Array.isArray(data.targets) ? data.targets : [];
+  },
+
+  async resolveHomeTarget(params: {
+    input: string;
+    row: AdminHomeEditorialEntry['row'];
+    streamKey?: HomeDiscoverStreamKey;
+    targetType?: AdminHomeEditorialEntry['targetType'];
+  }): Promise<AdminHomeTargetPreview | null> {
+    const data = await callCallableEndpoint<
+      {
+        input: string;
+        row: AdminHomeEditorialEntry['row'];
+        streamKey?: HomeDiscoverStreamKey;
+        targetType?: AdminHomeEditorialEntry['targetType'];
+      },
+      { target: AdminHomeTargetPreview | null }
+    >('adminResolveHomeTarget', {
+      input: params.input.trim(),
+      row: params.row,
+      ...(params.streamKey ? { streamKey: params.streamKey } : {}),
+      ...(params.targetType ? { targetType: params.targetType } : {}),
+    });
+    return data.target;
+  },
+
+  async previewHomePlacement(payload: AdminHomeEditorialEntry): Promise<AdminHomePlacementPreview> {
+    const data = await callCallableEndpoint<
+      AdminHomeEditorialEntry,
+      { preview: AdminHomePlacementPreview }
+    >('adminPreviewHomePlacement', payload);
+    return data.preview;
   },
 
   async disableHomeEditorialEntry(id: string): Promise<void> {

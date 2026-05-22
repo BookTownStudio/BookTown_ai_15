@@ -189,4 +189,109 @@ describe("Home editorial governance contract", () => {
       },
     }).success).toBe(true);
   });
+
+  it("accepts editorial resolver and Discover stream preview DTOs", () => {
+    const target = {
+      targetType: "book",
+      targetId: "book_hidden_gem",
+      label: "A Hidden Work",
+      subtitle: "Quiet Author",
+      source: "canonical_search",
+      preview: {
+        title: "A Hidden Work",
+        author: "Quiet Author",
+      },
+      eligibility: {
+        exists: true,
+        eligible: true,
+        public: true,
+        readable: true,
+        hasEbookAttachment: true,
+        moderationSafe: true,
+      },
+      blocking: [],
+      warnings: [],
+    };
+
+    expect(apiContracts.callable.adminSearchHomeTargets.requestSchema.safeParse({
+      query: "Hidden Work",
+      row: "dynamicDiscovery",
+      streamKey: "hiddenGems",
+      limit: 5,
+    }).success).toBe(true);
+    expect(apiContracts.callable.adminSearchHomeTargets.responseSchema.safeParse({
+      success: true,
+      data: { targets: [target] },
+    }).success).toBe(true);
+    expect(apiContracts.callable.adminResolveHomeTarget.responseSchema.safeParse({
+      success: true,
+      data: { target: { ...target, source: "canonical_resolver" } },
+    }).success).toBe(true);
+    expect(apiContracts.callable.adminResolveHomeTarget.requestSchema.safeParse({
+      candidate: {
+        targetType: "book",
+        targetId: "book_hidden_gem",
+      },
+      row: "dynamicDiscovery",
+      streamKey: "hiddenGems",
+    }).success).toBe(true);
+    expect(apiContracts.callable.adminPreviewHomePlacement.responseSchema.safeParse({
+      success: true,
+      data: {
+        preview: {
+          target,
+          eligibility: target.eligibility,
+          blocking: [],
+          warnings: [],
+          occupancy: {
+            row: "dynamicDiscovery",
+            streamKey: "hiddenGems",
+            streamLabel: "Hidden Gems",
+            activeCount: 1,
+            max: 2,
+            featuredCount: 0,
+            maxFeatured: 1,
+          },
+          conflicts: {
+            slotCollisionIds: [],
+            sameTargetIds: [],
+            crossLayerTargetIds: [],
+          },
+          schedule: {
+            startAt: new Date(0).toISOString(),
+            endAt: new Date(86_400_000).toISOString(),
+          },
+          canActivate: true,
+        },
+      },
+    }).success).toBe(true);
+  });
+});
+
+describe("Home continuity book contract", () => {
+  it("accepts server-selected continuity book DTOs", () => {
+    const book = {
+      id: "book_surprise",
+      authorId: "",
+      titleEn: "A Literary Surprise",
+      titleAr: "A Literary Surprise",
+      authorEn: "Author",
+      authorAr: "Author",
+      coverUrl: "",
+      descriptionEn: "",
+      descriptionAr: "",
+      genresEn: [],
+      genresAr: [],
+      rating: 0,
+      ratingsCount: 0,
+      isEbookAvailable: true,
+    };
+
+    expect(apiContracts.callable.selectHomeContinuityBook.requestSchema.safeParse({ mode: "surprise" }).success).toBe(true);
+    expect(apiContracts.callable.selectHomeContinuityBook.requestSchema.safeParse({ mode: "starter" }).success).toBe(true);
+    expect(apiContracts.callable.selectHomeContinuityBook.responseSchema.safeParse({
+      success: true,
+      data: book,
+    }).success).toBe(true);
+  });
 });
