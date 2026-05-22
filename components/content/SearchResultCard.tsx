@@ -7,7 +7,6 @@ import Button from '../ui/Button.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import { EyeIcon } from '../icons/EyeIcon.tsx';
-import { ChevronRightIcon } from '../icons/ChevronRightIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 
@@ -33,9 +32,6 @@ interface SearchResultCardProps {
     result: SearchResultDTO;
   }) => void;
 
-  /** UX mode */
-  mode?: 'discovery' | 'insertion';
-
   isBusy?: boolean;
   className?: string;
 }
@@ -43,15 +39,9 @@ interface SearchResultCardProps {
 /**
  * 🔒 SearchResultCard — Discovery & Insertion Safe
  *
- * DISCOVERY mode (default):
  * - Card click → open details
  * - Eye → read ebook (if available)
- * - Plus → add to BookTown
- *
- * INSERTION mode:
- * - Card click → add directly to target shelf
- * - Chevron → open details
- * - No eye / no plus clutter
+ * - Plus → explicit add mutation
  *
  * Guarantees:
  * - Stable DOM
@@ -65,7 +55,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   onOpen,
   onRead,
   onSemanticChipClick,
-  mode = 'discovery',
   isBusy = false,
   className = ''
 }) => {
@@ -205,12 +194,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
 
   const handlePrimaryAction = () => {
     if (isBusy) return;
-
-    if (mode === 'insertion') {
-      onAdd?.(result);
-    } else {
-      onOpen?.(result);
-    }
+    onOpen?.(result);
   };
 
   const triggerAddFeedback = () => {
@@ -323,73 +307,48 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
 
       {/* Actions */}
       <div className="flex flex-col gap-2 justify-center items-center">
-        {mode === 'discovery' && (
-          <>
-            {/* 👁 Ebook indicator / Read */}
-            {canRead && (
-              <button
-                type="button"
-                disabled={isBusy}
-                title={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onRead?.(result);
-                }}
-                className={cn(
-                  'p-2 rounded-full border transition-colors',
-                  'bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer'
-                )}
-                aria-label={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
-              >
-                <EyeIcon className="h-4 w-4 text-white/90" />
-              </button>
-            )}
-
-            {/* ➕ Add */}
-            {canAdd && (
-              <Button
-                variant="icon"
-                aria-label="Add book"
-                className={cn(
-                  "!h-9 !w-9 transition-all",
-                  didAdd && "!bg-accent/20 !border !border-accent/40"
-                )}
-                disabled={isBusy}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onAdd?.(result);
-                  triggerAddFeedback();
-                }}
-              >
-                {isBusy ? (
-                  <LoadingSpinner className="!h-4 !w-4" />
-                ) : didAdd ? (
-                  <CheckCircleIcon className="h-5 w-5 text-accent" />
-                ) : (
-                  <PlusIcon className="h-5 w-5" />
-                )}
-              </Button>
-            )}
-          </>
-        )}
-
-        {mode === 'insertion' && onOpen && (
+        {canRead && (
           <button
             type="button"
-            aria-label={
-              lang === 'en' ? 'View details' : 'عرض التفاصيل'
-            }
+            disabled={isBusy}
+            title={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
             onClick={(e) => {
               e.stopPropagation();
-              onOpen(result);
+              onRead?.(result);
             }}
             className={cn(
               'p-2 rounded-full border transition-colors',
-              'bg-white/5 border-white/10 hover:bg-white/10'
+              'bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer'
             )}
+            aria-label={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
           >
-            <ChevronRightIcon className="h-4 w-4 text-white/90" />
+            <EyeIcon className="h-4 w-4 text-white/90" />
           </button>
+        )}
+
+        {canAdd && (
+          <Button
+            variant="icon"
+            aria-label="Add book"
+            className={cn(
+              "!h-9 !w-9 transition-all",
+              didAdd && "!bg-accent/20 !border !border-accent/40"
+            )}
+            disabled={isBusy}
+            onClick={(e) => {
+              e.stopPropagation();
+              onAdd?.(result);
+              triggerAddFeedback();
+            }}
+          >
+            {isBusy ? (
+              <LoadingSpinner className="!h-4 !w-4" />
+            ) : didAdd ? (
+              <CheckCircleIcon className="h-5 w-5 text-accent" />
+            ) : (
+              <PlusIcon className="h-5 w-5" />
+            )}
+          </Button>
         )}
       </div>
     </div>

@@ -35,7 +35,7 @@ export function useContinueReading(
   maxItems: number = 8
 ): UseContinueReadingResult {
   const limit = Math.max(1, Math.min(CONTINUE_READING_LIMIT, Math.trunc(maxItems)));
-  const { items: activeReadingItems, isLoading } = useCurrentlyReading(limit);
+  const { items: activeReadingItems, isLoading } = useCurrentlyReading(CONTINUE_READING_LIMIT);
 
   const items = useMemo(
     () =>

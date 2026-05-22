@@ -178,6 +178,15 @@ describe("getReaderInsights", () => {
       },
       {
         uid,
+        bookId: "rereading_newest",
+        status_state: "rereading",
+        progress: 0.15,
+        continuityLevel: "manual",
+        sourceType: "physical",
+        lastActiveAt: Timestamp.fromMillis(9_000),
+      },
+      {
+        uid,
         bookId: "abandoned",
         status_state: "abandoned",
         progress: 0.3,
@@ -207,6 +216,7 @@ describe("getReaderInsights", () => {
 
     expect(result.currentlyReading.map((row: JsonMap) => row.bookId)).toEqual([
       "reading_older",
+      "rereading_newest",
       "paused_newer",
     ]);
     expect(result.currentlyReading[0]).toMatchObject({
@@ -215,6 +225,11 @@ describe("getReaderInsights", () => {
       sourceType: "in_app_epub",
     });
     expect(result.currentlyReading[1]).toMatchObject({
+      status_state: "rereading",
+      continuityLevel: "manual",
+      sourceType: "physical",
+    });
+    expect(result.currentlyReading[2]).toMatchObject({
       status_state: "paused",
       continuityLevel: "manual",
       sourceType: "physical",
@@ -231,7 +246,7 @@ describe("getReaderInsights", () => {
         {
           collection: "reading_progress",
           action: "where",
-          payload: { field: "status_state", op: "in", value: ["reading", "paused"] },
+          payload: { field: "status_state", op: "in", value: ["reading", "paused", "rereading"] },
         },
         {
           collection: "reading_progress",

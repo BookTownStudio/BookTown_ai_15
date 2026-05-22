@@ -571,4 +571,66 @@ describe("syncReaderOperations", () => {
     expect(progress?.status_state).toBe("completed");
     expect(progress?.progress).toBe(1);
   });
+
+  it("maps explicit runtime reread intent to the rereading lifecycle state", async () => {
+    const { syncReaderOperationsHandler } = await import("../syncReaderOperations");
+    const auth = { uid: "user_sync", token: {} };
+
+    await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_start_for_reread",
+            idempotencyKey: "progress:book_sync:5000:op_progress_start_for_reread",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 5_000,
+            payload: {
+              percentage: 0.8,
+              lastPosition: { page: 80, totalPages: 100 },
+              status_state: "reading",
+            },
+          },
+          {
+            opId: "op_progress_complete_for_reread",
+            idempotencyKey: "progress:book_sync:6000:op_progress_complete_for_reread",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 6_000,
+            payload: {
+              percentage: 1,
+              lastPosition: { page: 100, totalPages: 100 },
+              status_state: "completed",
+            },
+          },
+        ],
+      },
+    });
+
+    const reread = await syncReaderOperationsHandler({
+      auth,
+      data: {
+        operations: [
+          {
+            opId: "op_progress_runtime_reread",
+            idempotencyKey: "progress:book_sync:7000:op_progress_runtime_reread",
+            type: "upsert_progress",
+            bookId: "book_sync",
+            clientTimestampMs: 7_000,
+            payload: {
+              percentage: 0.05,
+              lastPosition: { page: 5, totalPages: 100 },
+              status_state: "reading",
+              reread: true,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(reread.rejected).toBe(0);
+    const progress = fakeDb.read("reading_progress", "user_sync_book_sync");
+    expect(progress?.status_state).toBe("rereading");
+  });
 });

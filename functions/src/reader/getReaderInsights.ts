@@ -6,7 +6,7 @@ import * as logger from "firebase-functions/logger";
 import { Timestamp } from "firebase-admin/firestore";
 
 const db = admin.firestore();
-const ACTIVE_READING_STATES = ["reading", "paused"] as const;
+const ACTIVE_READING_STATES = ["reading", "paused", "rereading"] as const;
 const DEFAULT_CONTINUE_READING_LIMIT = 50;
 const MAX_CONTINUE_READING_LIMIT = 50;
 
@@ -32,7 +32,7 @@ function toMillis(value: unknown): number {
 }
 
 function statusRank(value: unknown): number {
-  return value === "reading" ? 0 : value === "paused" ? 1 : 2;
+  return value === "reading" ? 0 : value === "rereading" ? 1 : value === "paused" ? 2 : 3;
 }
 
 function toUnitProgress(value: unknown): number {
@@ -90,7 +90,7 @@ export const getReaderInsightsHandler = async (request: any) => {
 
       totalReadingTimeSeconds += data.totalActiveSeconds ?? 0;
 
-      if (statusState === "reading" || statusState === "paused") {
+      if (statusState === "reading" || statusState === "paused" || statusState === "rereading") {
         const lastActiveAt = data.lastActiveAt ?? data.updatedAt ?? null;
         currentlyReading.push({
           bookId: data.bookId,

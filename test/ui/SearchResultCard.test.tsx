@@ -50,6 +50,10 @@ function buildResult(overrides?: Partial<SearchResultDTO>): SearchResultDTO {
     descriptionAr: "",
     coverUrl: "",
     language: "en",
+    available: false,
+    acquired: false,
+    readAccess: "none",
+    readProvider: null,
     hasEbook: false,
     downloadable: false,
     isEbookAvailable: false,
@@ -79,6 +83,7 @@ describe("SearchResultCard", () => {
         result={buildResult({
           ebookClass: "in_app",
           hasEbook: true,
+          acquired: true,
           downloadable: true,
           isEbookAvailable: true,
         })}

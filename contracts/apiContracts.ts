@@ -138,7 +138,7 @@ const readerInsightsDataSchema = z
         .object({
           bookId: z.string().min(1),
           progress: z.number().min(0).max(1),
-          status_state: z.enum(["reading", "paused"]).optional(),
+          status_state: z.enum(["reading", "paused", "rereading"]).optional(),
           continuityLevel: z.string().min(1).nullable().optional(),
           sourceType: z.string().min(1).nullable().optional(),
           lastPosition: z.unknown().nullable(),
@@ -5551,7 +5551,7 @@ export const apiContracts = {
           percentage: z.number().min(0).max(1),
           lastPosition: readerLastPositionSchema.optional(),
           lastAnchor: canonicalAnchorV1Schema.optional(),
-          status_state: z.enum(["reading", "paused", "abandoned", "completed"]).optional(),
+          status_state: z.enum(["reading", "paused", "abandoned", "completed", "rereading"]).optional(),
           recommendationContext: recommendationOriginSchema.optional(),
         })
         .strict(),
@@ -5574,8 +5574,15 @@ export const apiContracts = {
           currentPage: z.number().int().positive().optional(),
           totalPages: z.number().int().positive().optional(),
           chapter: z.string().min(1).max(160).optional(),
-          status_state: z.enum(["reading", "paused", "abandoned", "completed"]).optional(),
-          sourceType: z.enum(["physical", "external_ebook"]),
+          status_state: z.enum(["reading", "paused", "abandoned", "completed", "rereading"]).optional(),
+          sourceType: z.enum([
+            "physical",
+            "external_ebook",
+            "kindle",
+            "apple_books",
+            "pdf_external",
+            "unknown",
+          ]),
         })
         .strict(),
       z
@@ -5585,7 +5592,10 @@ export const apiContracts = {
         .strict(),
       "httpsCallable",
       {
-        callSites: ["app/book-details.tsx"],
+        callSites: [
+          "app/book-details.tsx",
+          "lib/actions/enterReadingState.ts",
+        ],
       }
     ),
 

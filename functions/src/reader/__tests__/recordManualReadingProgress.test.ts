@@ -191,6 +191,30 @@ describe("recordManualReadingProgress", () => {
     });
   });
 
+  it("supports unknown manual continuity without assuming a reading source", async () => {
+    const { recordManualReadingProgressHandler } = await import("../recordManualReadingProgress");
+
+    await recordManualReadingProgressHandler({
+      auth: { uid: "user_manual" },
+      data: {
+        bookId: "book_manual",
+        sourceType: "unknown",
+        progress: 0,
+        status_state: "reading",
+      },
+    });
+
+    const progress = fakeDb.read("reading_progress", "user_manual_book_manual");
+    expect(progress).toMatchObject({
+      status_state: "reading",
+      progress: 0,
+      continuityLevel: "manual",
+      continuitySource: "manual",
+      sourceType: "unknown",
+    });
+    expect(progress?.lastPosition).toBeNull();
+  });
+
   it("supports manual completion and abandonment through canonical transitions", async () => {
     const { recordManualReadingProgressHandler } = await import("../recordManualReadingProgress");
     const auth = { uid: "user_manual" };
@@ -238,6 +262,41 @@ describe("recordManualReadingProgress", () => {
     expect(progress?.progress).toBe(1);
     expect(fakeDb.rows("reader_events").map((row) => row.event)).toContain("read_complete");
     expect(fakeDb.rows("reader_events").map((row) => row.event)).toContain("read_abandon");
+  });
+
+  it("supports explicit rereading after completion", async () => {
+    const { recordManualReadingProgressHandler } = await import("../recordManualReadingProgress");
+    const auth = { uid: "user_manual" };
+
+    await recordManualReadingProgressHandler({
+      auth,
+      data: {
+        bookId: "book_manual",
+        sourceType: "physical",
+        status_state: "reading",
+      },
+    });
+    await recordManualReadingProgressHandler({
+      auth,
+      data: {
+        bookId: "book_manual",
+        sourceType: "physical",
+        status_state: "completed",
+      },
+    });
+    await recordManualReadingProgressHandler({
+      auth,
+      data: {
+        bookId: "book_manual",
+        sourceType: "physical",
+        status_state: "rereading",
+      },
+    });
+
+    const progress = fakeDb.read("reading_progress", "user_manual_book_manual");
+    expect(progress?.status_state).toBe("rereading");
+    expect(progress?.sessionStartedAt).toBeTruthy();
+    expect(fakeDb.rows("reader_events").map((row) => row.event)).toContain("reread_start");
   });
 
   it("rejects runtime-owned precision fields and invalid page/progress payloads", async () => {

@@ -18,7 +18,7 @@ export interface ReaderInsights {
   currentlyReading: {
     bookId: string;
     progress: number;
-    status_state?: 'reading' | 'paused';
+    status_state?: 'reading' | 'paused' | 'rereading';
     continuityLevel?: string | null;
     sourceType?: string | null;
     lastPosition: any;

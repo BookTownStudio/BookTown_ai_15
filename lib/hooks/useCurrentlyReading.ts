@@ -80,6 +80,7 @@ const progressToUnit = (value: unknown): number => {
 const toContinuityState = (value: unknown): CurrentlyReadingItem['status_state'] | undefined => {
   if (
     value === 'reading' ||
+    value === 'rereading' ||
     value === 'paused' ||
     value === 'abandoned' ||
     value === 'completed'

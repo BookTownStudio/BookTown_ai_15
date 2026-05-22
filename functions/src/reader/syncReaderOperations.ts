@@ -259,6 +259,14 @@ function resolveProgressState(payload: Record<string, unknown> | undefined): Rea
   return undefined;
 }
 
+function hasExplicitRereadIntent(payload: Record<string, unknown>): boolean {
+  return (
+    payload.restart === true ||
+    payload.reread === true ||
+    payload.explicitReread === true
+  );
+}
+
 function timestampToMillis(value: unknown): number | null {
   if (
     value &&
@@ -280,13 +288,10 @@ function isExplicitReadingResume(
   requestedState: ReadingState | undefined,
   payload: Record<string, unknown>
 ): boolean {
-  const explicitReread =
-    payload.restart === true ||
-    payload.reread === true ||
-    payload.explicitReread === true;
+  const explicitReread = hasExplicitRereadIntent(payload);
 
   return (
-    requestedState === "reading" &&
+    (requestedState === "reading" || requestedState === "rereading") &&
     (
       previousState === "paused" ||
       previousState === "abandoned" ||
@@ -445,12 +450,22 @@ async function applyProgressOperationInTx(params: {
       })
       : null);
 
+  const previousState = isPersistedReadingState(previousData.status_state)
+    ? previousData.status_state
+    : "not_started";
+  const requestedStateForMutation =
+    previousState === "completed" &&
+    requestedState === "reading" &&
+    hasExplicitRereadIntent(payload)
+      ? "rereading"
+      : requestedState;
+
   const mutation = computeReadingProgressMutation({
     uid,
     bookId: op.bookId,
     normalizedProgress: percentage,
     normalizedLastPosition: lastPosition,
-    requestedStateRaw: requestedState,
+    requestedStateRaw: requestedStateForMutation,
     now,
     previousData,
   });

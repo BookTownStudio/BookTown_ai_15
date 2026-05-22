@@ -10,12 +10,14 @@ const {
   showToastMock,
   ensureCanonicalBookMock,
   toggleBookMock,
+  enterReadingStateMock,
   mockedSearchState,
 } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   showToastMock: vi.fn(),
   ensureCanonicalBookMock: vi.fn(),
   toggleBookMock: vi.fn(),
+  enterReadingStateMock: vi.fn(),
   mockedSearchState: {
     response: { results: [] as SearchResultDTO[] },
   },
@@ -77,6 +79,10 @@ vi.mock("../../lib/hooks/useToggleBookOnShelf.ts", () => ({
   useToggleBookOnShelf: () => ({
     mutate: toggleBookMock,
   }),
+}));
+
+vi.mock("../../lib/actions/enterReadingState.ts", () => ({
+  enterReadingState: enterReadingStateMock,
 }));
 
 vi.mock("../../lib/hooks/useBookUpload.ts", () => ({
@@ -201,6 +207,10 @@ function buildExternalResult(overrides?: Partial<SearchResultDTO>): SearchResult
     descriptionAr: "",
     coverUrl: "",
     language: "en",
+    available: false,
+    acquired: false,
+    readAccess: "none",
+    readProvider: null,
     hasEbook: false,
     downloadable: false,
     isEbookAvailable: false,
@@ -224,6 +234,7 @@ describe("search modal canonicalization guards", () => {
     navigateMock.mockReset();
     showToastMock.mockReset();
     toggleBookMock.mockReset();
+    enterReadingStateMock.mockReset();
     ensureCanonicalBookMock.mockReset();
     ensureCanonicalBookMock.mockResolvedValue({
       canonicalBookId: "book_canonical_1",
@@ -235,7 +246,7 @@ describe("search modal canonicalization guards", () => {
     cleanup();
   });
 
-  it("AddBookModal resolves external results canonically before add-to-shelf navigation even if synthetic bookId exists", async () => {
+  it("AddBookModal resolves external results canonically before adding to Currently Reading", async () => {
     render(
       <AddBookModal
         isOpen
@@ -259,16 +270,15 @@ describe("search modal canonicalization guards", () => {
     });
 
     expect(toggleBookMock).not.toHaveBeenCalled();
-    expect(navigateMock).toHaveBeenCalledWith(
+    expect(navigateMock).not.toHaveBeenCalled();
+    expect(enterReadingStateMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: "bookDetails",
-        params: expect.objectContaining({
-          bookId: "book_canonical_1",
-          pendingAction: "ADD_TO_SHELF",
-          pendingShelfId: "currently-reading",
-        }),
+        bookId: "book_canonical_1",
+        progress: 0,
+        targetState: "reading",
       })
     );
+    expect(enterReadingStateMock.mock.calls[0][0]).not.toHaveProperty("sourceType");
   });
 
   it("SelectBookModal resolves external results canonically before attach flow even if synthetic bookId exists", async () => {

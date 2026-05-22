@@ -28,6 +28,7 @@ import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
 import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
 import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
 import UnifiedSearchFilterToggle from '../content/UnifiedSearchFilterToggle.tsx';
+import { enterReadingState } from '../../lib/actions/enterReadingState.ts';
 
 interface AddBookModalProps {
   isOpen: boolean;
@@ -96,7 +97,7 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     ? (lang === 'en' ? targetShelf.titleEn : targetShelf.titleAr)
     : '';
   const isProgressManagedShelf =
-    isCurrentlyReadingShelf(targetShelf) || (!targetShelf && targetShelfId === 'currently-reading');
+    isCurrentlyReadingShelf(targetShelf) || targetShelfId === 'currently-reading';
 
   const resolveUploadFileType = (file: File): 'epub' | 'pdf' | null => {
     const lowerName = file.name.toLowerCase();
@@ -151,60 +152,10 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
 
   /**
    * 🔒 Canonical ingest → add to shelf
-   * In insertion mode, this is the PRIMARY action
+   * The + button is the only search-result mutation trigger.
    */
   const handleAdd = async (result: SearchResultDTO) => {
     if (!targetShelfId || busyId) return;
-    if (isProgressManagedShelf) {
-      try {
-        setBusyId(result.id);
-        trackSearchClick({
-          query: searchQuery,
-          clickedRank: clickedRankFor(result.id),
-          result: {
-            ...result,
-            bookId: result.bookId || result.externalId || result.id,
-          },
-        });
-
-        const canonicalBookId = await resolveCanonicalBookId(result);
-        if (!canonicalBookId) {
-          showToast(
-            lang === 'en'
-              ? 'This book is unavailable right now.'
-              : 'هذا الكتاب غير متاح حالياً.'
-          );
-          return;
-        }
-
-        const canonicalNavResult: SearchResultDTO = {
-          ...result,
-          resultType: 'canonical',
-          bookId: canonicalBookId,
-        };
-
-        navigate({
-          type: 'immersive',
-          id: 'bookDetails',
-          params: buildBookDetailsParams(canonicalNavResult, currentView, {
-            searchQuery: searchQuery.trim(),
-            clickedRank: clickedRankFor(result.id),
-            clickTracked: true,
-          }),
-        });
-        onClose();
-      } catch (err) {
-        console.error('[AddBookModal][CURRENTLY_READING_ENTRY_FAILED]', err);
-        showToast(
-          lang === 'en'
-            ? 'Unable to open this book right now.'
-            : 'تعذر فتح هذا الكتاب حالياً.'
-        );
-      } finally {
-        setBusyId(null);
-      }
-      return;
-    }
 
     try {
       setBusyId(result.id);
@@ -232,6 +183,25 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
           resultType: 'canonical',
           bookId: canonicalBookId,
         };
+        if (isProgressManagedShelf) {
+          await enterReadingState({
+            bookId: canonicalBookId,
+            progress: 0,
+            targetState: 'reading',
+          });
+          if (effectiveUid) {
+            await queryClient.invalidateQueries({
+              queryKey: ['currentlyReading', effectiveUid] as unknown as any[],
+            });
+          }
+          showToast(
+            lang === 'en'
+              ? 'Added to Currently Reading'
+              : 'تمت الإضافة إلى تقرأ الآن'
+          );
+          onClose();
+          return;
+        }
         navigate({
           type: 'immersive',
           id: 'bookDetails',
@@ -243,6 +213,26 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
             clickTracked: true,
           }),
         });
+        onClose();
+        return;
+      }
+
+      if (isProgressManagedShelf) {
+        await enterReadingState({
+          bookId: result.bookId,
+          progress: 0,
+          targetState: 'reading',
+        });
+        if (effectiveUid) {
+          await queryClient.invalidateQueries({
+            queryKey: ['currentlyReading', effectiveUid] as unknown as any[],
+          });
+        }
+        showToast(
+          lang === 'en'
+            ? 'Added to Currently Reading'
+            : 'تمت الإضافة إلى تقرأ الآن'
+        );
         onClose();
         return;
       }
@@ -326,8 +316,6 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
     }
   };
 
-  const mode: 'discovery' | 'insertion' =
-    targetShelfId ? 'insertion' : 'discovery';
   const searchErrorMessage =
     searchError instanceof Error && searchError.message.trim().length > 0
       ? searchError.message
@@ -613,7 +601,6 @@ const AddBookModal: React.FC<AddBookModalProps> = ({
                     key={result.id}
                     result={result}
                     lang={lang}
-                    mode={mode}
                     isBusy={busyId === result.id}
                     onAdd={handleAdd}
                     onOpen={handleOpen}

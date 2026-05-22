@@ -1,6 +1,12 @@
 import { Timestamp } from "firebase-admin/firestore";
 
-export type ReadingState = "not_started" | "reading" | "paused" | "abandoned" | "completed";
+export type ReadingState =
+  | "not_started"
+  | "reading"
+  | "paused"
+  | "abandoned"
+  | "completed"
+  | "rereading";
 export type PersistedReadingState = Exclude<ReadingState, "not_started">;
 export type ReaderEvent =
   | "read_start"
@@ -13,9 +19,10 @@ export type ReaderEvent =
 const VALID_TRANSITIONS: Record<ReadingState, ReadingState[]> = {
   not_started: ["reading"],
   reading: ["paused", "abandoned", "completed"],
-  paused: ["reading", "abandoned", "completed"],
+  paused: ["reading", "rereading", "abandoned", "completed"],
   abandoned: ["reading"],
-  completed: ["reading"],
+  completed: ["rereading"],
+  rereading: ["paused", "abandoned", "completed"],
 };
 
 const PERSISTED_READING_STATES = new Set<PersistedReadingState>([
@@ -23,6 +30,7 @@ const PERSISTED_READING_STATES = new Set<PersistedReadingState>([
   "paused",
   "abandoned",
   "completed",
+  "rereading",
 ]);
 
 export function assertValidTransition(from: ReadingState, to: ReadingState): void {
@@ -40,7 +48,11 @@ export function resolveReaderEvent(from: ReadingState, to: ReadingState): Reader
   if ((from === "reading" || from === "paused") && to === "abandoned") return "read_abandon";
   if ((from === "reading" || from === "paused") && to === "completed") return "read_complete";
   if (from === "abandoned" && to === "reading") return "read_resume";
-  if (from === "completed" && to === "reading") return "reread_start";
+  if (from === "completed" && to === "rereading") return "reread_start";
+  if (from === "paused" && to === "rereading") return "read_resume";
+  if (from === "rereading" && to === "paused") return "read_pause";
+  if (from === "rereading" && to === "abandoned") return "read_abandon";
+  if (from === "rereading" && to === "completed") return "read_complete";
   return null;
 }
 
@@ -126,13 +138,13 @@ export function computeReadingProgressMutation(
       previousState === "abandoned" ||
       previousState === "completed"
     ) &&
-    nextState === "reading"
+    (nextState === "reading" || nextState === "rereading")
   ) {
     sessionStartedAt = now;
     sessionCount += 1;
   }
 
-  if (previousState === "reading" && sessionStartedAt) {
+  if ((previousState === "reading" || previousState === "rereading") && sessionStartedAt) {
     const deltaSeconds = Math.max(
       0,
       Math.floor((now.toMillis() - sessionStartedAt.toMillis()) / 1000)

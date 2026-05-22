@@ -164,15 +164,15 @@ describe("readingProgressStateMachine", () => {
       bookId,
       normalizedProgress: 0.02,
       normalizedLastPosition: { page: 2, totalPages: 100 },
-      requestedStateRaw: "reading",
+      requestedStateRaw: "rereading",
       now: t4,
       previousData: completed.payload,
     });
 
     expect(reread.previousState).toBe("completed");
-    expect(reread.nextState).toBe("reading");
+    expect(reread.nextState).toBe("rereading");
     expect(reread.event).toBe("reread_start");
-    expect(reread.payload.status_state).toBe("reading");
+    expect(reread.payload.status_state).toBe("rereading");
     expect(reread.payload.sessionStartedAt).toBe(t4);
   });
 
@@ -225,6 +225,8 @@ describe("readingProgressStateMachine", () => {
     ["not_started", "paused"],
     ["not_started", "abandoned"],
     ["not_started", "completed"],
+    ["not_started", "rereading"],
+    ["completed", "reading"],
     ["completed", "paused"],
     ["completed", "abandoned"],
   ] as Array<[ReadingState, ReadingState]>)("rejects %s -> %s", (from, to) => {
@@ -255,7 +257,9 @@ describe("readingProgressStateMachine", () => {
     expect(resolveReaderEvent("paused", "abandoned")).toBe("read_abandon");
     expect(resolveReaderEvent("reading", "completed")).toBe("read_complete");
     expect(resolveReaderEvent("paused", "completed")).toBe("read_complete");
-    expect(resolveReaderEvent("completed", "reading")).toBe("reread_start");
+    expect(resolveReaderEvent("completed", "rereading")).toBe("reread_start");
+    expect(resolveReaderEvent("rereading", "paused")).toBe("read_pause");
+    expect(resolveReaderEvent("rereading", "completed")).toBe("read_complete");
   });
 
   it("recognizes only persisted reading states as client intents", () => {
@@ -263,6 +267,7 @@ describe("readingProgressStateMachine", () => {
     expect(isPersistedReadingState("paused")).toBe(true);
     expect(isPersistedReadingState("abandoned")).toBe(true);
     expect(isPersistedReadingState("completed")).toBe(true);
+    expect(isPersistedReadingState("rereading")).toBe(true);
     expect(isPersistedReadingState("not_started")).toBe(false);
     expect(isPersistedReadingState("currently_reading")).toBe(false);
   });

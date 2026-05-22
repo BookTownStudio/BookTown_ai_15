@@ -52,8 +52,8 @@ import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import { acquireExternalEbookForRead } from '../lib/books/acquireExternalEbookForRead.ts';
 import type { GraphRelationshipType } from '../types/literaryGraph.ts';
-import { callCallableEndpoint } from '../lib/callable.ts';
 import { useQueryClient } from '../lib/react-query.ts';
+import { enterReadingState } from '../lib/actions/enterReadingState.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
@@ -526,12 +526,6 @@ const BookDetailsScreen: React.FC = () => {
       providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0));
   const canAttemptRead = hasReadableEbook;
   const isPreparingReadableCopy = acquisitionState === 'pending';
-  const manualContinuitySourceType: 'physical' | 'external_ebook' =
-    hasExternalHydrationCandidate ||
-    externalReadableSources.length > 0 ||
-    providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0)
-      ? 'external_ebook'
-      : 'physical';
   const canTrackManualContinuity = Boolean(bookId && book && !hasReadableEbook && !canPrepareReadableCopy);
 
   useEffect(() => {
@@ -682,18 +676,9 @@ const BookDetailsScreen: React.FC = () => {
 
       setIsManualContinuityBusy(true);
       try {
-        await callCallableEndpoint<
-          {
-            bookId: string;
-            sourceType: 'physical' | 'external_ebook';
-            status_state: 'reading';
-            progress?: number;
-          },
-          { ok: boolean }
-        >('recordManualReadingProgress', {
+        await enterReadingState({
           bookId,
-          sourceType: manualContinuitySourceType,
-          status_state: 'reading',
+          targetState: 'reading',
           ...(typeof progress === 'number' ? { progress } : {}),
         });
         queryClient.invalidateQueries({ queryKey: ['currentlyReading'] });

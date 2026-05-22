@@ -10,7 +10,22 @@ import {
 
 const db = admin.firestore();
 
-type ManualSourceType = "physical" | "external_ebook";
+type ManualSourceType =
+  | "physical"
+  | "external_ebook"
+  | "kindle"
+  | "apple_books"
+  | "pdf_external"
+  | "unknown";
+
+const MANUAL_SOURCE_TYPES = new Set<ManualSourceType>([
+  "physical",
+  "external_ebook",
+  "kindle",
+  "apple_books",
+  "pdf_external",
+  "unknown",
+]);
 
 const FORBIDDEN_RUNTIME_FIELDS = [
   "lastAnchor",
@@ -54,10 +69,13 @@ function asProgress(value: unknown): number | null {
 }
 
 function readSourceType(value: unknown): ManualSourceType {
-  if (value === "physical" || value === "external_ebook") {
-    return value;
+  if (typeof value === "string" && MANUAL_SOURCE_TYPES.has(value as ManualSourceType)) {
+    return value as ManualSourceType;
   }
-  throw new HttpsError("invalid-argument", "sourceType must be physical or external_ebook.");
+  throw new HttpsError(
+    "invalid-argument",
+    "sourceType must be physical, external_ebook, kindle, apple_books, pdf_external, or unknown."
+  );
 }
 
 function rejectRuntimeFields(data: Record<string, unknown>): void {
@@ -190,7 +208,13 @@ export const recordManualReadingProgressHandler = async (request: any) => {
 
       const payload: Record<string, unknown> = {
         ...mutation.payload,
-        continuityLevel: sourceType === "external_ebook" ? "partial_runtime" : "manual",
+        continuityLevel:
+          sourceType === "external_ebook" ||
+          sourceType === "kindle" ||
+          sourceType === "apple_books" ||
+          sourceType === "pdf_external"
+            ? "partial_runtime"
+            : "manual",
         continuitySource: "manual",
         sourceType,
         updatedAt: FieldValue.serverTimestamp(),

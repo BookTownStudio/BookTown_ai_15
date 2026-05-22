@@ -20,7 +20,12 @@ export interface ReaderContinuityDTO {
 
 export type OfflineReaderRecordDTO = OfflineEbookRecord;
 
-export type ReadingContinuityState = "reading" | "paused" | "abandoned" | "completed";
+export type ReadingContinuityState =
+  | "reading"
+  | "paused"
+  | "rereading"
+  | "abandoned"
+  | "completed";
 
 export interface ReaderInsightsDTO {
   currentlyReading?: Array<{
