@@ -112,6 +112,43 @@ describe("SearchResultCard", () => {
     expect(onAdd).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps card navigation separate from the add action", () => {
+    const onOpen = vi.fn();
+    const onAdd = vi.fn();
+    render(
+      <SearchResultCard
+        result={buildResult()}
+        lang="en"
+        onOpen={onOpen}
+        onAdd={onAdd}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /canonical book/i }));
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onAdd).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByLabelText("Add book"));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses the canonical 40px add action target", () => {
+    render(
+      <SearchResultCard
+        result={buildResult()}
+        lang="en"
+        onOpen={vi.fn()}
+        onAdd={vi.fn()}
+      />
+    );
+
+    expect(screen.getByLabelText("Add book").className).toContain("!h-10");
+    expect(screen.getByLabelText("Add book").className).toContain("!w-10");
+    expect(screen.getByLabelText("Add book").querySelector("svg")?.className.baseVal).toContain("h-8");
+    expect(screen.getByLabelText("Add book").querySelector("svg")?.className.baseVal).toContain("w-8");
+  });
+
   it("renders semantic truth badges from the existing DTO fields", () => {
     render(
       <SearchResultCard

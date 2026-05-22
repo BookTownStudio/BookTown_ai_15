@@ -54,6 +54,18 @@ export function isCurrentlyReadingShelf(
   return getSemanticSystemShelfId(shelf) === CURRENTLY_READING_SHELF_ID;
 }
 
+export function isSelectableOrganizationalShelf(
+  shelf: Pick<Shelf, 'id' | 'isSystem'> | null | undefined
+): boolean {
+  return !isCurrentlyReadingShelf(shelf);
+}
+
+export function getSelectableOrganizationalShelves<T extends Pick<Shelf, 'id' | 'isSystem'>>(
+  shelves: readonly T[] | null | undefined
+): T[] {
+  return (shelves || []).filter(isSelectableOrganizationalShelf);
+}
+
 export function getSystemShelfSortRank(
   shelf: Pick<Shelf, 'id' | 'isSystem'> | null | undefined
 ): number {

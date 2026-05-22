@@ -14,6 +14,7 @@ import { resolveIngestionSource } from '../../lib/books/searchNavigation.ts';
 import { ensureCanonicalAuthor } from '../../lib/authors/ensureCanonicalAuthor.ts';
 import { Author } from '../../types/entities.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
+import SearchResultCard from '../content/SearchResultCard.tsx';
 
 export interface CuratedSpaceRelationshipRefs {
     bookIds?: string[];
@@ -241,30 +242,17 @@ const SpaceRelationshipCurationField: React.FC<SpaceRelationshipCurationFieldPro
                     />
                     {isSearchingBooks && <div className="flex justify-center py-3"><LoadingSpinner /></div>}
                     {showBookResults && (
-                        <div className="mt-2 max-h-44 overflow-y-auto rounded-md border border-white/10 bg-slate-900/80">
-                            {bookResults.slice(0, 8).map(result => {
-                                const title = lang === 'en' ? result.titleEn || result.title : result.titleAr || result.titleEn || result.title;
-                                const author = lang === 'en' ? result.authorEn : result.authorAr || result.authorEn;
-                                const isBusy = busyId === `book:${result.id}`;
-                                return (
-                                    <button
-                                        key={result.id}
-                                        type="button"
-                                        disabled={disabled || Boolean(busyId)}
-                                        onClick={() => void selectBook(result)}
-                                        className="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2 text-left last:border-b-0 hover:bg-white/5 disabled:opacity-60"
-                                    >
-                                        <div className="h-10 w-8 flex-shrink-0 overflow-hidden rounded-sm bg-slate-800">
-                                            {result.coverUrl && <img src={result.coverUrl} alt="" className="h-full w-full object-cover" />}
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <div className="truncate text-sm font-semibold text-white">{title}</div>
-                                            {author && <div className="truncate text-xs text-white/55">{author}</div>}
-                                        </div>
-                                        {isBusy && <LoadingSpinner />}
-                                    </button>
-                                );
-                            })}
+                        <div className="mt-2 max-h-[28rem] space-y-2 overflow-y-auto rounded-md border border-white/10 bg-slate-900/80 p-2">
+                            {bookResults.slice(0, 8).map(result => (
+                                <SearchResultCard
+                                    key={result.id}
+                                    result={result}
+                                    lang={lang}
+                                    onOpen={selectBook}
+                                    isBusy={busyId === `book:${result.id}`}
+                                    isDisabled={disabled || (Boolean(busyId) && busyId !== `book:${result.id}`)}
+                                />
+                            ))}
                         </div>
                     )}
                 </div>

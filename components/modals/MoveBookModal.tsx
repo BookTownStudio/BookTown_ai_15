@@ -16,7 +16,10 @@ import { queryKeys } from '../../lib/queryKeys.ts';
 import { BookIcon } from '../icons/BookIcon.tsx';
 import { ChevronRightIcon as ArrowRightIcon } from '../icons/ChevronRightIcon.tsx';
 import { Book } from '../../types/entities.ts';
-import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
+import {
+  getSelectableOrganizationalShelves,
+  isCurrentlyReadingShelf,
+} from '../../lib/shelves/systemShelves.ts';
 import { enterReadingState } from '../../lib/actions/enterReadingState.ts';
 import { removeBookFromShelf } from '../../lib/actions/shelfActions.ts';
 
@@ -55,8 +58,8 @@ const MoveBookModal: React.FC<MoveBookModalProps> = ({
 
       return [
         currentlyReadingDestination,
-        ...(shelves || []).filter(
-          shelf => shelf.id !== fromShelfId && !isCurrentlyReadingShelf(shelf)
+        ...getSelectableOrganizationalShelves(shelves).filter(
+          shelf => shelf.id !== fromShelfId
         ),
       ];
     },

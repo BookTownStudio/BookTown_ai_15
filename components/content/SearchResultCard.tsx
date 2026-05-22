@@ -18,7 +18,7 @@ type SemanticChip = {
   value?: string;
 };
 
-interface SearchResultCardProps {
+export interface SearchResultCardProps {
   result: SearchResultDTO;
   lang: 'en' | 'ar';
 
@@ -33,6 +33,8 @@ interface SearchResultCardProps {
   }) => void;
 
   isBusy?: boolean;
+  isDisabled?: boolean;
+  actionSlot?: React.ReactNode;
   className?: string;
 }
 
@@ -42,6 +44,7 @@ interface SearchResultCardProps {
  * - Card click → open details
  * - Eye → read ebook (if available)
  * - Plus → explicit add mutation
+ * - actionSlot → context-specific action chrome without forking layout
  *
  * Guarantees:
  * - Stable DOM
@@ -56,6 +59,8 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   onRead,
   onSemanticChipClick,
   isBusy = false,
+  isDisabled = false,
+  actionSlot,
   className = ''
 }) => {
   const [didAdd, setDidAdd] = useState(false);
@@ -193,7 +198,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   const visibleChips = [...semanticDiscoveryChips, ...semanticChips];
 
   const handlePrimaryAction = () => {
-    if (isBusy) return;
+    if (isBusy || isDisabled) return;
     onOpen?.(result);
   };
 
@@ -219,12 +224,14 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
         }
       }}
       className={cn(
-        'flex gap-3 p-3 rounded-xl cursor-pointer',
+        'flex gap-3 p-3 rounded-xl',
         'bg-slate-800/60 border border-white/10',
         'hover:bg-slate-800 transition-colors',
         'focus:outline-none focus:ring-2 focus:ring-accent',
+        isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
         className
       )}
+      aria-disabled={isDisabled}
     >
       {/* Cover */}
       <div className="w-14 h-20 flex-shrink-0 bg-slate-700 rounded-md overflow-hidden">
@@ -307,10 +314,14 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
 
       {/* Actions */}
       <div className="flex flex-col gap-2 justify-center items-center">
+        {actionSlot ? (
+          <div onClick={(e) => e.stopPropagation()}>{actionSlot}</div>
+        ) : null}
+
         {canRead && (
           <button
             type="button"
-            disabled={isBusy}
+            disabled={isBusy || isDisabled}
             title={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
             onClick={(e) => {
               e.stopPropagation();
@@ -326,17 +337,23 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
           </button>
         )}
 
-        {canAdd && (
+        {!actionSlot && canAdd && (
           <Button
             variant="icon"
-            aria-label="Add book"
+            aria-label={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
+            title={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
             className={cn(
-              "!h-9 !w-9 transition-all",
-              didAdd && "!bg-accent/20 !border !border-accent/40"
+              "!h-10 !w-10 !min-h-10 !min-w-10",
+              "!rounded-full !border !border-accent/45",
+              "!bg-accent/20 !text-accent shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_20px_rgba(0,0,0,0.22)]",
+              "transition-all hover:!bg-accent/30 hover:!border-accent/70",
+              "active:scale-95 focus-visible:!ring-2 focus-visible:!ring-accent focus-visible:!ring-offset-2 focus-visible:!ring-offset-slate-950",
+              didAdd && "!bg-accent/30 !border-accent/80"
             )}
-            disabled={isBusy}
+            disabled={isBusy || isDisabled}
             onClick={(e) => {
               e.stopPropagation();
+              if (isDisabled) return;
               onAdd?.(result);
               triggerAddFeedback();
             }}
@@ -346,7 +363,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
             ) : didAdd ? (
               <CheckCircleIcon className="h-5 w-5 text-accent" />
             ) : (
-              <PlusIcon className="h-5 w-5" />
+              <PlusIcon className="h-8 w-8" />
             )}
           </Button>
         )}

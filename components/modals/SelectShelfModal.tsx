@@ -10,7 +10,7 @@ import { BookIcon } from '../icons/BookIcon.tsx';
 import { CheckIcon } from '../icons/CheckIcon.tsx';
 import { Book } from '../../types/entities.ts';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
-import { isCurrentlyReadingShelf } from '../../lib/shelves/systemShelves.ts';
+import { getSelectableOrganizationalShelves } from '../../lib/shelves/systemShelves.ts';
 
 interface SelectShelfModalProps {
   isOpen: boolean;
@@ -44,7 +44,7 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
 
   // Canonical membership state
   const { isOnShelf } = useBookShelfStatus(bookId);
-  const selectableShelves = shelves?.filter((shelf) => !isCurrentlyReadingShelf(shelf)) || [];
+  const selectableShelves = getSelectableOrganizationalShelves(shelves);
 
   /**
    * Emit shelf intent only.

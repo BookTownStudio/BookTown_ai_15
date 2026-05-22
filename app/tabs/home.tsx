@@ -12,6 +12,7 @@ import HomeSearchBar from '../../components/content/HomeSearchBar.tsx';
 import CameraCaptureModal from '../../components/modals/CameraCaptureModal.tsx';
 import VoiceSearchModal from '../../components/modals/VoiceSearchModal.tsx';
 import AddBookModal from '../../components/modals/AddBookModal.tsx';
+import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { useSearchHistory } from '../../lib/hooks/useSearchHistory.ts';
 import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
 import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
@@ -25,7 +26,10 @@ import { useToast } from '../../store/toast.tsx';
 import SearchResultCard from '../../components/content/SearchResultCard.tsx';
 import CanonicalCoverArtwork from '../../components/content/CanonicalCoverArtwork.tsx';
 import { staggerContainer, listItemVariants } from '../../lib/motion.ts';
-import { buildBookDetailsParams } from '../../lib/books/searchNavigation.ts';
+import {
+  buildBookDetailsParams,
+  resolveIngestionSource,
+} from '../../lib/books/searchNavigation.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 import { logBookEngineV2 } from '../../lib/logging/bookEngineV2Log.ts';
 import { trackSearchClick } from '../../services/searchTelemetryService.ts';
@@ -41,10 +45,19 @@ import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { SocialIcon } from '../../components/icons/SocialIcon.tsx';
 import { ChevronDownIcon } from '../../components/icons/ChevronDownIcon.tsx';
 import { PlusIcon } from '../../components/icons/PlusIcon.tsx';
+import { CheckIcon } from '../../components/icons/CheckIcon.tsx';
 import {
   HomeConsoleBookItem,
   useHomeDiscoveryConsole,
 } from '../../lib/hooks/useHomeDiscoveryConsole.ts';
+import { useUserShelves } from '../../lib/hooks/useUserShelves.ts';
+import { useToggleBookOnShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
+import { useQueryClient } from '../../lib/react-query.ts';
+import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
+import { buildLegacyBookView } from '../../lib/books/buildLegacyBookView.ts';
+import { enterReadingState } from '../../lib/actions/enterReadingState.ts';
+import { getSelectableOrganizationalShelves } from '../../lib/shelves/systemShelves.ts';
+import type { Shelf } from '../../types/entities.ts';
 
 function homeBookToCardBook(item: HomeConsoleBookItem): any {
   return {
@@ -128,10 +141,177 @@ type ContinuityStarterSelection =
 
 type ContinuitySelection = ContinuityBookSelection | ContinuityStarterSelection;
 
+type HomeShelfTarget =
+  | {
+      id: 'currently-reading';
+      titleEn: string;
+      titleAr: string;
+      kind: 'currently-reading';
+    }
+  | {
+      id: string;
+      titleEn: string;
+      titleAr: string;
+      kind: 'shelf';
+    };
+
+const CURRENTLY_READING_TARGET: HomeShelfTarget = {
+  id: 'currently-reading',
+  titleEn: 'Currently Reading',
+  titleAr: 'تقرأ الآن',
+  kind: 'currently-reading',
+};
+
+function buildHomeShelfTargets(shelves: readonly Shelf[] | null | undefined): HomeShelfTarget[] {
+  const organizationalShelves = getSelectableOrganizationalShelves(shelves).map((shelf) => ({
+    id: shelf.id,
+    titleEn: shelf.titleEn,
+    titleAr: shelf.titleAr,
+    kind: 'shelf' as const,
+  }));
+
+  return [CURRENTLY_READING_TARGET, ...organizationalShelves];
+}
+
+const HomeShelfActionSlot: React.FC<{
+  resultId: string;
+  lang: 'en' | 'ar';
+  isOpen: boolean;
+  isBusy: boolean;
+  shelfTargets: HomeShelfTarget[];
+  activeMutationKey: string | null;
+  onToggle: () => void;
+  onDismiss: () => void;
+  onSelectShelf: (target: HomeShelfTarget) => void;
+}> = ({
+  resultId,
+  lang,
+  isOpen,
+  isBusy,
+  shelfTargets,
+  activeMutationKey,
+  onToggle,
+  onDismiss,
+  onSelectShelf,
+}) => {
+  const containerRef = React.useRef<HTMLDivElement | null>(null);
+
+  React.useEffect(() => {
+    if (!isOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const container = containerRef.current;
+      if (!container || container.contains(event.target as Node)) return;
+
+      event.preventDefault();
+      event.stopPropagation();
+      onDismiss();
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown, {
+      capture: true,
+      passive: false,
+    });
+
+    return () => {
+      document.removeEventListener('pointerdown', handlePointerDown, {
+        capture: true,
+      });
+    };
+  }, [isOpen, onDismiss]);
+
+  return (
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        aria-label={lang === 'en' ? 'Add book to shelf' : 'إضافة كتاب إلى رف'}
+        aria-expanded={isOpen}
+        aria-haspopup="menu"
+        disabled={isBusy}
+        onPointerDown={(event) => {
+          event.stopPropagation();
+        }}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggle();
+        }}
+        className="flex h-10 w-10 min-h-10 min-w-10 items-center justify-center rounded-full border border-accent/45 bg-accent/20 text-accent shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_20px_rgba(0,0,0,0.22)] transition-all hover:bg-accent/30 hover:border-accent/70 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950 disabled:cursor-not-allowed disabled:opacity-60"
+      >
+        <PlusIcon className="h-8 w-8" />
+      </button>
+
+      {isOpen && (
+        <div
+          role="menu"
+          data-testid="home-shelf-selector-panel"
+          aria-label={lang === 'en' ? 'Choose shelf' : 'اختر رفًا'}
+          className="absolute right-0 top-full z-40 mt-2 w-[min(13.5rem,calc(100vw-2rem))] origin-top-right animate-fade-in overflow-hidden rounded-2xl border border-white/15 bg-white/80 p-1.5 text-left shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.36)]"
+        >
+          <div className="mb-1 border-b border-black/5 px-2.5 py-2 dark:border-white/10">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-white/50">
+              {lang === 'en' ? 'Add to' : 'إضافة إلى'}
+            </p>
+          </div>
+
+          <div className="space-y-1">
+            {shelfTargets.map((target) => {
+              const mutationKey = `${resultId}:${target.id}`;
+              const isTargetBusy = activeMutationKey === mutationKey;
+              const isCurrentlyReadingTarget = target.kind === 'currently-reading';
+
+              return (
+                <button
+                  key={target.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={Boolean(activeMutationKey)}
+                  onPointerDown={(event) => {
+                    event.stopPropagation();
+                  }}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onSelectShelf(target);
+                  }}
+                  className="group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-slate-800 transition-colors hover:bg-black/5 active:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 dark:text-white/88 dark:hover:bg-white/10 dark:active:bg-white/15"
+                >
+                  <span
+                    className={[
+                      'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border transition-colors',
+                      isCurrentlyReadingTarget
+                        ? 'border-accent/35 bg-accent/15 text-accent'
+                        : 'border-black/10 bg-black/[0.03] text-slate-500 group-hover:border-accent/25 group-hover:text-accent dark:border-white/10 dark:bg-white/[0.06] dark:text-white/55',
+                    ].join(' ')}
+                    aria-hidden="true"
+                  >
+                    {isTargetBusy ? (
+                      <LoadingSpinner className="!h-3.5 !w-3.5" />
+                    ) : isCurrentlyReadingTarget ? (
+                      <BookIcon className="h-3.5 w-3.5" />
+                    ) : (
+                      <CheckIcon className="h-3.5 w-3.5 opacity-0" />
+                    )}
+                  </span>
+
+                  <span className="min-w-0 flex-1 truncate font-medium leading-tight">
+                    {lang === 'en' ? target.titleEn : target.titleAr || target.titleEn}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const HomeScreen: React.FC = () => {
   const { lang } = useI18n();
   const { navigate, currentView, resetTokens } = useNavigation();
   const { showToast } = useToast();
+  const queryClient = useQueryClient();
+  const { data: shelves } = useUserShelves();
+  const { mutate: toggleBookOnShelf } = useToggleBookOnShelf();
   const {
     data: homeConsole,
     isLoading: isHomeConsoleLoading,
@@ -160,6 +340,8 @@ const HomeScreen: React.FC = () => {
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
   const [isAddBookModalOpen, setIsAddBookModalOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [openShelfSelectorResultId, setOpenShelfSelectorResultId] = useState<string | null>(null);
+  const [homeShelfMutationKey, setHomeShelfMutationKey] = useState<string | null>(null);
   const [starterSelection, setStarterSelection] = useState<ContinuityStarterSelection | null>(null);
   const [activeDiscoverStream, setActiveDiscoverStream] = useState<DiscoverStream>('Hidden Gems');
   const [isDiscoverStreamMenuOpen, setIsDiscoverStreamMenuOpen] = useState(false);
@@ -180,6 +362,8 @@ const HomeScreen: React.FC = () => {
     previousHomeResetTokenRef.current = resetTokens.home;
     clearSearch();
     setBusyId(null);
+    setOpenShelfSelectorResultId(null);
+    setHomeShelfMutationKey(null);
     setIsDiscoverStreamMenuOpen(false);
   }, [clearSearch, resetTokens.home]);
 
@@ -219,6 +403,22 @@ const HomeScreen: React.FC = () => {
   }, [isDiscoverStreamMenuOpen]);
 
   useEffect(() => {
+    if (!openShelfSelectorResultId) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setOpenShelfSelectorResultId(null);
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [openShelfSelectorResultId]);
+
+  useEffect(() => {
     setIsDiscoverStreamMenuOpen(false);
   }, [currentView]);
 
@@ -254,6 +454,10 @@ const HomeScreen: React.FC = () => {
     const index = searchResults.findIndex((entry) => entry.id === id);
     return index >= 0 ? index + 1 : 1;
   };
+  const homeShelfTargets = React.useMemo(
+    () => buildHomeShelfTargets(shelves),
+    [shelves]
+  );
 
   useEffect(() => {
     if (searchQuery.trim().length < 2) return;
@@ -358,6 +562,139 @@ const HomeScreen: React.FC = () => {
       );
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const resolveCanonicalBookId = async (result: SearchResultDTO): Promise<string | null> => {
+    if (
+      result.resultType === 'canonical' &&
+      typeof result.bookId === 'string' &&
+      result.bookId.trim().length > 0
+    ) {
+      return result.bookId.trim();
+    }
+
+    const source = resolveIngestionSource(result);
+    if (!source) return null;
+
+    const resolved = await ensureCanonicalBook({
+      providerExternalId: result.externalId || result.id,
+      source,
+      rawBook: result.rawBook || {
+        id: result.externalId || result.id,
+        externalId: result.externalId || result.id,
+        source,
+        title: result.title,
+        titleEn: result.titleEn,
+        titleAr: result.titleAr,
+        authors: result.authors,
+        authorEn: result.authorEn,
+        authorAr: result.authorAr,
+        description: result.description,
+        descriptionEn: result.descriptionEn,
+        descriptionAr: result.descriptionAr,
+      },
+    });
+
+    return resolved?.canonicalBookId || null;
+  };
+
+  const buildBookViewForShelf = (result: SearchResultDTO, bookId: string) =>
+    buildLegacyBookView({
+      id: bookId,
+      titleEn: result.titleEn || result.title,
+      titleAr: result.titleAr,
+      authorEn: result.authorEn,
+      authorAr: result.authorAr,
+      coverUrl: result.coverUrl,
+      isEbookAvailable: result.ebookClass === 'in_app',
+    });
+
+  const handleSelectHomeShelf = async (
+    result: SearchResultDTO,
+    target: HomeShelfTarget
+  ) => {
+    if (busyId || homeShelfMutationKey) return;
+
+    const mutationKey = `${result.id}:${target.id}`;
+    setHomeShelfMutationKey(mutationKey);
+
+    try {
+      trackSearchClick({
+        query: searchQuery,
+        clickedRank: clickedRankFor(result.id),
+        result: {
+          ...result,
+          bookId: result.bookId || result.externalId || result.id,
+        },
+      });
+
+      const canonicalBookId = await resolveCanonicalBookId(result);
+      if (!canonicalBookId) {
+        showToast(
+          lang === 'en'
+            ? 'This book is unavailable right now.'
+            : 'هذا الكتاب غير متاح حالياً.'
+        );
+        setHomeShelfMutationKey(null);
+        return;
+      }
+
+      if (target.kind === 'currently-reading') {
+        await enterReadingState({
+          bookId: canonicalBookId,
+          progress: 0,
+          targetState: 'reading',
+        });
+        await queryClient.invalidateQueries({ queryKey: ['currentlyReading'] });
+        setOpenShelfSelectorResultId(null);
+        showToast(
+          lang === 'en'
+            ? 'Added to Currently Reading'
+            : 'تمت الإضافة إلى تقرأ الآن'
+        );
+        return;
+      }
+
+      toggleBookOnShelf(
+        {
+          shelfId: target.id,
+          bookId: canonicalBookId,
+          book: buildBookViewForShelf(result, canonicalBookId),
+        },
+        {
+          onSuccess: () => {
+            setOpenShelfSelectorResultId(null);
+            showToast(
+              lang === 'en'
+                ? `Added to ${target.titleEn}`
+                : `تمت الإضافة إلى ${target.titleAr || target.titleEn}`
+            );
+          },
+          onError: () => {
+            showToast(
+              lang === 'en'
+                ? 'Unable to add this book to the selected shelf.'
+                : 'تعذر إضافة هذا الكتاب إلى الرف المحدد.'
+            );
+          },
+          onSettled: () => {
+            setHomeShelfMutationKey(null);
+          },
+        }
+      );
+    } catch (err) {
+      console.error('[HOME][ADD_TO_SHELF_FAILED]', err);
+      setHomeShelfMutationKey(null);
+      showToast(
+        lang === 'en'
+          ? 'Unable to add this book to the selected shelf.'
+          : 'تعذر إضافة هذا الكتاب إلى الرف المحدد.'
+      );
+    } finally {
+      if (target.kind === 'currently-reading') {
+        setHomeShelfMutationKey(null);
+      }
     }
   };
 
@@ -515,10 +852,27 @@ const HomeScreen: React.FC = () => {
                 key={result.id}
                 result={result}
                 lang={lang}
-                isBusy={busyId === result.id}
+                isBusy={busyId === result.id || homeShelfMutationKey?.startsWith(`${result.id}:`)}
                 onOpen={handleOpenResult}
                 onRead={handleReadResult}
                 onSemanticChipClick={handleSemanticChipClick}
+                actionSlot={
+                  <HomeShelfActionSlot
+                    resultId={result.id}
+                    lang={lang}
+                    isOpen={openShelfSelectorResultId === result.id}
+                    isBusy={Boolean(busyId) || Boolean(homeShelfMutationKey)}
+                    shelfTargets={homeShelfTargets}
+                    activeMutationKey={homeShelfMutationKey}
+                    onToggle={() =>
+                      setOpenShelfSelectorResultId((current) =>
+                        current === result.id ? null : result.id
+                      )
+                    }
+                    onDismiss={() => setOpenShelfSelectorResultId(null)}
+                    onSelectShelf={(target) => handleSelectHomeShelf(result, target)}
+                  />
+                }
               />
             ))}
           </div>
