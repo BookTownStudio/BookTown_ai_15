@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -10,7 +10,9 @@ import { useSubmitFeedback } from '../../lib/hooks/useSubmitFeedback.ts';
 import { useFeedbackAttachmentUpload, validateFeedbackAttachmentFile } from '../../lib/hooks/useFeedbackAttachmentUpload.ts';
 import { MediaIcon } from '../../components/icons/MediaIcon.tsx';
 import { CheckCircleIcon } from '../../components/icons/CheckCircleIcon.tsx';
+import { XIcon } from '../../components/icons/XIcon.tsx';
 import ContentRail from '../../components/layout/ContentRail.tsx';
+import { cn } from '../../lib/utils.ts';
 import type { FeedbackIntentType } from '../../contracts/apiContracts.ts';
 import {
     FEEDBACK_SOFT_COOLDOWN_MS,
@@ -74,6 +76,29 @@ const FeedbackScreen: React.FC = () => {
 
     const returnToPreviousSurface = () => navigate(returnView || { type: 'tab', id: 'home' });
     const handleBack = () => returnToPreviousSurface();
+    const hasUnsavedDraft = text.trim().length > 0 || attachments.length > 0;
+    const requestContextualDismiss = useCallback(() => {
+        if (!isContextualLaunch) {
+            navigate(returnView || { type: 'tab', id: 'home' });
+            return;
+        }
+        if (!hasUnsavedDraft || window.confirm(lang === 'en' ? 'Discard this feedback draft?' : 'هل تريد تجاهل مسودة الملاحظات؟')) {
+            navigate(returnView || { type: 'tab', id: 'home' });
+        }
+    }, [hasUnsavedDraft, isContextualLaunch, lang, navigate, returnView]);
+
+    useEffect(() => {
+        if (!isContextualLaunch) return undefined;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                requestContextualDismiss();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isContextualLaunch, requestContextualDismiss]);
     
     const resetForm = () => {
         setFeedbackType('bug');
@@ -132,11 +157,13 @@ const FeedbackScreen: React.FC = () => {
 
     const isCooldownActive = cooldownRemainingMs > 0;
     
-    if (isSubmitted) {
-        return (
-            <div className="h-screen flex flex-col">
-                <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
-                <main className="flex-grow overflow-y-auto pt-24 pb-8 flex items-center justify-center">
+    const renderSuccess = () => (
+        <>
+                {!isContextualLaunch && <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />}
+                <main className={cn(
+                    "flex-grow overflow-y-auto pb-8 flex items-center justify-center",
+                    isContextualLaunch ? "pt-4" : "pt-24"
+                )}>
                     <ContentRail variant="narrow" className="text-center">
                         <CheckCircleIcon className="h-16 w-16 text-accent mx-auto mb-4" />
                         <BilingualText role="H1" className="!text-2xl">
@@ -162,16 +189,35 @@ const FeedbackScreen: React.FC = () => {
                         </Button>
                     </ContentRail>
                 </main>
-            </div>
-        )
-    }
+        </>
+    );
 
-    return (
-        <div className="h-screen flex flex-col">
-            <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />
-            <main className="flex-grow overflow-y-auto pt-24 pb-8">
+    const renderForm = () => (
+        <>
+            {!isContextualLaunch && <ScreenHeader titleEn="Feedback" titleAr="ملاحظات" onBack={handleBack} />}
+            <main className={cn(
+                "flex-grow overflow-y-auto pb-8",
+                isContextualLaunch ? "pt-4" : "pt-24"
+            )}>
                 <ContentRail variant="narrow">
                     <form onSubmit={handleSubmit} className="space-y-6">
+                        {isContextualLaunch && (
+                            <div className="flex items-start justify-between gap-4 pb-1">
+                                <div>
+                                    <BilingualText role="H1" className="!text-xl">
+                                        {lang === 'en' ? 'Feedback' : 'ملاحظات'}
+                                    </BilingualText>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={requestContextualDismiss}
+                                    className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-slate-500 transition-colors hover:bg-black/5 hover:text-slate-900 dark:text-white/60 dark:hover:bg-white/10 dark:hover:text-white"
+                                    aria-label={lang === 'en' ? 'Close feedback' : 'إغلاق الملاحظات'}
+                                >
+                                    <XIcon className="h-5 w-5" />
+                                </button>
+                            </div>
+                        )}
                         <div>
                             <BilingualText role="Caption" className="!text-slate-700 dark:!text-white/80 mb-2 block">
                                 {lang === 'en' ? 'Type of Feedback' : 'نوع الملاحظات'}
@@ -263,6 +309,38 @@ const FeedbackScreen: React.FC = () => {
                     </form>
                 </ContentRail>
             </main>
+        </>
+    );
+
+    const content = isSubmitted ? renderSuccess() : renderForm();
+
+    if (isContextualLaunch) {
+        return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6" role="dialog" aria-modal="true" aria-label={lang === 'en' ? 'Feedback' : 'ملاحظات'}>
+                <div
+                    className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                    onClick={requestContextualDismiss}
+                    data-testid="feedback-overlay-backdrop"
+                    aria-hidden="true"
+                />
+                <section className="relative z-10 flex max-h-[calc(100dvh-2rem)] w-full max-w-[min(var(--app-rail-narrow,760px),calc(100vw-2rem))] flex-col overflow-y-auto overscroll-y-contain rounded-card border border-black/5 bg-gray-100/95 p-6 shadow-2xl shadow-black/50 dark:border-white/10 dark:bg-slate-800/95">
+                    {content}
+                </section>
+            </div>
+        );
+    }
+
+    if (isSubmitted) {
+        return (
+            <div className="h-screen flex flex-col">
+                {content}
+            </div>
+        );
+    }
+
+    return (
+        <div className="h-screen flex flex-col">
+            {content}
         </div>
     );
 };

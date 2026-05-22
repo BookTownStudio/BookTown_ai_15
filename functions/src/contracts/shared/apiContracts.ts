@@ -269,6 +269,24 @@ const adminHomePlacementPreviewSchema = z
   })
   .strict();
 
+const continuityStarterPoolRecordSchema = z
+  .object({
+    id: z.string().min(1).max(180),
+    title: z.string().min(1).max(300),
+    author: z.string().min(1).max(300),
+    language: z.enum(["en", "ar", "fr", "es"]),
+    futureCanonicalKey: z.string().min(1).max(500),
+    canonicalBookId: z.string().min(1).max(180).nullable(),
+    status: z.enum(["placeholder", "canonical_linked", "readable", "paused"]),
+    active: z.boolean(),
+    priority: z.number().int().min(0).max(1000),
+    onboardingWeight: z.number().min(0).max(10),
+    notes: z.string().max(500),
+    createdAt: z.string().nullable(),
+    updatedAt: z.string().nullable(),
+  })
+  .strict();
+
 const canonicalAnchorV1Schema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -927,6 +945,25 @@ const catalogBookSchema = z
       .optional(),
   })
   .strict();
+
+const continuityStarterSelectionSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("canonical"),
+      authority: z.literal("continuity_starter_pool_v1"),
+      starter: continuityStarterPoolRecordSchema,
+      book: catalogBookSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("placeholder"),
+      authority: z.literal("continuity_starter_pool_v1"),
+      starter: continuityStarterPoolRecordSchema,
+      book: z.null(),
+    })
+    .strict(),
+]);
 
 const literaryRelationshipTypeSchema = z.enum([
   "influenced_by",
@@ -2118,7 +2155,7 @@ export const apiContracts = {
 
     selectHomeContinuityBook: defineContract(
       z.object({ mode: z.enum(["surprise", "starter"]) }).strict(),
-      catalogBookSchema,
+      z.union([catalogBookSchema, continuityStarterSelectionSchema]),
       "httpsCallable",
       {
         callSites: ["app/tabs/home.tsx"],
@@ -2193,6 +2230,28 @@ export const apiContracts = {
     adminPreviewHomePlacement: defineContract(
       adminHomeEditorialEntrySchema.omit({ createdBy: true, createdAt: true, updatedAt: true }),
       z.object({ preview: adminHomePlacementPreviewSchema }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
+    ),
+
+    adminListContinuityStarterPool: defineContract(
+      z.object({}).strict(),
+      z.object({ starters: z.array(continuityStarterPoolRecordSchema).max(50) }).strict(),
+      "httpsCallable",
+      { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
+    ),
+
+    adminUpdateContinuityStarterPoolEntry: defineContract(
+      z.object({
+        id: z.string().min(1).max(180),
+        active: z.boolean().optional(),
+        priority: z.number().int().min(0).max(1000).optional(),
+        onboardingWeight: z.number().min(0).max(10).optional(),
+        notes: z.string().max(500).optional(),
+        canonicalBookId: z.string().min(1).max(180).nullable().optional(),
+        status: z.enum(["placeholder", "canonical_linked", "readable", "paused"]).optional(),
+      }).strict(),
+      z.object({ starter: continuityStarterPoolRecordSchema }).strict(),
       "httpsCallable",
       { callSites: ["lib/services/adminService.ts", "components/admin/HomeGovernanceTab.tsx"] }
     ),

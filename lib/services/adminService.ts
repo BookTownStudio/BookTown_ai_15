@@ -435,6 +435,22 @@ export type AdminHomePlacementPreview = {
   canActivate: boolean;
 };
 
+export type ContinuityStarterPoolRecord = {
+  id: string;
+  title: string;
+  author: string;
+  language: 'en' | 'ar' | 'fr' | 'es';
+  futureCanonicalKey: string;
+  canonicalBookId: string | null;
+  status: 'placeholder' | 'canonical_linked' | 'readable' | 'paused';
+  active: boolean;
+  priority: number;
+  onboardingWeight: number;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
 export type AdminHomeEditorialPreview = {
   region: string | null;
   language: string | null;
@@ -507,6 +523,7 @@ export const adminServiceQueryKeys = {
     ['admin', 'feedback', 'report', feedbackId ?? null] as const,
   spaces: (query: string) => ['admin', 'spaces', query.trim().toLowerCase()] as const,
   homeEditorial: ['admin', 'homeEditorial'] as const,
+  continuityStarterPool: ['admin', 'continuityStarterPool'] as const,
   homeEditorialPreview: (region: string, language: string) =>
     ['admin', 'homeEditorial', 'preview', region.trim().toLowerCase(), language.trim().toLowerCase()] as const,
 };
@@ -1587,6 +1604,30 @@ export const adminService = {
       { preview: AdminHomePlacementPreview }
     >('adminPreviewHomePlacement', payload);
     return data.preview;
+  },
+
+  async listContinuityStarterPool(): Promise<ContinuityStarterPoolRecord[]> {
+    const data = await callCallableEndpoint<Record<string, never>, { starters: ContinuityStarterPoolRecord[] }>(
+      'adminListContinuityStarterPool',
+      {}
+    );
+    return Array.isArray(data.starters) ? data.starters : [];
+  },
+
+  async updateContinuityStarterPoolEntry(params: {
+    id: string;
+    active?: boolean;
+    priority?: number;
+    onboardingWeight?: number;
+    notes?: string;
+    canonicalBookId?: string | null;
+    status?: ContinuityStarterPoolRecord['status'];
+  }): Promise<ContinuityStarterPoolRecord> {
+    const data = await callCallableEndpoint<
+      typeof params,
+      { starter: ContinuityStarterPoolRecord }
+    >('adminUpdateContinuityStarterPoolEntry', params);
+    return data.starter;
   },
 
   async disableHomeEditorialEntry(id: string): Promise<void> {

@@ -9,6 +9,7 @@ import {
   type AdminHomeEditorialEntry,
   type AdminHomePlacementPreview,
   type AdminHomeTargetPreview,
+  type ContinuityStarterPoolRecord,
   type HomeDiscoverStreamKey,
 } from '../../lib/services/adminService.ts';
 
@@ -91,6 +92,11 @@ const HomeGovernanceTab: React.FC = () => {
     queryFn: () => adminService.previewHomeEditorialConsole({ region, language }),
   });
 
+  const { data: starterPool = [], isLoading: isStarterPoolLoading } = useQuery<ContinuityStarterPoolRecord[]>({
+    queryKey: adminServiceQueryKeys.continuityStarterPool as unknown as any[],
+    queryFn: () => adminService.listContinuityStarterPool(),
+  });
+
   const searchMutation = useMutation({
     mutationFn: () => adminService.searchHomeTargets({
       query: targetInput,
@@ -154,6 +160,12 @@ const HomeGovernanceTab: React.FC = () => {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => adminService.deleteHomeEditorialEntry(id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'homeEditorial'] }),
+  });
+
+  const starterPoolMutation = useMutation({
+    mutationFn: (params: { id: string; active: boolean }) =>
+      adminService.updateContinuityStarterPoolEntry(params),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: adminServiceQueryKeys.continuityStarterPool as unknown as any[] }),
   });
 
   const occupancy = useMemo(() => {
@@ -373,8 +385,30 @@ const HomeGovernanceTab: React.FC = () => {
         <h3 className="text-base font-semibold text-white">Continuity Doorways</h3>
         <p className="mt-1 text-sm text-slate-400">Protected policy only. Starter book, Surprise Me, and Add Book doorways remain separate from user continuity memory.</p>
         <div className="mt-3 grid gap-3 md:grid-cols-3">
-          {['Add Book doorway enabled', 'Surprise doorway server-selected', 'Starter book opens reader authority'].map((label) => (
+          {['Add Book doorway enabled', 'Surprise doorway server-selected', 'Starter pool uses canonical-safe records'].map((label) => (
             <div key={label} className="rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-200">{label}</div>
+          ))}
+        </div>
+        <div className="mt-4 space-y-2">
+          <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">Starter Pool</div>
+          {isStarterPoolLoading && <LoadingSpinner />}
+          {!isStarterPoolLoading && starterPool.map((starter) => (
+            <div key={starter.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-white/10 bg-white/5 p-3 text-sm text-slate-200">
+              <div>
+                <div className="font-semibold">{starter.title}</div>
+                <div className="text-xs text-slate-400">
+                  {starter.author} · {starter.language.toUpperCase()} · {starter.status}
+                  {starter.canonicalBookId ? ` · canonical ${starter.canonicalBookId}` : ' · awaiting canonical ingestion'}
+                </div>
+              </div>
+              <Button
+                variant="secondary"
+                disabled={starterPoolMutation.isPending}
+                onClick={() => starterPoolMutation.mutate({ id: starter.id, active: !starter.active })}
+              >
+                {starter.active ? 'Pause' : 'Activate'}
+              </Button>
+            </div>
           ))}
         </div>
       </section>

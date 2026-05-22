@@ -4,6 +4,7 @@ import { admin } from "../firebaseAdmin";
 import { buildCatalogBookView, isPublicReadableBook } from "../catalog/catalogBookView";
 import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 import { canUserReadBook } from "../rights/bookRights";
+import { selectContinuityStarter } from "./continuityStarterPool";
 
 const db = admin.firestore();
 const CANDIDATE_LIMIT = 120;
@@ -284,5 +285,8 @@ export const selectHomeContinuityBook = onCall({ cors: true }, async (request) =
   }
 
   const mode = request.data?.mode === "starter" ? "starter" : "surprise";
+  if (mode === "starter") {
+    return selectContinuityStarter(uid);
+  }
   return selectBook(uid, mode);
 });

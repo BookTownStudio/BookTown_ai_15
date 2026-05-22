@@ -87,8 +87,22 @@ vi.mock("../../components/layout/ContentRail.tsx", () => ({
 describe("canonical feedback contextual return", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    currentViewState.type = "immersive";
+    currentViewState.id = "feedback";
+    currentViewState.params = {
+      from: { type: "tab", id: "social", params: { feedbackReturnState: { scope: "books", filters: ["quote"], scrollTop: 320 } } },
+      feedbackSource: "appnav_beta",
+      feedbackContext: {
+        route: "/social",
+        viewId: "social",
+        navigationType: "tab",
+        activeTab: "social",
+        locale: "en",
+      },
+    };
     navigateMock.mockReset();
     submitFeedbackMock.mockReset();
+    vi.restoreAllMocks();
     submitFeedbackMock.mockImplementation((_payload, options) => {
       void options?.onSuccess?.({
         feedbackId: "feedback-1",
@@ -124,11 +138,41 @@ describe("canonical feedback contextual return", () => {
     });
   });
 
-  it("returns to the prior surface when contextual feedback is closed", () => {
+  it("returns to the prior surface when contextual feedback is closed with the X button", () => {
+    render(<FeedbackScreen />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close feedback" }));
+
+    expect(navigateMock).toHaveBeenCalledWith(currentViewState.params.from);
+  });
+
+  it("dismisses contextual feedback on outside click when the draft is empty", () => {
+    render(<FeedbackScreen />);
+
+    fireEvent.click(screen.getByTestId("feedback-overlay-backdrop"));
+
+    expect(navigateMock).toHaveBeenCalledWith(currentViewState.params.from);
+  });
+
+  it("asks for confirmation before dismissing contextual feedback with unsaved text", () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<FeedbackScreen />);
+
+    fireEvent.change(screen.getByPlaceholderText("Please provide as much detail as possible..."), {
+      target: { value: "Unsaved note" },
+    });
+    fireEvent.click(screen.getByTestId("feedback-overlay-backdrop"));
+
+    expect(confirmSpy).toHaveBeenCalledWith("Discard this feedback draft?");
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps permanent Drawer feedback as a navigation page with back behavior", () => {
+    currentViewState.params = {};
     render(<FeedbackScreen />);
 
     fireEvent.click(screen.getByText("Back"));
 
-    expect(navigateMock).toHaveBeenCalledWith(currentViewState.params.from);
+    expect(navigateMock).toHaveBeenCalledWith({ type: "tab", id: "home" });
   });
 });

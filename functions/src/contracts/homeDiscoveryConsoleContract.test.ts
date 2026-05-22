@@ -294,4 +294,42 @@ describe("Home continuity book contract", () => {
       data: book,
     }).success).toBe(true);
   });
+
+  it("accepts canonical-safe continuity starter pool selections", () => {
+    const starter = {
+      id: "white-nights-fyodor-dostoevsky-en",
+      title: "White Nights",
+      author: "Fyodor Dostoevsky",
+      language: "en",
+      futureCanonicalKey: "en:white nights:fyodor dostoevsky",
+      canonicalBookId: null,
+      status: "placeholder",
+      active: true,
+      priority: 30,
+      onboardingWeight: 1,
+      notes: "Calm continuity doorway.",
+      createdAt: null,
+      updatedAt: null,
+    };
+
+    expect(apiContracts.callable.selectHomeContinuityBook.responseSchema.safeParse({
+      success: true,
+      data: {
+        kind: "placeholder",
+        authority: "continuity_starter_pool_v1",
+        starter,
+        book: null,
+      },
+    }).success).toBe(true);
+
+    expect(apiContracts.callable.adminListContinuityStarterPool.responseSchema.safeParse({
+      success: true,
+      data: { starters: [starter] },
+    }).success).toBe(true);
+    expect(apiContracts.callable.adminUpdateContinuityStarterPoolEntry.requestSchema.safeParse({
+      id: starter.id,
+      active: false,
+      status: "paused",
+    }).success).toBe(true);
+  });
 });

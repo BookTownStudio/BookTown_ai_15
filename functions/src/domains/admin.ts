@@ -29,6 +29,10 @@ import {
   adminSearchHomeTargets as adminSearchHomeTargetsRaw,
   adminUpsertHomeEditorialEntry as adminUpsertHomeEditorialEntryRaw,
 } from "../home/editorialGovernance";
+import {
+  adminListContinuityStarterPool as adminListContinuityStarterPoolRaw,
+  adminUpdateContinuityStarterPoolEntry as adminUpdateContinuityStarterPoolEntryRaw,
+} from "../home/continuityStarterPool";
 
 export const backfillDerivedStats = wrapCallableV2("backfillDerivedStats", backfillDerivedStatsRaw);
 export const backfillReadingProgressCanonical = wrapCallableV2("backfillReadingProgressCanonical", backfillReadingProgressCanonicalRaw);
@@ -54,6 +58,8 @@ export const adminPreviewHomeEditorialConsole = wrapCallableV2("adminPreviewHome
 export const adminSearchHomeTargets = wrapCallableV2("adminSearchHomeTargets", adminSearchHomeTargetsRaw);
 export const adminResolveHomeTarget = wrapCallableV2("adminResolveHomeTarget", adminResolveHomeTargetRaw);
 export const adminPreviewHomePlacement = wrapCallableV2("adminPreviewHomePlacement", adminPreviewHomePlacementRaw);
+export const adminListContinuityStarterPool = wrapCallableV2("adminListContinuityStarterPool", adminListContinuityStarterPoolRaw);
+export const adminUpdateContinuityStarterPoolEntry = wrapCallableV2("adminUpdateContinuityStarterPoolEntry", adminUpdateContinuityStarterPoolEntryRaw);
 
 export { scheduledNotificationCleanup } from "../admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "../admin/cleanupAttachments";

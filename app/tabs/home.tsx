@@ -58,6 +58,14 @@ function homeBookToCardBook(item: HomeConsoleBookItem): any {
   };
 }
 
+function isStarterSelection(selection: ContinuitySelection): selection is ContinuityStarterSelection {
+  return typeof selection === 'object' && selection !== null && 'kind' in selection && 'starter' in selection;
+}
+
+function isCanonicalStarter(selection: ContinuitySelection): selection is Extract<ContinuityStarterSelection, { kind: 'canonical' }> {
+  return isStarterSelection(selection) && selection.kind === 'canonical';
+}
+
 /* -------------------------------
    Constants
 -------------------------------- */
@@ -87,6 +95,38 @@ type ContinuityBookSelection = {
   };
   isEbookAvailable: boolean;
 };
+
+type ContinuityStarterPoolRecord = {
+  id: string;
+  title: string;
+  author: string;
+  language: 'en' | 'ar' | 'fr' | 'es';
+  futureCanonicalKey: string;
+  canonicalBookId: string | null;
+  status: 'placeholder' | 'canonical_linked' | 'readable' | 'paused';
+  active: boolean;
+  priority: number;
+  onboardingWeight: number;
+  notes: string;
+  createdAt: string | null;
+  updatedAt: string | null;
+};
+
+type ContinuityStarterSelection =
+  | {
+      kind: 'canonical';
+      authority: 'continuity_starter_pool_v1';
+      starter: ContinuityStarterPoolRecord;
+      book: ContinuityBookSelection;
+    }
+  | {
+      kind: 'placeholder';
+      authority: 'continuity_starter_pool_v1';
+      starter: ContinuityStarterPoolRecord;
+      book: null;
+    };
+
+type ContinuitySelection = ContinuityBookSelection | ContinuityStarterSelection;
 
 const HomeScreen: React.FC = () => {
   const { lang } = useI18n();
@@ -120,6 +160,7 @@ const HomeScreen: React.FC = () => {
   const [isMicModalOpen, setIsMicModalOpen] = useState(false);
   const [isAddBookModalOpen, setIsAddBookModalOpen] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [starterSelection, setStarterSelection] = useState<ContinuityStarterSelection | null>(null);
   const [activeDiscoverStream, setActiveDiscoverStream] = useState<DiscoverStream>('Hidden Gems');
   const [isDiscoverStreamMenuOpen, setIsDiscoverStreamMenuOpen] = useState(false);
 
@@ -326,7 +367,7 @@ const HomeScreen: React.FC = () => {
   };
 
   const selectContinuityBook = async (mode: 'surprise' | 'starter') => {
-    return callCallableEndpoint<{ mode: 'surprise' | 'starter' }, ContinuityBookSelection>(
+    return callCallableEndpoint<{ mode: 'surprise' | 'starter' }, ContinuitySelection>(
       'selectHomeContinuityBook',
       { mode }
     );
@@ -336,12 +377,15 @@ const HomeScreen: React.FC = () => {
     if (busyId) return;
     try {
       setBusyId('continue-reading-surprise');
-      const book = await selectContinuityBook('surprise');
+      const selection = await selectContinuityBook('surprise');
+      if (isStarterSelection(selection)) {
+        throw new Error('Unexpected starter selection for Surprise Me.');
+      }
       navigate({
         type: 'immersive',
         id: 'bookDetails',
         params: {
-          bookId: book.id,
+          bookId: selection.id,
           from: currentView,
         },
       });
@@ -361,12 +405,23 @@ const HomeScreen: React.FC = () => {
     if (busyId) return;
     try {
       setBusyId('continue-reading-starter');
-      const book = await selectContinuityBook('starter');
+      const selection = starterSelection ?? await selectContinuityBook('starter');
+      if (isStarterSelection(selection)) {
+        setStarterSelection(selection);
+      }
+      if (!isCanonicalStarter(selection)) {
+        showToast(
+          lang === 'en'
+            ? 'This starter doorway is being prepared for reading.'
+            : 'يجري تجهيز كتاب البداية للقراءة.'
+        );
+        return;
+      }
       navigate({
         type: 'immersive',
         id: 'reader',
         params: {
-          bookId: book.id,
+          bookId: selection.book.id,
           from: currentView,
         },
       });
@@ -412,6 +467,23 @@ const HomeScreen: React.FC = () => {
   const dynamicDiscoveryRow = homeConsole?.rows.find((row) => row.type === 'dynamicDiscovery');
   const fromTheTownRow = homeConsole?.rows.find((row) => row.type === 'fromTheTown');
   const hasContinueReadingItems = Boolean(continueReadingRow && continueReadingRow.items.length > 0);
+
+  useEffect(() => {
+    if (hasContinueReadingItems || starterSelection || isHomeConsoleLoading) return;
+    let cancelled = false;
+    selectContinuityBook('starter')
+      .then((selection) => {
+        if (!cancelled && isStarterSelection(selection)) {
+          setStarterSelection(selection);
+        }
+      })
+      .catch((error) => {
+        console.warn('[HOME][STARTER_PREVIEW_UNAVAILABLE]', error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasContinueReadingItems, isHomeConsoleLoading, starterSelection]);
 
   /* -------------------------------
      Render Search Results
@@ -489,7 +561,7 @@ const HomeScreen: React.FC = () => {
       >
         <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border border-sky-200/15 bg-gradient-to-br from-sky-500 via-sky-700 to-slate-700 shadow-md transition duration-300 group-hover:border-sky-100/30 dark:border-white/10">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,_rgba(255,255,255,0.18),_transparent_28%),radial-gradient(circle_at_72%_78%,_rgba(186,230,253,0.16),_transparent_30%)]" />
-          <div className="relative z-10 h-20 w-20 opacity-85">
+          <div className="relative z-10 h-24 w-24 opacity-90">
             <DotLottieReact
               src="/animations/sparkling-gift.lottie"
               autoplay
@@ -498,7 +570,7 @@ const HomeScreen: React.FC = () => {
               renderConfig={{ autoResize: true }}
             />
           </div>
-          <p className="relative z-10 mt-5 text-center text-sm font-bold text-white/90">
+          <p className="relative z-10 mt-2 text-center text-sm font-bold text-white/90">
             {lang === 'en' ? 'Surprise Me' : 'فاجئني'}
           </p>
         </div>
@@ -519,12 +591,12 @@ const HomeScreen: React.FC = () => {
       >
         <div className="relative aspect-[2/3] w-full overflow-hidden rounded-card bg-slate-800 shadow-md">
           <CanonicalCoverArtwork
-            title="The Prophet"
-            author="Kahlil Gibran"
+            title={starterSelection?.starter.title ?? 'Starter Book'}
+            author={starterSelection?.starter.author ?? 'BookTown'}
             variant="posterCompact"
             fallbackCover={{
-              title: 'The Prophet',
-              author: 'Kahlil Gibran',
+              title: starterSelection?.starter.title ?? 'Starter Book',
+              author: starterSelection?.starter.author ?? 'BookTown',
               theme: 'ink',
             }}
           />
