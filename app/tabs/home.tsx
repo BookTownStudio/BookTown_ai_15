@@ -248,7 +248,7 @@ const HomeShelfActionSlot: React.FC<{
           className="absolute right-0 top-full z-40 mt-2 w-[min(13.5rem,calc(100vw-2rem))] origin-top-right animate-fade-in overflow-hidden rounded-2xl border border-white/15 bg-white/80 p-1.5 text-left shadow-[0_18px_50px_rgba(15,23,42,0.22)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/85 dark:shadow-[0_18px_50px_rgba(0,0,0,0.36)]"
         >
           <div className="mb-1 border-b border-black/5 px-2.5 py-2 dark:border-white/10">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500 dark:text-white/50">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-600 dark:text-white/65">
               {lang === 'en' ? 'Add to' : 'إضافة إلى'}
             </p>
           </div>
@@ -272,14 +272,14 @@ const HomeShelfActionSlot: React.FC<{
                     event.stopPropagation();
                     onSelectShelf(target);
                   }}
-                  className="group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-slate-800 transition-colors hover:bg-black/5 active:bg-black/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 dark:text-white/88 dark:hover:bg-white/10 dark:active:bg-white/15"
+                  className="group flex min-h-11 w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-sm text-slate-900 transition-colors hover:bg-black/5 hover:text-slate-950 active:bg-black/10 active:text-slate-950 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-not-allowed disabled:opacity-60 dark:text-white/95 dark:hover:bg-white/10 dark:hover:text-white dark:active:bg-white/15 dark:active:text-white"
                 >
                   <span
                     className={[
                       'flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full border transition-colors',
                       isCurrentlyReadingTarget
                         ? 'border-accent/35 bg-accent/15 text-accent'
-                        : 'border-black/10 bg-black/[0.03] text-slate-500 group-hover:border-accent/25 group-hover:text-accent dark:border-white/10 dark:bg-white/[0.06] dark:text-white/55',
+                        : 'border-black/10 bg-black/[0.03] text-slate-600 group-hover:border-accent/25 group-hover:text-accent dark:border-white/10 dark:bg-white/[0.06] dark:text-white/70 dark:group-hover:text-accent',
                     ].join(' ')}
                     aria-hidden="true"
                   >
@@ -891,17 +891,17 @@ const HomeScreen: React.FC = () => {
     );
   };
 
-  const renderContinueReadingEmptyCards = () => (
-    <div className="flex overflow-x-auto scrollbar-hide snap-x pt-4 pb-2 px-1">
+  const renderContinuityDoorwayCards = () => (
+    <>
       <button
         type="button"
-        className="group mr-4 w-32 flex-shrink-0 snap-start text-left"
+        className="group w-36 flex-shrink-0 snap-start text-left sm:w-40"
         onClick={() => setIsAddBookModalOpen(true)}
         aria-label={lang === 'en' ? 'Add a book to Continue Reading' : 'أضف كتاباً إلى أكمل القراءة'}
       >
-        <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-card border-2 border-dashed border-slate-600 text-slate-600 transition-all duration-300 hover:border-accent hover:bg-slate-200/50 hover:text-accent dark:border-white/30 dark:text-white/40 dark:hover:bg-white/5">
-          <PlusIcon className="h-10 w-10" />
-          <p className="mt-1 text-xs font-semibold text-inherit">
+        <div className="flex aspect-[2/3] w-full flex-col items-center justify-center rounded-card border border-dashed border-slate-400/70 bg-white/45 text-slate-600 shadow-sm backdrop-blur-sm transition-all duration-300 hover:border-accent/70 hover:bg-accent/8 hover:text-accent dark:border-white/22 dark:bg-white/[0.035] dark:text-white/58 dark:hover:border-accent/55 dark:hover:bg-accent/10">
+          <PlusIcon className="h-11 w-11" />
+          <p className="mt-2 text-xs font-semibold text-inherit">
             {lang === 'en' ? 'Add Book' : 'أضف كتاب'}
           </p>
         </div>
@@ -909,11 +909,11 @@ const HomeScreen: React.FC = () => {
 
       <button
         type="button"
-        className="group mr-4 w-32 flex-shrink-0 snap-start text-left"
+        className="group w-36 flex-shrink-0 snap-start text-left sm:w-40"
         onClick={handleSurpriseMe}
         aria-label={lang === 'en' ? 'Surprise me with one book' : 'فاجئني بكتاب واحد'}
       >
-        <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border border-sky-200/15 bg-gradient-to-br from-sky-500 via-sky-700 to-slate-700 shadow-md transition duration-300 group-hover:border-sky-100/30 dark:border-white/10">
+        <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border border-sky-200/15 bg-gradient-to-br from-sky-500 via-sky-700 to-slate-700 shadow-md transition duration-300 group-hover:border-sky-100/30 group-hover:shadow-lg dark:border-white/10">
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,_rgba(255,255,255,0.18),_transparent_28%),radial-gradient(circle_at_72%_78%,_rgba(186,230,253,0.16),_transparent_30%)]" />
           <div className="relative z-10 h-24 w-24 opacity-90">
             <DotLottieReact
@@ -933,7 +933,7 @@ const HomeScreen: React.FC = () => {
       <div
         role="button"
         tabIndex={0}
-        className="mr-4 w-32 flex-shrink-0 cursor-pointer snap-start"
+        className="group w-36 flex-shrink-0 cursor-pointer snap-start sm:w-40"
         onClick={handleOpenStarterBook}
         onKeyDown={(event) => {
           if (event.key === 'Enter' || event.key === ' ') {
@@ -943,7 +943,7 @@ const HomeScreen: React.FC = () => {
         }}
         aria-label={lang === 'en' ? 'Open starter book' : 'افتح كتاب البداية'}
       >
-        <div className="relative aspect-[2/3] w-full overflow-hidden rounded-card bg-slate-800 shadow-md">
+        <div className="relative aspect-[2/3] w-full overflow-hidden rounded-card bg-slate-800 shadow-md transition duration-300 group-hover:shadow-lg">
           <CanonicalCoverArtwork
             title={starterSelection?.starter.title ?? 'Starter Book'}
             author={starterSelection?.starter.author ?? 'BookTown'}
@@ -956,6 +956,58 @@ const HomeScreen: React.FC = () => {
           />
         </div>
       </div>
+    </>
+  );
+
+  const renderContinueReadingRow = () => (
+    <div className="flex overflow-x-auto scrollbar-hide snap-x gap-4 pt-3 pb-4 px-1">
+      {continueReadingRow?.items.map(item => {
+        const progress = Math.round((item.progress ?? 0) * 100);
+
+        return (
+          <motion.button
+            key={item.bookId}
+            type="button"
+            variants={listItemVariants}
+            className="group relative w-36 flex-shrink-0 cursor-pointer snap-start text-left sm:w-40"
+            onClick={() =>
+              navigate({
+                type: 'immersive',
+                id: 'reader',
+                params: {
+                  bookId: item.bookId,
+                  from: currentView
+                }
+              })
+            }
+            aria-label={lang === 'en' ? `Continue ${item.title}` : `أكمل ${item.title}`}
+          >
+            <div className="relative aspect-[2/3] w-full overflow-hidden rounded-card bg-slate-800 shadow-md transition duration-300 group-hover:shadow-lg">
+              <CanonicalCoverArtwork
+                title={item.title}
+                author={item.author}
+                coverUrl={item.coverUrl}
+                variant="posterCompact"
+                fallbackCover={{
+                  title: item.title,
+                  author: item.author,
+                  theme: 'ink',
+                }}
+              />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 via-black/20 to-transparent px-2.5 pb-2.5 pt-8">
+                <div className="h-1 overflow-hidden rounded-full bg-white/22">
+                  <div
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          </motion.button>
+        );
+      })}
+
+      {renderContinuityDoorwayCards()}
     </div>
   );
 
@@ -1028,38 +1080,13 @@ const HomeScreen: React.FC = () => {
                     </div>
                   ) : hasContinueReadingItems ? (
                     <motion.div
-                      className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
                       variants={staggerContainer}
                       initial="hidden"
                       animate="show"
                     >
-                      {continueReadingRow!.items.map(item => (
-                        <motion.div
-                          key={item.bookId}
-                          variants={listItemVariants}
-                          className="cursor-pointer snap-start"
-                          onClick={() =>
-                            navigate({
-                              type: 'immersive',
-                              id: 'reader',
-                              params: {
-                                bookId: item.bookId,
-                                from: currentView
-                              }
-                            })
-                          }
-                        >
-                          <BookCard
-                            bookId={item.bookId}
-                            book={homeBookToCardBook(item)}
-                            layout="list"
-                            progress={Math.round((item.progress ?? 0) * 100)}
-                            className="w-40 sm:w-44"
-                          />
-                        </motion.div>
-                      ))}
+                      {renderContinueReadingRow()}
                     </motion.div>
-                  ) : renderContinueReadingEmptyCards()}
+                  ) : renderContinueReadingRow()}
                 </CollapsibleSection>
 
                 {(
