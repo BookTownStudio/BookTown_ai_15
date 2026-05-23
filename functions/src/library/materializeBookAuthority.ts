@@ -67,6 +67,7 @@ export type BookAuthorityState = "canonical" | "provisional";
 
 export type LiteraryAuthoritySource =
   | "booktown_canonical"
+  | "booktownRefinery"
   | "canonical_seed"
   | "googleBooks"
   | "goodreads_import"
@@ -2349,9 +2350,60 @@ export async function materializeBookAuthority(
   );
 }
 
+async function validateBooktownRefineryTransport(
+  params: MaterializeBookAuthorityParams
+): Promise<MaterializeBookAuthorityResult> {
+  const preferredBookId = asNonEmptyString(params.preferredBookId);
+  const incomingCanonicalKey = asNonEmptyString(params.rawBook?.canonicalKey);
+  let bookSnap: FirebaseFirestore.DocumentSnapshot<FirebaseFirestore.DocumentData> | null = null;
+
+  if (preferredBookId) {
+    bookSnap = await params.tx.get(db.collection("books").doc(preferredBookId));
+  } else if (incomingCanonicalKey) {
+    const snap = await params.tx.get(
+      db.collection("books")
+        .where("canonicalKey", "==", incomingCanonicalKey)
+        .limit(2)
+    );
+    if (snap.size === 1) {
+      bookSnap = snap.docs[0] ?? null;
+    }
+  }
+
+  if (!bookSnap?.exists) {
+    throw new Error("[BOOK_REFINERY][NO_CANONICAL_TARGET]");
+  }
+
+  const existingBook = (bookSnap.data() || {}) as Record<string, unknown>;
+  const existingCanonicalKey = asNonEmptyString(existingBook.canonicalKey);
+  if (incomingCanonicalKey && existingCanonicalKey && incomingCanonicalKey !== existingCanonicalKey) {
+    throw new Error("[BOOK_REFINERY][CANONICAL_KEY_MISMATCH]");
+  }
+
+  logger.info("[BOOK_REFINERY][AUTHORITY_PIPELINE_VALIDATED]", {
+    bookId: bookSnap.id,
+    canonicalKey: existingCanonicalKey || incomingCanonicalKey || null,
+    provider: params.source,
+    mode: "enrichment_only_noop",
+  });
+
+  return {
+    canonicalBookId: bookSnap.id,
+    bookId: bookSnap.id,
+    editionId: asNonEmptyString(existingBook.editionId) || null,
+    status: "ALREADY_COMPLETE",
+    authorityStatus: "canonical",
+    canonicalKey: existingCanonicalKey || incomingCanonicalKey,
+  };
+}
+
 export async function materializeBookAuthorityInTransaction(
   params: MaterializeBookAuthorityParams
 ): Promise<MaterializeBookAuthorityResult> {
+  if (params.source === "booktownRefinery") {
+    return validateBooktownRefineryTransport(params);
+  }
+
   if (isRegisteredProvider(params.source)) {
     if (canProviderEnterCanonicalBookWritePath(params.source)) {
       assertProviderCanEnterCanonicalBookWritePath(params.source);

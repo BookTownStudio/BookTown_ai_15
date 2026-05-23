@@ -18,6 +18,7 @@ export type RegisteredProviderId =
   | "gallica"
   | "hindawi"
   | "internetArchive"
+  | "booktownRefinery"
   | "bnf"
   | "britishLibrary"
   | "dnb"
@@ -248,6 +249,18 @@ export const PROVIDER_ROLE_REGISTRY: Record<
     canScoreCanonicalWork: false,
     canAffectAuthorLayer: false,
     canServeTrustedReadableSource: true,
+    allowedAuthorityFields: [],
+    allowedAuthorFields: [],
+  },
+  booktownRefinery: {
+    role: "enrichment_only",
+    acceptedAuthority: null,
+    authorityRank: 0,
+    canEnterCanonicalBookWritePath: false,
+    canEnrichExistingCanonicalBook: false,
+    canScoreCanonicalWork: false,
+    canAffectAuthorLayer: false,
+    canServeTrustedReadableSource: false,
     allowedAuthorityFields: [],
     allowedAuthorFields: [],
   },

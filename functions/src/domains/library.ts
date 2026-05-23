@@ -14,6 +14,7 @@ import {
 import { backfillCovers as backfillCoversRaw } from "../library/backfillCovers";
 import { backfillMissingCovers as backfillMissingCoversRaw } from "../library/backfillMissingCovers";
 import { backfillUserUploadCoverJobs as backfillUserUploadCoverJobsRaw } from "../library/backfillUserUploadCoverJobs";
+import { submitRefineryArtifacts as submitRefineryArtifactsRaw } from "../library/submitRefineryArtifacts";
 import { processUserUploadCoverJobs } from "../library/processUserUploadCoverJobs";
 import { processCoverJobs } from "../library/processCoverJobs";
 import { duplicateShelf as duplicateShelfRaw } from "../shelves/duplicateShelf";
@@ -43,6 +44,7 @@ export { processGoodreadsImportSessions };
 export const backfillCovers = wrapCallableV2("backfillCovers", backfillCoversRaw);
 export const backfillMissingCovers = wrapCallableV2("backfillMissingCovers", backfillMissingCoversRaw);
 export const backfillUserUploadCoverJobs = wrapCallableV2("backfillUserUploadCoverJobs", backfillUserUploadCoverJobsRaw);
+export const submitRefineryArtifacts = wrapCallableV2("submitRefineryArtifacts", submitRefineryArtifactsRaw);
 export { processUserUploadCoverJobs };
 export { processCoverJobs };
 export const duplicateShelf = wrapCallableV2("duplicateShelf", duplicateShelfRaw);

@@ -50,6 +50,90 @@ const recommendationOriginSchema = z
   })
   .strict();
 
+const refineryConfidenceSchema = z.enum(["low", "medium", "high"]);
+
+const refineryStringArraySchema = z.array(z.string().min(1).max(160)).max(40);
+
+const refineryOntologySchema = z
+  .object({
+    form: z.string().min(1).max(80).optional(),
+    subForm: z.string().min(1).max(120).optional(),
+    canonicalTradition: z.string().min(1).max(160).optional(),
+  })
+  .strict();
+
+const refinerySemanticRefsSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    traditionEntityId: z.string().min(1).max(160).optional(),
+    movementEntityIds: refineryStringArraySchema.optional(),
+    philosophyEntityIds: refineryStringArraySchema.optional(),
+    civilizationEntityIds: refineryStringArraySchema.optional(),
+    historicalPeriodEntityIds: refineryStringArraySchema.optional(),
+  })
+  .strict();
+
+const refineryEmbeddingDescriptorSchema = z
+  .object({
+    model: z.string().min(1).max(120),
+    dimensions: z.number().int().positive().max(100_000),
+    vectorRef: z.string().min(1).max(512),
+    contentHash: z.string().min(1).max(160),
+    createdAt: z.string().min(1).max(80),
+  })
+  .strict();
+
+const refineryProvenanceSchema = z
+  .object({
+    source: z.literal("booktownRefinery"),
+    artifactId: z.string().min(1).max(256),
+    factoryVersion: z.string().min(1).max(80),
+    contentHash: z.string().min(1).max(160),
+    generatedAt: z.string().min(1).max(80),
+  })
+  .strict();
+
+const refineryArtifactSchema = z
+  .object({
+    title: z.string().min(1).max(512),
+    canonicalKey: z.string().min(1).max(512).optional(),
+    ontology: refineryOntologySchema.optional(),
+    literaryQuality: z.number().min(0).max(1).optional(),
+    canonicalPotential: z.number().min(0).max(1).optional(),
+    confidence: refineryConfidenceSchema.optional(),
+    semanticRefs: refinerySemanticRefsSchema.optional(),
+    embeddingDescriptor: refineryEmbeddingDescriptorSchema.optional(),
+    provenance: refineryProvenanceSchema,
+  })
+  .strict();
+
+const submitRefineryArtifactsRequestSchema = z
+  .object({
+    artifacts: z.array(refineryArtifactSchema).min(1).max(50),
+    dryRun: z.boolean().optional(),
+  })
+  .strict();
+
+const submitRefineryArtifactsResponseSchema = z
+  .object({
+    accepted: z.number().int().nonnegative(),
+    rejected: z.number().int().nonnegative(),
+    durationMs: z.number().int().nonnegative(),
+    dryRun: z.boolean(),
+    results: z.array(
+      z
+        .object({
+          artifactId: z.string().min(1),
+          status: z.enum(["accepted", "rejected"]),
+          reason: z.string().min(1).optional(),
+          bookId: z.string().min(1).optional(),
+          canonicalKey: z.string().min(1).optional(),
+        })
+        .strict()
+    ),
+  })
+  .strict();
+
 const readerDiagnosticPayloadSchema = z
   .record(z.string(), z.union([
     z.string().max(160),
@@ -2065,6 +2149,15 @@ const defineContract = <Req extends z.ZodTypeAny, Data extends z.ZodTypeAny>(
 
 export const apiContracts = {
   callable: {
+    submitRefineryArtifacts: defineContract(
+      submitRefineryArtifactsRequestSchema,
+      submitRefineryArtifactsResponseSchema,
+      "httpsCallable",
+      {
+        callSites: [],
+      }
+    ),
+
     submitFeedback: defineContract(
       submitFeedbackRequestSchema,
       submitFeedbackResponseSchema,

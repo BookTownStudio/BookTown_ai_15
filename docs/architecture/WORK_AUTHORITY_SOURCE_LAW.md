@@ -152,7 +152,7 @@ Current registered roles:
 - author_only_authority: `viaf`
 - weighted_evidence: `wikidata`, `worldcat`, `isbndb`
 - ebook_source_only: `gutenberg`, `gallica`, `hindawi`, `internetArchive`
-- enrichment_only: `bnf`, `britishLibrary`, `dnb`, `ndl`
+- enrichment_only: `booktownRefinery`, `bnf`, `britishLibrary`, `dnb`, `ndl`
 
 Operational law:
 
@@ -164,6 +164,47 @@ Operational law:
 - enrichment only providers may enrich later only
 
 Future provider activation must begin by adding the provider to the registry before any ingestion, ranking, or authority write-path code changes.
+
+### BookTown Refinery Enrichment Law
+
+`booktownRefinery` represents governed output from the external local `booktown-canonical-factory`.
+
+Initial role:
+
+- enrichment only
+- no direct Firestore writes
+- no canonical book creation
+- no canonical identity merge
+- no `book_identity` writes
+- no `editions` writes
+- no cover job ownership
+- no canonical lock override
+- no `canonicalFieldTrust` mutation
+
+Refinery artifacts may propose only subordinate intelligence fields:
+
+- `ontology.form`
+- `ontology.subForm`
+- `ontology.canonicalTradition`
+- `literaryQuality`
+- `canonicalPotential`
+- semantic metadata
+- embedding descriptors or vector references
+
+The refinery never owns:
+
+- `canonicalTitle`
+- `canonicalAuthorIds`
+- `canonicalKey`
+- `originalLanguage`
+- `workIdentity`
+- author identity
+- edition identity
+- readable-source availability
+
+Accepted refinery output must be evaluated by backend authority code and routed through the canonical materialization layer. The refinery is an upstream evidence provider, not a database writer and not a parallel book system.
+
+Future vector integration must store embeddings as derived semantic infrastructure with pointer-style references from governed catalog records. Vector indexes must never become canonical book authority, and vector similarity must not rewrite identity, locks, provenance, or materialized search projection fields.
 
 ### LOC Restricted Authority Law
 
