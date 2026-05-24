@@ -378,6 +378,11 @@ export const usePostInteractions = (postId: string | undefined, post?: Post) => 
     isReposted: snapshot.status.repost,
     counts: snapshot.counts,
     isLoading: interactionSnapshot.isLoading,
+    pending: {
+      like: likeMutation.isPending,
+      bookmark: bookmarkMutation.isPending,
+      repost: repostMutation.isPending,
+    },
     isRepostTransitioning: repostMutation.isPending,
     isTransitioning:
       likeMutation.isPending ||

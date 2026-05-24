@@ -2,7 +2,6 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { DotLottieReact } from '@lottiefiles/dotlottie-react';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
@@ -913,20 +912,73 @@ const HomeScreen: React.FC = () => {
         onClick={handleSurpriseMe}
         aria-label={lang === 'en' ? 'Surprise me with one book' : 'فاجئني بكتاب واحد'}
       >
-        <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border border-sky-200/15 bg-gradient-to-br from-sky-500 via-sky-700 to-slate-700 shadow-md transition duration-300 group-hover:border-sky-100/30 group-hover:shadow-lg dark:border-white/10">
-          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_18%,_rgba(255,255,255,0.18),_transparent_28%),radial-gradient(circle_at_72%_78%,_rgba(186,230,253,0.16),_transparent_30%)]" />
-          <div className="relative z-10 h-24 w-24 opacity-90">
-            <DotLottieReact
-              src="/animations/sparkling-gift.lottie"
-              autoplay
-              loop
-              className="h-full w-full"
-              renderConfig={{ autoResize: true }}
-            />
+        <div className="relative flex aspect-[2/3] w-full flex-col items-center justify-center overflow-hidden rounded-card border-2 border-[#F2C76E]/45 bg-[linear-gradient(145deg,#073B63_0%,#0A4D86_48%,#062F52_100%)] px-4 text-center shadow-md transition duration-300 group-hover:border-[#F2C76E]/70 group-hover:shadow-lg">
+          <style>
+            {`
+              @keyframes bt-surprise-border-light {
+                0% { transform: translate(-44%, -46%) scale(0.92); opacity: 0.38; }
+                25% { transform: translate(116%, -42%) scale(1); opacity: 0.54; }
+                50% { transform: translate(118%, 128%) scale(0.96); opacity: 0.44; }
+                75% { transform: translate(-48%, 130%) scale(1); opacity: 0.5; }
+                100% { transform: translate(-44%, -46%) scale(0.92); opacity: 0.38; }
+              }
+              @keyframes bt-surprise-star-one {
+                0%, 100% { transform: rotate(-6deg) scale(0.99); opacity: 0.78; }
+                50% { transform: rotate(5deg) scale(1.02); opacity: 0.82; }
+              }
+              @keyframes bt-surprise-star-two {
+                0%, 100% { transform: rotate(8deg) scale(1); opacity: 0.66; }
+                50% { transform: rotate(-4deg) scale(1.03); opacity: 0.72; }
+              }
+              @keyframes bt-surprise-star-three {
+                0%, 100% { transform: rotate(-10deg) scale(0.98); opacity: 0.54; }
+                50% { transform: rotate(7deg) scale(1.02); opacity: 0.6; }
+              }
+              @media (prefers-reduced-motion: reduce) {
+                .bt-surprise-motion {
+                  animation: none !important;
+                }
+              }
+            `}
+          </style>
+
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_24%_18%,rgba(242,199,110,0.12),transparent_24%),radial-gradient(circle_at_78%_86%,rgba(255,255,255,0.08),transparent_28%)]" />
+          <span
+            aria-hidden="true"
+            className="bt-surprise-motion pointer-events-none absolute left-0 top-0 h-16 w-16 rounded-full bg-[#F2C76E]/25 blur-xl"
+            style={{ animation: 'bt-surprise-border-light 7.4s linear infinite' }}
+          />
+
+          <span
+            className="bt-surprise-motion absolute left-[22%] top-[66%] z-10 text-base text-[#F2C76E] [text-shadow:0_0_8px_rgba(242,199,110,0.28)]"
+            style={{ animation: 'bt-surprise-star-one 4.8s ease-in-out infinite' }}
+            aria-hidden="true"
+          >
+            ✦
+          </span>
+          <span
+            className="bt-surprise-motion absolute left-[57%] top-[25%] z-10 text-[26px] leading-none text-[#F2C76E] [text-shadow:0_0_12px_rgba(242,199,110,0.2)]"
+            style={{ animation: 'bt-surprise-star-three 7.6s ease-in-out infinite' }}
+            aria-hidden="true"
+          >
+            ✦
+          </span>
+          <span
+            className="bt-surprise-motion absolute right-[12%] top-[78%] z-10 text-[19px] leading-none text-[#F2C76E] [text-shadow:0_0_10px_rgba(242,199,110,0.24)]"
+            style={{ animation: 'bt-surprise-star-two 6.2s ease-in-out infinite' }}
+            aria-hidden="true"
+          >
+            ✦
+          </span>
+
+          <div className="relative z-20 flex translate-y-[12%] flex-col items-center">
+            <p className="text-center text-lg font-bold leading-tight text-[#FFF7E6] drop-shadow-sm">
+              {lang === 'en' ? 'Surprise Me' : 'فاجئني'}
+            </p>
+            <p className="mt-1 text-center text-[13px] font-normal leading-tight text-[#FFF7E6]/62">
+              {lang === 'en' ? 'with a book' : 'بكتاب'}
+            </p>
           </div>
-          <p className="relative z-10 mt-2 text-center text-sm font-bold text-white/90">
-            {lang === 'en' ? 'Surprise Me' : 'فاجئني'}
-          </p>
         </div>
       </button>
 

@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
+import sharp from "sharp";
 import { recomputeUserStats } from "../userStats/recomputeUserStats";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 
@@ -9,12 +10,80 @@ const db = admin.firestore();
 const storage = admin.storage();
 
 type ParentType = "posts" | "projects" | "drafts";
+type MediaProcessingStatus = "pending" | "processing" | "ready" | "failed";
+
+type MediaRenditionMetadata = {
+  storagePath: string;
+  width: number;
+  height: number;
+  mimeType: string;
+  sizeBytes: number;
+};
 
 function assertPathOwnership(uid: string, storagePath: string): void {
   const ownsAttachmentPath = storagePath.startsWith(`attachments/${uid}/`);
   if (!ownsAttachmentPath) {
     throw new HttpsError("permission-denied", "Invalid storage ownership.");
   }
+}
+
+function aspectRatio(width: number, height: number): number {
+  return height > 0 ? Number((width / height).toFixed(6)) : 0;
+}
+
+function readExistingRenditions(value: unknown): Record<string, MediaRenditionMetadata> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const output: Record<string, MediaRenditionMetadata> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const item = raw as Partial<MediaRenditionMetadata>;
+    if (
+      typeof item.storagePath !== "string" ||
+      typeof item.width !== "number" ||
+      typeof item.height !== "number" ||
+      typeof item.mimeType !== "string" ||
+      typeof item.sizeBytes !== "number"
+    ) {
+      continue;
+    }
+    output[key] = {
+      storagePath: item.storagePath,
+      width: item.width,
+      height: item.height,
+      mimeType: item.mimeType,
+      sizeBytes: item.sizeBytes,
+    };
+  }
+  return output;
+}
+
+function readProcessingStatus(value: unknown): MediaProcessingStatus | null {
+  return value === "pending" ||
+    value === "processing" ||
+    value === "ready" ||
+    value === "failed"
+    ? value
+    : null;
+}
+
+async function readOriginalImageRendition(params: {
+  file: ReturnType<ReturnType<typeof storage.bucket>["file"]>;
+  storagePath: string;
+  mimeType: string;
+  sizeBytes: number;
+}): Promise<MediaRenditionMetadata> {
+  const [bytes] = await params.file.download();
+  const { info } = await sharp(bytes, { failOn: "none" })
+    .rotate()
+    .toBuffer({ resolveWithObject: true });
+
+  return {
+    storagePath: params.storagePath,
+    width: info.width,
+    height: info.height,
+    mimeType: params.mimeType,
+    sizeBytes: params.sizeBytes,
+  };
 }
 
 async function assertParentAccess(
@@ -197,12 +266,38 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
   // -------------------------------------------------
   const now = FieldValue.serverTimestamp();
   const nowIso = new Date().toISOString();
+  const attachmentRef = db.collection("attachments").doc(attachmentId);
+  const existingAttachmentSnap = await attachmentRef.get();
+  const existingAttachmentData = existingAttachmentSnap.exists
+    ? (existingAttachmentSnap.data() ?? {})
+    : {};
+  const existingMetadata =
+    existingAttachmentData.metadata && typeof existingAttachmentData.metadata === "object"
+      ? (existingAttachmentData.metadata as Record<string, unknown>)
+      : {};
+  const existingRenditions = readExistingRenditions(existingMetadata.renditions);
+  const existingProcessingStatus =
+    readProcessingStatus(existingMetadata.processingStatus) ??
+    readProcessingStatus(existingAttachmentData.processingStatus);
   const canonicalAttachmentType =
     intentType === "IMAGE" || intentType === "DOCUMENT"
       ? intentType
       : intentPurpose === "ebook"
         ? "DOCUMENT"
         : "IMAGE";
+  const originalRendition =
+    canonicalAttachmentType === "IMAGE"
+      ? await readOriginalImageRendition({
+          file,
+          storagePath: intentStoragePath,
+          mimeType,
+          sizeBytes: size,
+        })
+      : null;
+  const imageProcessingStatus: MediaProcessingStatus =
+    canonicalAttachmentType === "IMAGE"
+      ? existingProcessingStatus ?? "pending"
+      : "ready";
   const canonicalMetadata = {
     attachmentId,
     type: canonicalAttachmentType,
@@ -217,6 +312,22 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
     storagePath: intentStoragePath,
     parentType: intentParentType,
     parentId: intentParentId,
+    ...(originalRendition
+      ? {
+          width: originalRendition.width,
+          height: originalRendition.height,
+          aspectRatio: aspectRatio(originalRendition.width, originalRendition.height),
+          dimensions: {
+            width: originalRendition.width,
+            height: originalRendition.height,
+          },
+          processingStatus: imageProcessingStatus,
+          renditions: {
+            ...existingRenditions,
+            original: originalRendition,
+          },
+        }
+      : {}),
   };
 
   await db
@@ -233,6 +344,18 @@ export const finalizeMetadata = onCall({ cors: true }, async (request) => {
         parentType: intentParentType,
         parentId: intentParentId,
         storagePath: intentStoragePath,
+        ...(originalRendition
+          ? {
+              width: originalRendition.width,
+              height: originalRendition.height,
+              aspectRatio: aspectRatio(originalRendition.width, originalRendition.height),
+              processingStatus: imageProcessingStatus,
+              renditions: {
+                ...existingRenditions,
+                original: originalRendition,
+              },
+            }
+          : {}),
         uploader: {
           uid,
         },

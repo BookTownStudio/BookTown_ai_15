@@ -11,6 +11,7 @@ const {
   enterReadingStateMock,
   ensureCanonicalBookMock,
   invalidateQueriesMock,
+  callCallableEndpointMock,
 } = vi.hoisted(() => ({
   mockedSearchState: {
     response: { results: [] as SearchResultDTO[] },
@@ -20,6 +21,7 @@ const {
   enterReadingStateMock: vi.fn(),
   ensureCanonicalBookMock: vi.fn(),
   invalidateQueriesMock: vi.fn(),
+  callCallableEndpointMock: vi.fn(),
 }));
 
 vi.mock("@lottiefiles/dotlottie-react", () => ({
@@ -242,7 +244,7 @@ vi.mock("../../lib/books/ensureCanonicalBook.ts", () => ({
 }));
 
 vi.mock("../../lib/callable.ts", () => ({
-  callCallableEndpoint: vi.fn(),
+  callCallableEndpoint: callCallableEndpointMock,
 }));
 
 vi.mock("../../lib/logging/bookEngineV2Log.ts", () => ({
@@ -304,12 +306,40 @@ describe("Home search shelf selector", () => {
     ensureCanonicalBookMock.mockReset();
     ensureCanonicalBookMock.mockResolvedValue({ canonicalBookId: "book_1" });
     invalidateQueriesMock.mockReset();
+    callCallableEndpointMock.mockReset();
     toggleBookMock.mockImplementation((_vars, callbacks) => {
       callbacks?.onSuccess?.();
       callbacks?.onSettled?.();
     });
     enterReadingStateMock.mockResolvedValue(undefined);
     invalidateQueriesMock.mockResolvedValue(undefined);
+  });
+
+  it("renders the Surprise Me doorway without Lottie and keeps the existing action", async () => {
+    callCallableEndpointMock.mockResolvedValue({
+      id: "surprise_book",
+      titleEn: "Surprise Book",
+      titleAr: "Surprise Book",
+      authorEn: "Author",
+      authorAr: "Author",
+      coverUrl: "",
+      isEbookAvailable: false,
+    });
+
+    render(<HomeScreen />);
+
+    expect(screen.getByText("Surprise Me")).toBeInTheDocument();
+    expect(screen.getByText("with a book")).toBeInTheDocument();
+    expect(screen.getAllByText("✦")).toHaveLength(3);
+
+    fireEvent.click(screen.getByLabelText("Surprise me with one book"));
+
+    await waitFor(() => {
+      expect(callCallableEndpointMock).toHaveBeenCalledWith(
+        "selectHomeContinuityBook",
+        { mode: "surprise" }
+      );
+    });
   });
 
   it("renders Home book results through SearchResultCard and opens an inline shelf selector", () => {

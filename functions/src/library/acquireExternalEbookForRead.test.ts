@@ -294,6 +294,13 @@ describe("acquireExternalEbookForRead", () => {
         hasEbook: false,
         isEbookAvailable: false,
         providerExternalIds: ["googleBooks:ext_1"],
+        externalReadableSources: [
+          {
+            provider: "gutenberg",
+            providerExternalId: "1342",
+            trust: "trusted",
+          },
+        ],
       },
       false
     );
@@ -532,6 +539,9 @@ describe("acquireExternalEbookForRead", () => {
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
+        readability: {
+          status: "trusted_external",
+        },
       },
       false
     );
@@ -630,6 +640,40 @@ describe("acquireExternalEbookForRead", () => {
     expect(ingestBookServerSideMock).not.toHaveBeenCalled();
   });
 
+  it("rejects acquisition before provider lookup without validated readability authority", async () => {
+    setDoc(
+      "books/book_1",
+      {
+        id: "book_1",
+        titleEn: "Pride and Prejudice",
+        authorEn: "Jane Austen",
+        language: "en",
+        rightsMode: "public_free",
+        visibility: "public",
+        downloadable: false,
+        hasEbook: false,
+        isEbookAvailable: false,
+        providerExternalIds: ["gutenberg:1342"],
+      },
+      false
+    );
+
+    const { acquireExternalEbookForReadHandler } = await import("./acquireExternalEbookForRead");
+
+    await expect(
+      acquireExternalEbookForReadHandler({
+        auth: { uid: "reader_1" },
+        data: { bookId: "book_1" },
+      })
+    ).rejects.toMatchObject({
+      code: "failed-precondition",
+      message: "No validated readability authority permits ebook preparation.",
+    });
+
+    expect(resolveOpenLibraryReadableCandidateMock).not.toHaveBeenCalled();
+    expect(resolveGutenbergReadableCandidateMock).not.toHaveBeenCalled();
+  });
+
   it("persists a discovered trusted external readable source on the canonical book before download", async () => {
     const epubBuffer = await buildMinimalEpub();
     setDoc(
@@ -644,6 +688,9 @@ describe("acquireExternalEbookForRead", () => {
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
+        readability: {
+          status: "trusted_external",
+        },
       },
       false
     );

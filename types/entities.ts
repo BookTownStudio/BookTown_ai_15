@@ -485,6 +485,28 @@ export type AttachmentStateV1 =
   | 'ARCHIVED'
   | 'DELETED';
 
+export type MediaProcessingStatusV1 =
+    | 'pending'
+    | 'processing'
+    | 'ready'
+    | 'failed';
+
+export type MediaRenditionNameV1 =
+    | 'original'
+    | 'thumb'
+    | 'feed'
+    | 'large';
+
+export interface MediaRenditionMetadataV1 {
+    storagePath: string;
+    width: number;
+    height: number;
+    mimeType: string;
+    sizeBytes: number;
+}
+
+export type MediaRenditionsV1 = Partial<Record<MediaRenditionNameV1, MediaRenditionMetadataV1>>;
+
 export interface AttachmentMetadataV1 {
     attachmentId: string;
     type: AttachmentTypeV1;
@@ -502,6 +524,11 @@ export interface AttachmentMetadataV1 {
     previewUrl?: string;
     duration?: number;
     dimensions?: { width: number; height: number };
+    width?: number;
+    height?: number;
+    aspectRatio?: number;
+    processingStatus?: MediaProcessingStatusV1;
+    renditions?: MediaRenditionsV1;
 }
 
 export interface AttachmentV1 {

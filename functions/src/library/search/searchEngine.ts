@@ -677,14 +677,6 @@ function computeExternalEbookClass(hasExternalEbookSignal: boolean): SearchEbook
   return hasExternalEbookSignal ? "external_link" : "unavailable";
 }
 
-function hasOpenLibraryReadableAvailability(doc: Record<string, unknown>): boolean {
-  const hasFulltext = doc.has_fulltext === true;
-  const lendingEditionId = asNonEmptyString(doc.lending_edition_s);
-  const lendingIdentifier = asNonEmptyString(doc.lending_identifier_s);
-
-  return hasFulltext && Boolean(lendingEditionId || lendingIdentifier);
-}
-
 function getProviderPriority(
   provider: SearchReadProvider
 ): number {
@@ -2917,9 +2909,6 @@ async function fetchOpenLibraryExternalRaw(query: string): Promise<ExternalSeedC
       : "";
 
     const language = asStringArray(doc.language)[0] || "en";
-    const hasExternalEbookSignal = hasOpenLibraryReadableAvailability(doc);
-    const lendingEditionId = asNonEmptyString(doc.lending_edition_s);
-    const lendingIdentifier = asNonEmptyString(doc.lending_identifier_s);
 
     mapped.push({
       externalId: key,
@@ -2929,22 +2918,9 @@ async function fetchOpenLibraryExternalRaw(query: string): Promise<ExternalSeedC
       description: "",
       coverUrl,
       language,
-      ...(hasExternalEbookSignal
-        ? {
-            externalReadableSources: [
-              {
-                provider: "openLibrary" as const,
-                providerExternalId: key,
-                ...(lendingEditionId ? { lendingEditionId } : {}),
-                ...(lendingIdentifier ? { lendingIdentifier } : {}),
-                trust: "trusted" as const,
-              },
-            ],
-          }
-        : {}),
       isbn13: isbn13 || undefined,
       isbn10: isbn10 || undefined,
-      hasExternalEbookSignal,
+      hasExternalEbookSignal: false,
       rawBook: {
         ...doc,
         id: key,
@@ -3609,7 +3585,10 @@ async function enrichCanonicalAvailability(
       for (const resolveProvider of providerResolvers) {
         try {
           const candidate = await resolveProvider(lookupContext);
-          if (!candidate?.trust?.availabilityTrust) {
+          if (
+            !candidate?.trust?.availabilityTrust ||
+            !candidate.trust.acquisitionTrust
+          ) {
             continue;
           }
           return applyTrustedExternalAvailability(

@@ -30,6 +30,7 @@ import { canonicalizeSocialFeedFilters } from '../../lib/socialFeedState.ts';
 import { isBetaFeedbackTriggerEnabled } from '../../lib/featureFlags.ts';
 import { useFeedbackLauncher } from '../../lib/feedback/useFeedbackLauncher.ts';
 import { MessageSquareWarningIcon } from '../../components/icons/MessageSquareWarningIcon.tsx';
+import { socialFeedLayoutStyle } from '../../components/content/socialFeedLayout.ts';
 
 // Simple text icon for the filters
 const TextIcon = (props: any) => (
@@ -857,19 +858,21 @@ const SocialScreen: React.FC = () => {
 
             <div
                 className={cn(
-                    "pointer-events-none fixed bottom-[calc(var(--bottom-nav-height,66px)+18px)] left-0 right-0 z-[26] transition-all duration-200",
+                    "pointer-events-none fixed bottom-[calc(var(--bottom-nav-height,66px)+var(--social-fab-bottom-offset))] left-0 right-0 z-[26] transition-opacity duration-[var(--social-fab-transition)] motion-reduce:transition-none",
                     isSearchOpen ? "opacity-0" : "opacity-100"
                 )}
+                style={socialFeedLayoutStyle}
             >
                 <div className="app-frame__inner">
                     <div className="app-rail social-rail--v23 flex justify-end px-0">
+                        {/* SocialScreen owns the canonical create-post FAB; behavior remains handleNewPost. */}
                         <button
                             type="button"
                             onClick={handleNewPost}
                             aria-label={lang === 'en' ? 'Write' : 'اكتب'}
-                            className="pointer-events-auto inline-flex h-14 w-14 items-center justify-center rounded-full border border-[#7cc8ff]/[0.32] bg-[#1d9bf0] text-white shadow-[0_10px_24px_rgba(8,53,92,0.28)] backdrop-blur-xl transition-all duration-200 hover:-translate-y-0.5 hover:bg-[#1a8cd8] hover:text-white active:translate-y-0"
+                            className="pointer-events-auto inline-flex h-[var(--social-fab-size)] w-[var(--social-fab-size)] items-center justify-center rounded-full border border-[color:var(--social-fab-border)] bg-[var(--social-fab-bg)] text-white shadow-[var(--social-fab-shadow)] backdrop-blur-xl transition-colors duration-[var(--social-fab-transition)] motion-reduce:transition-none hover:bg-[var(--social-fab-hover-bg)] hover:text-white active:bg-[var(--social-fab-hover-bg)]"
                         >
-                            <PlusIcon className="h-5 w-5" />
+                            <PlusIcon className="h-[var(--social-fab-icon-size)] w-[var(--social-fab-icon-size)]" />
                         </button>
                     </div>
                 </div>

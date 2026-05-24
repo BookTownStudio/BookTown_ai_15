@@ -49,11 +49,11 @@ const ActionButton = React.memo<ActionButtonProps>(({
             type="button"
             aria-label={buttonAriaLabel}
             className={cn(
-                "inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition-all duration-200",
+                "inline-flex h-9 shrink-0 items-center gap-1 rounded-full px-1.5 py-1 text-[11px] transition-colors duration-[var(--social-post-action-transition)] motion-reduce:transition-none",
                 (disabled || loading)
                     ? "cursor-not-allowed opacity-35 grayscale"
-                    : "opacity-75 hover:bg-white/[0.04] hover:opacity-100",
-                active && "bg-white/[0.06] text-white"
+                    : "opacity-75 hover:bg-[var(--social-post-action-hover-bg)] hover:opacity-100 active:bg-[var(--social-post-action-active-bg)]",
+                active && "bg-[var(--social-post-action-selected-bg)] text-white"
             )}
             disabled={disabled || loading}
             {...props}
@@ -85,7 +85,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
 
     const { 
         isLiked, isBookmarked, isReposted, 
-        counts, isTransitioning, isRepostTransitioning,
+        counts, pending,
         actions 
     } = usePostInteractions(post?.id, post || undefined);
 
@@ -115,7 +115,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
                     count: counts?.repostsCount || 0,
                     active: isReposted,
                     iconClassName: cn('text-green-400', isReposted && 'fill-green-400'),
-                    loading: isRepostTransitioning,
+                    loading: pending.repost,
                     onClick: actions.toggleRepost,
                     disabled: !canRepost,
                 }
@@ -128,7 +128,7 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
                     count: counts?.likesCount || 0,
                     active: isLiked,
                     iconClassName: cn('text-pink-500', isLiked && 'fill-pink-500'),
-                    loading: isTransitioning,
+                    loading: pending.like,
                     onClick: actions.toggleLike,
                     disabled: !canInteract,
                 }
@@ -166,18 +166,18 @@ const InteractionRail: React.FC<InteractionRailProps> = ({
                 count: counts?.bookmarksCount || 0,
                 active: isBookmarked,
                 iconClassName: cn('text-yellow-400', isBookmarked && 'fill-yellow-400'),
-                loading: isTransitioning,
+                loading: pending.bookmark,
                 onClick: actions.toggleBookmark,
                 disabled: !post || post.status === 'deleted',
             }
         };
 
         return { leftActions, bookmarkAction };
-    }, [post, lang, isLiked, isBookmarked, isReposted, counts, isTransitioning, actions, onOpenDiscussion, onNewPost, canInteract, canRepost, canShare, showNewPost]);
+    }, [post, lang, isLiked, isBookmarked, isReposted, counts, pending, actions, onOpenDiscussion, onNewPost, canInteract, canRepost, canShare, showNewPost]);
 
     return (
         <div className={cn(
-            "mt-4 flex items-center justify-between gap-3 border-t border-white/[0.05] pt-2.5 text-white/68",
+            "mt-[var(--social-post-action-margin-top)] flex items-center justify-between gap-3 border-t border-[color:var(--social-post-action-border)] pt-[var(--social-post-action-padding-top)] text-white/68",
             className
         )}>
             <div className="flex min-w-0 items-center gap-0.5 overflow-x-auto whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:gap-1">

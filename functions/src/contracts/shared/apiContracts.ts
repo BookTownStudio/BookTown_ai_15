@@ -151,6 +151,15 @@ const renderSurfaceSchema = z.enum([
   "write",
 ]);
 
+const attachmentDeliveryIntentSchema = z.enum([
+  "timeline",
+  "preview",
+  "overlay_default",
+  "high_detail",
+  "full",
+  "fallback",
+]);
+
 const moderationActionSchema = z.enum([
   "dismiss",
   "hide",
@@ -4154,6 +4163,7 @@ export const apiContracts = {
         .object({
           attachmentId: z.string().min(1),
           surface: renderSurfaceSchema,
+          deliveryIntent: attachmentDeliveryIntentSchema.optional(),
         })
         .strict(),
       z

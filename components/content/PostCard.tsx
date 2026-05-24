@@ -22,10 +22,10 @@ import { LockIcon } from '../icons/LockIcon.tsx';
 import { EyeOffIcon } from '../icons/EyeOffIcon.tsx';
 import { UsersIcon } from '../icons/UsersIcon.tsx';
 import { FlagIcon } from '../icons/FlagIcon.tsx';
-import { QuoteIcon } from '../icons/QuoteIcon.tsx';
 import { callCallableEndpoint } from '../../lib/callable.ts';
 import { resolveCanonicalPostAttachments } from '../../types/socialAttachments.ts';
 import { useSocialRenderDiagnostics } from '../../lib/socialPerformanceDiagnostics.ts';
+import { socialFeedLayoutStyle } from './socialFeedLayout.ts';
 
 interface PostCardProps {
     post: Post;
@@ -47,9 +47,6 @@ const toIsoTimestamp = (value: unknown): string => {
     }
     return '';
 };
-
-const isCanonicalQuoteId = (value: string | undefined): boolean =>
-    typeof value === 'string' && /^cq_[A-Za-z0-9_-]+$/.test(value.trim());
 
 const PostVisibilityBadge = React.memo(({
     lang,
@@ -123,80 +120,17 @@ const PostActionMenu = React.memo(({
 
 PostActionMenu.displayName = 'PostActionMenu';
 
-const QuoteAttachmentButton = React.memo(({
-    attachment,
-    lang,
-    onOpen,
-}: {
-    attachment: Extract<PostAttachment, { type: 'quote' }>;
-    lang: string;
-    onOpen: (attachment: Extract<PostAttachment, { type: 'quote' }>) => void;
-}) => {
-    const handleOpen = useCallback(() => {
-        onOpen(attachment);
-    }, [attachment, onOpen]);
-
-    return (
-        <button
-            type="button"
-            onClick={handleOpen}
-            className="block w-full text-left"
-        >
-            <GlassCard className="!p-4 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                <div className="flex items-start gap-3">
-                    <div className="mt-0.5 rounded-xl bg-accent/10 p-2 text-accent">
-                        <QuoteIcon className="h-4 w-4" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                        <BilingualText className="font-semibold">
-                            {lang === 'en' ? 'Quote' : 'اقتباس'}
-                        </BilingualText>
-                        {'quoteText' in attachment && attachment.quoteText ? (
-                            <BilingualText role="Quote" className="mt-1 !text-sm line-clamp-3">
-                                "{attachment.quoteText}"
-                            </BilingualText>
-                        ) : null}
-                    </div>
-                </div>
-            </GlassCard>
-        </button>
-    );
-});
-
-QuoteAttachmentButton.displayName = 'QuoteAttachmentButton';
-
 const PostAttachmentStack = React.memo(({
-    hasNonQuoteAttachments,
-    lang,
-    nonQuoteAttachments,
-    onOpenQuote,
-    quoteAttachments,
+    attachments,
     surface,
 }: {
-    hasNonQuoteAttachments: boolean;
-    lang: string;
-    nonQuoteAttachments: PostAttachment[];
-    onOpenQuote: (attachment: Extract<PostAttachment, { type: 'quote' }>) => void;
-    quoteAttachments: Extract<PostAttachment, { type: 'quote' }>[];
+    attachments: PostAttachment[];
     surface: RenderSurface;
 }) => (
     <>
-        {hasNonQuoteAttachments && (
-            <div className="mt-3">
-                <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
-            </div>
-        )}
-
-        {quoteAttachments.length > 0 && (
-            <div className={cn("space-y-3 px-4 md:px-5", hasNonQuoteAttachments ? "mt-3" : "mt-4")}>
-                {quoteAttachments.map((attachment) => (
-                    <QuoteAttachmentButton
-                        key={`quote:${attachment.quoteId}`}
-                        attachment={attachment}
-                        lang={lang}
-                        onOpen={onOpenQuote}
-                    />
-                ))}
+        {attachments.length > 0 && (
+            <div className="mt-[var(--social-post-section-gap-compact)]">
+                <AttachmentListV1 attachments={attachments} surface={surface === 'feed' ? 'read' : surface} />
             </div>
         )}
     </>
@@ -241,7 +175,7 @@ const PostListHeader = React.memo(({
     showEditedBadge: boolean;
     visibility?: Post['visibility'];
 }) => (
-    <header className={cn("flex items-start justify-between gap-3 px-4 pt-4 md:px-5 md:pt-5", isRTL && "text-right")}>
+    <header className={cn("flex items-start justify-between gap-3 px-[var(--social-post-inline-padding)] pt-[var(--social-post-block-padding)] md:px-[var(--social-post-inline-padding-md)] md:pt-[var(--social-post-block-padding-md)]", isRTL && "text-right")}>
         <div className={cn("flex min-w-0 items-center gap-3", isRTL && "flex-row-reverse")}>
             <button
                 type="button"
@@ -296,7 +230,10 @@ const PostListBody = React.memo(({
     onBodyIntent: (event: React.MouseEvent) => void;
     shouldShowExpandHint: boolean;
 }) => (
-    <div onClick={onBodyIntent} className={cn("cursor-pointer px-4 active:opacity-80 transition-opacity md:px-5", hasRenderableAttachments ? "mt-4" : "mt-3")}>
+    <div onClick={onBodyIntent} className={cn(
+        "cursor-pointer px-[var(--social-post-inline-padding)] active:opacity-80 transition-opacity duration-[var(--social-post-action-transition)] motion-reduce:transition-none md:px-[var(--social-post-inline-padding-md)]",
+        hasRenderableAttachments ? "mt-[var(--social-post-section-gap)]" : "mt-[var(--social-post-section-gap-compact)]"
+    )}>
         <BilingualText role="Body" className={cn(
             "font-serif !text-[1.2rem] leading-[1.6] text-white/92",
             shouldShowExpandHint && !isBodyExpanded && "line-clamp-3"
@@ -315,7 +252,7 @@ const PostInteractionBoundary = React.memo(({
     onOpenDiscussion: () => void;
     post: Post;
 }) => (
-    <div className="px-4 pb-3 md:px-5">
+    <div className="px-[var(--social-post-inline-padding)] pb-[var(--social-post-action-padding-bottom)] md:px-[var(--social-post-inline-padding-md)]">
         <InteractionRail post={post} onOpenDiscussion={onOpenDiscussion} />
     </div>
 ));
@@ -484,59 +421,13 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
         return resolveCanonicalPostAttachments(post);
     }, [post]);
 
-    const quoteAttachments = useMemo(
-        () =>
-            resolvedAttachments.filter(
-                (attachment): attachment is Extract<PostAttachment, { type: 'quote' }> =>
-                    typeof attachment === 'object' &&
-                    attachment !== null &&
-                    'type' in attachment &&
-                    attachment.type === 'quote'
-            ),
-        [resolvedAttachments]
-    );
-
-    const nonQuoteAttachments = useMemo(
-        () =>
-            resolvedAttachments.filter(
-                (attachment) =>
-                    !(
-                        typeof attachment === 'object' &&
-                        attachment !== null &&
-                        'type' in attachment &&
-                        attachment.type === 'quote'
-                    )
-            ),
-        [resolvedAttachments]
-    );
-    const hasQuoteAttachments = quoteAttachments.length > 0;
-    const hasNonQuoteAttachments = nonQuoteAttachments.length > 0;
-    const hasRenderableAttachments = hasQuoteAttachments || hasNonQuoteAttachments;
+    const hasRenderableAttachments = resolvedAttachments.length > 0;
     const hasDisplayBody = bodyLength > 0;
     useSocialRenderDiagnostics('PostCard', {
         attachmentCount: resolvedAttachments.length,
         surface,
         viewMode,
     });
-
-    const handleOpenQuoteAttachment = useCallback((attachment: Extract<PostAttachment, { type: 'quote' }>) => {
-        const quoteId = attachment.quoteId.trim();
-        if (!quoteId) return;
-
-        const params: Record<string, unknown> = {
-            quoteId,
-            from: currentView,
-        };
-        if (!isCanonicalQuoteId(quoteId) && attachment.quoteOwnerId) {
-            params.ownerId = attachment.quoteOwnerId;
-        }
-
-        navigate({
-            type: 'immersive',
-            id: 'quoteDetails',
-            params,
-        });
-    }, [currentView, navigate]);
 
     const openDiscussion = useCallback(() => {
         if (!post?.id) return;
@@ -699,34 +590,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                             </BilingualText>
                         </div>
                         <div className="w-full max-w-[760px] mx-auto space-y-3 mt-6">
-                            {quoteAttachments.map((attachment) => (
-                                <button
-                                    key={`quote:${attachment.quoteId}`}
-                                    type="button"
-                                    onClick={() => handleOpenQuoteAttachment(attachment)}
-                                    className="block w-full text-left"
-                                >
-                                    <GlassCard className="!p-4 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                                        <div className="flex items-start gap-3">
-                                            <div className="mt-0.5 rounded-xl bg-accent/10 p-2 text-accent">
-                                                <QuoteIcon className="h-4 w-4" />
-                                            </div>
-                                            <div className="min-w-0 flex-1">
-                                                <BilingualText className="font-semibold">
-                                                    {lang === 'en' ? 'Quote' : 'اقتباس'}
-                                                </BilingualText>
-                                                {'quoteText' in attachment && attachment.quoteText ? (
-                                                    <BilingualText role="Quote" className="mt-1 !text-sm line-clamp-3">
-                                                        "{attachment.quoteText}"
-                                                    </BilingualText>
-                                                ) : null}
-                                            </div>
-                                        </div>
-                                    </GlassCard>
-                                </button>
-                            ))}
-                            {nonQuoteAttachments.length > 0 ? (
-                                <AttachmentListV1 attachments={nonQuoteAttachments} surface={surface === 'feed' ? 'read' : surface} />
+                            {resolvedAttachments.length > 0 ? (
+                                <AttachmentListV1 attachments={resolvedAttachments} surface={surface === 'feed' ? 'read' : surface} />
                             ) : null}
                         </div>
                         <div className="mx-auto w-full max-w-[760px]">
@@ -775,34 +640,8 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                         {displayBody}
                     </BilingualText>
                     <div className="mt-2 scale-95 origin-top-left opacity-90 space-y-3">
-                        {quoteAttachments.map((attachment) => (
-                            <button
-                                key={`quote:${attachment.quoteId}`}
-                                type="button"
-                                onClick={() => handleOpenQuoteAttachment(attachment)}
-                                className="block w-full text-left"
-                            >
-                                <GlassCard className="!p-4 hover:bg-black/5 dark:hover:bg-white/10 transition-colors">
-                                    <div className="flex items-start gap-3">
-                                        <div className="mt-0.5 rounded-xl bg-accent/10 p-2 text-accent">
-                                            <QuoteIcon className="h-4 w-4" />
-                                        </div>
-                                        <div className="min-w-0 flex-1">
-                                            <BilingualText className="font-semibold">
-                                                {lang === 'en' ? 'Quote' : 'اقتباس'}
-                                            </BilingualText>
-                                            {'quoteText' in attachment && attachment.quoteText ? (
-                                                <BilingualText role="Quote" className="mt-1 !text-sm line-clamp-3">
-                                                    "{attachment.quoteText}"
-                                                </BilingualText>
-                                            ) : null}
-                                        </div>
-                                    </div>
-                                </GlassCard>
-                            </button>
-                        ))}
-                        {nonQuoteAttachments.length > 0 ? (
-                            <AttachmentListV1 attachments={nonQuoteAttachments} surface="read" />
+                        {resolvedAttachments.length > 0 ? (
+                            <AttachmentListV1 attachments={resolvedAttachments} surface="read" />
                         ) : null}
                     </div>
                 </div>
@@ -812,8 +651,11 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
     }
 
     return (
-        <GlassCard className="relative overflow-hidden !border-transparent !bg-transparent !p-0 !shadow-none">
-            <div className="pointer-events-none absolute inset-0 rounded-2xl bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.05),transparent_56%)]" />
+        <GlassCard
+            className="relative overflow-hidden !rounded-[var(--social-post-card-radius)] !border-[color:var(--social-post-card-border)] !bg-[image:var(--social-post-card-bg)] !p-0 !shadow-[var(--social-post-card-shadow)]"
+            style={socialFeedLayoutStyle}
+        >
+            <div className="pointer-events-none absolute inset-0 rounded-[var(--social-post-card-radius)] bg-[image:var(--social-post-card-wash)]" />
             <div className="relative z-10">
                 <PostListHeader
                     authorAvatar={authorAvatar}
@@ -835,15 +677,6 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     visibility={post?.visibility}
                 />
 
-                <PostAttachmentStack
-                    hasNonQuoteAttachments={hasNonQuoteAttachments}
-                    lang={lang}
-                    nonQuoteAttachments={nonQuoteAttachments}
-                    onOpenQuote={handleOpenQuoteAttachment}
-                    quoteAttachments={quoteAttachments}
-                    surface={surface}
-                />
-
                 {hasDisplayBody && (
                     <PostListBody
                         displayBody={displayBody}
@@ -854,12 +687,17 @@ const PostCard: React.FC<PostCardProps> = ({ post, viewMode = 'list', onOpenDisc
                     />
                 )}
                 {shouldShowExpandHint && (
-                    <BilingualText role="Caption" className="mt-2 px-4 !text-[11px] text-white/42 md:px-5">
+                    <BilingualText role="Caption" className="mt-2 px-[var(--social-post-inline-padding)] !text-[11px] text-white/42 md:px-[var(--social-post-inline-padding-md)]">
                         {isBodyExpanded
                             ? (lang === 'en' ? 'Tap again to open discussion' : 'اضغط مرة أخرى لفتح النقاش')
                             : (lang === 'en' ? 'Tap to continue reading' : 'اضغط لمتابعة القراءة')}
                     </BilingualText>
                 )}
+
+                <PostAttachmentStack
+                    attachments={resolvedAttachments}
+                    surface={surface}
+                />
 
                 <PostInteractionBoundary post={post} onOpenDiscussion={openDiscussion} />
             </div>

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
 import { useI18n } from '../../store/i18n.tsx';
@@ -8,7 +8,7 @@ import { AttachmentV1 } from '../../types/entities.ts';
 import { PlayIcon } from '../icons/PlayIcon.tsx';
 import { DownloadIcon } from '../icons/DownloadIcon.tsx';
 import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
-import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
+import { fetchAttachmentUrl, useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 
 const readNonEmptyString = (value: unknown): string =>
@@ -42,6 +42,7 @@ const resolveCreatedAtLabel = (attachment: AttachmentV1 | null): string => {
 const AttachmentViewerOverlay: React.FC = () => {
     const { lang } = useI18n();
     const { activeAttachment, closeViewer } = useAttachmentViewer();
+    const [isResolvingOriginal, setIsResolvingOriginal] = useState(false);
 
     const isV1 = activeAttachment && 'attachmentId' in activeAttachment;
     const v1 = isV1 ? (activeAttachment as AttachmentV1) : null;
@@ -53,8 +54,12 @@ const AttachmentViewerOverlay: React.FC = () => {
             ? (v1?.payload as { alt: string }).alt
             : 'attachment image';
     
-    // ATTACHMENT_SECURITY_V1: Fullscreen-scoped secure URL
-    const { data: secureUrl, isLoading: isResolving } = useAttachmentUrl(v1?.attachmentId, 'feed');
+    // ATTACHMENT_SECURITY_V1: expanded overlay uses the large rendition by default.
+    const { data: secureUrl, isLoading: isResolving } = useAttachmentUrl(
+        v1?.attachmentId,
+        'feed',
+        'overlay_default'
+    );
 
     // Analytics: Track Opened
     useEffect(() => {
@@ -65,11 +70,21 @@ const AttachmentViewerOverlay: React.FC = () => {
 
     if (!activeAttachment) return null;
 
-    const handleDownload = (e: React.MouseEvent) => {
+    const handleDownload = async (e: React.MouseEvent) => {
         e.stopPropagation();
+        if (!v1?.attachmentId || isResolvingOriginal) return;
+
         AttachmentAnalytics.track('attachment_downloaded', activeAttachment, 'feed');
-        if (secureUrl?.url) {
-            window.open(secureUrl.url, '_blank');
+        setIsResolvingOriginal(true);
+        try {
+            const originalUrl = await fetchAttachmentUrl(v1.attachmentId, 'high_detail');
+            if (originalUrl?.url) {
+                window.open(originalUrl.url, '_blank');
+            }
+        } catch (error) {
+            console.error('[ATTACHMENT_VIEWER][ORIGINAL_URL_FAILED]', error);
+        } finally {
+            setIsResolvingOriginal(false);
         }
     };
 
@@ -126,7 +141,7 @@ const AttachmentViewerOverlay: React.FC = () => {
                         <XIcon className="h-6 w-6" />
                     </Button>
                     <div className="flex gap-2">
-                        <Button variant="ghost" onClick={handleDownload} className="!text-white/70 hover:!text-white !bg-white/5" disabled={isResolving || !secureUrl}>
+                        <Button variant="ghost" onClick={handleDownload} className="!text-white/70 hover:!text-white !bg-white/5" disabled={isResolvingOriginal || isResolving || !secureUrl}>
                             <DownloadIcon className="h-5 w-5 mr-2" />
                             {lang === 'en' ? 'Download' : 'تحميل'}
                         </Button>

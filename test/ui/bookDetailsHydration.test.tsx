@@ -63,6 +63,12 @@ vi.mock("../../lib/hooks/useBookReviews.ts", () => ({
   }),
 }));
 
+vi.mock("../../lib/hooks/useBookSemanticGraph.ts", () => ({
+  useBookSemanticGraph: () => ({
+    data: null,
+  }),
+}));
+
 vi.mock("../../lib/hooks/useBookShelfStatus.ts", () => ({
   useBookShelfStatus: () => ({
     isSavedOnPhysicalShelf: false,
@@ -83,6 +89,12 @@ vi.mock("../../lib/hooks/useSubmitReview.ts", () => ({
 vi.mock("../../lib/hooks/useToggleBookOnShelf.ts", () => ({
   useToggleBookOnShelf: () => ({
     mutate: vi.fn(),
+  }),
+}));
+
+vi.mock("../../lib/react-query.ts", () => ({
+  useQueryClient: () => ({
+    invalidateQueries: vi.fn(),
   }),
 }));
 
@@ -170,6 +182,7 @@ vi.mock("../../components/icons", () => ({
   ShelvesIcon: () => <div>shelves</div>,
   SendIcon: () => <div>send</div>,
   EditIcon: () => <div>edit</div>,
+  ChevronLeftIcon: () => <div>back</div>,
 }));
 
 function buildSearchResult(overrides?: Partial<SearchResultDTO>): SearchResultDTO {
@@ -386,6 +399,58 @@ describe("BookDetailsScreen hydration guards", () => {
 
     expect(screen.getByText("Ebook ready to read.")).toBeInTheDocument();
     expect(screen.getByText("Read")).toBeInTheDocument();
+  });
+
+  it("blocks ebook preparation when availability count is zero", async () => {
+    const unavailableBook = buildBook("book_1", "Canonical Book");
+
+    currentViewState.params = {
+      bookId: "book_1",
+      searchResult: buildSearchResult({
+        id: "book_1",
+        bookId: "book_1",
+        available: false,
+        acquired: false,
+        readAccess: "none",
+        readProvider: null,
+        ebookClass: "unavailable",
+        externalReadableSources: [
+          {
+            provider: "openLibrary",
+            providerExternalId: "OL66554W",
+            trust: "trusted",
+          },
+        ],
+      }),
+    };
+
+    useBookCatalogMock.mockImplementation(() => ({
+      data: {
+        ...unavailableBook,
+        externalReadableSources: [
+          {
+            provider: "openLibrary",
+            providerExternalId: "OL66554W",
+            trust: "trusted",
+          },
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      refetch: refetchMock,
+    }));
+
+    render(<BookDetailsScreen />);
+
+    expect(screen.getByText("No ebook available")).toBeInTheDocument();
+    expect(screen.getByText("Add to shelf")).toBeInTheDocument();
+    expect(screen.getByText("Find external edition")).toBeInTheDocument();
+    expect(screen.getByText("Upload your own ebook")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Unavailable"));
+
+    expect(acquireExternalEbookForReadMock).not.toHaveBeenCalled();
+    expect(showToastMock).not.toHaveBeenCalledWith("Preparing ebook...");
   });
 
   it("renders a persistent failed acquisition state with explicit retry", async () => {

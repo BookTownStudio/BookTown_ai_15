@@ -6,6 +6,7 @@ import { useAuth } from '../../lib/auth.tsx';
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { useQuoteDetails } from '../../lib/hooks/useQuoteDetails.ts';
 import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
+import type { AttachmentDeliveryIntent } from '../../lib/hooks/useAttachmentUrl.ts';
 import { useSocialRenderDiagnostics } from '../../lib/socialPerformanceDiagnostics.ts';
 import { cn } from '../../lib/utils.ts';
 
@@ -14,9 +15,9 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
 
 import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
+import type { View } from '../../types/navigation.ts';
 
 import BilingualText from '../ui/BilingualText.tsx';
-import GlassCard from '../ui/GlassCard.tsx';
 
 import { BookIcon } from '../icons/BookIcon.tsx';
 import { DraftIcon as FileIcon } from '../icons/DraftIcon.tsx';
@@ -24,6 +25,7 @@ import { EyeIcon } from '../icons/EyeIcon.tsx';
 import { GlobeIcon } from '../icons/GlobeIcon.tsx';
 import { MediaIcon } from '../icons/MediaIcon.tsx';
 import { PlayIcon } from '../icons/PlayIcon.tsx';
+import { QuoteIcon } from '../icons/QuoteIcon.tsx';
 import { TrashIcon } from '../icons/TrashIcon.tsx';
 import { VerticalEllipsisIcon } from '../icons/VerticalEllipsisIcon.tsx';
 import { VolumeXIcon } from '../icons/VolumeXIcon.tsx';
@@ -39,6 +41,11 @@ const ACTION_MATRIX: Record<RenderSurface, string[]> = {
 };
 
 const mediaFeedDiagnosticsLogged = new Set<string>();
+
+type ImageRenditionMetadata = {
+    width: number;
+    height: number;
+};
 
 interface AttachmentActionMenuProps {
     attachment: PostAttachment;
@@ -102,7 +109,8 @@ const ImageView: React.FC<{
     payload?: any;
     maxHeight?: number | string;
     surface: RenderSurface;
-}> = ({ attachment, url, payload, maxHeight, surface }) => {
+    dimensions?: ImageRenditionMetadata | null;
+}> = ({ attachment, url, payload, maxHeight, surface, dimensions }) => {
     devLog("IMAGE_VIEW_ACTIVE");
 
     const safePayload =
@@ -110,47 +118,55 @@ const ImageView: React.FC<{
             ? payload
             : {};
 
-    const isExhibitionSurface = surface === 'feed';
-
     const fallbackAlt = 'attachment image';
 
     const resolvedAlt =
         typeof safePayload.alt === 'string' && safePayload.alt.trim().length > 0
             ? safePayload.alt
             : fallbackAlt;
+    const hasStableDimensions =
+        dimensions &&
+        Number.isFinite(dimensions.width) &&
+        Number.isFinite(dimensions.height) &&
+        dimensions.width > 0 &&
+        dimensions.height > 0;
 
     return (
-        <div
-            className={cn(
-                "relative w-full overflow-hidden bg-slate-800 shadow-[0_14px_24px_-20px_rgba(0,0,0,0.72)]",
-                isExhibitionSurface
-                    ? "rounded-[0.7rem]"
-                    : "rounded-xl"
-            )}
-            style={
-                isExhibitionSurface
-                    ? undefined
-                    : { maxHeight }
+        <AttachmentGrammarCard
+            label="Image"
+            title="Image"
+            subtitle={resolvedAlt !== fallbackAlt ? resolvedAlt : undefined}
+            mediaFirst
+            preview={
+                <div
+                    className="relative max-h-[30rem] overflow-hidden"
+                    style={hasStableDimensions
+                        ? {
+                            aspectRatio: `${dimensions.width} / ${dimensions.height}`,
+                            maxHeight,
+                        }
+                        : undefined}
+                >
+                    <img
+                        src={url}
+                        alt={resolvedAlt}
+                        loading="lazy"
+                        onLoad={() =>
+                            AttachmentAnalytics.track('attachment_rendered', attachment, surface)
+                        }
+                        onError={() =>
+                            AttachmentAnalytics.track('attachment_failed', attachment, surface)
+                        }
+                        className={cn(
+                            "block w-full object-cover transition-opacity duration-300",
+                            hasStableDimensions ? "h-full" : "h-auto"
+                        )}
+                        style={hasStableDimensions ? undefined : { maxHeight }}
+                    />
+                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/24 via-transparent to-transparent" />
+                </div>
             }
-        >
-            <img
-                src={url}
-                alt={resolvedAlt}
-                loading="lazy"
-                onLoad={() =>
-                    AttachmentAnalytics.track('attachment_rendered', attachment, surface)
-                }
-                onError={() =>
-                    AttachmentAnalytics.track('attachment_failed', attachment, surface)
-                }
-                className={cn(
-                    "block w-full h-auto object-cover transition-opacity duration-300",
-                    isExhibitionSurface && "scale-[1.01]"
-                )}
-            />
-
-            <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/35 via-black/10 to-transparent" />
-        </div>
+        />
     );
 };
 
@@ -160,65 +176,41 @@ const VideoView: React.FC<{ attachment: PostAttachment; payload?: any; maxHeight
         payload && typeof payload === 'object'
             ? payload
             : {};
-    const isExhibitionSurface = surface === 'feed';
     useEffect(() => {
         AttachmentAnalytics.track('attachment_rendered', attachment, surface);
     }, [attachment, surface]);
 
     return (
-        <div 
-            className={cn(
-                "relative overflow-hidden bg-black flex items-center justify-center",
-                isExhibitionSurface
-                    ? "rounded-[0.7rem] w-full max-h-[72dvh]"
-                    : "rounded-lg"
-            )}
-            style={isExhibitionSurface ? undefined : { height: maxHeight }}
-        >
-
-            {typeof safePayload.thumbnail === 'string' && safePayload.thumbnail.length > 0 && (
-                <img src={safePayload.thumbnail} alt="Poster" className="absolute inset-0 w-full h-full object-cover opacity-50" />
-            )}
-            {isExhibitionSurface && (
-                <div className="pointer-events-none absolute left-4 top-4">
-                    <AttachmentTypeLabel label="VIDEO" />
+        <AttachmentGrammarCard
+            label="Video"
+            title={lang === 'en' ? 'Video Attachment' : 'مرفق فيديو'}
+            mediaFirst
+            preview={
+                <div className="relative flex min-h-[12rem] items-center justify-center overflow-hidden bg-black" style={{ maxHeight }}>
+                    {typeof safePayload.thumbnail === 'string' && safePayload.thumbnail.length > 0 && (
+                        <img src={safePayload.thumbnail} alt="Poster" className="absolute inset-0 h-full w-full object-cover opacity-50" />
+                    )}
+                    <PlayIcon className="relative z-10 h-10 w-10 text-white/50" />
                 </div>
-            )}
-            <div className="z-10 flex flex-col items-center">
-                <PlayIcon className="h-10 w-10 text-white/50" />
-                <BilingualText role="Caption" className="mt-2 !text-white/30">
-                    {lang === 'en' ? 'Video Attachment' : 'مرفق فيديو'}
-                </BilingualText>
-            </div>
-        </div>
+            }
+        />
     );
 };
 
 const AudioView: React.FC<{ attachment: PostAttachment; maxHeight: number | string; surface: RenderSurface }> = ({ attachment, maxHeight, surface }) => {
     const { lang } = useI18n();
-    const isExhibitionSurface = surface === 'feed';
     useEffect(() => {
         AttachmentAnalytics.track('attachment_rendered', attachment, surface);
     }, [attachment, surface]);
 
     return (
-        <div 
-            className={cn(
-                "flex items-center gap-3 p-3 bg-slate-800/40",
-                isExhibitionSurface
-                    ? "rounded-[0.9rem] min-h-[22vh] md:min-h-[26vh]"
-                    : "rounded-lg"
-            )}
-            style={isExhibitionSurface ? undefined : { maxHeight }}
+        <AttachmentGrammarCard
+            label="Audio"
+            title={lang === 'en' ? 'Audio' : 'صوت'}
+            preview={<div className="flex h-full w-full items-center justify-center"><VolumeXIcon className="h-5 w-5 text-accent/60" /></div>}
         >
-            <div className="h-8 w-8 rounded-full bg-accent/10 flex items-center justify-center text-accent/50">
-                <VolumeXIcon className="h-4 w-4" />
-            </div>
-            <div className="flex-grow h-1 bg-white/5 rounded-full" />
-            <BilingualText role="Caption" className="!text-[10px] uppercase font-black opacity-30">
-                {lang === 'en' ? 'Audio' : 'صوت'}
-            </BilingualText>
-        </div>
+            <div className="mt-3 h-1 rounded-full bg-white/8" style={{ maxHeight }} />
+        </AttachmentGrammarCard>
     );
 };
 
@@ -233,22 +225,14 @@ const DocumentView: React.FC<{ attachment: PostAttachment; payload?: any; surfac
     }, [attachment, surface]);
 
     return (
-        <GlassCard className={cn(
-            "flex items-center gap-3 !p-3 border-dashed border-white/10 opacity-80 !shadow-none",
-            surface === 'feed' && "rounded-[0.7rem] min-h-[20vh] !border-white/0 !bg-white/4"
-        )}>
-            <FileIcon className="h-5 w-5 text-slate-500" />
-            <div className="min-w-0 flex-grow">
-                <BilingualText className="font-bold text-sm truncate">
-                    {(typeof safePayload.name === 'string' ? safePayload.name : '') || (lang === 'en' ? 'Document' : 'مستند')}
-                </BilingualText>
-                <BilingualText role="Caption" className="!text-[10px]">
-                    {typeof safePayload.size === 'number' && Number.isFinite(safePayload.size)
-                        ? `${(safePayload.size / 1024).toFixed(1)} KB`
-                        : 'File'}
-                </BilingualText>
-            </div>
-        </GlassCard>
+        <AttachmentGrammarCard
+            label="Document"
+            title={(typeof safePayload.name === 'string' ? safePayload.name : '') || (lang === 'en' ? 'Document' : 'مستند')}
+            subtitle={typeof safePayload.size === 'number' && Number.isFinite(safePayload.size)
+                ? `${(safePayload.size / 1024).toFixed(1)} KB`
+                : 'File'}
+            preview={<div className="flex h-full w-full items-center justify-center"><FileIcon className="h-5 w-5 text-slate-500" /></div>}
+        />
     );
 };
 
@@ -258,76 +242,71 @@ const AttachmentTypeLabel: React.FC<{ label: string }> = ({ label }) => (
     </span>
 );
 
-const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: string; rating?: number; surface?: RenderSurface }> = ({ title, author, coverUrl, rating = 0, surface = 'feed' }) => {
-    const safeRating = Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
-    const isExhibitionSurface = surface === 'feed';
-    return (
-        <div className={cn(
-            "relative overflow-hidden p-3",
-            isExhibitionSurface
-                ? "rounded-[0.7rem] bg-gradient-to-br from-[#081a2a] via-[#0a2235] to-[#0d2a40] px-4 py-4 shadow-[0_10px_22px_-16px_rgba(0,119,182,0.58)]"
-                : "rounded-[0.95rem] border border-white/8 bg-[#0b1420]/92 shadow-none"
-        )}>
-            <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.26),transparent_56%)]" />
-            <div className={cn(
-                "relative flex items-start gap-3",
-                isExhibitionSurface && "h-full"
-            )}>
-                <div className="flex-shrink-0">
-                    {coverUrl ? (
-                        <img src={coverUrl} className={cn(
-                            "object-cover shadow-lg",
-                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-28 w-20 rounded-lg shadow-none"
-                        )} alt="" />
-                    ) : (
-                        <div className={cn(
-                            "bg-white/10",
-                            isExhibitionSurface ? "h-[46vh] md:h-[54vh] w-[38vw] max-w-[19rem] rounded-xl" : "h-28 w-20 rounded-lg"
-                        )} />
-                    )}
+const AttachmentGrammarCard: React.FC<{
+    label: string;
+    title: string;
+    subtitle?: string;
+    metadata?: string;
+    preview?: React.ReactNode;
+    children?: React.ReactNode;
+    mediaFirst?: boolean;
+}> = ({ label, title, subtitle, metadata, preview, children, mediaFirst = false }) => (
+    <div className="relative overflow-hidden rounded-[0.95rem] border border-white/8 bg-[#0d1520]/94 px-3.5 py-3.5 text-slate-200 shadow-none">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.12),transparent_58%)]" />
+        <div className={cn("relative flex gap-3", mediaFirst ? "flex-col" : "items-start")}>
+            {preview ? (
+                <div className={cn(
+                    "shrink-0 overflow-hidden rounded-[0.7rem] bg-white/8",
+                    mediaFirst ? "w-full" : "h-24 w-16"
+                )}>
+                    {preview}
                 </div>
-                <div className={cn("min-w-0 flex-1", isExhibitionSurface && "flex flex-col justify-between h-full py-1")}>
-                    <AttachmentTypeLabel label="Book" />
-                    <div>
-                        <BilingualText className={cn(
-                            "mt-2 font-semibold leading-snug text-white",
-                            isExhibitionSurface ? "text-[1.05rem] md:text-[1.15rem] line-clamp-3" : "text-[13px] truncate"
-                        )}>{title}</BilingualText>
-                        <BilingualText role="Caption" className={cn(
-                            "mt-1 text-white/65",
-                            isExhibitionSurface ? "!text-[12px] line-clamp-2" : "!text-[10px] truncate"
-                        )}>{author}</BilingualText>
+            ) : null}
+            <div className="min-w-0 flex-1">
+                <AttachmentTypeLabel label={label} />
+                <BilingualText className="mt-2 font-semibold text-[15px] leading-snug text-white line-clamp-3">
+                    {title}
+                </BilingualText>
+                {subtitle ? (
+                    <BilingualText role="Caption" className="mt-1 !text-[11px] leading-snug text-white/65 line-clamp-2">
+                        {subtitle}
+                    </BilingualText>
+                ) : null}
+                {children}
+                {metadata ? (
+                    <div className="mt-3 inline-flex w-fit items-center rounded-full border border-white/15 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/74">
+                        {metadata}
                     </div>
-                    <div className={cn(
-                        "mt-2 text-[#8ecdf2] tracking-wide",
-                        isExhibitionSurface ? "text-[12px]" : "text-[11px]"
-                    )}>{'★'.repeat(Math.round(safeRating)) || '☆☆☆☆☆'}</div>
-                </div>
+                ) : null}
             </div>
         </div>
+    </div>
+);
+
+const BookReferenceCard: React.FC<{ title: string; author: string; coverUrl?: string; rating?: number; surface?: RenderSurface }> = ({ title, author, coverUrl, rating = 0, surface = 'feed' }) => {
+    const safeRating = Number.isFinite(rating) ? Math.max(0, Math.min(5, rating)) : 0;
+    return (
+        <AttachmentGrammarCard
+            label="Book"
+            title={title || 'Book'}
+            subtitle={author}
+            metadata={'★'.repeat(Math.round(safeRating)) || 'No rating'}
+            preview={coverUrl
+                ? <img src={coverUrl} className="h-full w-full object-cover" alt="" loading="lazy" />
+                : <div className="flex h-full w-full items-center justify-center"><BookIcon className="h-5 w-5 text-white/58" /></div>}
+        />
     );
 };
 
 const QuoteReferenceCard: React.FC<{ text: string; surface?: RenderSurface }> = ({ text, surface = 'feed' }) => {
-    const isExhibitionSurface = surface === 'feed';
     return (
-    <div className={cn(
-        "relative px-4 py-3.5 text-slate-200",
-        isExhibitionSurface
-            ? "rounded-[0.7rem] bg-gradient-to-r from-[#111a24] to-[#0c1118] shadow-[0_10px_22px_-20px_rgba(255,255,255,0.35)] aspect-[4/5] max-h-[68dvh] flex flex-col justify-between"
-            : "rounded-[0.95rem] border border-white/8 bg-[#0d1520]/94"
-    )}>
-        <div className="mt-3 flex gap-2">
-            <span className={cn(
-                "leading-none text-[#8ecdf2]",
-                isExhibitionSurface ? "text-[2.3rem]" : "text-2xl"
-            )}>“</span>
-            <p className={cn(
-                "italic text-white/80",
-                isExhibitionSurface ? "text-[1rem] leading-[1.65] line-clamp-[10]" : "text-[13px] leading-relaxed line-clamp-3"
-            )}>{text}</p>
-        </div>
-    </div>
+        <AttachmentGrammarCard
+            label="Quote"
+            title="Quote"
+            preview={<div className="flex h-full w-full items-center justify-center"><QuoteIcon className="h-5 w-5 text-[#8ecdf2]" /></div>}
+        >
+            <p className="mt-2 line-clamp-4 text-[13px] leading-relaxed text-white/78 italic">{text}</p>
+        </AttachmentGrammarCard>
     );
 };
 
@@ -336,65 +315,40 @@ const AuthorReferenceCard: React.FC<{ name: string; avatarUrl?: string; country?
     avatarUrl,
     country,
 }) => (
-    <div className="flex items-center gap-3 rounded-[0.95rem] border border-white/8 bg-[#0d1520]/92 px-3 py-3 shadow-none">
-        {avatarUrl ? (
-            <img src={avatarUrl} className="h-11 w-11 object-cover rounded-full shadow-md" alt="" />
-        ) : (
-            <div className="h-11 w-11 rounded-full bg-white/10" />
-        )}
-        <div className="min-w-0">
-            <AttachmentTypeLabel label="Author" />
-            <BilingualText className="font-semibold text-[12px] text-white/90 truncate">{name || 'Author'}</BilingualText>
-            <BilingualText role="Caption" className="!text-[10px] text-white/55 truncate">{country || ''}</BilingualText>
-        </div>
-    </div>
+    <AttachmentGrammarCard
+        label="Author"
+        title={name || 'Author'}
+        subtitle={country || undefined}
+        preview={avatarUrl
+            ? <img src={avatarUrl} className="h-full w-full object-cover" alt="" loading="lazy" />
+            : <div className="flex h-full w-full items-center justify-center bg-white/8"><GlobeIcon className="h-5 w-5 text-white/58" /></div>}
+    />
 );
 
 const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: string[] }> = ({ name, bookCount, covers = [] }) => (
-    <div className="relative rounded-[0.95rem] border border-white/8 bg-[#0c1624]/94 px-4 py-3.5 shadow-none min-h-[12rem]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(0,119,182,0.16),transparent_60%)]" />
-        <div className="relative flex items-center gap-3 h-full">
-            <div className="h-full min-h-[112px] w-[48%] max-w-[156px] rounded-[0.7rem] bg-white/10 flex items-center justify-center overflow-hidden">
-                {covers.length > 0 ? (
-                    <div className="grid grid-cols-2 gap-1 p-1 w-full h-full">
-                        {covers.slice(0, 4).map((cover, idx) => (
-                            <img key={`${cover}-${idx}`} src={cover} alt="" className="h-full w-full object-cover rounded-sm" loading="lazy" />
-                        ))}
-                    </div>
-                ) : (
-                    <MediaIcon className="h-5 w-5 text-white/65" />
-                )}
-            </div>
-            <div className="min-w-0 flex-1 flex flex-col justify-between py-1">
-                <div>
-                    <AttachmentTypeLabel label="Shelf" />
-                    <BilingualText className="mt-2.5 font-semibold text-[15px] text-white/90 line-clamp-3">{name || 'Shelf'}</BilingualText>
+    <AttachmentGrammarCard
+        label="Shelf"
+        title={name || 'Shelf'}
+        metadata={Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : 'Collection'}
+        preview={covers.length > 0
+            ? (
+                <div className="grid h-full w-full grid-cols-2 gap-1 p-1">
+                    {covers.slice(0, 4).map((cover, idx) => (
+                        <img key={`${cover}-${idx}`} src={cover} alt="" className="h-full w-full rounded-sm object-cover" loading="lazy" />
+                    ))}
                 </div>
-                <div className="mt-3 inline-flex w-fit items-center rounded-full border border-white/15 bg-white/10 px-2.5 py-1 text-[11px] font-semibold text-white/80">
-                    {Number.isFinite(bookCount) ? `${Math.max(0, Math.trunc(bookCount as number))} books` : 'Collection'}
-                </div>
-            </div>
-        </div>
-    </div>
+            )
+            : <div className="flex h-full w-full items-center justify-center"><MediaIcon className="h-5 w-5 text-white/65" /></div>}
+    />
 );
 
 const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: string; locationLabel?: string }> = ({ name, type, dateLabel, locationLabel }) => (
-    <div className="rounded-[0.95rem] border border-white/8 bg-[#0d1520]/92 px-3 py-3 shadow-none min-h-[8.5rem]">
-        <div className="flex items-center justify-between gap-3">
-            <div className="min-w-0">
-                <AttachmentTypeLabel label="Venue" />
-                <BilingualText className="mt-2 font-semibold text-[13px] text-white/92 truncate">
-                    {dateLabel || name || 'Venue'}
-                </BilingualText>
-                <BilingualText role="Caption" className="!text-[10px] text-white/58 truncate">
-                    {locationLabel || type || ''}
-                </BilingualText>
-            </div>
-            <div className="h-10 w-10 rounded-lg bg-white/10 flex items-center justify-center">
-                <GlobeIcon className="h-4 w-4 text-white/70" />
-            </div>
-        </div>
-    </div>
+    <AttachmentGrammarCard
+        label="Venue"
+        title={dateLabel || name || 'Venue'}
+        subtitle={locationLabel || type || undefined}
+        preview={<div className="flex h-full w-full items-center justify-center"><GlobeIcon className="h-5 w-5 text-white/70" /></div>}
+    />
 );
 
 const PublicationReferenceCard: React.FC<{ title: string; coverUrl?: string; author?: string }> = ({
@@ -402,29 +356,14 @@ const PublicationReferenceCard: React.FC<{ title: string; coverUrl?: string; aut
     coverUrl,
     author,
 }) => (
-    <div className="relative overflow-hidden rounded-[0.95rem] border border-white/8 bg-[#17120f]/94 px-4 py-4 shadow-none min-h-[10rem]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(231,193,128,0.18),transparent_58%)]" />
-        <div className="relative flex items-start gap-3">
-            <div className="h-24 w-16 flex-shrink-0 overflow-hidden rounded-lg bg-white/10">
-                {coverUrl ? (
-                    <img src={coverUrl} alt="" className="h-full w-full object-cover" />
-                ) : (
-                    <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03))]">
-                        <BookIcon className="h-5 w-5 text-[#d9c4a2]" />
-                    </div>
-                )}
-            </div>
-            <div className="min-w-0 flex-1">
-                <AttachmentTypeLabel label="Publication" />
-                <BilingualText className="mt-2 font-semibold text-[15px] leading-snug text-white line-clamp-3">
-                    {title || 'Publication'}
-                </BilingualText>
-                <BilingualText role="Caption" className="mt-1 !text-[11px] text-white/65 line-clamp-2">
-                    {author || 'Article in BookTown'}
-                </BilingualText>
-            </div>
-        </div>
-    </div>
+    <AttachmentGrammarCard
+        label="Publication"
+        title={title || 'Publication'}
+        subtitle={author || 'Article in BookTown'}
+        preview={coverUrl
+            ? <img src={coverUrl} alt="" className="h-full w-full object-cover" loading="lazy" />
+            : <div className="flex h-full w-full items-center justify-center bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.03))]"><BookIcon className="h-5 w-5 text-[#d9c4a2]" /></div>}
+    />
 );
 
 const HookedBookReferenceView: React.FC<{ id: string; surface: RenderSurface }> = ({ id, surface }) => {
@@ -468,10 +407,64 @@ const firstNonEmpty = (...values: unknown[]): string => {
     return '';
 };
 
+const readPositiveNumber = (value: unknown): number | null =>
+    typeof value === 'number' && Number.isFinite(value) && value > 0 ? value : null;
+
+const readRenditionDimensions = (value: unknown): ImageRenditionMetadata | null => {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+    const record = value as Record<string, unknown>;
+    const width = readPositiveNumber(record.width);
+    const height = readPositiveNumber(record.height);
+    return width && height ? { width, height } : null;
+};
+
+const resolveAttachmentDeliveryIntent = (
+    surface: RenderSurface,
+    currentView: View
+): AttachmentDeliveryIntent => {
+    if (surface === 'feed' || surface === 'home') return 'timeline';
+    if (surface === 'drawer') return 'preview';
+
+    const isSocialTimelineContext =
+        currentView.type === 'tab' && currentView.id === 'social';
+    const isProfileTimelineContext =
+        currentView.type === 'immersive' && currentView.id === 'profile';
+
+    if (surface === 'read' && (isSocialTimelineContext || isProfileTimelineContext)) {
+        return 'timeline';
+    }
+
+    return 'full';
+};
+
+const readImageDimensions = (
+    metadata: unknown,
+    intent: AttachmentDeliveryIntent
+): ImageRenditionMetadata | null => {
+    if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return null;
+
+    const metadataRecord = metadata as Record<string, unknown>;
+    const renditions =
+        metadataRecord.renditions && typeof metadataRecord.renditions === 'object'
+            ? (metadataRecord.renditions as Record<string, unknown>)
+            : {};
+    const preferredRendition =
+        intent === 'timeline' ? 'feed' : intent === 'preview' ? 'thumb' : 'original';
+    const preferredDimensions = readRenditionDimensions(renditions[preferredRendition]);
+    if (preferredDimensions) return preferredDimensions;
+
+    const originalDimensions = readRenditionDimensions(renditions.original);
+    if (originalDimensions) return originalDimensions;
+
+    const width = readPositiveNumber(metadataRecord.width);
+    const height = readPositiveNumber(metadataRecord.height);
+    return width && height ? { width, height } : null;
+};
+
 type StructuredNavigationTarget =
     | { id: 'bookDetails'; params: { bookId: string } }
     | { id: 'authorDetails'; params: { authorId: string } }
-    | { id: 'quoteDetails'; params: { quoteId: string; ownerId: string } }
+    | { id: 'quoteDetails'; params: { quoteId: string; ownerId?: string } }
     | { id: 'shelfDetails'; params: { shelfId: string; ownerId?: string } }
     | { id: 'venueDetails'; params: { venueId: string } }
     | { id: 'publicationReader'; params: { publicationId: string; title?: string; canonicalSlug?: string } };
@@ -512,8 +505,8 @@ const resolveStructuredNavigationTarget = (
                 readNonEmptyString((v1.payload as any)?.ownerId) ||
                 readNonEmptyString((v1.payload as any)?.entityOwnerId) ||
                 readNonEmptyString((v1.payload as any)?.quoteOwnerId);
-            return quoteId && ownerId
-                ? { id: 'quoteDetails', params: { quoteId, ownerId } }
+            return quoteId
+                ? { id: 'quoteDetails', params: { quoteId, ...(ownerId ? { ownerId } : {}) } }
                 : null;
         }
         return null;
@@ -535,8 +528,8 @@ const resolveStructuredNavigationTarget = (
             readNonEmptyString(legacy.entityOwnerId) ||
             readNonEmptyString(legacy.quoteOwnerId) ||
             readNonEmptyString(legacy.ownerId);
-        return quoteId && ownerId
-            ? { id: 'quoteDetails', params: { quoteId, ownerId } }
+        return quoteId
+            ? { id: 'quoteDetails', params: { quoteId, ...(ownerId ? { ownerId } : {}) } }
             : null;
     }
     if (legacy.type === 'shelf') {
@@ -706,9 +699,11 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         Boolean(isInViewport && v1) &&
         !isReferenceV1 &&
         v1Type !== 'LINK';
+    const deliveryIntent = resolveAttachmentDeliveryIntent(surface, currentView);
     const { data: secureUrl, isLoading: isResolvingUrl, isError: isUrlError } = useAttachmentUrl(
         shouldResolveSecureUrl ? v1!.attachmentId : undefined,
-        surface
+        surface,
+        deliveryIntent
     );
 
     useEffect(() => {
@@ -736,6 +731,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
             isResolvingUrl,
             isUrlError,
             hasSecureUrl: Boolean(secureUrl?.url),
+            deliveryIntent,
             payloadUrl: firstNonEmpty((v1Payload as any)?.url, (attachment as any)?.url),
             payloadPreviewUrl: firstNonEmpty((v1Payload as any)?.previewUrl, (attachment as any)?.previewUrl),
             payloadImageUrl: firstNonEmpty((v1Payload as any)?.imageUrl, (attachment as any)?.imageUrl),
@@ -749,6 +745,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         isV1,
         secureUrl?.url,
         surface,
+        deliveryIntent,
         v1?.attachmentId,
         v1Metadata,
         v1Payload,
@@ -916,7 +913,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     legacyMetadata.url
                 );
                 visual = legacyUrl
-                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} />
+                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} dimensions={readImageDimensions(legacyMetadata, 'timeline')} />
                     : <UnresolvedReferenceView />;
                 break;
             }
@@ -941,7 +938,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     legacyMetadata.url
                 );
                 visual = legacyUrl
-                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} />
+                    ? <ImageView attachment={attachment} url={legacyUrl} payload={legacyPayload} maxHeight={maxHeightMap[surface]} surface={surface} dimensions={readImageDimensions(legacyMetadata, 'timeline')} />
                     : <UnresolvedReferenceView />;
                 break;
             }
@@ -992,6 +989,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
             payload={v1Payload}
             maxHeight={maxHeightMap[surface]}
             surface={surface}
+            dimensions={readImageDimensions(v1Metadata, deliveryIntent)}
         />
     );
     break;

@@ -341,6 +341,35 @@ function assertPublicAcquisitionAllowed(book: Record<string, unknown>): void {
   }
 }
 
+function hasTrustedExternalReadabilityAuthority(book: Record<string, unknown>): boolean {
+  const readability = asRecord(book.readability);
+  if (readability?.status === "trusted_external") {
+    return true;
+  }
+
+  return readExternalReadableSources(book).length > 0;
+}
+
+function assertPreparationAuthority(bookId: string, book: Record<string, unknown>): void {
+  if (hasTrustedExternalReadabilityAuthority(book)) {
+    return;
+  }
+
+  logger.warn("[ACQUIRE][READABILITY_AUTHORITY_REJECTED]", {
+    bookId,
+    readabilityStatus: asRecord(book.readability)?.status || null,
+    externalReadableSourceCount: readExternalReadableSources(book).length,
+    providerExternalIdCount: Array.isArray(book.providerExternalIds)
+      ? book.providerExternalIds.length
+      : 0,
+  });
+
+  throw new HttpsError(
+    "failed-precondition",
+    "No validated readability authority permits ebook preparation."
+  );
+}
+
 async function buildCanonicalMetadataFromSource(
   source: SupportedSource,
   providerExternalId: string
@@ -1021,6 +1050,7 @@ export const acquireExternalEbookForReadHandler = async (
   });
   if (existing) return existing;
 
+  assertPreparationAuthority(bookId, book);
   assertPublicAcquisitionAllowed(book);
 
   const lookupContext: ProviderLookupContext = {

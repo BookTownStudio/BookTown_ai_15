@@ -61,6 +61,7 @@ const ACQUISITION_CONFIRM_MAX_ATTEMPTS = 3;
 const ACQUISITION_CONFIRM_DELAY_MS = 500;
 
 type AcquisitionState = 'idle' | 'pending' | 'success' | 'failed';
+type ReadabilityStatus = 'none' | 'in_app' | 'trusted_external';
 
 function getCanonicalEbookAttachmentId(
   value: Pick<BookDetailsRuntimeDTO, 'ebookAttachmentId'> | null | undefined
@@ -76,6 +77,27 @@ function hasReadableCopy(value: BookDetailsRuntimeDTO | null | undefined): boole
       (typeof value.ebookStoragePath === 'string' && value.ebookStoragePath.trim().length > 0) ||
       value.downloadable
   );
+}
+
+function resolveReadabilityStatus(params: {
+  bookDetails: BookDetailsRuntimeDTO | null;
+  pendingSearchResult: SearchResultDTO | undefined;
+  hasReadableEbook: boolean;
+}): ReadabilityStatus {
+  const { bookDetails, pendingSearchResult, hasReadableEbook } = params;
+  if (hasReadableEbook || pendingSearchResult?.readAccess === 'in_app') {
+    return 'in_app';
+  }
+
+  if (
+    pendingSearchResult?.available === true &&
+    pendingSearchResult?.readAccess === 'trusted_external'
+  ) {
+    return 'trusted_external';
+  }
+
+  const readability = (bookDetails as unknown as { readability?: { status?: unknown } } | null)?.readability;
+  return readability?.status === 'trusted_external' ? 'trusted_external' : 'none';
 }
 
 function waitForAcquisitionConfirmation(ms: number): Promise<void> {
@@ -516,27 +538,25 @@ const BookDetailsScreen: React.FC = () => {
   const liveReadableAttachmentId = getCanonicalEbookAttachmentId(bookDetails);
   const hasReadableEbook =
     hasReadableCopy(bookDetails) || Boolean(confirmedReadableAttachmentId);
-  const providerExternalIds = bookDetails?.providerExternalIds ?? [];
-  const externalReadableSources = bookDetails?.externalReadableSources ?? [];
+  const readabilityStatus = resolveReadabilityStatus({
+    bookDetails,
+    pendingSearchResult,
+    hasReadableEbook,
+  });
+  const availabilityCount = readabilityStatus === 'none' ? 0 : 1;
   const canPrepareReadableCopy =
     !hasReadableEbook &&
-    (pendingSearchResult?.available === true ||
-      pendingSearchResult?.readAccess === 'trusted_external' ||
-      externalReadableSources.length > 0 ||
-      providerExternalIds.some((entry) => typeof entry === 'string' && entry.trim().length > 0));
+    availabilityCount > 0 &&
+    readabilityStatus === 'trusted_external';
   const canAttemptRead = hasReadableEbook;
   const isPreparingReadableCopy = acquisitionState === 'pending';
-  const canTrackManualContinuity = Boolean(bookId && book && !hasReadableEbook && !canPrepareReadableCopy);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log('SEARCH RESULT PROVIDERS', pendingSearchResult?.externalReadableSources);
-  }, [pendingSearchResult]);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-    console.log('DETAIL BOOK PROVIDERS', bookDetails?.externalReadableSources);
-  }, [bookDetails?.externalReadableSources]);
+  const canTrackManualContinuity = Boolean(
+    bookId &&
+      book &&
+      availabilityCount > 0 &&
+      !hasReadableEbook &&
+      !canPrepareReadableCopy
+  );
 
   const displayBook = useMemo(() => {
     if (bookDetails) return bookDetails;
@@ -600,13 +620,13 @@ const BookDetailsScreen: React.FC = () => {
 
   const prepareReadableCopy = async (silent: boolean): Promise<boolean> => {
     if (!bookId || isPreparingReadableCopy || !canPrepareReadableCopy) {
+      if (!silent && availabilityCount === 0) {
+        showToast(lang === 'en' ? 'No ebook available.' : 'لا يتوفر كتاب إلكتروني.');
+      }
       return false;
     }
 
     try {
-      if (import.meta.env.DEV) {
-        console.log('ACQUIRE INPUT PROVIDERS', bookDetails?.externalReadableSources);
-      }
       setAcquisitionState('pending');
       setAcquisitionErrorMessage(null);
       if (!silent) {
@@ -984,7 +1004,12 @@ const BookDetailsScreen: React.FC = () => {
             </button>
             <button
               onClick={handleRead}
-              disabled={isPreparingReadableCopy || isManualContinuityBusy || (!canAttemptRead && !canPrepareReadableCopy && !canTrackManualContinuity)}
+              disabled={
+                availabilityCount === 0 ||
+                isPreparingReadableCopy ||
+                isManualContinuityBusy ||
+                (!canAttemptRead && !canPrepareReadableCopy && !canTrackManualContinuity)
+              }
               className={cn(
                 'flex aspect-square items-center justify-center rounded-2xl border transition-all lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
                 canAttemptRead
@@ -1017,7 +1042,42 @@ const BookDetailsScreen: React.FC = () => {
             </button>
           </section>
 
-          {acquisitionState !== 'idle' && (
+          {availabilityCount === 0 && (
+            <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-white">{lang === 'en' ? 'No ebook available' : 'لا يتوفر كتاب إلكتروني'}</p>
+                <p className="mt-1 text-xs text-white/60">
+                  {lang === 'en'
+                    ? 'Add to shelf, find an external edition, or upload your own ebook.'
+                    : 'أضفه إلى الرف، أو ابحث عن طبعة خارجية، أو ارفع نسختك الإلكترونية.'}
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                <Button
+                  variant="ghost"
+                  onClick={() => setIsShelfModalOpen(true)}
+                  disabled={!bookId || !book}
+                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
+                >
+                  {lang === 'en' ? 'Add to shelf' : 'أضف إلى الرف'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
+                >
+                  {lang === 'en' ? 'Find external edition' : 'ابحث عن طبعة خارجية'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
+                >
+                  {lang === 'en' ? 'Upload your own ebook' : 'ارفع كتابك الإلكتروني'}
+                </Button>
+              </div>
+            </section>
+          )}
+
+          {availabilityCount > 0 && acquisitionState !== 'idle' && (
             <section
               className={cn(
                 'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3',

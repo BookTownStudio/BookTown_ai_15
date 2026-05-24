@@ -5,6 +5,62 @@ import { canUserReadBook, resolveBookOwnerUid } from "../rights/bookRights";
 
 const db = admin.firestore();
 const storage = admin.storage();
+type AttachmentRenditionName = "original" | "thumb" | "feed" | "large";
+type AttachmentDeliveryIntent =
+  | "timeline"
+  | "preview"
+  | "overlay_default"
+  | "high_detail"
+  | "full"
+  | "fallback";
+
+function readNonEmptyString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function resolveAttachmentRenditionStoragePath(
+  metadata: Record<string, unknown>,
+  rendition: AttachmentRenditionName
+): string {
+  const metadataRecord =
+    metadata.metadata && typeof metadata.metadata === "object"
+      ? (metadata.metadata as Record<string, unknown>)
+      : {};
+  const metadataRenditions =
+    metadataRecord.renditions && typeof metadataRecord.renditions === "object"
+      ? (metadataRecord.renditions as Record<string, unknown>)
+      : {};
+  const topLevelRenditions =
+    metadata.renditions && typeof metadata.renditions === "object"
+      ? (metadata.renditions as Record<string, unknown>)
+      : {};
+  const renditions = { ...topLevelRenditions, ...metadataRenditions };
+  const selected = renditions[rendition];
+  if (selected && typeof selected === "object") {
+    const storagePath = readNonEmptyString(
+      (selected as Record<string, unknown>).storagePath
+    );
+    if (storagePath) return storagePath;
+  }
+  return readNonEmptyString(metadata.storagePath);
+}
+
+function resolveDeliveryRendition(value: unknown): AttachmentRenditionName {
+  const intent: AttachmentDeliveryIntent =
+    value === "timeline" ||
+    value === "preview" ||
+    value === "overlay_default" ||
+    value === "high_detail" ||
+    value === "full" ||
+    value === "fallback"
+      ? value
+      : "full";
+
+  if (intent === "timeline") return "feed";
+  if (intent === "preview") return "thumb";
+  if (intent === "overlay_default") return "large";
+  return "original";
+}
 
 /**
  * getAttachmentUrl
@@ -21,7 +77,7 @@ export const getAttachmentUrl = onCall({ cors: true }, async (request) => {
     throw new HttpsError("unauthenticated", "Auth required.");
   }
 
-  const { attachmentId, surface } = request.data;
+  const { attachmentId, surface, deliveryIntent } = request.data;
   const uid = request.auth.uid;
 
   if (!attachmentId || !surface) {
@@ -174,7 +230,11 @@ export const getAttachmentUrl = onCall({ cors: true }, async (request) => {
   // -------------------------------------------------
   try {
     const bucket = storage.bucket();
-    const file = bucket.file(metadata.storagePath);
+    const requestedRendition = surface === "download"
+      ? "original"
+      : resolveDeliveryRendition(deliveryIntent);
+    const storagePath = resolveAttachmentRenditionStoragePath(metadata, requestedRendition);
+    const file = bucket.file(storagePath);
 
     const [url] = await file.getSignedUrl({
       version: "v4",

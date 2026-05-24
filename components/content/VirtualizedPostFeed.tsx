@@ -6,9 +6,7 @@ import {
     recordSocialPerformanceMetric,
     useSocialRenderDiagnostics,
 } from '../../lib/socialPerformanceDiagnostics.ts';
-
-const ESTIMATED_POST_HEIGHT = 560;
-const OVERSCAN_PX = 1600;
+import { socialFeedLayout, socialFeedLayoutStyle } from './socialFeedLayout.ts';
 
 type VirtualItem = {
     index: number;
@@ -73,8 +71,8 @@ const VirtualizedPostRow = React.memo(({
             data-post-id={postId}
             data-virtual-index={index}
             className={cn(
-                "absolute left-0 right-0 w-full",
-                index > 0 && "before:absolute before:top-0 before:left-4 before:right-4 before:h-px before:bg-white/[0.09] md:before:left-5 md:before:right-5"
+                "absolute left-0 right-0 w-full pb-[var(--social-feed-post-gap)]",
+                index > 0 && "pt-[var(--social-feed-separator-space)] before:absolute before:top-0 before:left-[var(--social-feed-separator-inset)] before:right-[var(--social-feed-separator-inset)] before:h-px before:bg-white/[0.09] md:before:left-[var(--social-feed-separator-inset-md)] md:before:right-[var(--social-feed-separator-inset-md)]"
             )}
             style={{ transform: `translateY(${item.top}px)` }}
         >
@@ -143,7 +141,7 @@ const VirtualizedPostFeed: React.FC<VirtualizedPostFeedProps> = ({
         let runningTop = 0;
         const items: VirtualItem[] = posts.map((post, index) => {
             const postId = readPostId(post);
-            const height = heightsRef.current.get(postId) ?? ESTIMATED_POST_HEIGHT;
+            const height = heightsRef.current.get(postId) ?? socialFeedLayout.estimatedPostHeightPx;
             const item = { index, post, top: runningTop, height };
             runningTop += height;
             return item;
@@ -153,8 +151,8 @@ const VirtualizedPostFeed: React.FC<VirtualizedPostFeedProps> = ({
     }, [measureVersion, posts]);
 
     const virtualItems = useMemo(() => {
-        const minTop = Math.max(0, scrollState.top - OVERSCAN_PX);
-        const maxTop = scrollState.top + scrollState.height + OVERSCAN_PX;
+        const minTop = Math.max(0, scrollState.top - socialFeedLayout.overscanPx);
+        const maxTop = scrollState.top + scrollState.height + socialFeedLayout.overscanPx;
 
         return measuredLayout.items.filter((item) => (
             item.top + item.height >= minTop && item.top <= maxTop
@@ -187,7 +185,7 @@ const VirtualizedPostFeed: React.FC<VirtualizedPostFeedProps> = ({
     useEffect(() => {
         if (!hasNextPage || isFetchingNextPage || fetchRequestedRef.current) return;
         const remaining = measuredLayout.totalHeight - (scrollState.top + scrollState.height);
-        if (remaining > 1800) return;
+        if (remaining > socialFeedLayout.fetchAheadPx) return;
 
         fetchRequestedRef.current = true;
         onFetchNextPage();
@@ -209,7 +207,7 @@ const VirtualizedPostFeed: React.FC<VirtualizedPostFeedProps> = ({
     return (
         <div
             className={cn("relative w-full", className)}
-            style={{ height: measuredLayout.totalHeight || 1 }}
+            style={{ ...socialFeedLayoutStyle, height: measuredLayout.totalHeight || 1 }}
             data-virtualized-feed="true"
             data-mounted-count={virtualItems.length}
             data-total-count={posts.length}

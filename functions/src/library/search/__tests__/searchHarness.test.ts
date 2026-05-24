@@ -1319,7 +1319,7 @@ describe("Search Harness — Canonical Local Engine", () => {
     }
   });
 
-  it("availabilityOnly keeps live-shape OpenLibrary readable rows even when ebook_count_i is absent", async () => {
+  it("availabilityOnly does not trust raw OpenLibrary search metadata as readable authority", async () => {
     vi.stubEnv("NODE_ENV", "development");
     vi.stubGlobal(
       "fetch",
@@ -1369,19 +1369,7 @@ describe("Search Harness — Canonical Local Engine", () => {
     const response = await unifiedSearch("Jane Eyre", { availabilityOnly: true });
     const jane = response.results.find((entry: any) => entry.externalId === "OL1095427W");
 
-    expect(jane).toBeDefined();
-    expect(jane?.available).toBe(true);
-    expect(jane?.acquired).toBe(false);
-    expect(jane?.readAccess).toBe("trusted_external");
-    expect(jane?.readProvider).toBe("openLibrary");
-    expect(jane?.externalReadableSources).toEqual([
-      {
-        provider: "openLibrary",
-        providerExternalId: "OL1095427W",
-        lendingEditionId: "OL35354586M",
-        trust: "trusted",
-      },
-    ]);
+    expect(jane).toBeUndefined();
   });
 
   it("penalizes unknown-author Frankenstein rows below the canonical author", async () => {
@@ -1528,7 +1516,8 @@ describe("Search Harness — Canonical Local Engine", () => {
 
       expect(menResults.length).toBe(1);
       expect(menResults[0]?.resultType).toBe("canonical");
-      expect(menResults[0]?.externalReadableSources?.length).toBeGreaterThanOrEqual(1);
+      expect(menResults[0]?.externalReadableSources).toBeUndefined();
+      expect(menResults[0]?.readAccess).toBe("none");
     } finally {
       if (LOCAL_EDITIONS[mmenIndex]) {
         (LOCAL_EDITIONS[mmenIndex] as any) = originalMmen;
