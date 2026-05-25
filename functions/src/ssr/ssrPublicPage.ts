@@ -1,5 +1,6 @@
 import { onRequest } from "firebase-functions/v2/https";
 import type { Request } from "express";
+import sharp from "sharp";
 import { admin } from "../firebaseAdmin";
 import { isBookVisibleToPublic } from "../rights/bookRights";
 
@@ -39,6 +40,17 @@ type PostEntityView = {
   content: string;
   authorName: string | null;
   createdAtIso: string | null;
+  previewImageUrl: string | null;
+};
+
+type SocialMetadata = {
+  type: "article" | "website";
+  siteName: "BookTown";
+  url: string;
+  title: string;
+  description: string;
+  image: string;
+  twitterCard: "summary_large_image";
 };
 
 type ShellModel = {
@@ -52,6 +64,7 @@ type ShellModel = {
   isBookLayout?: boolean;
   bookDescription?: string;
   cacheControl?: string;
+  social?: SocialMetadata;
 };
 
 const db = admin.firestore();
@@ -111,6 +124,41 @@ const truncateText = (value: string, maxLength: number): string => {
 
 const takeChars = (value: string, maxLength: number): string =>
   maxLength <= 0 ? "" : value.slice(0, maxLength);
+
+const normalizeAbsoluteUrl = (value: unknown): string | null => {
+  const raw = normalizeText(value, 4096);
+  if (!raw) return null;
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "https:" || parsed.protocol === "http:"
+      ? parsed.toString()
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+const firstAbsoluteUrl = (values: unknown[]): string | null => {
+  for (const value of values) {
+    const normalized = normalizeAbsoluteUrl(value);
+    if (normalized) return normalized;
+  }
+  return null;
+};
+
+const buildPostSocialCardUrl = (canonicalUrl: string): string => {
+  const url = new URL(canonicalUrl);
+  url.searchParams.set("bt_card", "1");
+  return url.toString();
+};
+
+const isSocialCardImageRequest = (req: Request): boolean =>
+  String(req.query.bt_card || "").trim() === "1";
+
+const readObject = (value: unknown): Record<string, unknown> =>
+  value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+
+const readArray = (value: unknown): unknown[] => (Array.isArray(value) ? value : []);
 
 const parsePublicationYear = (source: Record<string, unknown>): string | null => {
   const explicitYear = source.publicationYear;
@@ -288,6 +336,82 @@ const buildCanonicalUrl = (req: Request, pathname: string): string => {
   }
 };
 
+const resolveStorageSignedUrl = async (storagePath: string): Promise<string | null> => {
+  const path = normalizeText(storagePath, 2048);
+  if (!path || !path.startsWith("attachments/")) return null;
+
+  try {
+    const file = admin.storage().bucket().file(path);
+    const [exists] = await file.exists();
+    if (!exists) return null;
+
+    const [url] = await file.getSignedUrl({
+      version: "v4",
+      action: "read",
+      expires: Date.now() + 7 * 24 * 60 * 60 * 1000,
+    });
+    return url;
+  } catch {
+    return null;
+  }
+};
+
+const resolveRenditionStoragePath = (
+  attachment: Record<string, unknown>,
+  renditionName: "large" | "feed" | "thumb" | "original"
+): string => {
+  const metadata = readObject(attachment.metadata);
+  const metadataRenditions = readObject(metadata.renditions);
+  const topLevelRenditions = readObject(attachment.renditions);
+  const selected = readObject({
+    ...topLevelRenditions,
+    ...metadataRenditions,
+  }[renditionName]);
+
+  return firstText(
+    [
+      selected.storagePath,
+      attachment.storagePath,
+      metadata.storagePath,
+    ],
+    2048
+  );
+};
+
+const resolveMediaAttachmentImageUrl = async (
+  attachmentId: string
+): Promise<string | null> => {
+  const id = normalizeText(attachmentId, 128);
+  if (!id) return null;
+
+  const snap = await db.collection("attachments").doc(id).get();
+  if (!snap.exists) return null;
+
+  const attachment = (snap.data() ?? {}) as Record<string, unknown>;
+  const type = normalizeText(attachment.type, 64).toUpperCase();
+  const metadata = readObject(attachment.metadata);
+  const mimeType = firstText([attachment.mimeType, metadata.mimeType], 120).toLowerCase();
+  if (type !== "IMAGE" && !mimeType.startsWith("image/")) {
+    return null;
+  }
+
+  const directUrl = firstAbsoluteUrl([
+    attachment.url,
+    attachment.previewUrl,
+    metadata.url,
+    metadata.previewUrl,
+  ]);
+  if (directUrl) return directUrl;
+
+  const preferredPath =
+    resolveRenditionStoragePath(attachment, "large") ||
+    resolveRenditionStoragePath(attachment, "feed") ||
+    resolveRenditionStoragePath(attachment, "thumb") ||
+    resolveRenditionStoragePath(attachment, "original");
+
+  return preferredPath ? resolveStorageSignedUrl(preferredPath) : null;
+};
+
 const safeJsonForHtmlScript = (value: string): string =>
   value
     .replace(/</g, "\\u003c")
@@ -305,6 +429,20 @@ const buildHtmlDocument = (model: ShellModel): string => {
     .join("\n");
   const metaDescription = model.metaDescription
     ? `  <meta name="description" content="${escapeHtml(model.metaDescription)}">`
+    : "";
+  const socialTags = model.social
+    ? [
+        `  <meta property="og:type" content="${escapeHtml(model.social.type)}">`,
+        `  <meta property="og:site_name" content="${escapeHtml(model.social.siteName)}">`,
+        `  <meta property="og:url" content="${escapeHtml(model.social.url)}">`,
+        `  <meta property="og:title" content="${escapeHtml(model.social.title)}">`,
+        `  <meta property="og:description" content="${escapeHtml(model.social.description)}">`,
+        `  <meta property="og:image" content="${escapeHtml(model.social.image)}">`,
+        `  <meta name="twitter:card" content="${escapeHtml(model.social.twitterCard)}">`,
+        `  <meta name="twitter:title" content="${escapeHtml(model.social.title)}">`,
+        `  <meta name="twitter:description" content="${escapeHtml(model.social.description)}">`,
+        `  <meta name="twitter:image" content="${escapeHtml(model.social.image)}">`,
+      ].join("\n")
     : "";
   const jsonLdScript = model.jsonLd
     ? `  <script type="application/ld+json">${safeJsonForHtmlScript(
@@ -325,6 +463,7 @@ const buildHtmlDocument = (model: ShellModel): string => {
     `  <title>${escapedTitle}</title>`,
     metaDescription,
     `  <link rel="canonical" href="${escapedCanonical}">`,
+    socialTags,
     jsonLdScript,
     "  <style>",
     "    :root { color-scheme: light; }",
@@ -400,6 +539,110 @@ const fetchAuthorEntity = async (authorId: string): Promise<AuthorEntityView | n
   };
 };
 
+const resolveBookAttachmentImageUrl = async (bookId: string): Promise<string | null> => {
+  const id = normalizeText(bookId, 256);
+  if (!id) return null;
+  const snap = await db.collection("books").doc(id).get();
+  if (!snap.exists) return null;
+  const source = (snap.data() ?? {}) as Record<string, unknown>;
+  const cover = readObject(source.cover);
+  return firstAbsoluteUrl([
+    source.coverUrl,
+    source.bookCover,
+    cover.large,
+    cover.medium,
+    cover.url,
+    cover.original,
+  ]);
+};
+
+const resolveAuthorAttachmentImageUrl = async (authorId: string): Promise<string | null> => {
+  const id = normalizeText(authorId, 256);
+  if (!id) return null;
+  const snap = await db.collection("authors").doc(id).get();
+  if (!snap.exists) return null;
+  const source = (snap.data() ?? {}) as Record<string, unknown>;
+  return firstAbsoluteUrl([
+    source.avatarUrl,
+    source.authorPhoto,
+    source.photoUrl,
+    source.imageUrl,
+  ]);
+};
+
+const resolveShelfAttachmentImageUrl = async (
+  shelfId: string,
+  ownerId?: string
+): Promise<string | null> => {
+  const id = normalizeText(shelfId, 256);
+  if (!id) return null;
+
+  const candidates = [
+    db.collection("shelves").doc(id),
+    ...(ownerId
+      ? [db.collection("users").doc(ownerId).collection("shelves").doc(id)]
+      : []),
+  ];
+
+  for (const ref of candidates) {
+    const snap = await ref.get();
+    if (!snap.exists) continue;
+    const source = (snap.data() ?? {}) as Record<string, unknown>;
+    const covers = readArray(source.covers);
+    const image = firstAbsoluteUrl([
+      source.coverUrl,
+      source.userCoverUrl,
+      source.imageUrl,
+      covers[0],
+    ]);
+    if (image) return image;
+  }
+
+  return null;
+};
+
+const resolvePostPreviewImageUrl = async (
+  source: Record<string, unknown>
+): Promise<string | null> => {
+  const content = readObject(source.content);
+  const attachmentRefs = readArray(content.attachments);
+
+  for (const rawRef of attachmentRefs) {
+    const ref = readObject(rawRef);
+    const type = normalizeText(ref.type, 64).toLowerCase();
+    const attachmentId = firstText([ref.attachmentId], 256);
+
+    if (type === "image" || type === "media" || type === "IMAGE".toLowerCase()) {
+      const mediaImage = await resolveMediaAttachmentImageUrl(attachmentId);
+      if (mediaImage) return mediaImage;
+    }
+  }
+
+  for (const rawRef of attachmentRefs) {
+    const ref = readObject(rawRef);
+    const type = normalizeText(ref.type, 64).toLowerCase();
+    const entityId = firstText([ref.entityId, ref.attachmentId], 256);
+
+    if (type === "book") {
+      const bookImage = await resolveBookAttachmentImageUrl(entityId);
+      if (bookImage) return bookImage;
+    }
+    if (type === "author") {
+      const authorImage = await resolveAuthorAttachmentImageUrl(entityId);
+      if (authorImage) return authorImage;
+    }
+    if (type === "shelf") {
+      const shelfImage = await resolveShelfAttachmentImageUrl(
+        entityId,
+        firstText([ref.entityOwnerId], 256)
+      );
+      if (shelfImage) return shelfImage;
+    }
+  }
+
+  return null;
+};
+
 const fetchPostEntity = async (postId: string): Promise<PostEntityView | null> => {
   const postSnap = await db.collection("posts").doc(postId).get();
   if (!postSnap.exists) {
@@ -438,6 +681,7 @@ const fetchPostEntity = async (postId: string): Promise<PostEntityView | null> =
     content,
     authorName,
     createdAtIso,
+    previewImageUrl: await resolvePostPreviewImageUrl(source),
   };
 };
 
@@ -564,9 +808,12 @@ const buildAuthorModel = (
 const buildPostModel = (post: PostEntityView, canonicalUrl: string): ShellModel => {
   const bodyText = post.content;
   const headline = bodyText ? takeChars(bodyText, 120) : "Post";
-  const titleBase = bodyText ? takeChars(bodyText, 60) : "Post";
-  const description = bodyText ? takeChars(bodyText, 160) : "";
+  const titleBase = post.authorName ? `${post.authorName} on BookTown` : "BookTown Post";
+  const description = bodyText
+    ? truncateText(bodyText, 170)
+    : "A public post from BookTown, a reading-first social space for books and writing.";
   const articleBody = bodyText ? takeChars(bodyText, 5000) : "";
+  const socialImage = post.previewImageUrl || buildPostSocialCardUrl(canonicalUrl);
 
   const details: string[] = [];
   if (post.authorName) {
@@ -599,15 +846,24 @@ const buildPostModel = (post: PostEntityView, canonicalUrl: string): ShellModel 
 
   return {
     statusCode: 200,
-    title: `${titleBase} | BookTown`,
+    title: titleBase,
     canonicalUrl,
     heading: headline,
     details,
-    ...(description ? { metaDescription: description } : {}),
+    metaDescription: description,
     jsonLd,
     isBookLayout: true,
     ...(bodyText ? { bookDescription: bodyText } : {}),
     cacheControl: "public, max-age=0, s-maxage=60",
+    social: {
+      type: "article",
+      siteName: "BookTown",
+      url: canonicalUrl,
+      title: titleBase,
+      description,
+      image: socialImage,
+      twitterCard: "summary_large_image",
+    },
   };
 };
 
@@ -629,13 +885,115 @@ const buildGenericEntityModel = (
   };
 };
 
+const splitSvgTextLines = (
+  text: string,
+  maxCharsPerLine: number,
+  maxLines: number
+): string[] => {
+  const words = normalizeText(text, 600).split(" ").filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length <= maxCharsPerLine) {
+      current = candidate;
+      continue;
+    }
+    if (current) lines.push(current);
+    current = word;
+    if (lines.length >= maxLines) break;
+  }
+
+  if (current && lines.length < maxLines) {
+    lines.push(current);
+  }
+
+  if (lines.length === maxLines && words.join(" ").length > lines.join(" ").length) {
+    lines[maxLines - 1] = truncateText(lines[maxLines - 1], Math.max(12, maxCharsPerLine - 1));
+  }
+
+  return lines.length > 0 ? lines : ["A public post from BookTown"];
+};
+
+const renderPostSocialCardPng = async (post: PostEntityView): Promise<Buffer> => {
+  const title = post.authorName ? `${post.authorName} on BookTown` : "BookTown Post";
+  const excerpt = post.content
+    ? truncateText(post.content, 220)
+    : "A reading-first post from BookTown.";
+  const titleLines = splitSvgTextLines(title, 34, 2);
+  const excerptLines = splitSvgTextLines(excerpt, 54, 4);
+
+  const titleTspans = titleLines
+    .map((line, index) =>
+      `<tspan x="96" dy="${index === 0 ? 0 : 52}">${escapeHtml(line)}</tspan>`
+    )
+    .join("");
+  const excerptTspans = excerptLines
+    .map((line, index) =>
+      `<tspan x="96" dy="${index === 0 ? 0 : 38}">${escapeHtml(line)}</tspan>`
+    )
+    .join("");
+
+  const svg = `<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#06111F"/>
+      <stop offset="0.52" stop-color="#0B1C2E"/>
+      <stop offset="1" stop-color="#102E44"/>
+    </linearGradient>
+    <radialGradient id="accent" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(912 130) rotate(135) scale(520 360)">
+      <stop stop-color="#38BDF8" stop-opacity="0.34"/>
+      <stop offset="1" stop-color="#38BDF8" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="1200" height="630" rx="36" fill="url(#bg)"/>
+  <rect width="1200" height="630" rx="36" fill="url(#accent)"/>
+  <rect x="56" y="54" width="1088" height="522" rx="32" fill="#020817" fill-opacity="0.24" stroke="#E0F2FE" stroke-opacity="0.12"/>
+  <g transform="translate(96 92)">
+    <rect x="0" y="0" width="54" height="54" rx="16" fill="#38BDF8" fill-opacity="0.16" stroke="#7DD3FC" stroke-opacity="0.42"/>
+    <path d="M17 17H37C40.314 17 43 19.686 43 23V37C43 40.314 40.314 43 37 43H17V17Z" fill="#E0F2FE" fill-opacity="0.95"/>
+    <path d="M17 17H33C36.314 17 39 19.686 39 23V39H17V17Z" fill="#0F172A"/>
+    <path d="M23 25H33M23 32H31" stroke="#7DD3FC" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <text x="166" y="128" fill="#BAE6FD" font-family="Inter, Arial, sans-serif" font-size="24" font-weight="700" letter-spacing="5">BOOKTOWN</text>
+  <text x="96" y="250" fill="#F8FAFC" font-family="Georgia, 'Times New Roman', serif" font-size="52" font-weight="700">${titleTspans}</text>
+  <text x="96" y="382" fill="#CBD5E1" font-family="Inter, Arial, sans-serif" font-size="30" font-weight="500">${excerptTspans}</text>
+  <line x1="96" y1="525" x2="1098" y2="525" stroke="#E0F2FE" stroke-opacity="0.12"/>
+  <text x="96" y="558" fill="#7DD3FC" font-family="Inter, Arial, sans-serif" font-size="22" font-weight="600">A reading-first social space for books and writing</text>
+</svg>`;
+
+  return sharp(Buffer.from(svg)).png().toBuffer();
+};
+
 /**
  * SSR shell endpoint for public entity pages.
- * Book and author routes are entity-backed; post remains placeholder in this phase.
+ * Book, author, and post routes are entity-backed for crawler-readable public pages.
  */
 export const ssrPublicPage = onRequest({ region: "us-central1" }, async (req, res) => {
   const route = parsePublicRoute(req.path || "/");
   const canonicalUrl = buildCanonicalUrl(req, route.pathname);
+
+  if (isSocialCardImageRequest(req)) {
+    if (!route.ok || route.entityType !== "post") {
+      res.status(404).send("Not Found");
+      return;
+    }
+
+    const post = await fetchPostEntity(route.entityId);
+    if (!post) {
+      res.status(404).send("Not Found");
+      return;
+    }
+
+    const png = await renderPostSocialCardPng(post);
+    res.status(200);
+    res.set("Content-Type", "image/png");
+    res.set("Cache-Control", "public, max-age=0, s-maxage=86400");
+    res.send(png);
+    return;
+  }
 
   let model: ShellModel;
 

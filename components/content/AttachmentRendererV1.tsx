@@ -130,14 +130,29 @@ const ImageView: React.FC<{
         Number.isFinite(dimensions.height) &&
         dimensions.width > 0 &&
         dimensions.height > 0;
+    const imageAspectRatio = hasStableDimensions
+        ? dimensions.width / dimensions.height
+        : null;
+    const isVeryTallImage =
+        imageAspectRatio !== null &&
+        imageAspectRatio < 0.56 &&
+        surface !== 'write';
     const reserveAspectRatio = hasStableDimensions && surface !== 'write';
+    const frameAspectRatio = reserveAspectRatio
+        ? isVeryTallImage
+            ? '4 / 5'
+            : `${dimensions.width} / ${dimensions.height}`
+        : undefined;
 
     return (
         <div
-            className="relative overflow-hidden rounded-[0.7rem] border border-white/[0.08] bg-black/28"
+            className={cn(
+                "relative overflow-hidden rounded-[0.7rem] border border-white/[0.08] bg-black/28",
+                isVeryTallImage && "bg-black/36"
+            )}
             style={reserveAspectRatio
                 ? {
-                    aspectRatio: `${dimensions.width} / ${dimensions.height}`,
+                    aspectRatio: frameAspectRatio,
                     maxHeight,
                 }
                 : { maxHeight }}
@@ -157,6 +172,9 @@ const ImageView: React.FC<{
                     reserveAspectRatio ? "h-full object-contain" : "h-auto object-contain"
                 )}
             />
+            {isVeryTallImage ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 h-10 bg-gradient-to-t from-black/38 to-transparent" />
+            ) : null}
         </div>
     );
 };

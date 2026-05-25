@@ -42,6 +42,7 @@ import ContentRail from '../../components/layout/ContentRail.tsx';
 
 const TEXT_LIMIT = 500;
 const AUTOSAVE_DEBOUNCE = 800;
+const EDITOR_MAX_VIEWPORT_RATIO = 0.56;
 
 const buildDraftSignature = (
   text: string,
@@ -69,6 +70,7 @@ const PostComposerScreen: React.FC = () => {
   const [exitAction, setExitAction] = useState<'save' | 'discard' | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [modals, setModals] = useState({ book: false, author: false, shelf: false, quote: false });
   const attachedBookRef = useRef<string>('');
   const attachedPublicationRef = useRef<string>('');
@@ -88,6 +90,19 @@ const PostComposerScreen: React.FC = () => {
   const [debouncedText] = useDebounce(text, AUTOSAVE_DEBOUNCE);
   const [debouncedVisibility] = useDebounce(visibility, AUTOSAVE_DEBOUNCE);
   const [debouncedAttachment] = useDebounce(attachment, AUTOSAVE_DEBOUNCE);
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = 'auto';
+    const viewportHeight =
+      typeof window === 'undefined' ? 0 : window.innerHeight * EDITOR_MAX_VIEWPORT_RATIO;
+    const maxHeight = viewportHeight > 0 ? viewportHeight : textarea.scrollHeight;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }, [text]);
 
   const routeDraftId =
     currentView.type === 'immersive' &&
@@ -515,6 +530,10 @@ const PostComposerScreen: React.FC = () => {
     : activeDraftId
       ? (lang === 'en' ? 'Draft saved' : 'تم حفظ المسودة')
       : '';
+  const editorMetaParts = [
+    footerDraftLabel,
+    `${text.length}/${TEXT_LIMIT}`,
+  ].filter(Boolean);
 
   return (
     <div className="h-screen bg-[#0f172a] text-white flex flex-col">
@@ -522,16 +541,27 @@ const PostComposerScreen: React.FC = () => {
         <div className="mx-auto flex h-full w-full max-w-[var(--app-rail-wide)] flex-col bg-[#0f172a]/86 backdrop-blur-sm md:border-x md:border-white/6 md:shadow-[0_24px_72px_-48px_rgba(0,0,0,0.9)]">
           <header className="border-b border-white/5">
             <ContentRail variant="default" className="flex h-16 items-center justify-between px-0">
-              <button onClick={() => setShowCancelPrompt(true)} disabled={isDeletingDraft || !!exitAction}>
+              <button
+                onClick={() => setShowCancelPrompt(true)}
+                disabled={isDeletingDraft || !!exitAction}
+                className="rounded-full px-3 py-2 text-sm text-white/72 transition-colors hover:bg-white/5 hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+              >
                 Cancel
               </button>
               <div className="flex gap-2">
                 {isDraftAvailable && (
-                  <button onClick={handleOpenDrafts} className="px-3 py-1 text-xs rounded-full bg-white/5">
+                  <button
+                    onClick={handleOpenDrafts}
+                    className="rounded-full border border-white/8 bg-white/[0.04] px-3 py-2 text-xs font-medium text-white/70 transition-colors hover:bg-white/[0.08] hover:text-white"
+                  >
                     Drafts
                   </button>
                 )}
-                <Button onClick={handlePublish} disabled={isPosting || isUploading || isRouteDraftLoading}>
+                <Button
+                  onClick={handlePublish}
+                  disabled={isPosting || isUploading || isRouteDraftLoading}
+                  className="min-w-[76px]"
+                >
                   {isPosting ? <LoadingSpinner /> : 'Post'}
                 </Button>
               </div>
@@ -539,32 +569,46 @@ const PostComposerScreen: React.FC = () => {
           </header>
 
           <div className="border-b border-white/5">
-            <ContentRail variant="default" className="grid grid-cols-6 gap-2 py-4 px-0">
+            <ContentRail variant="default" className="grid grid-cols-3 gap-3 py-4 px-0 sm:grid-cols-6">
               {attachmentTypes.map((type) => (
                 <button
                   key={type.id}
                   onClick={type.action}
-                  className="flex flex-col items-center gap-1 py-2 rounded-xl bg-white/5 hover:bg-white/10"
+                  className="flex min-h-[72px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.045] px-2 py-3 text-white/78 transition-colors hover:border-white/[0.11] hover:bg-white/[0.075] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
                   disabled={isRouteDraftLoading}
                 >
-                  <type.icon className="h-6 w-6" />
-                  <span className="text-[10px]">{type.label}</span>
+                  <type.icon className="h-5 w-5" />
+                  <span className="text-[11px] font-medium">{type.label}</span>
                 </button>
               ))}
             </ContentRail>
           </div>
 
-          <ContentRail variant="default" className="flex flex-1 flex-col px-0">
-            <textarea
-              value={text}
-              onChange={(event) => setText(event.target.value.slice(0, TEXT_LIMIT))}
-              placeholder="What's happening?"
-              className="flex-grow py-6 bg-transparent text-2xl font-serif resize-none focus:outline-none"
-              disabled={isRouteDraftLoading}
-            />
+          <ContentRail variant="default" className="min-h-0 flex-1 overflow-y-auto px-0 py-5">
+            <div className="rounded-2xl border border-white/[0.07] bg-white/[0.035] px-4 py-4">
+              <textarea
+                ref={textareaRef}
+                value={text}
+                onChange={(event) => setText(event.target.value.slice(0, TEXT_LIMIT))}
+                placeholder="What's happening?"
+                rows={4}
+                className="min-h-[132px] w-full resize-none bg-transparent text-2xl font-serif leading-snug text-white placeholder:text-white/34 focus:outline-none"
+                disabled={isRouteDraftLoading}
+              />
+              <div className="mt-3 flex items-center justify-end border-t border-white/[0.06] pt-3">
+                <span
+                  className={cn(
+                    'text-xs font-medium text-white/38',
+                    TEXT_LIMIT - text.length < 50 && 'text-amber-300/90'
+                  )}
+                >
+                  {editorMetaParts.join(' • ')}
+                </span>
+              </div>
+            </div>
 
             {attachment && (
-              <div className="pb-4">
+              <div className="pb-5 pt-2">
                 <AttachmentListV1
                   attachments={[attachment]}
                   onRemove={() => setAttachment(null)}
@@ -573,15 +617,6 @@ const PostComposerScreen: React.FC = () => {
               </div>
             )}
           </ContentRail>
-
-          <footer className="border-t border-white/5">
-            <ContentRail variant="default" className="flex h-14 items-center justify-between px-0">
-              <span className="text-xs opacity-40">{footerDraftLabel}</span>
-              <span className={cn('text-xs', TEXT_LIMIT - text.length < 50 && 'text-amber-400')}>
-                {TEXT_LIMIT - text.length} / {TEXT_LIMIT}
-              </span>
-            </ContentRail>
-          </footer>
         </div>
       </div>
 
@@ -670,23 +705,14 @@ const PostComposerScreen: React.FC = () => {
           }
         }}
       >
-        <div className="space-y-4">
-          <div className="space-y-2 pr-8">
+        <div className="space-y-5">
+          <div className="pr-8">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
-              {lang === 'en' ? 'Leave composer?' : 'مغادرة المحرر؟'}
+              {lang === 'en' ? 'Discard post?' : 'تجاهل المنشور؟'}
             </h2>
-            <p className="text-sm text-slate-600 dark:text-slate-300">
-              {canSaveDraftOnExit
-                ? (lang === 'en'
-                    ? 'Save this draft before leaving, discard it, or keep editing.'
-                    : 'احفظ هذه المسودة قبل المغادرة، أو تجاهلها، أو واصل التحرير.')
-                : (lang === 'en'
-                    ? 'Discard this composer or keep editing.'
-                    : 'تجاهل هذا المحرر أو واصل التحرير.')}
-            </p>
           </div>
 
-          <div className="flex flex-col gap-3">
+          <div className="grid gap-2 sm:grid-cols-3">
             {canSaveDraftOnExit && (
               <Button
                 onClick={() => void handleSaveDraftAndExit()}
@@ -695,7 +721,7 @@ const PostComposerScreen: React.FC = () => {
               >
                 {exitAction === 'save'
                   ? <LoadingSpinner />
-                  : (lang === 'en' ? 'Save Draft' : 'حفظ المسودة')}
+                  : (lang === 'en' ? 'Save draft' : 'حفظ المسودة')}
               </Button>
             )}
             <Button
