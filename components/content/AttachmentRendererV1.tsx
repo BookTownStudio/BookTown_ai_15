@@ -130,43 +130,34 @@ const ImageView: React.FC<{
         Number.isFinite(dimensions.height) &&
         dimensions.width > 0 &&
         dimensions.height > 0;
+    const reserveAspectRatio = hasStableDimensions && surface !== 'write';
 
     return (
-        <AttachmentGrammarCard
-            label="Image"
-            title="Image"
-            subtitle={resolvedAlt !== fallbackAlt ? resolvedAlt : undefined}
-            mediaFirst
-            preview={
-                <div
-                    className="relative max-h-[30rem] overflow-hidden"
-                    style={hasStableDimensions
-                        ? {
-                            aspectRatio: `${dimensions.width} / ${dimensions.height}`,
-                            maxHeight,
-                        }
-                        : undefined}
-                >
-                    <img
-                        src={url}
-                        alt={resolvedAlt}
-                        loading="lazy"
-                        onLoad={() =>
-                            AttachmentAnalytics.track('attachment_rendered', attachment, surface)
-                        }
-                        onError={() =>
-                            AttachmentAnalytics.track('attachment_failed', attachment, surface)
-                        }
-                        className={cn(
-                            "block w-full object-cover transition-opacity duration-300",
-                            hasStableDimensions ? "h-full" : "h-auto"
-                        )}
-                        style={hasStableDimensions ? undefined : { maxHeight }}
-                    />
-                    <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/24 via-transparent to-transparent" />
-                </div>
-            }
-        />
+        <div
+            className="relative overflow-hidden rounded-[0.7rem] border border-white/[0.08] bg-black/28"
+            style={reserveAspectRatio
+                ? {
+                    aspectRatio: `${dimensions.width} / ${dimensions.height}`,
+                    maxHeight,
+                }
+                : { maxHeight }}
+        >
+            <img
+                src={url}
+                alt={resolvedAlt}
+                loading="lazy"
+                onLoad={() =>
+                    AttachmentAnalytics.track('attachment_rendered', attachment, surface)
+                }
+                onError={() =>
+                    AttachmentAnalytics.track('attachment_failed', attachment, surface)
+                }
+                className={cn(
+                    "block w-full transition-opacity duration-300",
+                    reserveAspectRatio ? "h-full object-contain" : "h-auto object-contain"
+                )}
+            />
+        </div>
     );
 };
 
@@ -699,6 +690,10 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         Boolean(isInViewport && v1) &&
         !isReferenceV1 &&
         v1Type !== 'LINK';
+    const isMediaImage = isV1
+        ? v1Type === 'IMAGE' || v1Type === 'MEDIA'
+        : ['media', 'image'].includes(readNonEmptyString((attachment as any)?.type).toLowerCase());
+    const shouldShowActionMenu = !isMediaImage || surface === 'write';
     const deliveryIntent = resolveAttachmentDeliveryIntent(surface, currentView);
     const { data: secureUrl, isLoading: isResolvingUrl, isError: isUrlError } = useAttachmentUrl(
         shouldResolveSecureUrl ? v1!.attachmentId : undefined,
@@ -757,7 +752,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         feed: 560,
         drawer: 64,
         read: 480,
-        write: 200
+        write: 520
     };
 
     useEffect(() => {
@@ -1076,6 +1071,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
         >
             {visual}
             
+            {shouldShowActionMenu ? (
             <div className="absolute top-2 right-2 flex gap-1" ref={menuRef}>
                 <button 
                     onClick={toggleMenu}
@@ -1095,6 +1091,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     />
                 )}
             </div>
+            ) : null}
         </div>
     );
 };
