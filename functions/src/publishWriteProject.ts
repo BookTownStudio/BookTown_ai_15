@@ -509,10 +509,6 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       tx.set(
         db.collection("books").doc(canonicalBookId),
         {
-          ownerId: uid,
-          ownerUid: uid,
-          projectId: canonicalProjectId,
-          visibility: "public",
           synopsis: canonicalDescription,
           publishedAt: nowIso,
           publishedWorkId,

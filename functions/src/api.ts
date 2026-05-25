@@ -316,6 +316,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
   const authorEn = String(raw?.authorEn || authors[0] || "Unknown");
   const normalizedAuthors = authors.length > 0 ? authors : [authorEn];
   const externalId = String(raw?.externalId || "").trim();
+  // Search DTO availability fields are response projections. Persistence
+  // ownership remains with materializeBookAuthority, createEbookAttachment, and
+  // acquireExternalEbookForRead according to field-level authority.
   const hasEbook = Boolean(raw?.hasEbook);
   const downloadable = Boolean(raw?.downloadable);
   const ebookAvailable = Boolean(raw?.isEbookAvailable ?? hasEbook);

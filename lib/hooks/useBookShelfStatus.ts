@@ -9,6 +9,15 @@ import { useCurrentlyReading } from './useCurrentlyReading.ts';
  */
 const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
 
+const hasShelfBooksAuthorityMembership = (
+  shelf: { membershipAuthority?: unknown; membershipBookIds?: unknown },
+  bookId: string
+) => {
+  if (shelf.membershipAuthority !== 'shelf_books') return false;
+  const projectedBookIds = Array.isArray(shelf.membershipBookIds) ? shelf.membershipBookIds : [];
+  return projectedBookIds.some(id => id === bookId);
+};
+
 /**
  * useBookShelfStatus
  * ------------------------------------------------
@@ -34,14 +43,16 @@ export const useBookShelfStatus = (bookId?: string) => {
 
   /**
    * 🔒 Physical shelf membership
-   * (user-managed shelves only)
+   * User shelf DTOs expose a bounded projection generated from shelf_books.
+   * The projection is accepted only when the backend marks shelf_books as the
+   * membership authority.
    */
   const shelvesWithBook = useMemo(() => {
     if (!shelves || !bookId) return [];
 
     return shelves.filter(
       shelf =>
-        Array.isArray(shelf.bookIds) && shelf.bookIds.includes(bookId)
+        hasShelfBooksAuthorityMembership(shelf, bookId)
     );
   }, [shelves, bookId]);
 

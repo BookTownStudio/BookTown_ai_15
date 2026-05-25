@@ -1,7 +1,7 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
-import { writeShelfBookInBatch } from "./shelfBookEntry";
+import { SHELF_BOOKS_COLLECTION, writeShelfBookInBatch } from "./shelfBookEntry";
 
 type DuplicateShelfRequest = {
   sourceShelfId?: unknown;
@@ -32,19 +32,17 @@ function resolveShelfVisibility(data: Record<string, unknown>): "public" | "unli
   return "private";
 }
 
-function normalizeEntries(value: unknown): Record<string, Record<string, unknown>> {
-  if (!value || typeof value !== "object") {
-    return {};
-  }
-
-  const source = value as Record<string, unknown>;
+function normalizeShelfBookEntries(
+  docs: FirebaseFirestore.QueryDocumentSnapshot[]
+): Record<string, Record<string, unknown>> {
   const result: Record<string, Record<string, unknown>> = {};
-  for (const [bookId, entry] of Object.entries(source)) {
-    const normalizedBookId = readNonEmptyString(bookId, 128);
-    if (!normalizedBookId || !entry || typeof entry !== "object") {
+  for (const doc of docs) {
+    const entry = doc.data() as Record<string, unknown>;
+    const normalizedBookId = readNonEmptyString(entry.bookId, 128);
+    if (!normalizedBookId) {
       continue;
     }
-    result[normalizedBookId] = { ...(entry as Record<string, unknown>) };
+    result[normalizedBookId] = { ...entry };
   }
   return result;
 }
@@ -122,7 +120,12 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
   const titleEn = requestedTitleEn || `${sourceTitleEn} (Copy)`;
   const titleAr = requestedTitleAr || `${sourceTitleAr} (Copy)`;
 
-  const entries = normalizeEntries(sourceData.entries);
+  const sourceShelfBooksSnap = await db
+    .collection(SHELF_BOOKS_COLLECTION)
+    .where("shelfId", "==", sourceShelfId)
+    .where("ownerId", "==", sourceOwnerId)
+    .get();
+  const entriesProjection = normalizeShelfBookEntries(sourceShelfBooksSnap.docs);
   const orderedBookIds = normalizeOrderedBookIds(sourceData.orderedBookIds);
   const userCoverUrl = readNonEmptyString(sourceData.userCoverUrl, 2048) || null;
   const visibility = resolveShelfVisibility(sourceData);
@@ -135,7 +138,9 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     ownerId: uid,
     titleEn,
     titleAr,
-    entries,
+    // Compatibility projection copied from shelf_books. It is not the
+    // membership authority for the duplicated shelf.
+    entries: entriesProjection,
     visibility,
     createdAt: now,
     updatedAt: now,
@@ -155,18 +160,19 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     duplicatePayload.userCoverUrl = userCoverUrl;
   }
 
-  // Write the shelf metadata + legacy entries map.
+  // Write shelf metadata plus a compatibility projection of the copied
+  // shelf_books entries. Membership authority remains shelf_books.
   await duplicateRef.set(duplicatePayload);
 
   // Write shelf_books docs for every copied entry (SHELF_BOOKS_SCHEMA_V1).
   // Firestore batches are capped at 500 operations per commit.
   const BATCH_SIZE = 500;
-  const bookIds = Object.keys(entries);
-  for (let i = 0; i < bookIds.length; i += BATCH_SIZE) {
+  const copiedBookIds = Object.keys(entriesProjection);
+  for (let i = 0; i < copiedBookIds.length; i += BATCH_SIZE) {
     const batch = db.batch();
-    const chunk = bookIds.slice(i, i + BATCH_SIZE);
+    const chunk = copiedBookIds.slice(i, i + BATCH_SIZE);
     for (const bookId of chunk) {
-      const entry = entries[bookId];
+      const entry = entriesProjection[bookId];
       const addedAt =
         typeof entry.addedAt === "string" && entry.addedAt.trim().length > 0
           ? entry.addedAt
@@ -211,15 +217,17 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     sourceShelfId,
     sourceOwnerId,
     duplicateShelfId: duplicateRef.id,
-    entriesCount: bookIds.length,
+    entriesCount: copiedBookIds.length,
   });
 
   return {
     id: duplicateRef.id,
     ownerId: uid,
+    membershipAuthority: "shelf_books",
+    membershipBookIds: copiedBookIds,
     titleEn,
     titleAr,
-    entries,
+    entries: entriesProjection,
     ...(orderedBookIds ? { orderedBookIds } : {}),
     ...(userCoverUrl ? { userCoverUrl } : {}),
     visibility,

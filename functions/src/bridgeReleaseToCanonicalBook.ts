@@ -321,69 +321,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         effectiveVisibility
       );
 
-      tx.set(
-        attachmentRef,
-        {
-          parentType: "editions",
-          parentId: editionId,
-          editionId,
-          bookId,
-          releaseId,
-          visibility: attachmentVisibility,
-          updatedAt: now,
-        },
-        { merge: true }
-      );
-
-      tx.set(
-        editionRef,
-        {
-          id: editionId,
-          editionId,
-          bookId,
-          authorId: canonicalAuthor.authorId,
-          source: "write_release",
-          externalId: release.projectId,
-          currentReleaseId: releaseId,
-          title,
-          titleEn,
-          titleAr,
-          authors: [authorName],
-          authorEn: authorName,
-          authorAr: authorName,
-          language,
-          description: synopsis,
-          descriptionEn: synopsis,
-          descriptionAr: synopsis,
-          hasEbook: true,
-          downloadable: true,
-          isEbookAvailable: true,
-          ebookAttachmentId: release.attachmentId,
-          epubStoragePath: release.epubStoragePath,
-          searchTitleNormalized: normalizedTitle,
-          searchAuthorNormalized: normalizedAuthor,
-          searchTokens: searchFields.tokens,
-          publicationVersion,
-          datePublished,
-          dateModified: now,
-          lastPublishedTarget: "ebook",
-          publicationState: "published",
-          rightsMode,
-          visibility: effectiveVisibility,
-          coverMode: resolvedCover.coverMode,
-          ...(resolvedCover.fallbackCover
-            ? { fallbackCover: resolvedCover.fallbackCover }
-            : editionSnap.exists
-              ? { fallbackCover: FieldValue.delete() }
-              : {}),
-          publicDomain: false,
-          createdAt: existingEdition.createdAt || now,
-          updatedAt: now,
-          ...(coverUrl ? { coverUrl } : { coverUrl: FieldValue.delete() }),
-        },
-        { merge: true }
-      );
-
       await materializeBookAuthorityInTransaction({
         tx,
         source: "write_release",
@@ -423,6 +360,75 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         },
       });
 
+      const newEditionIdentitySeed = editionSnap.exists
+        ? {}
+        : {
+            id: editionId,
+            editionId,
+            bookId,
+            authorId: canonicalAuthor.authorId,
+            source: "write_release",
+            externalId: release.projectId,
+            title,
+            titleEn,
+            titleAr,
+            authors: [authorName],
+            authorEn: authorName,
+            authorAr: authorName,
+            language,
+            description: synopsis,
+            descriptionEn: synopsis,
+            descriptionAr: synopsis,
+            searchTitleNormalized: normalizedTitle,
+            searchAuthorNormalized: normalizedAuthor,
+            searchTokens: searchFields.tokens,
+            createdAt: now,
+          };
+
+      tx.set(
+        attachmentRef,
+        {
+          parentType: "editions",
+          parentId: editionId,
+          editionId,
+          bookId,
+          releaseId,
+          visibility: attachmentVisibility,
+          updatedAt: now,
+        },
+        { merge: true }
+      );
+
+      tx.set(
+        editionRef,
+        {
+          ...newEditionIdentitySeed,
+          currentReleaseId: releaseId,
+          hasEbook: true,
+          downloadable: true,
+          isEbookAvailable: true,
+          ebookAttachmentId: release.attachmentId,
+          epubStoragePath: release.epubStoragePath,
+          publicationVersion,
+          datePublished,
+          dateModified: now,
+          lastPublishedTarget: "ebook",
+          publicationState: "published",
+          rightsMode,
+          visibility: effectiveVisibility,
+          coverMode: resolvedCover.coverMode,
+          ...(resolvedCover.fallbackCover
+            ? { fallbackCover: resolvedCover.fallbackCover }
+            : editionSnap.exists
+              ? { fallbackCover: FieldValue.delete() }
+              : {}),
+          publicDomain: false,
+          updatedAt: now,
+          ...(coverUrl ? { coverUrl } : { coverUrl: FieldValue.delete() }),
+        },
+        { merge: true }
+      );
+
       tx.set(
         bookRef,
         {
@@ -445,7 +451,6 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           rightsMode,
           visibility: effectiveVisibility,
           coverMode: resolvedCover.coverMode,
-          ...(bookSnap.exists ? {} : { createdAt: now }),
           ...(coverUrl
             ? {
                 coverUrl,

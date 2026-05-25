@@ -8,6 +8,30 @@ import { performance } from "perf_hooks";
 // Authority: Use centralized admin instances to ensure initialization and bucket binding
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
+const COVER_BOOK_WRITE_ALLOWLIST = new Set([
+  "cover",
+  "coverUrl",
+  "coverState",
+  "coverFailureReason",
+  "coverUpdatedAt",
+  "updatedAt",
+]);
+
+function assertAllowedCoverBookPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !COVER_BOOK_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[COVERS][DISALLOWED_BOOK_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new Error("COVERS_DISALLOWED_BOOK_MUTATION_FIELDS");
+  }
+}
 
 /**
  * deriveBookCovers
@@ -115,19 +139,23 @@ export const deriveBookCovers = onDocumentCreated(
         };
       }
 
-      await db.collection("books").doc(bookId).update({
+      const bookPatch: Record<string, unknown> = {
         cover: {
           original: cover.original,
           large: derivedPaths.large,
           medium: derivedPaths.medium,
           small: derivedPaths.small,
         },
-        coverMeta: {
-          derived: derivedMeta,
-        },
-        ingestionStatus: "completed",
+        coverState: "READY",
+        coverUrl: derivedPaths.medium,
+        coverFailureReason: null,
+        coverUpdatedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
-      });
+      };
+      void derivedMeta;
+      assertAllowedCoverBookPatch(bookPatch, "deriveBookCovers.ready");
+
+      await db.collection("books").doc(bookId).update(bookPatch);
 
       logger.info("[COVERS] Completed", {
         bookId,

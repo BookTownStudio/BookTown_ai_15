@@ -442,6 +442,106 @@ type AdminDeleteAllBooksInput = {
   confirmation?: unknown;
 };
 
+type AdminDestructiveOperation =
+  | "adminMergeCanonicalBooks"
+  | "adminDeleteCanonicalBook"
+  | "adminDeleteCanonicalSeedList"
+  | "adminDeleteAllBooks";
+
+type AdminDestructiveAuditPayload = Record<string, unknown>;
+
+type DeleteCanonicalBookCascadeOptions = {
+  dryRun?: boolean;
+  audit?: {
+    operation: AdminDestructiveOperation;
+    actorUid: string;
+    action: string;
+    requestedInputId: string;
+  };
+};
+
+const ADMIN_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION = 1;
+const ADMIN_DESTRUCTIVE_ALLOWED_OPERATIONS = new Set<AdminDestructiveOperation>([
+  "adminMergeCanonicalBooks",
+  "adminDeleteCanonicalBook",
+  "adminDeleteCanonicalSeedList",
+  "adminDeleteAllBooks",
+]);
+
+const ADMIN_MERGE_EDITION_PATCH_FIELDS = new Set([
+  "bookId",
+  "workId",
+  "canonicalBookId",
+  "updatedAt",
+]);
+
+const ADMIN_MERGE_QUOTE_PATCH_FIELDS = new Set(["bookId", "sourceBookId", "updatedAt"]);
+const ADMIN_MERGE_SHELF_PATCH_FIELDS = new Set(["orderedBookIds", "updatedAt"]);
+
+function assertAdminDestructiveAuthority(params: {
+  operation: AdminDestructiveOperation;
+  actorUid: string;
+  resourceId: string;
+}): void {
+  if (!ADMIN_DESTRUCTIVE_ALLOWED_OPERATIONS.has(params.operation)) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Unsupported destructive operation "${params.operation}".`
+    );
+  }
+  if (!params.actorUid || !params.actorUid.trim()) {
+    throw new HttpsError("unauthenticated", "Destructive admin operation requires an actor.");
+  }
+  if (!params.resourceId || !params.resourceId.trim()) {
+    throw new HttpsError(
+      "invalid-argument",
+      "Destructive admin operation requires a resource id."
+    );
+  }
+}
+
+function assertAllowedDestructivePatch(
+  patch: Record<string, unknown>,
+  allowedFields: Set<string>,
+  context: string
+): void {
+  const forbidden = Object.keys(patch).filter((field) => !allowedFields.has(field));
+  if (forbidden.length > 0) {
+    throw new HttpsError(
+      "failed-precondition",
+      `${context} attempted to write non-contract fields: ${forbidden.join(", ")}.`
+    );
+  }
+}
+
+async function writeAdminDestructiveAudit(params: {
+  operation: AdminDestructiveOperation;
+  action: string;
+  actorUid: string;
+  resourceType: string;
+  resourceId: string;
+  payload?: AdminDestructiveAuditPayload;
+}): Promise<void> {
+  assertAdminDestructiveAuthority({
+    operation: params.operation,
+    actorUid: params.actorUid,
+    resourceId: params.resourceId,
+  });
+
+  await db.collection("admin_audit_log").add({
+    action: params.action,
+    authority: "admin_destructive",
+    authorityContractVersion: ADMIN_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION,
+    allowedOperation: params.operation,
+    resourceType: params.resourceType,
+    resourceId: params.resourceId,
+    actorUid: params.actorUid,
+    timestamp: admin.firestore.Timestamp.now(),
+    source: "admin_api",
+    ...(params.payload || {}),
+  });
+}
+
 function readRequiredString(value: unknown, field: string, max = 300): string {
   if (typeof value !== "string") {
     throw new HttpsError("invalid-argument", `${field} must be a string.`);
@@ -3749,7 +3849,7 @@ async function executeDeleteExecutionPlan(plan: DeleteExecutionPlan): Promise<vo
 
 async function deleteCanonicalBookCascade(
   inputId: string,
-  options?: { dryRun?: boolean }
+  options?: DeleteCanonicalBookCascadeOptions
 ): Promise<AdminDeleteCanonicalBookResponse> {
   const plan = await buildDeleteExecutionPlan(inputId);
   const resolvedBookId = plan.resolution.resolvedBookId || readRequiredString(inputId, "bookId", 180);
@@ -3759,7 +3859,7 @@ async function deleteCanonicalBookCascade(
     await executeDeleteExecutionPlan(plan);
   }
 
-  return {
+  const result = {
     bookId: resolvedBookId,
     deleted: shouldDelete,
     dryRun: options?.dryRun === true,
@@ -3770,6 +3870,29 @@ async function deleteCanonicalBookCascade(
     deleteGraph: plan.deleteGraph,
     cascade: plan.cascade,
   };
+
+  if (options?.audit) {
+    await writeAdminDestructiveAudit({
+      operation: options.audit.operation,
+      action: options.audit.action,
+      actorUid: options.audit.actorUid,
+      resourceType: "book",
+      resourceId: resolvedBookId,
+      payload: {
+        requestedInputId: options.audit.requestedInputId,
+        dryRun: result.dryRun,
+        deleted: result.deleted,
+        resolved: result.resolved,
+        inputType: result.inputType,
+        collectionCounts: result.collectionCounts,
+        storageCounts: result.storageCounts,
+        deleteGraph: result.deleteGraph,
+        cascade: result.cascade,
+      },
+    });
+  }
+
+  return result;
 }
 
 function parseOptionalIsbn(value: unknown): { isbn10?: string; isbn13?: string } {
@@ -4487,6 +4610,12 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
   const sourceBookId = validatedData.sourceBookId;
   const targetBookId = validatedData.targetBookId;
 
+  assertAdminDestructiveAuthority({
+    operation: "adminMergeCanonicalBooks",
+    actorUid: caller.uid,
+    resourceId: `${sourceBookId}->${targetBookId}`,
+  });
+
   if (sourceBookId === targetBookId) {
     throw new HttpsError(
       "invalid-argument",
@@ -4546,6 +4675,11 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
         }
         updateData.updatedAt = FieldValue.serverTimestamp();
 
+        assertAllowedDestructivePatch(
+          updateData,
+          ADMIN_MERGE_EDITION_PATCH_FIELDS,
+          "adminMergeCanonicalBooks.edition"
+        );
         tx.set(doc.ref, updateData, { merge: true });
         referenceCounts.editionsFromSource += 1;
       }
@@ -4558,24 +4692,36 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
     ]);
 
     for (const doc of quoteSnaps[0].docs) {
+      const quotePatch = {
+        bookId: targetBookId,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      assertAllowedDestructivePatch(
+        quotePatch,
+        ADMIN_MERGE_QUOTE_PATCH_FIELDS,
+        "adminMergeCanonicalBooks.quote"
+      );
       tx.set(
         doc.ref,
-        {
-          bookId: targetBookId,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
+        quotePatch,
         { merge: true }
       );
       referenceCounts.quotesFromSource += 1;
     }
 
     for (const doc of quoteSnaps[1].docs) {
+      const quotePatch = {
+        sourceBookId: targetBookId,
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      assertAllowedDestructivePatch(
+        quotePatch,
+        ADMIN_MERGE_QUOTE_PATCH_FIELDS,
+        "adminMergeCanonicalBooks.quoteSource"
+      );
       tx.set(
         doc.ref,
-        {
-          sourceBookId: targetBookId,
-          updatedAt: FieldValue.serverTimestamp(),
-        },
+        quotePatch,
         { merge: true }
       );
       referenceCounts.quotesAsSource += 1;
@@ -4604,13 +4750,19 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
               id === sourceBookId ? targetBookId : id
             )
           : [];
+        const shelfPatch = {
+          orderedBookIds,
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        assertAllowedDestructivePatch(
+          shelfPatch,
+          ADMIN_MERGE_SHELF_PATCH_FIELDS,
+          "adminMergeCanonicalBooks.shelfProjection"
+        );
 
         tx.set(
           shelfRef,
-          {
-            orderedBookIds,
-            updatedAt: FieldValue.serverTimestamp(),
-          },
+          shelfPatch,
           { merge: true }
         );
         referenceCounts.shelvesUpdated += 1;
@@ -4644,20 +4796,20 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
     return referenceCounts;
   });
 
-  const now = admin.firestore.Timestamp.now();
-
-  await db.collection("admin_audit_log").add({
+  await writeAdminDestructiveAudit({
+    operation: "adminMergeCanonicalBooks",
     action: "book_merge",
     resourceType: "book",
     resourceId: targetBookId,
-    sourceBookId,
-    targetBookId,
     actorUid: caller.uid,
-    sourceTitle: sourceData.title || sourceData.titleEn,
-    targetTitle: targetData.title || targetData.titleEn,
-    mergeStats: mergeResult,
-    timestamp: now,
-    source: "admin_api",
+    payload: {
+      sourceBookId,
+      targetBookId,
+      sourceTitle: sourceData.title || sourceData.titleEn,
+      targetTitle: targetData.title || targetData.titleEn,
+      protectedIdentityOwner: "materializeBookAuthority",
+      mergeStats: mergeResult,
+    },
   });
 
   logger.info("[ADMIN_AUDIT][BOOK_MERGED]", {
@@ -4681,10 +4833,15 @@ export const adminMergeCanonicalBooks = onCall({ cors: true }, async (request) =
 });
 
 export const adminDeleteCanonicalBook = onCall({ cors: true }, async (request) => {
-  assertRoleFromClaims(request.auth, "superadmin");
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
   const data = (request.data ?? {}) as AdminDeleteCanonicalBookInput;
   const bookId = readRequiredString(data.bookId, "bookId", 180);
   const dryRun = data.dryRun === true;
+  assertAdminDestructiveAuthority({
+    operation: "adminDeleteCanonicalBook",
+    actorUid: caller.uid,
+    resourceId: bookId,
+  });
   if (!dryRun && typeof data.confirmation === "string" && data.confirmation.trim().length > 0) {
     const preview = await buildDeleteExecutionPlan(bookId);
     if (!preview.resolution.resolvedBookId) {
@@ -4707,14 +4864,27 @@ export const adminDeleteCanonicalBook = onCall({ cors: true }, async (request) =
       );
     }
   }
-  return deleteCanonicalBookCascade(bookId, { dryRun });
+  return deleteCanonicalBookCascade(bookId, {
+    dryRun,
+    audit: {
+      operation: "adminDeleteCanonicalBook",
+      action: dryRun ? "book_delete_dry_run" : "book_delete",
+      actorUid: caller.uid,
+      requestedInputId: bookId,
+    },
+  });
 });
 
 export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (request) => {
-  assertRoleFromClaims(request.auth, "superadmin");
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
   const data = (request.data ?? {}) as AdminDeleteCanonicalSeedListInput;
   const rows = parseBulkSeedRows(data.rows);
   const results: AdminDeleteCanonicalSeedListRow[] = [];
+  assertAdminDestructiveAuthority({
+    operation: "adminDeleteCanonicalSeedList",
+    actorUid: caller.uid,
+    resourceId: "seed-list",
+  });
 
   for (const entry of rows) {
     try {
@@ -4735,7 +4905,14 @@ export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (reques
         continue;
       }
 
-      const deleted = await deleteCanonicalBookCascade(bookId);
+      const deleted = await deleteCanonicalBookCascade(bookId, {
+        audit: {
+          operation: "adminDeleteCanonicalSeedList",
+          action: "book_delete_seed_list",
+          actorUid: caller.uid,
+          requestedInputId: bookId,
+        },
+      });
       results.push({
         row: entry.row,
         input: entry.input,
@@ -4764,7 +4941,7 @@ export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (reques
 });
 
 export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
-  assertRoleFromClaims(request.auth, "superadmin");
+  const caller = assertRoleFromClaims(request.auth, "superadmin");
 
   const confirmation = readRequiredString(
     (request.data as AdminDeleteAllBooksInput | null | undefined)?.confirmation,
@@ -4774,6 +4951,11 @@ export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
   if (confirmation !== "DELETE ALL BOOKS") {
     throw new HttpsError("invalid-argument", 'confirmation must equal "DELETE ALL BOOKS".');
   }
+  assertAdminDestructiveAuthority({
+    operation: "adminDeleteAllBooks",
+    actorUid: caller.uid,
+    resourceId: "books",
+  });
 
   const booksSnap = await db.collection("books").get();
   let deletedCount = 0;
@@ -4808,6 +4990,18 @@ export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
     cascade.attachmentStorageFiles += result.cascade.attachmentStorageFiles;
     cascade.otherSubcollectionDocs += result.cascade.otherSubcollectionDocs;
   }
+
+  await writeAdminDestructiveAudit({
+    operation: "adminDeleteAllBooks",
+    action: "book_delete_all",
+    actorUid: caller.uid,
+    resourceType: "book_collection",
+    resourceId: "books",
+    payload: {
+      deletedCount,
+      cascade,
+    },
+  });
 
   return {
     deletedCount,

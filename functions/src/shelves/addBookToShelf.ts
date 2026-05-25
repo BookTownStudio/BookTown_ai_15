@@ -8,6 +8,7 @@ import {
 } from "../attribution/recommendationOrigin";
 import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
 import {
+  readShelfBookInTransaction,
   writeShelfBookInTransaction,
 } from "./shelfBookEntry";
 
@@ -95,14 +96,7 @@ export const addBookToShelf = onCall<AddBookToShelfRequest>({ cors: true }, asyn
       shelfData,
     });
 
-    const entries =
-      shelfData.entries && typeof shelfData.entries === "object"
-        ? (shelfData.entries as Record<string, unknown>)
-        : {};
-    const existingEntry =
-      entries[bookId] && typeof entries[bookId] === "object"
-        ? (entries[bookId] as Record<string, unknown>)
-        : null;
+    const existingEntry = await readShelfBookInTransaction(tx, db, shelfId, bookId);
     const existingOrigin = readExistingRecommendationOrigin(
       existingEntry?.recommendationOrigin
     );

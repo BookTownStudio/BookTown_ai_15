@@ -388,12 +388,32 @@ export interface ShelfEntry {
 export interface Shelf {
     id: string;
     ownerId: string;
+    /**
+     * Membership decisions must use membershipBookIds only when this marker is
+     * present. The marker is emitted by backend shelf DTOs generated from
+     * shelf_books.
+     */
+    membershipAuthority?: 'shelf_books';
+    /**
+     * Membership projection generated from shelf_books. This exists so clients
+     * can check membership without treating legacy bookIds as authoritative.
+     */
+    membershipBookIds?: string[];
     titleEn: string;
     titleAr: string;
+    /**
+     * Legacy/display projection only. Do not use for membership decisions.
+     */
     bookIds: string[];
+    /**
+     * Display-order projection only. Membership still comes from shelf_books.
+     */
     orderedBookIds?: string[];
     userCoverUrl?: string;
     visibility?: 'public' | 'unlisted' | 'private';
+    /**
+     * Display projection only.
+     */
     bookCount?: number;
     createdAt?: any;
     updatedAt?: any;

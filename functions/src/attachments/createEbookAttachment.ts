@@ -9,6 +9,31 @@ import {
 
 const db = admin.firestore();
 const storage = admin.storage();
+const ATTACHMENT_WRITE_ALLOWLIST = new Set([
+  "ebookAttachmentId",
+  "ebookStoragePath",
+  "epubStoragePath",
+  "updatedAt",
+]);
+
+function assertAllowedAttachmentPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !ATTACHMENT_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[EBOOK][DISALLOWED_ATTACHMENT_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new HttpsError(
+      "internal",
+      "Ebook attachment attempted to mutate fields outside its authority."
+    );
+  }
+}
 
 /**
  * createEbookAttachment
@@ -19,6 +44,15 @@ const storage = admin.storage();
  * - Register a PDF ebook file already uploaded to Cloud Storage
  * - Create a canonical attachment record
  * - Bind it to a book / edition
+ * - Own in-app readable-copy pointer fields:
+ *   ebookAttachmentId, ebookStoragePath, and isReadableInApp semantics.
+ *
+ * AVAILABILITY FIELD OWNERSHIP:
+ * - hasEbook: materializeBookAuthority.
+ * - ebookAttachmentId / ebookStoragePath: this attachment finalizer for
+ *   uploaded/admin-ingested ebooks.
+ * - downloadable / isEbookAvailable: outside attachment ownership; readers must
+ *   derive availability from attachment pointers.
  *
  * SECURITY CONTRACT:
  * - Auth required
@@ -134,31 +168,30 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
   });
 
   // --------------------------------------------------
-  // 🔗 LINK TO EDITION (CANONICAL POINTER)
+  // 🔗 LINK TO EDITION (CANONICAL READABLE-COPY POINTER)
   // --------------------------------------------------
+  const editionPatch: Record<string, unknown> = {
+    ebookAttachmentId: attachmentRef.id,
+    ebookStoragePath: storagePath,
+    updatedAt: now,
+  };
+  assertAllowedAttachmentPatch(editionPatch, "createEbookAttachment.edition");
+
   await db.collection("editions").doc(editionId).set(
-    {
-      ebookAttachmentId: attachmentRef.id,
-      ebookStoragePath: storagePath,
-      hasEbook: true,
-      downloadable: true,
-      isEbookAvailable: true,
-      updatedAt: now,
-    },
+    editionPatch,
     { merge: true }
   );
 
+  const bookPatch: Record<string, unknown> = {
+    ebookAttachmentId: attachmentRef.id,
+    ebookStoragePath: storagePath,
+    ...(mimeType === "application/epub+zip" ? { epubStoragePath: storagePath } : {}),
+    updatedAt: now,
+  };
+  assertAllowedAttachmentPatch(bookPatch, "createEbookAttachment.book");
+
   await db.collection("books").doc(bookId).set(
-    {
-      editionId,
-      ebookAttachmentId: attachmentRef.id,
-      ebookStoragePath: storagePath,
-      ...(mimeType === "application/epub+zip" ? { epubStoragePath: storagePath } : {}),
-      hasEbook: true,
-      downloadable: true,
-      isEbookAvailable: true,
-      updatedAt: now,
-    },
+    bookPatch,
     { merge: true }
   );
 

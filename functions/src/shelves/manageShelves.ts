@@ -128,7 +128,7 @@ function serializeShelfDoc(
 ): Record<string, unknown> {
   const titleEn = sanitizeString(source.titleEn, 120);
   const titleAr = sanitizeString(source.titleAr, 120);
-  const bookIds = Object.keys(prebuiltEntries);
+  const projectedBookIds = Object.keys(prebuiltEntries);
   const orderedBookIds = normalizeOrderedBookIds(source.orderedBookIds);
   const copiedFromRaw =
     source.copiedFrom && typeof source.copiedFrom === "object" && !Array.isArray(source.copiedFrom)
@@ -138,18 +138,23 @@ function serializeShelfDoc(
   return {
     id: shelfId,
     ownerId: sanitizeString(source.ownerId, 128),
+    membershipAuthority: "shelf_books",
+    membershipBookIds: projectedBookIds,
     titleEn: titleEn || titleAr || "Shelf",
     titleAr: titleAr || titleEn || "Shelf",
     descriptionEn: sanitizeString(source.descriptionEn, 280),
     descriptionAr: sanitizeString(source.descriptionAr, 280),
-    bookIds,
+    // Projection only: generated from shelf_books for legacy display surfaces.
+    // Consumers must not treat bookIds as a membership authority.
+    bookIds: projectedBookIds,
     ...(orderedBookIds ? { orderedBookIds } : {}),
     ...(sanitizeString(source.userCoverUrl, 2048)
       ? { userCoverUrl: sanitizeString(source.userCoverUrl, 2048) }
       : {}),
     visibility: resolveShelfVisibility(source.visibility),
     isSystem: source.isSystem === true,
-    bookCount: bookIds.length,
+    // Projection only: generated from shelf_books for display.
+    bookCount: projectedBookIds.length,
     createdAt: toIsoString(source.createdAt),
     updatedAt: toIsoString(source.updatedAt),
     ...(copiedFromRaw

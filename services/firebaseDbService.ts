@@ -640,8 +640,13 @@ const toProfilePublication = (
 };
 
 const toShelf = (source: Record<string, unknown>): Shelf => {
-  const bookIds: string[] = Array.isArray(source.bookIds)
+  const projectedBookIds: string[] = Array.isArray(source.bookIds)
     ? source.bookIds
+        .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
+        .map((id) => id.trim().slice(0, 128))
+    : [];
+  const membershipBookIds: string[] = Array.isArray(source.membershipBookIds)
+    ? source.membershipBookIds
         .filter((id): id is string => typeof id === "string" && id.trim().length > 0)
         .map((id) => id.trim().slice(0, 128))
     : [];
@@ -663,17 +668,23 @@ const toShelf = (source: Record<string, unknown>): Shelf => {
   return {
     id: ensureNonEmptyString(normalizeString(source.id, 190), "id", 190),
     ownerId: ensureNonEmptyString(normalizeString(source.ownerId, 128), "ownerId", 128),
+    ...(source.membershipAuthority === "shelf_books"
+      ? { membershipAuthority: "shelf_books" as const }
+      : {}),
+    ...(source.membershipAuthority === "shelf_books"
+      ? { membershipBookIds }
+      : {}),
     titleEn: normalizeString(source.titleEn, 120) || "Shelf",
     titleAr: normalizeString(source.titleAr, 120) || normalizeString(source.titleEn, 120) || "Shelf",
     descriptionEn: normalizeString(source.descriptionEn, 280),
     descriptionAr: normalizeString(source.descriptionAr, 280),
-    bookIds,
+    bookIds: projectedBookIds,
     ...(orderedBookIds && orderedBookIds.length > 0 ? { orderedBookIds } : {}),
     ...(normalizeString(source.userCoverUrl, 2048)
       ? { userCoverUrl: normalizeString(source.userCoverUrl, 2048) }
       : {}),
     visibility,
-    bookCount: toNonNegativeInt(source.bookCount ?? bookIds.length),
+    bookCount: toNonNegativeInt(source.bookCount ?? projectedBookIds.length),
     createdAt: toIsoString(source.createdAt),
     updatedAt: toIsoString(source.updatedAt),
     isSystem: source.isSystem === true,

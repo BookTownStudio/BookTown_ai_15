@@ -11,6 +11,14 @@ const bucket = admin.storage().bucket();
 type JobStatus = "PENDING" | "PROCESSING" | "READY" | "FAILED";
 
 type CoverSizes = "original" | "large" | "medium" | "small";
+const COVER_BOOK_WRITE_ALLOWLIST = new Set([
+  "cover",
+  "coverUrl",
+  "coverState",
+  "coverFailureReason",
+  "coverUpdatedAt",
+  "updatedAt",
+]);
 
 const DERIVED_SIZES: Record<Exclude<CoverSizes, "original">, { width: number; quality: number }> = {
   large: { width: 1200, quality: 82 },
@@ -27,6 +35,22 @@ function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function assertAllowedCoverBookPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !COVER_BOOK_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[COVER_JOB][DISALLOWED_BOOK_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new Error("COVER_JOB_DISALLOWED_BOOK_MUTATION_FIELDS");
+  }
 }
 
 function coverPath(bookId: string, size: CoverSizes): string {
@@ -61,6 +85,17 @@ async function failJob(params: {
     error: message,
   });
 
+  const bookPatch: Record<string, unknown> = {
+    coverState: "FAILED",
+    cover: {
+      state: "FAILED",
+    },
+    coverFailureReason: message,
+    coverUpdatedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+  assertAllowedCoverBookPatch(bookPatch, "processCoverJobs.fail");
+
   await Promise.all([
     statusRef.set(
       {
@@ -72,13 +107,7 @@ async function failJob(params: {
       { merge: true }
     ),
     db.collection("books").doc(bookId).set(
-      {
-        coverState: "FAILED",
-        cover: {
-          state: "FAILED",
-        },
-        updatedAt: FieldValue.serverTimestamp(),
-      },
+      bookPatch,
       { merge: true }
     ),
   ]);
@@ -118,15 +147,20 @@ export const processCoverJobs = onDocumentWritten("cover_jobs/{bookId}", async (
       { merge: true }
     );
 
+    const processingBookPatch: Record<string, unknown> = {
+      coverState: "PROCESSING",
+      cover: {
+        state: "PROCESSING",
+      },
+      coverFailureReason: null,
+      coverUpdatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    assertAllowedCoverBookPatch(processingBookPatch, "processCoverJobs.processing");
+
     tx.set(
       db.collection("books").doc(bookId),
-      {
-        coverState: "PROCESSING",
-        cover: {
-          state: "PROCESSING",
-        },
-        updatedAt: FieldValue.serverTimestamp(),
-      },
+      processingBookPatch,
       { merge: true }
     );
 
@@ -202,6 +236,22 @@ export const processCoverJobs = onDocumentWritten("cover_jobs/{bookId}", async (
 
     void derivedOutputs;
 
+    const readyBookPatch: Record<string, unknown> = {
+      coverState: "READY",
+      coverUrl: paths.medium,
+      cover: {
+        state: "READY",
+        original: paths.original,
+        large: paths.large,
+        medium: paths.medium,
+        small: paths.small,
+      },
+      coverFailureReason: null,
+      coverUpdatedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    assertAllowedCoverBookPatch(readyBookPatch, "processCoverJobs.ready");
+
     await Promise.all([
       after.ref.set(
         {
@@ -213,18 +263,7 @@ export const processCoverJobs = onDocumentWritten("cover_jobs/{bookId}", async (
         { merge: true }
       ),
       db.collection("books").doc(bookId).set(
-        {
-          coverState: "READY",
-          coverUrl: paths.medium,
-          cover: {
-            state: "READY",
-            original: paths.original,
-            large: paths.large,
-            medium: paths.medium,
-            small: paths.small,
-          },
-          updatedAt: FieldValue.serverTimestamp(),
-        },
+        readyBookPatch,
         { merge: true }
       ),
     ]);

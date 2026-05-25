@@ -27,7 +27,6 @@ import {
   RecommendedShelf,
   BookEdition,
   BibliographicWork,
-  EditionReadingState,
   Ebook,
   ExternalSource
 } from '../types/entities.ts';
@@ -210,17 +209,6 @@ export interface LibrarySearchDataService {
 
   getEdition(editionId: string): Promise<BookEdition | null>;
   getWork(workId: string): Promise<BibliographicWork | null>;
-
-  getReadingState(
-    uid: string,
-    editionId: string
-  ): Promise<EditionReadingState | null>;
-
-  saveReadingState(
-    uid: string,
-    editionId: string,
-    state: Partial<EditionReadingState>
-  ): Promise<void>;
 
   ingestExternalResult(
     source: 'google_books' | 'open_library',

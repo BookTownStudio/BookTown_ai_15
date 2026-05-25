@@ -4,6 +4,40 @@ import { admin } from "./firebaseAdmin";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 const MAX_CASCADE_DELETE_DOCS = 450;
+const WRITE_PROJECT_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION = 1;
+const WRITE_PROJECT_DESTRUCTIVE_OPERATION = "deleteWriteProject";
+
+function assertWriteProjectDestructiveAuthority(params: {
+  uid: string;
+  projectId: string;
+}): void {
+  if (!params.uid || !params.uid.trim()) {
+    throw new HttpsError("unauthenticated", "Project deletion requires an authenticated actor.");
+  }
+  if (!params.projectId || !params.projectId.trim()) {
+    throw new HttpsError("invalid-argument", "Project deletion requires a project id.");
+  }
+}
+
+function buildProjectDestructiveAuditRecord(params: {
+  uid: string;
+  projectId: string;
+  deletedCounts: Record<string, number>;
+}): Record<string, unknown> {
+  return {
+    action: "write_project_delete",
+    authority: "user_owned_destructive",
+    authorityContractVersion: WRITE_PROJECT_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION,
+    allowedOperation: WRITE_PROJECT_DESTRUCTIVE_OPERATION,
+    resourceType: "write_project",
+    resourceId: `${params.uid}/${params.projectId}`,
+    actorUid: params.uid,
+    projectId: params.projectId,
+    deletedCounts: params.deletedCounts,
+    timestamp: admin.firestore.Timestamp.now(),
+    source: "write_project_api",
+  };
+}
 
 function isAuthoredProjectBook(
   bookData: Record<string, unknown>,
@@ -41,6 +75,7 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
 
   const canonicalProjectId = projectId.trim();
   const db = admin.firestore();
+  assertWriteProjectDestructiveAuthority({ uid, projectId: canonicalProjectId });
 
   const userRef = db.collection("users").doc(uid);
   const projectRef = userRef.collection("projects").doc(canonicalProjectId);
@@ -96,7 +131,8 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
       publishedEditionIds.size +
       publishedWorkIds.size +
       legacyEditionIds.size +
-      legacyBookIds.size;
+      legacyBookIds.size +
+      1;
 
     if (docsToDeleteCount > MAX_CASCADE_DELETE_DOCS) {
       throw new HttpsError(
@@ -112,6 +148,26 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
     });
 
     const batch = db.batch();
+    const deletedCounts = {
+      projects: 1,
+      shareLinks: shareSnap.exists ? 1 : 0,
+      publicShareTokens: shareToken ? 1 : 0,
+      publishedBooks: publishedSnap.size,
+      publishOps: publishOpsSnap.size,
+      duplicateOps: duplicateOpsSnap.size,
+      publishedEditions: publishedEditionIds.size,
+      publishedWorks: publishedWorkIds.size,
+      legacyEditions: legacyEditionIds.size,
+      legacyBooks: legacyBookIds.size,
+    };
+    batch.set(
+      db.collection("admin_audit_log").doc(),
+      buildProjectDestructiveAuditRecord({
+        uid,
+        projectId: canonicalProjectId,
+        deletedCounts,
+      })
+    );
     batch.delete(projectRef);
 
     if (shareSnap.exists) {

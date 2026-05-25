@@ -125,20 +125,16 @@ export const useToggleBookOnShelf = () => {
         }
       );
 
-      // ---- Optimistic shelves list ----
+      // ---- Optimistic display projection ----
+      // Membership authority remains the shelfEntries query backed by shelf_books.
       queryClient.setQueryData(
         shelvesKey,
         (old: Shelf[] = []) =>
           old.map(shelf => {
             if (shelf.id !== shelfId) return shelf;
 
-            const updatedBookIds = Array.isArray(shelf.bookIds) && shelf.bookIds.includes(bookId)
-              ? shelf.bookIds
-              : [...(shelf.bookIds || []), bookId];
-
             return {
               ...shelf,
-              bookIds: updatedBookIds,
               bookCount:
                 typeof shelf.bookCount === 'number'
                   ? shelf.bookCount + 1
@@ -251,17 +247,15 @@ export const useRemoveBookFromShelf = () => {
           old.filter(entry => entry.bookId !== bookId)
       );
 
+      // Display projection only; membership authority remains shelfEntries.
       queryClient.setQueryData(
         shelvesKey,
         (old: Shelf[] = []) =>
           old.map(shelf => {
             if (shelf.id !== shelfId) return shelf;
 
-            const updatedBookIds = (shelf.bookIds || []).filter(id => id !== bookId);
-
             return {
               ...shelf,
-              bookIds: updatedBookIds,
               bookCount:
                 typeof shelf.bookCount === 'number'
                   ? Math.max(0, shelf.bookCount - 1)

@@ -3,7 +3,6 @@ import { LibrarySearchDataService } from './db.types.ts';
 import {
     BookEdition,
     BibliographicWork,
-    EditionReadingState,
     Ebook,
     ExternalSource
 } from '../types/entities.ts';
@@ -109,47 +108,6 @@ export class LibrarySearchService implements LibrarySearchDataService {
 
         const d = snap.docs[0];
         return { ...d.data(), ebookId: d.id } as Ebook;
-    }
-
-    async getReadingState(
-        uid: string,
-        editionId: string
-    ): Promise<EditionReadingState | null> {
-        const db = this.getDb();
-        if (!db) return null;
-
-        const snap = await getDoc(
-            doc(db, 'edition_reading_state', `${uid}_${editionId}`)
-        );
-        return snap.exists()
-            ? (snap.data() as EditionReadingState)
-            : null;
-    }
-
-    async saveReadingState(
-        uid: string,
-        editionId: string,
-        state: Partial<EditionReadingState>
-    ): Promise<void> {
-        const db = this.getDb();
-        if (!db) return;
-
-        const ref = doc(
-            db,
-            'edition_reading_state',
-            `${uid}_${editionId}`
-        );
-
-        await setDoc(
-            ref,
-            {
-                ...state,
-                userId: uid,
-                editionId,
-                lastReadAt: serverTimestamp()
-            },
-            { merge: true }
-        );
     }
 
     async logExternalSource(source: ExternalSource): Promise<void> {

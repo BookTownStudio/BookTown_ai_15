@@ -38,6 +38,23 @@ const storage = admin.storage();
 const MAX_DOWNLOAD_BYTES = 80 * 1024 * 1024;
 const DOWNLOAD_TIMEOUT_MS = 25_000;
 const ACQUISITION_COLLECTION = "ebook_acquisitions";
+const ACQUISITION_BOOK_WRITE_ALLOWLIST = new Set([
+  "externalReadableSources",
+  "ebookAttachmentId",
+  "ebookStoragePath",
+  "epubStoragePath",
+  "acquiredFromProvider",
+  "providerExternalIds",
+  "updatedAt",
+]);
+const ACQUISITION_EDITION_WRITE_ALLOWLIST = new Set([
+  "externalReadableSources",
+  "ebookAttachmentId",
+  "ebookStoragePath",
+  "epubStoragePath",
+  "providerExternalIds",
+  "updatedAt",
+]);
 
 type AcquisitionState = "idle" | "acquiring" | "acquired" | "failed";
 
@@ -88,6 +105,24 @@ function asStringArray(value: unknown): string[] {
 
 function asFiniteNumber(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function assertAllowedAcquisitionPatch(
+  patch: Record<string, unknown>,
+  allowedFields: Set<string>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter((field) => !allowedFields.has(field));
+  if (unexpectedFields.length > 0) {
+    logger.error("[ACQUIRE][DISALLOWED_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new HttpsError(
+      "internal",
+      "Acquisition attempted to mutate fields outside its authority."
+    );
+  }
 }
 
 function inferFormatFromPath(path: string): AcquisitionFormat | "unknown" {
@@ -233,6 +268,15 @@ function readExternalReadableSources(
     .filter((entry): entry is ExternalReadableSourceRecord => entry !== null);
 }
 
+/**
+ * Availability ownership:
+ * - externalReadableSources is owned by this acquisition flow.
+ * - ebookAttachmentId / ebookStoragePath are readable-copy pointers finalized
+ *   here only for acquired external assets; createEbookAttachment owns admin
+ *   attachment finalization for uploaded in-app ebooks.
+ * - hasEbook, downloadable, and isEbookAvailable remain outside acquisition
+ *   ownership; readers must derive availability from attachment pointers.
+ */
 function mergeExternalReadableSources(
   existing: ExternalReadableSourceRecord[],
   incoming: ExternalReadableSourceRecord
@@ -286,28 +330,45 @@ async function persistExternalReadableSource(params: {
       ? mergeExternalReadableSources(readExternalReadableSources(existingEdition), source)
       : null;
 
+    const bookPatch: Record<string, unknown> = {
+      externalReadableSources: nextBookSources,
+      providerExternalIds: FieldValue.arrayUnion(
+        `${source.provider}:${source.providerExternalId}`
+      ),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    assertAllowedAcquisitionPatch(
+      bookPatch,
+      ACQUISITION_BOOK_WRITE_ALLOWLIST,
+      "persistExternalReadableSource.book"
+    );
+
+    // This transaction mutates only the acquisition-owned external readability
+    // source list plus provider index projection.
     tx.set(
       bookRef,
-      {
-        externalReadableSources: nextBookSources,
-        providerExternalIds: FieldValue.arrayUnion(
-          `${source.provider}:${source.providerExternalId}`
-        ),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
+      bookPatch,
       { merge: true }
     );
 
     if (!editionRef) return;
+    const editionPatch: Record<string, unknown> = {
+      externalReadableSources: nextEditionSources,
+      providerExternalIds: FieldValue.arrayUnion(
+        `${source.provider}:${source.providerExternalId}`
+      ),
+      updatedAt: FieldValue.serverTimestamp(),
+    };
+    assertAllowedAcquisitionPatch(
+      editionPatch,
+      ACQUISITION_EDITION_WRITE_ALLOWLIST,
+      "persistExternalReadableSource.edition"
+    );
+
+    // Edition projection of acquisition-owned external readability sources.
     tx.set(
       editionRef,
-      {
-        externalReadableSources: nextEditionSources,
-        providerExternalIds: FieldValue.arrayUnion(
-          `${source.provider}:${source.providerExternalId}`
-        ),
-        updatedAt: FieldValue.serverTimestamp(),
-      },
+      editionPatch,
       { merge: true }
     );
   });
@@ -851,8 +912,6 @@ async function finalizeAcquisition(params: {
 
     assertPublicAcquisitionAllowed(book);
     const now = FieldValue.serverTimestamp();
-    const rightsMode = asNonEmptyString(book.rightsMode) || "public_free";
-    const visibility = asNonEmptyString(book.visibility) || "public";
 
     tx.set(
       attachmentRef,
@@ -877,56 +936,49 @@ async function finalizeAcquisition(params: {
       { merge: true }
     );
 
+    const editionPatch: Record<string, unknown> = {
+      ebookAttachmentId: attachmentRef.id,
+      ebookStoragePath: storagePath,
+      ...(asset.format === "epub" ? { epubStoragePath: storagePath } : {}),
+      providerExternalIds: FieldValue.arrayUnion(`${provider}:${providerExternalId}`),
+      externalReadableSources: existingEditionReadableSources,
+      updatedAt: now,
+    };
+    assertAllowedAcquisitionPatch(
+      editionPatch,
+      ACQUISITION_EDITION_WRITE_ALLOWLIST,
+      "finalizeAcquisition.edition"
+    );
+
+    // Acquired readable copy finalization. Pointer fields identify the acquired
+    // attachment; catalog availability booleans are intentionally excluded from
+    // acquisition ownership.
     tx.set(
       editionRef,
-      {
-        id: resolvedEditionId,
-        editionId: resolvedEditionId,
-        bookId,
-        title: asNonEmptyString(existingEdition.title) || asNonEmptyString(book.titleEn),
-        titleEn: asNonEmptyString(existingEdition.titleEn) || asNonEmptyString(book.titleEn),
-        titleAr: asNonEmptyString(existingEdition.titleAr) || asNonEmptyString(book.titleAr),
-        authors:
-          Array.isArray(existingEdition.authors) && existingEdition.authors.length > 0
-            ? existingEdition.authors
-            : Array.isArray(book.authors) && book.authors.length > 0
-              ? book.authors
-              : [asNonEmptyString(book.authorEn) || "Unknown"],
-        authorEn: asNonEmptyString(existingEdition.authorEn) || asNonEmptyString(book.authorEn),
-        authorAr: asNonEmptyString(existingEdition.authorAr) || asNonEmptyString(book.authorAr),
-        language: asNonEmptyString(existingEdition.language) || asNonEmptyString(book.language) || "en",
-        source: asNonEmptyString(existingEdition.source) || "booktown",
-        hasEbook: true,
-        downloadable: true,
-        isEbookAvailable: true,
-        ebookAttachmentId: attachmentRef.id,
-        ebookStoragePath: storagePath,
-        ...(asset.format === "epub" ? { epubStoragePath: storagePath } : {}),
-        providerExternalIds: FieldValue.arrayUnion(`${provider}:${providerExternalId}`),
-        externalReadableSources: existingEditionReadableSources,
-        updatedAt: now,
-        createdAt: existingEdition.createdAt || now,
-      },
+      editionPatch,
       { merge: true }
     );
 
+    const bookPatch: Record<string, unknown> = {
+      ebookAttachmentId: attachmentRef.id,
+      ebookStoragePath: storagePath,
+      acquiredFromProvider: provider,
+      providerExternalIds: FieldValue.arrayUnion(`${provider}:${providerExternalId}`),
+      externalReadableSources: existingBookReadableSources,
+      ...(asset.format === "epub" ? { epubStoragePath: storagePath } : {}),
+      updatedAt: now,
+    };
+    assertAllowedAcquisitionPatch(
+      bookPatch,
+      ACQUISITION_BOOK_WRITE_ALLOWLIST,
+      "finalizeAcquisition.book"
+    );
+
+    // Book projection mirrors the acquired readable copy. This must not be read
+    // as taking over hasEbook ownership from materializeBookAuthority.
     tx.set(
       bookRef,
-      {
-        editionId: resolvedEditionId,
-        rightsMode,
-        visibility,
-        hasEbook: true,
-        downloadable: true,
-        isEbookAvailable: true,
-        ebookAttachmentId: attachmentRef.id,
-        ebookStoragePath: storagePath,
-        acquiredFromProvider: provider,
-        providerExternalIds: FieldValue.arrayUnion(`${provider}:${providerExternalId}`),
-        externalReadableSources: existingBookReadableSources,
-        ...(asset.format === "epub" ? { epubStoragePath: storagePath } : {}),
-        updatedAt: now,
-      },
+      bookPatch,
       { merge: true }
     );
 

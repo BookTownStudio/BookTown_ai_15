@@ -12,6 +12,31 @@ import {
   resolveBookOwnerUid,
 } from "./rights/bookRights";
 
+const RIGHTS_WRITE_ALLOWLIST = new Set([
+  "rightsMode",
+  "rightsUpdatedAt",
+  "updatedAt",
+]);
+
+function assertAllowedRightsPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !RIGHTS_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[PUBLISH][DISALLOWED_RIGHTS_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new HttpsError(
+      "internal",
+      "Rights update attempted to mutate fields outside its authority."
+    );
+  }
+}
+
 function asNonEmptyString(value: unknown, max = 512): string {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, max);
@@ -83,25 +108,24 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
         rightsMode,
         bookVisibility
       );
+      const rightsPatch: Record<string, unknown> = {
+        rightsMode,
+        rightsUpdatedAt: now,
+        updatedAt: now,
+      };
+      assertAllowedRightsPatch(rightsPatch, "updatePublishedBookRights.book");
 
       tx.set(
         bookRef,
-        {
-          rightsMode,
-          visibility: bookVisibility,
-          updatedAt: now,
-        },
+        rightsPatch,
         { merge: true }
       );
 
       if (editionId) {
+        assertAllowedRightsPatch(rightsPatch, "updatePublishedBookRights.edition");
         tx.set(
           db.collection("editions").doc(editionId),
-          {
-            rightsMode,
-            visibility: bookVisibility,
-            updatedAt: now,
-          },
+          rightsPatch,
           { merge: true }
         );
       }

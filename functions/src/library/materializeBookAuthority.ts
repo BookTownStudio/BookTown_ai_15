@@ -2698,6 +2698,15 @@ export async function materializeBookAuthorityInTransaction(
       : []),
     ...asStringArray(rawBook.providerExternalIds),
   ], 20);
+  // Availability ownership:
+  // - hasEbook is classified here by materializeBookAuthority.
+  // - externalReadableSources is owned by acquireExternalEbookForRead; this path
+  //   preserves an existing/incoming value but must not be treated as the source
+  //   of external availability truth.
+  // - ebookAttachmentId / ebookStoragePath are attachment pointers owned by
+  //   createEbookAttachment or acquisition finalization.
+  // - downloadable / isEbookAvailable are compatibility projections derived
+  //   from the authoritative fields above.
   const externalReadableSources = Array.isArray(rawBook.externalReadableSources)
     ? rawBook.externalReadableSources
     : Array.isArray(existingBook?.externalReadableSources)
@@ -3026,6 +3035,8 @@ export async function materializeBookAuthorityInTransaction(
 
   const protectedBookBase = applyCanonicalProtection(existingBook, bookBase);
   const searchPatch = buildBookSearchPatch(protectedBookBase);
+  // materializeBookAuthority owns the canonical hasEbook classification.
+  // downloadable and isEbookAvailable remain derived compatibility projections.
   const shouldHaveEbook =
     params.source === "user_upload" ||
     searchPatch.hasEbook === true ||
@@ -3119,6 +3130,9 @@ export async function materializeBookAuthorityInTransaction(
         ...(coverSourceUrl ? { sourceUrl: coverSourceUrl } : {}),
       },
       ...(coverSourceUrl ? { coverUrl: coverSourceUrl } : {}),
+      // Edition-level readability fields mirror the canonical book projection
+      // for legacy DTO compatibility. They are not independent availability
+      // authorities.
       readabilityFlags: {
         hasEbook: finalBookPayload.hasEbook === true,
         downloadable: finalBookPayload.downloadable === true,

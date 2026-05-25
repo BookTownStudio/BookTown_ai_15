@@ -12,6 +12,31 @@ import {
   type PublicationVisibility,
 } from "./rights/bookRights";
 
+const VISIBILITY_WRITE_ALLOWLIST = new Set([
+  "visibility",
+  "visibilityUpdatedAt",
+  "updatedAt",
+]);
+
+function assertAllowedVisibilityPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !VISIBILITY_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[PUBLISH][DISALLOWED_VISIBILITY_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    throw new HttpsError(
+      "internal",
+      "Visibility update attempted to mutate fields outside its authority."
+    );
+  }
+}
+
 function asNonEmptyString(value: unknown, max = 512): string {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, max);
@@ -67,23 +92,30 @@ export const updatePublishedBookVisibility = onCall({ cors: true }, async (reque
         effectiveVisibility
       );
       const now = FieldValue.serverTimestamp();
+      const visibilityPatch: Record<string, unknown> = {
+        visibility: effectiveVisibility,
+        visibilityUpdatedAt: now,
+        updatedAt: now,
+      };
+      assertAllowedVisibilityPatch(
+        visibilityPatch,
+        "updatePublishedBookVisibility.book"
+      );
 
       tx.set(
         bookRef,
-        {
-          visibility: effectiveVisibility,
-          updatedAt: now,
-        },
+        visibilityPatch,
         { merge: true }
       );
 
       if (editionId) {
+        assertAllowedVisibilityPatch(
+          visibilityPatch,
+          "updatePublishedBookVisibility.edition"
+        );
         tx.set(
           db.collection("editions").doc(editionId),
-          {
-            visibility: effectiveVisibility,
-            updatedAt: now,
-          },
+          visibilityPatch,
           { merge: true }
         );
       }

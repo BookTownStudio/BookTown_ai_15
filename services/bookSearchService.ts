@@ -179,6 +179,8 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     descriptionAr: asString(record.descriptionAr),
     coverUrl: asString(record.coverUrl),
     language: asString(record.language) || 'en',
+    // Availability flags in search results are DTO projections only. They must
+    // not be persisted back as availability authority.
     available: Boolean(record.available ?? (ebookClass === 'in_app' || ebookClass === 'external_link')),
     acquired: Boolean(record.acquired ?? record.downloadable),
     readAccess,

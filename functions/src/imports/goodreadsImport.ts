@@ -16,6 +16,11 @@ import {
   trimTo,
 } from "./goodreads/normalization";
 import { writeShelfBookInTransaction } from "../shelves/shelfBookEntry";
+import {
+  computeReadingProgressMutation,
+  type ReaderEvent,
+  type ReadingState,
+} from "../reader/readingProgressStateMachine";
 import { detectSourceKind, sha256ForBuffer } from "./goodreads/sourceDetection";
 import type {
   CanonicalImportRow,
@@ -318,6 +323,112 @@ function deriveUserBookState(row: CanonicalImportRow): "completed" | "reading" |
   return "unknown";
 }
 
+function timestampFromIso(value: string | null): Timestamp | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return Timestamp.fromDate(parsed);
+}
+
+function readExistingProgress(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return Math.max(0, Math.min(1, value));
+}
+
+function computeGoodreadsImportProgress(params: {
+  uid: string;
+  bookId: string;
+  row: CanonicalImportRow;
+  exclusive: string | null;
+  previousData: Record<string, unknown>;
+}): {
+  canonicalPayload: Record<string, unknown>;
+  importMetadata: Record<string, unknown>;
+  events: Array<{
+    event: ReaderEvent;
+    fromState: ReadingState;
+    toState: ReadingState;
+    progress: number;
+    occurredAt: Timestamp;
+  }>;
+} {
+  const { uid, bookId, row, exclusive, previousData } = params;
+  const completed = Boolean(row.dateRead || exclusive === "finished");
+  const requestedState: ReadingState = completed ? "completed" : "reading";
+  const importedOccurredAt =
+    timestampFromIso(completed ? row.dateRead : row.dateAdded) ?? Timestamp.now();
+  const existingProgress = readExistingProgress(previousData.progress);
+  const normalizedProgress = completed ? 1 : existingProgress ?? 0;
+  const normalizedLastPosition = previousData.lastPosition ?? null;
+  const events: Array<{
+    event: ReaderEvent;
+    fromState: ReadingState;
+    toState: ReadingState;
+    progress: number;
+    occurredAt: Timestamp;
+  }> = [];
+
+  const compute = (
+    requestedStateRaw: ReadingState,
+    progress: number,
+    priorData: Record<string, unknown>
+  ) =>
+    computeReadingProgressMutation({
+      uid,
+      bookId,
+      normalizedProgress: progress,
+      normalizedLastPosition,
+      requestedStateRaw,
+      now: importedOccurredAt,
+      previousData: priorData,
+    });
+
+  let finalMutation;
+  try {
+    finalMutation = compute(requestedState, normalizedProgress, previousData);
+  } catch (error) {
+    if (!completed) throw error;
+
+    const resumeMutation = compute("reading", existingProgress ?? 0, previousData);
+    if (resumeMutation.event) {
+      events.push({
+        event: resumeMutation.event,
+        fromState: resumeMutation.previousState,
+        toState: resumeMutation.nextState,
+        progress: existingProgress ?? 0,
+        occurredAt: importedOccurredAt,
+      });
+    }
+    finalMutation = compute("completed", 1, {
+      ...previousData,
+      ...resumeMutation.payload,
+    });
+  }
+
+  if (finalMutation.event) {
+    events.push({
+      event: finalMutation.event,
+      fromState: finalMutation.previousState,
+      toState: finalMutation.nextState,
+      progress: normalizedProgress,
+      occurredAt: importedOccurredAt,
+    });
+  }
+
+  return {
+    canonicalPayload: finalMutation.payload,
+    importMetadata: {
+      source: "goodreads_import",
+      continuitySource: "import",
+      parserVersion: PARSER_VERSION,
+      stateMachineVersion: STATE_MACHINE_VERSION,
+      importedDateAdded: row.dateAdded,
+      importedDateRead: row.dateRead,
+    },
+    events,
+  };
+}
+
 async function applyCanonicalRow(params: {
   uid: string;
   importId: string;
@@ -499,23 +610,37 @@ async function applyCanonicalRow(params: {
 
     if (writesProgress) {
       const progressRef = db.doc(`reading_progress/${uid}_${bookId}`);
-      const completed = Boolean(row.dateRead || exclusive === "finished");
+      const progressSnap = await tx.get(progressRef);
+      const previousProgressData = progressSnap.exists ? progressSnap.data() || {} : {};
+      const importProgress = computeGoodreadsImportProgress({
+        uid,
+        bookId,
+        row,
+        exclusive,
+        previousData: previousProgressData,
+      });
       tx.set(
         progressRef,
         {
-          uid,
-          userId: uid,
-          bookId,
-          progress: completed ? 1 : 0,
-          status_state: completed ? "completed" : "reading",
-          startedAt: row.dateAdded || nowIso(),
-          finishedAt: row.dateRead || null,
+          ...importProgress.canonicalPayload,
+          ...importProgress.importMetadata,
           updatedAt: now,
-          source: "goodreads_import",
-          parserVersion: PARSER_VERSION,
         },
         { merge: true }
       );
+      for (const event of importProgress.events) {
+        tx.set(db.collection("reader_events").doc(), {
+          uid,
+          bookId,
+          event: event.event,
+          fromState: event.fromState,
+          toState: event.toState,
+          progress: event.progress,
+          source: "goodreads_import",
+          parserVersion: PARSER_VERSION,
+          occurredAt: event.occurredAt,
+        });
+      }
     }
 
     const userBookRef = db.doc(`users/${uid}/userBooks/${bookId}`);

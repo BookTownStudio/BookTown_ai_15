@@ -24,8 +24,8 @@ export const SHELF_BOOKS_COLLECTION = "shelf_books";
  *   updatedAt          Timestamp  — server-set on every write
  *
  * Replaces: shelves/{shelfId}.entries.{bookId} map field
- * The legacy entries map is kept for backward compatibility until a migration
- * removes it. All new writes go to both paths (dual-write).
+ * The legacy entries map may remain on old shelf documents as a display or
+ * migration projection, but shelf_books is the only membership authority.
  */
 
 export type ShelfBookEntryPayload = {

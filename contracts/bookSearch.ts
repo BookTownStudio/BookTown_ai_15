@@ -46,12 +46,17 @@ export interface SearchResultDTO {
   descriptionAr: string;
   coverUrl: string;
   language: string;
+  /** Derived response projection; not a persistence authority. */
   available: boolean;
+  /** Derived response projection; not a persistence authority. */
   acquired: boolean;
   readAccess: BookSearchReadAccess;
   readProvider: BookSearchReadProvider;
+  /** Canonical catalog classification owned by materializeBookAuthority. */
   hasEbook: boolean;
+  /** Derived compatibility projection; not an authority. */
   downloadable: boolean;
+  /** Derived compatibility projection for in-app readability. */
   isEbookAvailable: boolean;
   confidence: number;
   rank: number;
@@ -61,6 +66,7 @@ export interface SearchResultDTO {
   isbn13?: string;
   isbn10?: string;
   canonicalKey?: string;
+  /** Acquisition-owned trusted external readability sources. */
   externalReadableSources?: ExternalReadableSourceDTO[];
   rawBook?: Record<string, unknown>;
 }

@@ -57,6 +57,14 @@ const ZIP_SIGNATURE_CENTRAL_FILE = 0x02014b50;
 const ZIP_SIGNATURE_LOCAL_FILE = 0x04034b50;
 const MAX_SOURCE_FILE_BYTES = 50 * 1024 * 1024;
 const MIN_IMAGE_BYTES = 1_000;
+const COVER_BOOK_WRITE_ALLOWLIST = new Set([
+  "cover",
+  "coverUrl",
+  "coverState",
+  "coverFailureReason",
+  "coverUpdatedAt",
+  "updatedAt",
+]);
 
 const DERIVED_SIZES = {
   large: { width: 1200, quality: 82 },
@@ -73,6 +81,30 @@ function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function assertAllowedCoverBookPatch(
+  patch: Record<string, unknown>,
+  context: string
+): void {
+  const unexpectedFields = Object.keys(patch).filter(
+    (field) => !COVER_BOOK_WRITE_ALLOWLIST.has(field)
+  );
+  if (unexpectedFields.length > 0) {
+    logger.error("[COVER_JOB][DISALLOWED_BOOK_MUTATION_FIELDS]", {
+      context,
+      unexpectedFields,
+    });
+    fail("UNKNOWN", "Cover pipeline attempted to mutate fields outside its authority.");
+  }
+}
+
+function coverFailureReason(error: CoverJobErrorShape): Record<string, unknown> {
+  return {
+    code: error.code,
+    message: error.message,
+    retryable: error.retryable,
+  };
 }
 
 function toUploadFileType(value: unknown): UploadFileType | null {
@@ -441,16 +473,18 @@ async function processCoverJob(bookId: string): Promise<void> {
         fail("INVALID_BOOK_SOURCE", "Book source is not user_upload.", false);
       }
 
-      await bookRef.set(
-        {
-          coverState: "PROCESSING" as CoverState,
-          coverFailureCode: null,
-          coverFailureMessage: null,
-          coverUpdatedAt: FieldValue.serverTimestamp(),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
+      const processingBookPatch: Record<string, unknown> = {
+        coverState: "PROCESSING" as CoverState,
+        coverFailureReason: null,
+        coverUpdatedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      };
+      assertAllowedCoverBookPatch(
+        processingBookPatch,
+        "processUserUploadCoverJobs.processing"
       );
+
+      await bookRef.set(processingBookPatch, { merge: true });
 
       const sourceFile = bucket.file(resolvedStoragePath);
       const [exists] = await sourceFile.exists();
@@ -483,16 +517,21 @@ async function processCoverJob(bookId: string): Promise<void> {
       };
 
       await db.runTransaction(async (tx) => {
+        const readyBookPatch: Record<string, unknown> = {
+          cover,
+          coverState: "READY" as CoverState,
+          coverFailureReason: null,
+          coverUpdatedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        assertAllowedCoverBookPatch(
+          readyBookPatch,
+          "processUserUploadCoverJobs.ready"
+        );
+
         tx.set(
           bookRef,
-          {
-            cover,
-            coverState: "READY" as CoverState,
-            coverFailureCode: null,
-            coverFailureMessage: null,
-            coverUpdatedAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
+          readyBookPatch,
           { merge: true }
         );
 
@@ -544,15 +583,20 @@ async function processCoverJob(bookId: string): Promise<void> {
         : "FAILED_FATAL";
 
       await db.runTransaction(async (tx) => {
+        const failedBookPatch: Record<string, unknown> = {
+          coverState: failedState,
+          coverFailureReason: coverFailureReason(shaped),
+          coverUpdatedAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        };
+        assertAllowedCoverBookPatch(
+          failedBookPatch,
+          "processUserUploadCoverJobs.failed"
+        );
+
         tx.set(
           bookRef,
-          {
-            coverState: failedState,
-            coverFailureCode: shaped.code,
-            coverFailureMessage: shaped.message,
-            coverUpdatedAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-          },
+          failedBookPatch,
           { merge: true }
         );
 
