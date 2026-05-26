@@ -74,8 +74,7 @@ function hasReadableCopy(value: BookDetailsRuntimeDTO | null | undefined): boole
   if (!value) return false;
   return Boolean(
     getCanonicalEbookAttachmentId(value) ||
-      (typeof value.ebookStoragePath === 'string' && value.ebookStoragePath.trim().length > 0) ||
-      value.downloadable
+      (typeof value.ebookStoragePath === 'string' && value.ebookStoragePath.trim().length > 0)
   );
 }
 

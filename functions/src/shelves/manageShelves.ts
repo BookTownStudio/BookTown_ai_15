@@ -5,8 +5,9 @@ import { SHELF_BOOKS_COLLECTION } from "./shelfBookEntry";
 
 const db = admin.firestore();
 const MAX_SHELF_LIMIT = 200;
-// Firestore batches are capped at 500 operations per commit.
-const BATCH_SIZE = 500;
+// Firestore transactions are capped at 500 writes. Shelf delete writes include
+// the shelf metadata document plus every authoritative shelf_books membership.
+const MAX_ATOMIC_SHELF_DELETE_WRITES = 500;
 
 type ShelfVisibility = "public" | "unlisted" | "private";
 
@@ -215,30 +216,6 @@ function sanitizeShelfPatch(input: unknown): Record<string, unknown> {
   return patch;
 }
 
-/**
- * Batch-deletes all shelf_books documents belonging to a shelf.
- * Requires a single-field index on shelf_books(shelfId).
- * This is a best-effort cleanup — the shelf document is already deleted
- * before this runs, so orphaned shelf_books docs are harmless but wasteful.
- */
-async function deleteShelfBooksForShelf(shelfId: string): Promise<void> {
-  const snap = await db
-    .collection(SHELF_BOOKS_COLLECTION)
-    .where("shelfId", "==", shelfId)
-    .get();
-
-  if (snap.empty) return;
-
-  for (let i = 0; i < snap.docs.length; i += BATCH_SIZE) {
-    const batch = db.batch();
-    const chunk = snap.docs.slice(i, i + BATCH_SIZE);
-    for (const doc of chunk) {
-      batch.delete(doc.ref);
-    }
-    await batch.commit();
-  }
-}
-
 export const listUserShelves = onCall<ListUserShelvesRequest>({ cors: true }, async (request) => {
   const targetUid = readRequiredString(request.data?.uid, "uid", 128);
   const viewerUid = request.auth?.uid ? sanitizeString(request.auth.uid, 128) : null;
@@ -399,6 +376,11 @@ export const deleteShelf = onCall<DeleteShelfRequest>({ cors: true }, async (req
   const shelfRef = db.collection("shelves").doc(shelfId);
 
   await db.runTransaction(async (tx) => {
+    const membershipSnap = await tx.get(
+      db
+        .collection(SHELF_BOOKS_COLLECTION)
+        .where("shelfId", "==", shelfId)
+    );
     const snap = await tx.get(shelfRef);
     if (!snap.exists) {
       throw new HttpsError("not-found", "Shelf not found.");
@@ -411,13 +393,19 @@ export const deleteShelf = onCall<DeleteShelfRequest>({ cors: true }, async (req
     if (current.isSystem === true) {
       throw new HttpsError("failed-precondition", "System shelves cannot be deleted.");
     }
+
+    if (membershipSnap.docs.length + 1 > MAX_ATOMIC_SHELF_DELETE_WRITES) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Shelf has too many membership rows to delete atomically."
+      );
+    }
+
+    for (const doc of membershipSnap.docs) {
+      tx.delete(doc.ref);
+    }
     tx.delete(shelfRef);
   });
-
-  // Best-effort cleanup of shelf_books docs for this shelf.
-  // Runs after the transaction so the shelf is already gone.
-  // Requires a single-field index on shelf_books(shelfId).
-  await deleteShelfBooksForShelf(shelfId);
 
   return {
     shelfId,

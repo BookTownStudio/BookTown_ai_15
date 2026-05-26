@@ -97,8 +97,6 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     ebookClassRaw === 'external_link' ||
     ebookClassRaw === 'unavailable'
       ? ebookClassRaw
-      : Boolean(record.downloadable)
-      ? 'in_app'
       : 'unavailable';
   const sourceClass = asString(record.sourceClass) === 'external_provider'
     ? 'external_provider'
@@ -182,7 +180,7 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     // Availability flags in search results are DTO projections only. They must
     // not be persisted back as availability authority.
     available: Boolean(record.available ?? (ebookClass === 'in_app' || ebookClass === 'external_link')),
-    acquired: Boolean(record.acquired ?? record.downloadable),
+    acquired: Boolean(record.acquired ?? ebookClass === 'in_app'),
     readAccess,
     readProvider,
     hasEbook: Boolean(record.hasEbook),

@@ -3,6 +3,38 @@
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 
+const LEGACY_EBOOK_ATTACHMENT_PREFIX = "attachments/";
+
+function hasUnsafeStoragePathSegment(path: string): boolean {
+  return path
+    .split("/")
+    .some((segment) => segment === "" || segment === "." || segment === "..");
+}
+
+export function isCanonicalReaderEbookStoragePath(path: string): boolean {
+  if (!path.startsWith("ebooks/") || hasUnsafeStoragePathSegment(path)) {
+    return false;
+  }
+
+  const [, bookId, ...rest] = path.split("/");
+  return Boolean(bookId && rest.length > 0 && rest.join("/").trim().length > 0);
+}
+
+export function isCanonicalBookReaderEbookStoragePath(
+  bookId: string,
+  path: string
+): boolean {
+  return isCanonicalReaderEbookStoragePath(path) && path.startsWith(`ebooks/${bookId}/`);
+}
+
+export function isLegacyEbookAttachmentStoragePath(path: string): boolean {
+  return path.startsWith(LEGACY_EBOOK_ATTACHMENT_PREFIX) && !hasUnsafeStoragePathSegment(path);
+}
+
+function isAllowedEbookSignedUrlPath(path: string): boolean {
+  return isCanonicalReaderEbookStoragePath(path) || isLegacyEbookAttachmentStoragePath(path);
+}
+
 /**
  * SIGNED_URL_CONTRACT_V1
  * --------------------------------------------------
@@ -14,6 +46,9 @@ import * as logger from "firebase-functions/logger";
  * - Intent-scoped TTLs
  * - Path validation (no arbitrary reads)
  * - Existence check before issuance
+ *
+ * Canonical reader ebook assets live under ebooks/{bookId}/...
+ * attachments/... is legacy upload compatibility only.
  *
  * This is the ONLY approved read gateway for:
  * - Ebook attachments
@@ -45,7 +80,7 @@ export async function getSignedUrl(params: {
    * 🔒 Enforce allowed path prefixes by intent
    */
   if (intent === "ebook") {
-    if (!path.startsWith("attachments/")) {
+    if (!isAllowedEbookSignedUrlPath(path)) {
       throw new Error("[SIGNED_URL] Invalid ebook path");
     }
   }

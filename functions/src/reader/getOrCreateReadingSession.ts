@@ -8,6 +8,9 @@ const db = admin.firestore();
 const storage = admin.storage();
 const READER_URL_TTL_MS = 10 * 60 * 1000;
 
+type ResumeContinuityMode = "anchor" | "approximate_position" | "start";
+type ResumeAnchorSource = "reading_progress" | "reading_sessions";
+
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
@@ -178,19 +181,51 @@ function sanitizeReaderLastPosition(
   };
 }
 
-function resolveResumePage(lastPosition: unknown): number {
-  if (typeof lastPosition === "number" && Number.isFinite(lastPosition)) {
-    return Math.max(1, Math.trunc(lastPosition));
+function asProgressFraction(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  if (value < 0 || value > 1) return null;
+  return value;
+}
+
+function boundResumePage(page: number, estimatedPageCount: number | null): number {
+  const normalized = Math.max(1, Math.trunc(page));
+  if (!estimatedPageCount || estimatedPageCount <= 0) {
+    return normalized;
+  }
+  return Math.min(normalized, Math.trunc(estimatedPageCount));
+}
+
+function resolveFallbackResumePage(params: {
+  lastPosition: ReturnType<typeof sanitizeReaderLastPosition>;
+  progress: number | null;
+  estimatedPageCount: number | null;
+}): { resumePage: number; usedApproximateFallback: boolean } {
+  const { lastPosition, progress, estimatedPageCount } = params;
+  if (lastPosition) {
+    return {
+      resumePage: boundResumePage(lastPosition.page, estimatedPageCount),
+      usedApproximateFallback: true,
+    };
   }
 
-  if (lastPosition && typeof lastPosition === "object") {
-    const page = (lastPosition as { page?: unknown }).page;
-    if (typeof page === "number" && Number.isFinite(page)) {
-      return Math.max(1, Math.trunc(page));
-    }
+  if (progress !== null && estimatedPageCount && estimatedPageCount > 0) {
+    return {
+      resumePage: boundResumePage(
+        Math.max(1, Math.round(progress * estimatedPageCount)),
+        estimatedPageCount
+      ),
+      usedApproximateFallback: progress > 0,
+    };
   }
 
-  return 1;
+  return { resumePage: 1, usedApproximateFallback: false };
+}
+
+function isAnchorCompatible(
+  anchor: Record<string, unknown> | null,
+  manifestVersion: number
+): boolean {
+  return anchor?.manifestVersion === manifestVersion;
 }
 
 /**
@@ -263,17 +298,49 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
     }
 
     const progressData = progressSnap.exists
-      ? (progressSnap.data() as { lastPosition?: unknown; lastAnchor?: unknown } | undefined)
+      ? (progressSnap.data() as {
+          progress?: unknown;
+          lastPosition?: unknown;
+          lastAnchor?: unknown;
+        } | undefined)
       : null;
     const sessionData = sessionSnap.exists
       ? (sessionSnap.data() as { resumeAnchor?: unknown; narration?: unknown } | undefined)
       : null;
 
     const lastPosition = sanitizeReaderLastPosition(progressData?.lastPosition);
-    const resumePage = resolveResumePage(lastPosition);
+    const progress = asProgressFraction(progressData?.progress);
+    const fallback = resolveFallbackResumePage({
+      lastPosition,
+      progress,
+      estimatedPageCount: manifest.estimatedPageCount,
+    });
+    const resumePage = fallback.resumePage;
     const progressResumeAnchor = sanitizeCanonicalAnchor(progressData?.lastAnchor);
     const storedResumeAnchor = sanitizeCanonicalAnchor(sessionData?.resumeAnchor);
-    const resumeAnchor = progressResumeAnchor ?? storedResumeAnchor ?? null;
+    const progressAnchorCompatible = isAnchorCompatible(
+      progressResumeAnchor,
+      manifest.version
+    );
+    const storedAnchorCompatible = isAnchorCompatible(
+      storedResumeAnchor,
+      manifest.version
+    );
+    const resumeAnchor = progressAnchorCompatible
+      ? progressResumeAnchor
+      : storedAnchorCompatible
+        ? storedResumeAnchor
+        : null;
+    const resumeAnchorSource: ResumeAnchorSource | null = progressAnchorCompatible
+      ? "reading_progress"
+      : storedAnchorCompatible
+        ? "reading_sessions"
+        : null;
+    const continuityMode: ResumeContinuityMode = resumeAnchor
+      ? "anchor"
+      : fallback.usedApproximateFallback
+        ? "approximate_position"
+        : "start";
     const narration = sanitizeNarrationSessionState(sessionData?.narration);
     const now = FieldValue.serverTimestamp();
 
@@ -289,12 +356,32 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       resumePage,
       format: manifest.format,
       manifestVersion: manifest.version,
+      continuityMode,
+      continuityIsApproximate: continuityMode === "approximate_position",
+      continuitySource: resumeAnchorSource || "reading_progress",
       updatedAt: now,
       ...(isNewSession ? { createdAt: now } : {}),
     };
 
-    if (progressResumeAnchor) {
-      sessionPayload.resumeAnchor = progressResumeAnchor;
+    if (resumeAnchor) {
+      sessionPayload.resumeAnchor = resumeAnchor;
+    } else {
+      sessionPayload.resumeAnchor = FieldValue.delete();
+    }
+
+    if (
+      (progressResumeAnchor && !progressAnchorCompatible) ||
+      (storedResumeAnchor && !storedAnchorCompatible)
+    ) {
+      logger.warn("[READER][STALE_RESUME_ANCHOR_IGNORED]", {
+        uid,
+        bookId,
+        manifestVersion: manifest.version,
+        progressAnchorVersion: progressResumeAnchor?.manifestVersion ?? null,
+        sessionAnchorVersion: storedResumeAnchor?.manifestVersion ?? null,
+        fallbackResumePage: resumePage,
+        continuityMode,
+      });
     }
 
     await sessionRef.set(
@@ -309,6 +396,8 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       resumePage,
       format: manifest.format,
       manifestVersion: manifest.version,
+      continuityMode,
+      resumeAnchorSource,
     });
 
     return {
@@ -317,6 +406,12 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       format: manifest.format,
       lastPosition,
       resumeAnchor,
+      continuity: {
+        mode: continuityMode,
+        approximate: continuityMode === "approximate_position",
+        manifestVersion: manifest.version,
+        anchorSource: resumeAnchorSource,
+      },
       narration,
     };
   } catch (error: any) {

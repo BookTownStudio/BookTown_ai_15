@@ -341,11 +341,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
     ebookClassRaw === "external_link" ||
     ebookClassRaw === "unavailable"
       ? ebookClassRaw
-      : downloadable
-      ? "in_app"
       : "unavailable";
-  const available = Boolean(raw?.available ?? (downloadable || ebookClass === "external_link"));
-  const acquired = Boolean(raw?.acquired ?? downloadable);
+  const available = Boolean(raw?.available ?? (ebookClass === "in_app" || ebookClass === "external_link"));
+  const acquired = Boolean(raw?.acquired ?? ebookClass === "in_app");
   const sourceClassRaw = String(raw?.sourceClass || "").trim();
   const sourceClass =
     sourceClassRaw === "external_provider"
@@ -357,9 +355,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
     readAccessRaw === "in_app" ||
     readAccessRaw === "trusted_external"
       ? readAccessRaw
-      : acquired
+      : ebookClass === "in_app"
       ? "in_app"
-      : available
+      : ebookClass === "external_link"
       ? "trusted_external"
       : "none";
   const readProviderRaw = String(raw?.readProvider || "").trim();

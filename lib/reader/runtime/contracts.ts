@@ -106,6 +106,12 @@ export interface ReaderSessionSnapshot {
   format: ReaderFormat;
   lastPosition?: ReaderLastPosition | null;
   resumeAnchor?: CanonicalAnchorV1 | null;
+  continuity?: {
+    mode: 'anchor' | 'approximate_position' | 'start';
+    approximate: boolean;
+    manifestVersion: number;
+    anchorSource?: 'reading_progress' | 'reading_sessions' | null;
+  };
   narration?: ReaderNarrationSessionState | null;
 }
 

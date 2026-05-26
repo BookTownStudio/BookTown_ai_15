@@ -668,8 +668,7 @@ function computeCanonicalEbookClass(
   const hasVerifiedAttachment =
     asNonEmptyString(data.ebookAttachmentId).length > 0 ||
     asNonEmptyString(data.ebookStoragePath).length > 0 ||
-    hasCanonicalLegacyStoragePath(bookId, data) ||
-    Boolean(data.downloadable);
+    hasCanonicalLegacyStoragePath(bookId, data);
   return hasVerifiedAttachment ? "in_app" : "unavailable";
 }
 

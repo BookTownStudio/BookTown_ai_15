@@ -4087,6 +4087,18 @@ export const apiContracts = {
           format: z.enum(["pdf", "epub", "unknown"]),
           lastPosition: readerLastPositionSchema.nullable().optional(),
           resumeAnchor: canonicalAnchorV1Schema.nullable().optional(),
+          continuity: z
+            .object({
+              mode: z.enum(["anchor", "approximate_position", "start"]),
+              approximate: z.boolean(),
+              manifestVersion: z.number().int().positive(),
+              anchorSource: z
+                .enum(["reading_progress", "reading_sessions"])
+                .nullable()
+                .optional(),
+            })
+            .strict()
+            .optional(),
           narration: readerNarrationSessionStateSchema.nullable().optional(),
         })
         .strict(),

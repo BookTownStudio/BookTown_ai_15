@@ -6,6 +6,7 @@ import {
   assertActiveAuthenticatedUser,
   assertRoleFromClaims,
 } from "../shared/auth";
+import { isCanonicalBookReaderEbookStoragePath } from "./storageSignedUrl";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -58,6 +59,9 @@ function assertAllowedAttachmentPatch(
  * - Auth required
  * - Caller must be admin or system
  * - Callable ONLY from ingestion / admin surfaces
+ * - Attachment visibility must match reader access requirements. Public
+ *   visibility here does not expose Storage directly; reader access still
+ *   requires catalog rights checks and short-lived signed URLs.
  *
  * NOTE:
  * - This function DOES NOT upload files
@@ -102,8 +106,8 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
     );
   }
 
-  // Enforce canonical storage location
-  if (!storagePath.startsWith(`ebooks/${bookId}/`)) {
+  // Enforce canonical reader ebook storage location.
+  if (!isCanonicalBookReaderEbookStoragePath(bookId, storagePath)) {
     throw new HttpsError(
       "invalid-argument",
       "Invalid ebook storage path."
@@ -160,7 +164,7 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
       role,
     },
 
-    visibility: "restricted", // Accessed via signed URLs only
+    visibility: "public",
     status: "active",
 
     createdAt: now,

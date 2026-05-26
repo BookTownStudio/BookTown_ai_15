@@ -444,6 +444,7 @@ type AdminDeleteAllBooksInput = {
 
 type AdminDestructiveOperation =
   | "adminMergeCanonicalBooks"
+  | "adminMergeCanonicalDuplicateGroup"
   | "adminDeleteCanonicalBook"
   | "adminDeleteCanonicalSeedList"
   | "adminDeleteAllBooks";
@@ -463,6 +464,7 @@ type DeleteCanonicalBookCascadeOptions = {
 const ADMIN_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION = 1;
 const ADMIN_DESTRUCTIVE_ALLOWED_OPERATIONS = new Set<AdminDestructiveOperation>([
   "adminMergeCanonicalBooks",
+  "adminMergeCanonicalDuplicateGroup",
   "adminDeleteCanonicalBook",
   "adminDeleteCanonicalSeedList",
   "adminDeleteAllBooks",
@@ -477,6 +479,78 @@ const ADMIN_MERGE_EDITION_PATCH_FIELDS = new Set([
 
 const ADMIN_MERGE_QUOTE_PATCH_FIELDS = new Set(["bookId", "sourceBookId", "updatedAt"]);
 const ADMIN_MERGE_SHELF_PATCH_FIELDS = new Set(["orderedBookIds", "updatedAt"]);
+const ADMIN_DUPLICATE_GROUP_SURVIVOR_PATCH_FIELDS = new Set([
+  "titleAliases",
+  "canonicalAuthorIds",
+  "workIdentity",
+  "providerExternalIds",
+  "identityKeys",
+  "externalReadableSources",
+  "canonicalKey",
+  "editionId",
+  "canonicalRelations",
+  "ebookAttachmentId",
+  "ebookStoragePath",
+  "epubStoragePath",
+  "storagePath",
+  "acquiredFromProvider",
+  "hasEbook",
+  "downloadable",
+  "isEbookAvailable",
+  "coverState",
+  "cover",
+  "coverUrl",
+  "coverSource",
+  "coverAuthority",
+  "normalizedTitle",
+  "titleEnNormalized",
+  "canonicalTitleAuthorities",
+  "authorNamesNormalized",
+  "searchableTitleAuthor",
+  "search",
+  "updatedAt",
+]);
+const ADMIN_DUPLICATE_GROUP_EDITION_PATCH_FIELDS = new Set([
+  "bookId",
+  "workId",
+  "canonicalKey",
+  "searchTitleNormalized",
+  "searchAuthorNormalized",
+  "searchTokens",
+  "downloadable",
+  "hasEbook",
+  "isEbookAvailable",
+  "updatedAt",
+]);
+const ADMIN_DUPLICATE_GROUP_IDENTITY_PATCH_FIELDS = new Set(["bookId", "updatedAt"]);
+const ADMIN_DUPLICATE_GROUP_INGESTION_PATCH_FIELDS = new Set([
+  "bookId",
+  "canonicalKey",
+  "updatedAt",
+]);
+const ADMIN_DUPLICATE_GROUP_DUPLICATE_BOOK_PATCH_FIELDS = new Set([
+  "mergedInto",
+  "mergeState",
+  "updatedAt",
+]);
+const ADMIN_DUPLICATE_GROUP_COVER_JOB_PATCH_FIELDS = new Set([
+  "id",
+  "bookId",
+  "source",
+  "externalId",
+  "candidateUrls",
+  "status",
+  "updatedAt",
+]);
+const ADMIN_DUPLICATE_GROUP_COVER_JOB_REDIRECT_PATCH_FIELDS = new Set([
+  "bookId",
+  "redirectBookId",
+  "mergedInto",
+  "status",
+  "lastError",
+  "updatedAt",
+  "completedAt",
+]);
 
 function assertAdminDestructiveAuthority(params: {
   operation: AdminDestructiveOperation;
@@ -1250,7 +1324,13 @@ async function mergeCanonicalDuplicateGroup(params: {
     };
   }
 
-  return db.runTransaction(async (tx) => {
+  assertAdminDestructiveAuthority({
+    operation: "adminMergeCanonicalDuplicateGroup",
+    actorUid: "system",
+    resourceId: params.providerWorkId,
+  });
+
+  const mergeResult = await db.runTransaction(async (tx) => {
     const refs = ordered.map((candidate) => db.collection("books").doc(candidate.bookId));
     const snapshots = await tx.getAll(...refs);
     const freshCandidates = snapshots
@@ -1489,41 +1569,47 @@ async function mergeCanonicalDuplicateGroup(params: {
       ...survivorSearchPatch,
     };
 
+    const survivorPatch = {
+      titleAliases: survivorAliases,
+      canonicalAuthorIds: survivorCanonicalAuthorIds,
+      workIdentity: survivorWorkIdentity,
+      providerExternalIds: survivorProviderExternalIds,
+      identityKeys: survivorIdentityKeys,
+      externalReadableSources: survivorExternalReadableSources,
+      canonicalKey: survivorCanonicalKey,
+      ...(survivorEditionId ? { editionId: survivorEditionId } : {}),
+      canonicalRelations: {
+        ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
+        ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
+      },
+      ebookAttachmentId: survivorBookDraft.ebookAttachmentId,
+      ebookStoragePath: survivorBookDraft.ebookStoragePath,
+      epubStoragePath: survivorBookDraft.epubStoragePath,
+      storagePath: survivorBookDraft.storagePath,
+      acquiredFromProvider: survivorBookDraft.acquiredFromProvider,
+      hasEbook: survivorBookDraft.hasEbook === true,
+      downloadable: survivorBookDraft.downloadable === true,
+      isEbookAvailable: survivorBookDraft.isEbookAvailable === true,
+      ...(duplicateReadyCover
+        ? {
+            coverState: survivorBookDraft.coverState,
+            cover: survivorBookDraft.cover,
+            coverUrl: survivorBookDraft.coverUrl,
+            coverSource: survivorBookDraft.coverSource,
+            coverAuthority: survivorBookDraft.coverAuthority,
+          }
+        : {}),
+      ...survivorSearchPatch,
+      updatedAt: now,
+    };
+    assertAllowedDestructivePatch(
+      survivorPatch,
+      ADMIN_DUPLICATE_GROUP_SURVIVOR_PATCH_FIELDS,
+      "adminMergeCanonicalDuplicateGroup.survivor"
+    );
     tx.set(
       survivorRef,
-      {
-        titleAliases: survivorAliases,
-        canonicalAuthorIds: survivorCanonicalAuthorIds,
-        workIdentity: survivorWorkIdentity,
-        providerExternalIds: survivorProviderExternalIds,
-        identityKeys: survivorIdentityKeys,
-        externalReadableSources: survivorExternalReadableSources,
-        canonicalKey: survivorCanonicalKey,
-        ...(survivorEditionId ? { editionId: survivorEditionId } : {}),
-        canonicalRelations: {
-          ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
-          ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
-        },
-        ebookAttachmentId: survivorBookDraft.ebookAttachmentId,
-        ebookStoragePath: survivorBookDraft.ebookStoragePath,
-        epubStoragePath: survivorBookDraft.epubStoragePath,
-        storagePath: survivorBookDraft.storagePath,
-        acquiredFromProvider: survivorBookDraft.acquiredFromProvider,
-        hasEbook: survivorBookDraft.hasEbook === true,
-        downloadable: survivorBookDraft.downloadable === true,
-        isEbookAvailable: survivorBookDraft.isEbookAvailable === true,
-        ...(duplicateReadyCover
-          ? {
-              coverState: survivorBookDraft.coverState,
-              cover: survivorBookDraft.cover,
-              coverUrl: survivorBookDraft.coverUrl,
-              coverSource: survivorBookDraft.coverSource,
-              coverAuthority: survivorBookDraft.coverAuthority,
-            }
-          : {}),
-        ...survivorSearchPatch,
-        updatedAt: now,
-      },
+      survivorPatch,
       { merge: true }
     );
 
@@ -1534,78 +1620,108 @@ async function mergeCanonicalDuplicateGroup(params: {
         workId: freshSurvivor.bookId,
         canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
       };
+      const editionPatch = {
+        bookId: freshSurvivor.bookId,
+        workId: freshSurvivor.bookId,
+        canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
+        ...buildEditionSearchPatch(nextEdition),
+        updatedAt: now,
+      };
+      assertAllowedDestructivePatch(
+        editionPatch,
+        ADMIN_DUPLICATE_GROUP_EDITION_PATCH_FIELDS,
+        "adminMergeCanonicalDuplicateGroup.edition"
+      );
       tx.set(
         ref,
-        {
-          bookId: freshSurvivor.bookId,
-          workId: freshSurvivor.bookId,
-          canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
-          ...buildEditionSearchPatch(nextEdition),
-          updatedAt: now,
-        },
+        editionPatch,
         { merge: true }
       );
     }
 
     for (const { ref } of identityDocs.values()) {
+      const identityPatch = {
+        bookId: freshSurvivor.bookId,
+        updatedAt: now,
+      };
+      assertAllowedDestructivePatch(
+        identityPatch,
+        ADMIN_DUPLICATE_GROUP_IDENTITY_PATCH_FIELDS,
+        "adminMergeCanonicalDuplicateGroup.identity"
+      );
       tx.set(
         ref,
-        {
-          bookId: freshSurvivor.bookId,
-          updatedAt: now,
-        },
+        identityPatch,
         { merge: true }
       );
     }
 
     for (const { ref, data } of ingestionDocs.values()) {
+      const ingestionPatch = {
+        bookId: freshSurvivor.bookId,
+        canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
+        updatedAt: now,
+      };
+      assertAllowedDestructivePatch(
+        ingestionPatch,
+        ADMIN_DUPLICATE_GROUP_INGESTION_PATCH_FIELDS,
+        "adminMergeCanonicalDuplicateGroup.ingestion"
+      );
       tx.set(
         ref,
-        {
-          bookId: freshSurvivor.bookId,
-          canonicalKey: survivorCanonicalKey || asNonEmptyString(data.canonicalKey),
-          updatedAt: now,
-        },
+        ingestionPatch,
         { merge: true }
       );
     }
 
     if (!survivorHasReadyCover && mergedCoverCandidateUrls.length > 0) {
+      const coverJobPatch = {
+        id: freshSurvivor.bookId,
+        bookId: freshSurvivor.bookId,
+        source: pickFirstNonEmptyString([
+          coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.source,
+          ...duplicateBookIds.map(
+            (bookId) =>
+              coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.source
+          ),
+        ]) || asNonEmptyString(freshSurvivor.data.source) || null,
+        externalId: pickFirstNonEmptyString([
+          coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.externalId,
+          ...duplicateBookIds.map(
+            (bookId) =>
+              coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.externalId
+          ),
+        ]) || null,
+        candidateUrls: mergedCoverCandidateUrls,
+        status: "PENDING",
+        updatedAt: now,
+      };
+      assertAllowedDestructivePatch(
+        coverJobPatch,
+        ADMIN_DUPLICATE_GROUP_COVER_JOB_PATCH_FIELDS,
+        "adminMergeCanonicalDuplicateGroup.coverJob"
+      );
       tx.set(
         db.collection("cover_jobs").doc(freshSurvivor.bookId),
-        {
-          id: freshSurvivor.bookId,
-          bookId: freshSurvivor.bookId,
-          source: pickFirstNonEmptyString([
-            coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.source,
-            ...duplicateBookIds.map(
-              (bookId) =>
-                coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.source
-            ),
-          ]) || asNonEmptyString(freshSurvivor.data.source) || null,
-          externalId: pickFirstNonEmptyString([
-            coverJobDataByPath.get(db.collection("cover_jobs").doc(freshSurvivor.bookId).path)?.externalId,
-            ...duplicateBookIds.map(
-              (bookId) =>
-                coverJobDataByPath.get(db.collection("cover_jobs").doc(bookId).path)?.externalId
-            ),
-          ]) || null,
-          candidateUrls: mergedCoverCandidateUrls,
-          status: "PENDING",
-          updatedAt: now,
-        },
+        coverJobPatch,
         { merge: true }
       );
     }
 
     for (const duplicate of freshDuplicates) {
+      const duplicateBookPatch = {
+        mergedInto: freshSurvivor.bookId,
+        mergeState: "merged_duplicate",
+        updatedAt: now,
+      };
+      assertAllowedDestructivePatch(
+        duplicateBookPatch,
+        ADMIN_DUPLICATE_GROUP_DUPLICATE_BOOK_PATCH_FIELDS,
+        "adminMergeCanonicalDuplicateGroup.duplicateBook"
+      );
       tx.set(
         db.collection("books").doc(duplicate.bookId),
-        {
-          mergedInto: freshSurvivor.bookId,
-          mergeState: "merged_duplicate",
-          updatedAt: now,
-        },
+        duplicateBookPatch,
         { merge: true }
       );
 
@@ -1616,17 +1732,23 @@ async function mergeCanonicalDuplicateGroup(params: {
         if (!coverJobData) {
           continue;
         }
+        const coverJobRedirectPatch = {
+          bookId: duplicate.bookId,
+          redirectBookId: freshSurvivor.bookId,
+          mergedInto: freshSurvivor.bookId,
+          status: "FAILED",
+          lastError: "MERGED_REDIRECT",
+          updatedAt: now,
+          completedAt: now,
+        };
+        assertAllowedDestructivePatch(
+          coverJobRedirectPatch,
+          ADMIN_DUPLICATE_GROUP_COVER_JOB_REDIRECT_PATCH_FIELDS,
+          "adminMergeCanonicalDuplicateGroup.coverJobRedirect"
+        );
         tx.set(
           db.collection(collectionName).doc(duplicate.bookId),
-          {
-            bookId: duplicate.bookId,
-            redirectBookId: freshSurvivor.bookId,
-            mergedInto: freshSurvivor.bookId,
-            status: "FAILED",
-            lastError: "MERGED_REDIRECT",
-            updatedAt: now,
-            completedAt: now,
-          },
+          coverJobRedirectPatch,
           { merge: true }
         );
       }
@@ -1638,6 +1760,24 @@ async function mergeCanonicalDuplicateGroup(params: {
       mergedBookIds: freshDuplicates.map((candidate) => candidate.bookId),
     };
   });
+
+  if (mergeResult && mergeResult.mergedBookIds.length > 0) {
+    await writeAdminDestructiveAudit({
+      operation: "adminMergeCanonicalDuplicateGroup",
+      action: "canonical_duplicate_group_merge",
+      resourceType: "provider_work",
+      resourceId: params.providerWorkId,
+      actorUid: "system",
+      payload: {
+        survivorId: mergeResult.survivorId,
+        mergedBookIds: mergeResult.mergedBookIds,
+        mergedCount: mergeResult.mergedBookIds.length,
+        protectedIdentityOwner: "materializeBookAuthority",
+      },
+    });
+  }
+
+  return mergeResult;
 }
 
 function scoreExistingSeedWork(params: {

@@ -15,7 +15,11 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as admin from 'firebase-admin';
 import * as logger from "firebase-functions/logger";
-import { getSignedUrl } from '../attachments/storageSignedUrl';
+import {
+  getSignedUrl,
+  isCanonicalBookReaderEbookStoragePath,
+  isLegacyEbookAttachmentStoragePath,
+} from '../attachments/storageSignedUrl';
 import { resolveBookToEbookAttachment } from '../attachments/resolveBookToEbookAttachment';
 import { canUserReadBook } from "../rights/bookRights";
 
@@ -109,6 +113,22 @@ export const requestEbookReadAccess = onCall(
       throw new HttpsError(
         'internal',
         'Attachment is missing storagePath.'
+      );
+    }
+
+    if (
+      !isCanonicalBookReaderEbookStoragePath(bookId, attachment.storagePath) &&
+      !isLegacyEbookAttachmentStoragePath(attachment.storagePath)
+    ) {
+      logger.error("[READER][READ_ACCESS_INVALID_STORAGE_PATH]", {
+        uid,
+        bookId,
+        attachmentId: attachment.id,
+        storagePath: attachment.storagePath,
+      });
+      throw new HttpsError(
+        'failed-precondition',
+        'Attachment storage path is outside canonical reader scope.'
       );
     }
 

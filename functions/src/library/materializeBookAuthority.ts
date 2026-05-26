@@ -2536,9 +2536,7 @@ export async function materializeBookAuthorityInTransaction(
     params.source === "openLibrary" ||
     params.source === "goodreads_import" ||
     params.source === "user_upload" ||
-    Boolean(asNonEmptyString(rawBook.storagePath)) ||
-    Boolean(asNonEmptyString(rawBook.ebookAttachmentId)) ||
-    Boolean(asNonEmptyString(rawBook.ebookStoragePath));
+    Boolean(asNonEmptyString(rawBook.storagePath));
   const editionId = resolveEditionId({
     explicitEditionId: params.explicitEditionId,
     source: params.source,
@@ -2701,17 +2699,20 @@ export async function materializeBookAuthorityInTransaction(
   // Availability ownership:
   // - hasEbook is classified here by materializeBookAuthority.
   // - externalReadableSources is owned by acquireExternalEbookForRead; this path
-  //   preserves an existing/incoming value but must not be treated as the source
-  //   of external availability truth.
-  // - ebookAttachmentId / ebookStoragePath are attachment pointers owned by
-  //   createEbookAttachment or acquisition finalization.
+  //   preserves an existing value but must not be treated as the source of
+  //   external availability truth.
+  // - ebookAttachmentId / ebookStoragePath / epubStoragePath are attachment
+  //   pointers owned by createEbookAttachment or acquisition finalization.
   // - downloadable / isEbookAvailable are compatibility projections derived
   //   from the authoritative fields above.
-  const externalReadableSources = Array.isArray(rawBook.externalReadableSources)
-    ? rawBook.externalReadableSources
-    : Array.isArray(existingBook?.externalReadableSources)
-      ? existingBook?.externalReadableSources
-      : [];
+  const externalReadableSources = Array.isArray(existingBook?.externalReadableSources)
+    ? existingBook?.externalReadableSources
+    : [];
+  const existingPointerProjection = {
+    ebookAttachmentId: asNonEmptyString(existingBook?.ebookAttachmentId) || null,
+    ebookStoragePath: asNonEmptyString(existingBook?.ebookStoragePath) || null,
+    epubStoragePath: asNonEmptyString(existingBook?.epubStoragePath) || null,
+  };
 
   const canonicalTitleTrust = resolveCanonicalFieldTrust({
     existingBook,
@@ -2944,18 +2945,6 @@ export async function materializeBookAuthorityInTransaction(
           : null,
     storagePath:
       asNonEmptyString(rawBook.storagePath) || asNonEmptyString(existingBook?.storagePath) || null,
-    ebookAttachmentId:
-      asNonEmptyString(rawBook.ebookAttachmentId) ||
-      asNonEmptyString(existingBook?.ebookAttachmentId) ||
-      null,
-    ebookStoragePath:
-      asNonEmptyString(rawBook.ebookStoragePath) ||
-      asNonEmptyString(existingBook?.ebookStoragePath) ||
-      null,
-    epubStoragePath:
-      asNonEmptyString(rawBook.epubStoragePath) ||
-      asNonEmptyString(existingBook?.epubStoragePath) ||
-      null,
     acquiredFromProvider:
       asNonEmptyString(rawBook.acquiredFromProvider) ||
       asNonEmptyString(existingBook?.acquiredFromProvider) ||
@@ -3034,7 +3023,10 @@ export async function materializeBookAuthorityInTransaction(
   };
 
   const protectedBookBase = applyCanonicalProtection(existingBook, bookBase);
-  const searchPatch = buildBookSearchPatch(protectedBookBase);
+  const searchPatch = buildBookSearchPatch({
+    ...protectedBookBase,
+    ...existingPointerProjection,
+  });
   // materializeBookAuthority owns the canonical hasEbook classification.
   // downloadable and isEbookAvailable remain derived compatibility projections.
   const shouldHaveEbook =
@@ -3138,18 +3130,6 @@ export async function materializeBookAuthorityInTransaction(
         downloadable: finalBookPayload.downloadable === true,
         isEbookAvailable: finalBookPayload.isEbookAvailable === true,
       },
-      ebookAttachmentId:
-        asNonEmptyString(rawBook.ebookAttachmentId) ||
-        asNonEmptyString(existingBook?.ebookAttachmentId) ||
-        null,
-      ebookStoragePath:
-        asNonEmptyString(rawBook.ebookStoragePath) ||
-        asNonEmptyString(existingBook?.ebookStoragePath) ||
-        null,
-      epubStoragePath:
-        asNonEmptyString(rawBook.epubStoragePath) ||
-        asNonEmptyString(existingBook?.epubStoragePath) ||
-        null,
       storagePath:
         asNonEmptyString(rawBook.storagePath) || asNonEmptyString(existingBook?.storagePath) || null,
       createdAt: existingBook?.createdAt || now,
@@ -3163,7 +3143,12 @@ export async function materializeBookAuthorityInTransaction(
       editionRef!,
       {
         ...editionBase,
-        ...buildEditionSearchPatch(editionBase),
+        ...buildEditionSearchPatch({
+          ...editionBase,
+          ebookAttachmentId: asNonEmptyString(existingEdition?.ebookAttachmentId) || null,
+          ebookStoragePath: asNonEmptyString(existingEdition?.ebookStoragePath) || null,
+          epubStoragePath: asNonEmptyString(existingEdition?.epubStoragePath) || null,
+        }),
       },
       { merge: true }
     );
