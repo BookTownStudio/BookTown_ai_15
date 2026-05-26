@@ -45,6 +45,7 @@ const ACQUISITION_BOOK_WRITE_ALLOWLIST = new Set([
   "epubStoragePath",
   "acquiredFromProvider",
   "providerExternalIds",
+  "readerAuthority",
   "updatedAt",
 ]);
 const ACQUISITION_EDITION_WRITE_ALLOWLIST = new Set([
@@ -966,6 +967,12 @@ async function finalizeAcquisition(params: {
       providerExternalIds: FieldValue.arrayUnion(`${provider}:${providerExternalId}`),
       externalReadableSources: existingBookReadableSources,
       ...(asset.format === "epub" ? { epubStoragePath: storagePath } : {}),
+      readerAuthority: {
+        hasReadableAttachment: true,
+        attachmentId: attachmentRef.id,
+        source: "acquisition",
+        updatedAt: now,
+      },
       updatedAt: now,
     };
     assertAllowedAcquisitionPatch(

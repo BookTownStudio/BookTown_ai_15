@@ -191,6 +191,20 @@
       "queryScope": "COLLECTION",
       "fields": [
         {
+          "fieldPath": "readerAuthority.hasReadableAttachment",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "rating",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
+      "collectionGroup": "books",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
           "fieldPath": "mainCategory",
           "order": "ASCENDING"
         },

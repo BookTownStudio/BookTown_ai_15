@@ -213,6 +213,21 @@ function applyCanonicalProtection(
   return protectedIncoming;
 }
 
+function buildReaderAuthorityProjection(params: {
+  attachmentId: string;
+  source: string;
+  updatedAt: FirebaseFirestore.FieldValue;
+}): Record<string, unknown> | null {
+  const attachmentId = asNonEmptyString(params.attachmentId);
+  if (!attachmentId) return null;
+  return {
+    hasReadableAttachment: true,
+    attachmentId,
+    source: asNonEmptyString(params.source) || "ebook_attachment",
+    updatedAt: params.updatedAt,
+  };
+}
+
 function normalizeSourceIdentityValue(source: string, providerExternalId: string): string {
   if (source === "googleBooks") {
     return providerExternalId.replace(/^gb_/i, "").trim();
@@ -3028,20 +3043,40 @@ export async function materializeBookAuthorityInTransaction(
     ...existingPointerProjection,
   });
   // materializeBookAuthority owns the canonical hasEbook classification.
-  // downloadable and isEbookAvailable remain derived compatibility projections.
+  // Caller-supplied hasEbook / downloadable / isEbookAvailable are ignored here;
+  // compatibility projections are derived only from server-owned read evidence.
+  const hasAttachmentPointer = Boolean(
+    existingPointerProjection.ebookAttachmentId ||
+      existingPointerProjection.ebookStoragePath ||
+      existingPointerProjection.epubStoragePath
+  );
+  const hasAcquiredReadableSource = externalReadableSources.length > 0;
+  const hasUserUploadStorage =
+    params.source === "user_upload" &&
+    Boolean(asNonEmptyString(protectedBookBase.storagePath));
   const shouldHaveEbook =
-    params.source === "user_upload" ||
-    searchPatch.hasEbook === true ||
-    rawBook.hasEbook === true ||
-    rawBook.downloadable === true ||
-    rawBook.isEbookAvailable === true;
+    hasAttachmentPointer ||
+    hasAcquiredReadableSource ||
+    hasUserUploadStorage;
+  const existingReaderAuthority = asRecord(existingBook?.readerAuthority);
+  const readerAuthorityAttachmentId =
+    existingPointerProjection.ebookAttachmentId ||
+    asNonEmptyString(existingReaderAuthority?.attachmentId);
+  const readerAuthority = hasAttachmentPointer
+    ? buildReaderAuthorityProjection({
+        attachmentId: readerAuthorityAttachmentId,
+        source: asNonEmptyString(existingReaderAuthority?.source) || "ebook_attachment",
+        updatedAt: now,
+      })
+    : null;
 
   const finalBookPayload: Record<string, unknown> = {
     ...protectedBookBase,
     ...searchPatch,
     hasEbook: shouldHaveEbook,
-    downloadable: shouldHaveEbook || searchPatch.downloadable === true,
-    isEbookAvailable: shouldHaveEbook || searchPatch.isEbookAvailable === true,
+    downloadable: shouldHaveEbook,
+    isEbookAvailable: shouldHaveEbook,
+    ...(readerAuthority ? { readerAuthority } : {}),
   };
 
   if (editionId) {

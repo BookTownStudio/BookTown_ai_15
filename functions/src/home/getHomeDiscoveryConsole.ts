@@ -4,7 +4,6 @@ import { FieldPath, Timestamp } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { isPublicReadableBook } from "../catalog/catalogBookView";
 import { canUserReadBook } from "../rights/bookRights";
-import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 
 const db = admin.firestore();
 
@@ -393,6 +392,17 @@ function sanitizeTownItems(items: HomeTownItem[], limit: number): HomeTownItem[]
     .slice(0, limit);
 }
 
+function hasReadableAttachmentProjection(data: Record<string, unknown>): boolean {
+  const readerAuthority =
+    data.readerAuthority && typeof data.readerAuthority === "object" && !Array.isArray(data.readerAuthority)
+      ? data.readerAuthority as Record<string, unknown>
+      : null;
+  return (
+    readerAuthority?.hasReadableAttachment === true &&
+    asString(readerAuthority.attachmentId, 160).length > 0
+  );
+}
+
 async function readEvergreenBookFallback(
   uid: string,
   diagnostics: HomeDiagnostics,
@@ -401,7 +411,7 @@ async function readEvergreenBookFallback(
   try {
     const snap = await db
       .collection("books")
-      .where("isEbookAvailable", "==", true)
+      .where("readerAuthority.hasReadableAttachment", "==", true)
       .orderBy("rating", "desc")
       .limit(Math.max(4, Math.min(24, limit * 3)))
       .get();
@@ -412,6 +422,7 @@ async function readEvergreenBookFallback(
       if (items.length >= limit) break;
       const data = (docSnap.data() ?? {}) as Record<string, unknown>;
       if (!isPublicReadableBook(data) || !canUserReadBook(data, uid)) continue;
+      if (!hasReadableAttachmentProjection(data)) continue;
       const item = mapBookItem(docSnap.id, data, 0.2 - items.length / 100);
       if (!item) continue;
       item.reason = "A quiet place to begin";
@@ -833,7 +844,7 @@ async function readContinueReading(uid: string, diagnostics: HomeDiagnostics): P
 async function readReadNow(uid: string, diagnostics: HomeDiagnostics): Promise<HomeBookItem[]> {
   const snap = await db
     .collection("books")
-    .where("isEbookAvailable", "==", true)
+    .where("readerAuthority.hasReadableAttachment", "==", true)
     .orderBy("rating", "desc")
     .limit(READ_NOW_FETCH_LIMIT)
     .get();
@@ -845,8 +856,7 @@ async function readReadNow(uid: string, diagnostics: HomeDiagnostics): Promise<H
     if (items.length >= READ_NOW_LIMIT) break;
     const data = (docSnap.data() ?? {}) as Record<string, unknown>;
     if (!isPublicReadableBook(data) || !canUserReadBook(data, uid)) continue;
-    const attachment = await resolveBookToEbookAttachment(docSnap.id);
-    if (!attachment || !attachment.storagePath) continue;
+    if (!hasReadableAttachmentProjection(data)) continue;
     const item = mapBookItem(docSnap.id, data, 1 - rank / 100);
     if (!item) continue;
     items.push(item);
@@ -1122,8 +1132,7 @@ async function hydrateEditorialBooks(
       continue;
     }
     if (slot.rowType === "readNow") {
-      const attachment = await resolveBookToEbookAttachment(snap.id);
-      if (!attachment || !attachment.storagePath) {
+      if (!hasReadableAttachmentProjection(data)) {
         diagnostics.invalidEditorialFiltered += 1;
         continue;
       }

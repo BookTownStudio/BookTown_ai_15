@@ -14,6 +14,7 @@ const ATTACHMENT_WRITE_ALLOWLIST = new Set([
   "ebookAttachmentId",
   "ebookStoragePath",
   "epubStoragePath",
+  "readerAuthority",
   "updatedAt",
 ]);
 
@@ -190,6 +191,12 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
     ebookAttachmentId: attachmentRef.id,
     ebookStoragePath: storagePath,
     ...(mimeType === "application/epub+zip" ? { epubStoragePath: storagePath } : {}),
+    readerAuthority: {
+      hasReadableAttachment: true,
+      attachmentId: attachmentRef.id,
+      source: "ebook_attachment",
+      updatedAt: now,
+    },
     updatedAt: now,
   };
   assertAllowedAttachmentPatch(bookPatch, "createEbookAttachment.book");

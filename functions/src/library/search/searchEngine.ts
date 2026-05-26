@@ -733,6 +733,17 @@ function hasTrustedExternalAvailability(
   );
 }
 
+function hasAuthoritativeEbookReadSignal(
+  result: Pick<UnifiedSearchResult, "available" | "acquired" | "readAccess">
+): boolean {
+  return (
+    result.readAccess === "in_app" ||
+    result.readAccess === "trusted_external" ||
+    result.acquired === true ||
+    (result.available === true && result.readAccess !== "none")
+  );
+}
+
 function mergeExternalReadableSources(
   existing: ExternalReadableSourceRecord[] | undefined,
   next: ExternalReadableSourceRecord[] | undefined
@@ -2148,7 +2159,7 @@ function mapCanonicalBook(
   const languageTruth = resolveLanguageTruth(language, options.language);
   const ebookClass = computeCanonicalEbookClass(docId, data);
   const ownedReadSignals = buildOwnershipReadSignals(ebookClass === "in_app");
-  if (options.ebookOnly && !ownedReadSignals.downloadable) {
+  if (options.ebookOnly && !hasAuthoritativeEbookReadSignal(ownedReadSignals)) {
     return null;
   }
 
@@ -4765,12 +4776,7 @@ export async function unifiedSearch(
   });
   let merged = [...canonicalResultsForResponse, ...visibleExternalCandidates].sort(compareRanked);
   if (options.ebookOnly) {
-    merged = merged.filter(
-      (entry) =>
-        entry.downloadable ||
-        entry.readAccess === "trusted_external" ||
-        entry.available
-    );
+    merged = merged.filter(hasAuthoritativeEbookReadSignal);
   }
   const visibleCanonicalCount = merged.filter((entry) => entry.resultType === "canonical").length;
   const visibleExternalCount = merged.filter((entry) => entry.resultType === "external").length;
