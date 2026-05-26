@@ -1,8 +1,8 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldPath, FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
-import { getOrBuildReaderManifest } from "./readerManifestService";
+import { getOrBuildReaderManifest, toPublicReaderManifest } from "./readerManifestService";
 import {
   attemptStableAnchorMigration,
   evaluateContinuityCompatibility,
@@ -17,6 +17,7 @@ const READER_URL_TTL_MS = 10 * 60 * 1000;
 
 type ResumeContinuityMode = "anchor" | "approximate_position" | "start";
 type ResumeAnchorSource = "reading_progress" | "reading_sessions";
+type ReaderArtifactKind = "bookmark" | "highlight";
 
 function asNonEmptyString(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -226,6 +227,75 @@ function resolveFallbackResumePage(params: {
   }
 
   return { resumePage: 1, usedApproximateFallback: false };
+}
+
+async function buildArtifactCompatibilitySummary(params: {
+  uid: string;
+  bookId: string;
+  collection: "reader_bookmarks" | "reader_highlights";
+  limit: number;
+  kind: ReaderArtifactKind;
+  sourceProvenance: ReturnType<typeof provenanceFromManifest>;
+}): Promise<Record<string, unknown>> {
+  const prefix = `${params.uid}_${params.bookId}_`;
+  const collectionRef = db.collection(params.collection) as any;
+  if (typeof collectionRef.where !== "function") {
+    return {
+      totalCount: 0,
+      compatibleCount: 0,
+      staleAnchorRejectedCount: 0,
+      counts: {},
+      compatibilityRate: 1,
+      manifestVersion: params.sourceProvenance.manifestVersion,
+      sourceSignatureHash: params.sourceProvenance.sourceSignatureHash,
+      attachmentId: params.sourceProvenance.attachmentId,
+      sourceType: params.sourceProvenance.sourceType,
+      artifactsOmitted: true,
+      lazyLoadCallable:
+        params.kind === "bookmark" ? "getReaderBookmarks" : "getReaderHighlights",
+    };
+  }
+  const snap = await collectionRef
+    .where(FieldPath.documentId(), ">=", prefix)
+    .where(FieldPath.documentId(), "<", `${prefix}\uf8ff`)
+    .limit(params.limit)
+    .get();
+
+  let compatibleCount = 0;
+  let staleAnchorRejectedCount = 0;
+  const counts: Record<string, number> = {};
+
+  snap.docs.forEach((doc: FirebaseFirestore.QueryDocumentSnapshot) => {
+    const data = doc.data();
+    const anchor = sanitizeCanonicalAnchor(data.anchor);
+    const compatibility = evaluateContinuityCompatibility({
+      current: params.sourceProvenance,
+      stored: provenanceFromStoredRecord(data, anchor),
+    });
+    counts[compatibility.status] = (counts[compatibility.status] || 0) + 1;
+    if (anchor && !compatibility.compatible) {
+      staleAnchorRejectedCount += 1;
+      return;
+    }
+    compatibleCount += 1;
+  });
+
+  const totalCount = snap.docs.length;
+  const compatibilityRate = totalCount > 0 ? compatibleCount / totalCount : 1;
+  return {
+    totalCount,
+    compatibleCount,
+    staleAnchorRejectedCount,
+    counts,
+    compatibilityRate,
+    manifestVersion: params.sourceProvenance.manifestVersion,
+    sourceSignatureHash: params.sourceProvenance.sourceSignatureHash,
+    attachmentId: params.sourceProvenance.attachmentId,
+    sourceType: params.sourceProvenance.sourceType,
+    artifactsOmitted: true,
+    lazyLoadCallable:
+      params.kind === "bookmark" ? "getReaderBookmarks" : "getReaderHighlights",
+  };
 }
 
 /**
@@ -489,6 +559,27 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
           (storedResumeAnchor && !storedCompatibility.compatible ? 1 : 0),
       },
       narration,
+      manifest: toPublicReaderManifest(manifest),
+      bootstrap: {
+        schemaVersion: 1,
+        artifactsLazyLoaded: true,
+        bookmarkCompatibilitySummary: await buildArtifactCompatibilitySummary({
+          uid,
+          bookId,
+          collection: "reader_bookmarks",
+          limit: 500,
+          kind: "bookmark",
+          sourceProvenance,
+        }),
+        highlightCompatibilitySummary: await buildArtifactCompatibilitySummary({
+          uid,
+          bookId,
+          collection: "reader_highlights",
+          limit: 500,
+          kind: "highlight",
+          sourceProvenance,
+        }),
+      },
     };
   } catch (error: any) {
     logger.error("[READER][SESSION_INIT_FAILED]", {
@@ -504,4 +595,11 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
 export const getOrCreateReadingSession = onCall(
   { cors: true },
   getOrCreateReadingSessionHandler
+);
+
+export const getReaderBootstrapHandler = getOrCreateReadingSessionHandler;
+
+export const getReaderBootstrap = onCall(
+  { cors: true },
+  getReaderBootstrapHandler
 );

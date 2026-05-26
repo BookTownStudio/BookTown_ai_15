@@ -5,6 +5,7 @@ import BilingualText from '../ui/BilingualText.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
 import { BookIcon } from '../icons/BookIcon.tsx';
+import { QuoteCardDataAdapter } from '../content/QuoteCardDataAdapter.ts';
 
 interface QuoteCardProps {
     quoteId: string;
@@ -39,8 +40,9 @@ const QuoteCard: React.FC<QuoteCardProps> = ({ quoteId, ownerId, onPress }) => {
     if (isLoading) return <div className="h-24 w-full bg-black/5 dark:bg-white/5 animate-pulse rounded-lg mt-3" />;
     if (!quote) return null;
 
-    const quoteText = lang === 'en' ? quote.textEn : quote.textAr;
-    const authorText = lang === 'en' ? quote.sourceEn : quote.sourceAr;
+    const card = QuoteCardDataAdapter.fromQuote(quote);
+    const quoteText = lang === 'en' ? card.textEn : card.textAr;
+    const authorText = lang === 'en' ? card.sourceEn : card.sourceAr;
     const shortQuoteLabel = quoteText.split(' ').slice(0, 8).join(' ');
 
     return (
@@ -60,7 +62,7 @@ const QuoteCard: React.FC<QuoteCardProps> = ({ quoteId, ownerId, onPress }) => {
                     <BilingualText role="Caption" className="!text-slate-600/80 dark:!text-white/60">
                         — {authorText}
                     </BilingualText>
-                    {quote.bookId && <SourceChip bookId={quote.bookId} />}
+                    {card.bookId && <SourceChip bookId={card.bookId} />}
                 </div>
             </div>
         </button>

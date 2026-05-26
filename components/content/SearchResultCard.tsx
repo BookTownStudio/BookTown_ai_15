@@ -8,8 +8,6 @@ import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
-import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
-import { useReaderProgress } from '../../lib/hooks/useReaderProgress.ts';
 import OtherEditionsSheet from '../books/OtherEditionsSheet.tsx';
 
 type SemanticChip = {
@@ -69,10 +67,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   const [didAdd, setDidAdd] = useState(false);
   const [isEditionsSheetOpen, setIsEditionsSheetOpen] = useState(false);
   const addFeedbackTimerRef = useRef<number | null>(null);
-  const { data: catalogBook } = useBookCatalog(result.bookId, {
-    enabled: Boolean(result.bookId && result.resultType === 'canonical'),
-  });
-  const { progress: readerProgress } = useReaderProgress(result.bookId);
 
   useEffect(() => {
     return () => {
@@ -94,14 +88,14 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
 
   const canAdd = typeof onAdd === 'function';
   const hasActiveReadingProgress = Boolean(
-    readerProgress?.exists &&
+    result.readingProgressProjection?.exists &&
       (
-        readerProgress.status_state === 'reading' ||
-        readerProgress.status_state === 'paused' ||
-        readerProgress.status_state === 'rereading'
+        result.readingProgressProjection.status_state === 'reading' ||
+        result.readingProgressProjection.status_state === 'paused' ||
+        result.readingProgressProjection.status_state === 'rereading'
       )
   );
-  const hasReadableAttachment = catalogBook?.readerAuthority?.hasReadableAttachment === true;
+  const hasReadableAttachment = result.readerAuthority?.hasReadableAttachment === true;
   const primaryAction: PrimarySearchAction = hasActiveReadingProgress
     ? 'continue'
     : hasReadableAttachment

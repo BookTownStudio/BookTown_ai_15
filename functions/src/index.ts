@@ -36,3 +36,4 @@ export * from "./triggers/notificationTriggers";
 export * from "./triggers/activityTriggers";
 export * from "./triggers/searchTriggers";
 export * from "./triggers/attachmentTriggers";
+export * from "./triggers/quoteProjectionTriggers";

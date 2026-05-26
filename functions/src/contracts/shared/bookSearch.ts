@@ -22,6 +22,19 @@ export interface ExternalReadableSourceDTO {
   trust: "trusted";
 }
 
+export interface SearchReaderAuthorityProjectionDTO {
+  hasReadableAttachment: boolean;
+  attachmentId?: string | null;
+  source?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface SearchReadingProgressProjectionDTO {
+  exists: boolean;
+  status_state?: "reading" | "paused" | "abandoned" | "completed" | "rereading" | null;
+  updatedAt?: string | null;
+}
+
 export interface SearchResultDTO {
   id: string;
   editionId: string;
@@ -68,6 +81,10 @@ export interface SearchResultDTO {
   canonicalKey?: string;
   /** Acquisition-owned trusted external readability sources. */
   externalReadableSources?: ExternalReadableSourceDTO[];
+  /** Server-owned readability projection for search UI decisions. */
+  readerAuthority?: SearchReaderAuthorityProjectionDTO;
+  /** Server-owned continuity projection for search UI decisions. */
+  readingProgressProjection?: SearchReadingProgressProjectionDTO;
   rawBook?: Record<string, unknown>;
 }
 

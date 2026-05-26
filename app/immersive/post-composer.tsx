@@ -22,6 +22,7 @@ import SelectBookModal from '../../components/modals/SelectBookModal.tsx';
 import AttachAuthorModal from '../../components/modals/AttachAuthorModal.tsx';
 import AttachShelfModal from '../../components/modals/AttachShelfModal.tsx';
 import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
+import { QuoteCardDataAdapter } from '../../components/content/QuoteCardDataAdapter.ts';
 
 import { PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
 import type { View } from '../../types/navigation.ts';
@@ -688,11 +689,12 @@ const PostComposerScreen: React.FC = () => {
         isOpen={modals.quote}
         onClose={() => setModals((current) => ({ ...current, quote: false }))}
         onSelect={(quote) => {
-          const canonicalQuoteId = quote.canonicalQuoteId || quote.id;
+          const card = QuoteCardDataAdapter.fromQuote(quote);
+          const canonicalQuoteId = card.canonicalQuoteId || card.id;
           setAttachment(buildQuotePostAttachment({
             quoteId: canonicalQuoteId,
-            quoteOwnerId: quote.ownerId,
-            quoteText: quote.textEn || quote.textAr,
+            quoteOwnerId: card.ownerId,
+            quoteText: card.textEn || card.textAr,
           }));
         }}
       />

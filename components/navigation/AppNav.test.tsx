@@ -23,6 +23,9 @@ vi.mock("../../store/navigation.tsx", () => ({
 }));
 
 vi.mock("../../lib/hooks/useNotifications.ts", () => ({
+  useNotificationSummary: () => ({
+    data: { unreadCount: 0, latestNotificationAt: null, lastReadAt: null },
+  }),
   useUnreadNotificationsCount: () => ({ data: 0 }),
 }));
 

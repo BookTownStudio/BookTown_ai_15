@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 import { z, parseInput } from "../shared/validation";
+import { readNotificationSummary } from "../notifications/notificationSummary";
 
 const db = admin.firestore();
 const MARK_ALL_LIMIT = 500;
@@ -84,4 +85,9 @@ export const markAllNotificationsRead = onCall({ cors: true }, async (request) =
     updatedCount: docs.length,
     complete: docs.length < MARK_ALL_LIMIT,
   };
+});
+
+export const getNotificationSummary = onCall({ cors: true }, async (request) => {
+  const caller = await assertActiveAuthenticatedUser(request.auth);
+  return readNotificationSummary(caller.uid);
 });

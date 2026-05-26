@@ -3,8 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { devInfo, devLog } from '../../lib/logging/devLog';
 import { AttachmentAnalytics } from '../../lib/media/AttachmentAnalytics.ts';
 import { useAuth } from '../../lib/auth.tsx';
-import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
-import { useQuoteDetails } from '../../lib/hooks/useQuoteDetails.ts';
 import { useAttachmentUrl } from '../../lib/hooks/useAttachmentUrl.ts';
 import type { AttachmentDeliveryIntent } from '../../lib/hooks/useAttachmentUrl.ts';
 import { useSocialRenderDiagnostics } from '../../lib/socialPerformanceDiagnostics.ts';
@@ -375,28 +373,6 @@ const PublicationReferenceCard: React.FC<{ title: string; coverUrl?: string; aut
     />
 );
 
-const HookedBookReferenceView: React.FC<{ id: string; surface: RenderSurface }> = ({ id, surface }) => {
-    const { data: book, isLoading } = useBookCatalog(id);
-    if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
-    if (!book) return null;
-    return (
-        <BookReferenceCard
-            title={book.titleEn}
-            author={book.authorEn}
-            coverUrl={book.coverUrl}
-            rating={book.rating}
-            surface={surface}
-        />
-    );
-};
-
-const HookedQuoteReferenceView: React.FC<{ id: string; owner?: string; surface: RenderSurface }> = ({ id, owner, surface }) => {
-    const { data: quote, isLoading } = useQuoteDetails(id, owner);
-    if (isLoading) return <div className="h-16 bg-slate-800 animate-pulse rounded-lg" />;
-    if (!quote) return null;
-    return <QuoteReferenceCard text={quote.textEn} surface={surface} />;
-};
-
 const UnresolvedReferenceView: React.FC = () => (
     <div className="p-3 bg-white/5 rounded-[0.7rem] text-[11px] text-slate-400">
         Reference unavailable
@@ -577,7 +553,7 @@ const ReferenceView: React.FC<{
     owner?: string;
     surface: RenderSurface;
     hydrated?: Record<string, unknown> | null;
-}> = ({ type, id, owner, surface, hydrated }) => {
+}> = ({ type, surface, hydrated }) => {
     if (type === 'BOOK') {
         const hydratedTitle =
             typeof hydrated?.titleEn === 'string'
@@ -606,11 +582,7 @@ const ReferenceView: React.FC<{
             );
         }
 
-        if (surface === 'feed') {
-            return <UnresolvedReferenceView />;
-        }
-
-        return <HookedBookReferenceView id={id} surface={surface} />;
+        return <UnresolvedReferenceView />;
     }
 
     const hydratedText =
@@ -626,11 +598,7 @@ const ReferenceView: React.FC<{
         return <QuoteReferenceCard text={hydratedText} surface={surface} />;
     }
 
-    if (surface === 'feed') {
-        return <UnresolvedReferenceView />;
-    }
-
-    return <HookedQuoteReferenceView id={id} owner={owner} surface={surface} />;
+    return <UnresolvedReferenceView />;
 };
 
 interface AttachmentRendererV1Props {

@@ -1,5 +1,6 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
+import { SOCIAL_QUOTE_PROJECTION_COLLECTION } from "../projections/quoteProjections";
 
 const db = admin.firestore();
 
@@ -269,68 +270,19 @@ async function resolveAttachmentSnapshot(
     };
   }
 
-  const rootQuoteSnap = await transaction.get(
-    db.collection("quotes").doc(attachment.entityId)
+  const quoteSnap = await transaction.get(
+    db.collection(SOCIAL_QUOTE_PROJECTION_COLLECTION).doc(attachment.entityId)
   );
-  if (rootQuoteSnap.exists) {
-    const data = (rootQuoteSnap.data() ?? {}) as Record<string, unknown>;
-    const ownerId = readTrimmedString(data.ownerId, 128);
-    const isPublic = data.isPublic !== false;
-    if (!isPublic && ownerId !== uid) {
-      throw new HttpsError("permission-denied", "Referenced quote is not accessible.");
-    }
-
-    const quoteText =
-      readTrimmedString(data.textEn, 600) ||
-      readTrimmedString(data.textAr, 600);
-
-    return {
-      type: "quote",
-      entityId: attachment.entityId,
-      ...(ownerId ? { quoteOwnerId: ownerId } : {}),
-      ...(quoteText ? { quoteText } : {}),
-    };
-  }
-
-  const quoteQuery = db
-    .collectionGroup("quotes")
-    .where(admin.firestore.FieldPath.documentId(), "==", attachment.entityId)
-    .limit(10);
-  const quoteSnap = await transaction.get(quoteQuery);
-  const accessibleQuotes = quoteSnap.docs
-    .map((docSnap) => {
-      const data = (docSnap.data() ?? {}) as Record<string, unknown>;
-      const quoteOwnerId = readTrimmedString(docSnap.ref.parent.parent?.id, 128);
-      const canonicalQuoteId = readTrimmedString(data.canonicalQuoteId, 256);
-      const isPublic = data.isPublic === true;
-      if (!quoteOwnerId) return null;
-      if (!isPublic && quoteOwnerId !== uid) return null;
-      return { data, quoteOwnerId, canonicalQuoteId };
-    })
-    .filter(
-      (
-        entry
-      ): entry is {
-        data: Record<string, unknown>;
-        quoteOwnerId: string;
-        canonicalQuoteId: string;
-      } => entry !== null && Boolean(entry.canonicalQuoteId)
-    );
-
-  if (accessibleQuotes.length === 0) {
+  if (!quoteSnap.exists) {
     throw new HttpsError("not-found", "Referenced quote not found.");
   }
-  if (accessibleQuotes.length > 1) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Referenced quote identity is ambiguous."
-    );
-  }
-
-  const { data, quoteOwnerId, canonicalQuoteId } = accessibleQuotes[0];
+  const data = (quoteSnap.data() ?? {}) as Record<string, unknown>;
+  const quoteOwnerId = readTrimmedString(data.ownerId, 128) || readTrimmedString(data.authorUid, 128);
+  const canonicalQuoteId = readTrimmedString(data.canonicalQuoteId, 256) || attachment.entityId;
   const quoteText =
     readTrimmedString(data.textEn, 600) ||
-    readTrimmedString(data.textAr, 600);
+    readTrimmedString(data.textAr, 600) ||
+    readTrimmedString(data.quoteText, 600);
 
   return {
     type: "quote",

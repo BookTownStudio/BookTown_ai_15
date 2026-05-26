@@ -10,7 +10,16 @@ import { getOrCreateAgentContextSnapshot } from "./intelligence/agentContextBuil
 import { runLibrarianRecommendation } from "./ai/librarian";
 import { enforceSearchRequestQuota } from "./utils/searchRequestQuota";
 import { normalizeSearchText } from "./library/normalization/bookSearchNormalization";
-import type { ExternalReadableSourceDTO, SearchResultDTO } from "./contracts/shared/bookSearch";
+import {
+  readRuntimeHealthProjection,
+  recordOperationalMetric,
+} from "./operations/operationalMetrics";
+import type {
+  ExternalReadableSourceDTO,
+  SearchReaderAuthorityProjectionDTO,
+  SearchReadingProgressProjectionDTO,
+  SearchResultDTO,
+} from "./contracts/shared/bookSearch";
 
 const INTERNAL_BOOK_COVER_PATH_RE = /^books\/[^/]+\/covers\/[^?#]+$/i;
 const DEFAULT_STORAGE_BUCKET = admin.storage().bucket().name;
@@ -393,6 +402,8 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
             Boolean(entry)
         )
     : [];
+  const readerAuthority = toSearchReaderAuthorityProjection(raw?.readerAuthority);
+  const readingProgressProjection = toSearchReadingProgressProjection(raw?.readingProgressProjection);
 
   return {
     id: String(raw?.id || editionId),
@@ -431,6 +442,8 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
     ...(form ? { form } : {}),
     ...(subForm ? { subForm } : {}),
     ...(externalReadableSources.length > 0 ? { externalReadableSources } : {}),
+    readerAuthority,
+    ...(readingProgressProjection ? { readingProgressProjection } : {}),
     rawBook:
       raw?.rawBook && typeof raw.rawBook === "object"
         ? (raw.rawBook as Record<string, unknown>)
@@ -472,6 +485,75 @@ function toExternalReadableSource(
     ...(lendingIdentifier ? { lendingIdentifier } : {}),
     trust,
   };
+}
+
+function toSearchReaderAuthorityProjection(raw: unknown): SearchReaderAuthorityProjectionDTO {
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const attachmentId = String(record.attachmentId || "").trim();
+  const source = String(record.source || "").trim();
+  const updatedAt = String(record.updatedAt || "").trim();
+  return {
+    hasReadableAttachment: record.hasReadableAttachment === true,
+    attachmentId: attachmentId || null,
+    ...(source ? { source } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
+  };
+}
+
+function toSearchReadingProgressProjection(raw: unknown): SearchReadingProgressProjectionDTO | undefined {
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  if (!record) return undefined;
+  const statusRaw = String(record.status_state || "").trim();
+  const statusState =
+    statusRaw === "reading" ||
+    statusRaw === "paused" ||
+    statusRaw === "abandoned" ||
+    statusRaw === "completed" ||
+    statusRaw === "rereading"
+      ? statusRaw
+      : null;
+  const updatedAt = String(record.updatedAt || "").trim();
+  return {
+    exists: record.exists === true,
+    ...(statusState ? { status_state: statusState } : {}),
+    ...(updatedAt ? { updatedAt } : {}),
+  };
+}
+
+async function readSearchProgressProjectionMap(params: {
+  uid: string | null;
+  bookIds: string[];
+}): Promise<Map<string, SearchReadingProgressProjectionDTO>> {
+  const uniqueBookIds = Array.from(
+    new Set(params.bookIds.map((id) => id.trim()).filter(Boolean))
+  ).slice(0, 30);
+  const progressByBookId = new Map<string, SearchReadingProgressProjectionDTO>();
+  if (!params.uid || uniqueBookIds.length === 0) return progressByBookId;
+
+  const db = admin.firestore();
+  const refs = uniqueBookIds.map((bookId) =>
+    db.collection("reading_progress").doc(`${params.uid}_${bookId}`)
+  );
+  const snapshots = await db.getAll(...refs);
+  snapshots.forEach((snap, index) => {
+    if (!snap.exists) return;
+    const data = snap.data() || {};
+    const projection = toSearchReadingProgressProjection({
+      exists: true,
+      status_state: data.status_state,
+      updatedAt: data.updatedAtIso || data.updatedAt || data.lastReadAt,
+    });
+    if (projection) {
+      progressByBookId.set(uniqueBookIds[index], projection);
+    }
+  });
+  return progressByBookId;
 }
 
 function extractInternalBookCoverPath(candidate: string, expectedBucket: string): string {
@@ -554,6 +636,16 @@ apiRouter.get("/health", (_req: any, res: any) => {
   });
 });
 
+apiRouter.get("/health/summary", async (_req: any, res: any) => {
+  const runtimeHealth = await readRuntimeHealthProjection();
+  res.status(200).json({
+    ok: true,
+    service: "booktown-api",
+    runtimeHealth,
+    timestamp: Date.now(),
+  });
+});
+
 /**
  * GET /api/search/books
  * Authoritative Unified Search
@@ -589,6 +681,9 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
           clientIp: resolveClientIp(req),
         }),
       });
+    }
+    if (!searchQuotaUid) {
+      searchQuotaUid = await resolveOptionalAuthenticatedUid(req);
     }
 
     const q = req.query.q as string | undefined;
@@ -666,21 +761,33 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
     const parsedResults = searchResponse.results
       .map((row: any) => toSearchResultDTO(row))
       .filter((row: SearchResultDTO | null): row is SearchResultDTO => row !== null);
+    const progressProjectionByBookId = await readSearchProgressProjectionMap({
+      uid: searchQuotaUid,
+      bookIds: parsedResults
+        .filter((row) => row.resultType === "canonical")
+        .map((row) => row.bookId),
+    });
     const signedCoverByBookId = new Map<string, string>();
     const results = await Promise.all(
       parsedResults.map(async (row) => {
+        const rowWithProgress = progressProjectionByBookId.has(row.bookId)
+          ? {
+              ...row,
+              readingProgressProjection: progressProjectionByBookId.get(row.bookId),
+            }
+          : row;
         const internalCoverPath = extractInternalBookCoverPath(
-          row.coverUrl,
+          rowWithProgress.coverUrl,
           DEFAULT_STORAGE_BUCKET
         );
         if (!internalCoverPath) {
-          return row;
+          return rowWithProgress;
         }
 
-        const coverKey = row.bookId || internalCoverPath;
+        const coverKey = rowWithProgress.bookId || internalCoverPath;
         if (signedCoverByBookId.has(coverKey)) {
           return {
-            ...row,
+            ...rowWithProgress,
             coverUrl: signedCoverByBookId.get(coverKey) || "",
           };
         }
@@ -693,17 +800,17 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
           });
           signedCoverByBookId.set(coverKey, signedCoverUrl);
           return {
-            ...row,
+            ...rowWithProgress,
             coverUrl: signedCoverUrl,
           };
         } catch (error) {
           console.warn("[API][SEARCH][COVER_SIGN_FAILED]", {
-            bookId: row.bookId,
+            bookId: rowWithProgress.bookId,
             path: internalCoverPath,
             error: String(error),
           });
           return {
-            ...row,
+            ...rowWithProgress,
             coverUrl: "",
           };
         }
@@ -753,6 +860,15 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
         topCoverageScores,
         lowConfidenceTopThree: Boolean(telemetry?.lowConfidenceTopThree),
               });
+      await recordOperationalMetric({
+        name: "search_latency",
+        value: latencyMs,
+        unit: "ms",
+        dimensions: {
+          resultCount: sanitizedResults.length,
+          externalFallbackTriggered: Boolean(telemetry?.externalFallbackTriggered),
+        },
+      });
     });
 
     logger.info("BOOK_SEARCH_V2_API", {
@@ -781,6 +897,12 @@ apiRouter.get("/search/books", async (req: any, res: any) => {
       cursorUsed: searchResponse.cursorUsed,
     });
   } catch (error) {
+    await recordOperationalMetric({
+      name: "callable_error_rate",
+      value: 1,
+      unit: "count",
+      dimensions: { route: "search_books" },
+    });
     logger.error("[BOOK_SEARCH][FAILED_FULL]", {
       error,
       message: error instanceof Error ? error.message : String(error),

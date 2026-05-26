@@ -152,6 +152,29 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
           ): entry is ExternalReadableSourceDTO => entry !== null
         )
     : [];
+  const readerAuthorityRecord =
+    record.readerAuthority && typeof record.readerAuthority === 'object' && !Array.isArray(record.readerAuthority)
+      ? (record.readerAuthority as Record<string, unknown>)
+      : {};
+  const readerAuthorityAttachmentId = asString(readerAuthorityRecord.attachmentId);
+  const readerAuthoritySource = asString(readerAuthorityRecord.source);
+  const readerAuthorityUpdatedAt = asString(readerAuthorityRecord.updatedAt);
+  const progressRecord =
+    record.readingProgressProjection &&
+    typeof record.readingProgressProjection === 'object' &&
+    !Array.isArray(record.readingProgressProjection)
+      ? (record.readingProgressProjection as Record<string, unknown>)
+      : null;
+  const progressStatusRaw = progressRecord ? asString(progressRecord.status_state) : '';
+  const progressStatus =
+    progressStatusRaw === 'reading' ||
+    progressStatusRaw === 'paused' ||
+    progressStatusRaw === 'abandoned' ||
+    progressStatusRaw === 'completed' ||
+    progressStatusRaw === 'rereading'
+      ? progressStatusRaw
+      : null;
+  const progressUpdatedAt = progressRecord ? asString(progressRecord.updatedAt) : '';
 
   return {
     id,
@@ -193,6 +216,21 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     ...(asString(record.canonicalKey) ? { canonicalKey: asString(record.canonicalKey) } : {}),
     ...(externalReadableSources.length > 0
       ? { externalReadableSources }
+      : {}),
+    readerAuthority: {
+      hasReadableAttachment: readerAuthorityRecord.hasReadableAttachment === true,
+      attachmentId: readerAuthorityAttachmentId || null,
+      ...(readerAuthoritySource ? { source: readerAuthoritySource } : {}),
+      ...(readerAuthorityUpdatedAt ? { updatedAt: readerAuthorityUpdatedAt } : {}),
+    },
+    ...(progressRecord
+      ? {
+          readingProgressProjection: {
+            exists: progressRecord.exists === true,
+            ...(progressStatus ? { status_state: progressStatus } : {}),
+            ...(progressUpdatedAt ? { updatedAt: progressUpdatedAt } : {}),
+          },
+        }
       : {}),
     rawBook:
       record.rawBook && typeof record.rawBook === 'object'

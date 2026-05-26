@@ -80,6 +80,10 @@ export {
   getRecentSystemEvents,
   getSystemHealthSnapshot,
 } from "../control/systemEventsAdmin";
+export {
+  getOperationalDashboard,
+  getRuntimeHealthSummary,
+} from "../control/operationalDashboard";
 export { purgeDeletedUsers } from "../control/purgeDeletedUsers";
 export { exportDailyAnalyticsSnapshot } from "../analytics/dailyExport";
 export {

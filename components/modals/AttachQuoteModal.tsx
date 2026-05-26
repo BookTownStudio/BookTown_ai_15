@@ -8,6 +8,7 @@ import { useSearchUserQuotes } from '../../lib/hooks/useSearchUserQuotes.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { Quote } from '../../types/entities.ts';
 import { QuoteIcon } from '../icons/QuoteIcon.tsx';
+import { QuoteCardDataAdapter } from '../content/QuoteCardDataAdapter.ts';
 
 interface AttachQuoteModalProps {
     isOpen: boolean;
@@ -50,23 +51,26 @@ const AttachQuoteModal: React.FC<AttachQuoteModalProps> = ({ isOpen, onClose, on
                     {isLoading && <div className="flex justify-center pt-8"><LoadingSpinner /></div>}
                     
                     {!isLoading && quotes && quotes.length > 0 ? (
-                        quotes.map(quote => (
+                        quotes.map(quote => {
+                            const card = QuoteCardDataAdapter.fromQuote(quote);
+                            return (
                             <button
-                                key={quote.id}
+                                key={card.id}
                                 onClick={() => handleSelectQuote(quote)}
                                 className="w-full p-4 rounded-lg text-left hover:bg-black/5 dark:hover:bg-white/5 transition-colors border border-black/5 dark:border-white/5 group"
                             >
                                 <div className="flex items-start gap-3">
                                     <QuoteIcon className="h-5 w-5 text-accent flex-shrink-0 mt-1" />
                                     <div>
-                                        <BilingualText role="Body" className="italic line-clamp-3">"{lang === 'en' ? quote.textEn : quote.textAr}"</BilingualText>
+                                        <BilingualText role="Body" className="italic line-clamp-3">"{lang === 'en' ? card.textEn : card.textAr}"</BilingualText>
                                         <BilingualText role="Caption" className="mt-1 text-slate-500 dark:text-white/60">
-                                            — {lang === 'en' ? quote.sourceEn : quote.sourceAr}
+                                            — {lang === 'en' ? card.sourceEn : card.sourceAr}
                                         </BilingualText>
                                     </div>
                                 </div>
                             </button>
-                        ))
+                            );
+                        })
                     ) : (
                         !isLoading && (
                             <BilingualText className="text-center pt-8 text-slate-500">

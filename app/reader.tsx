@@ -205,8 +205,13 @@ const ReaderScreen: React.FC = () => {
     isLoading: loadingSession,
     error: sessionError,
   } = useReaderSessionBootstrap(bookId);
-  const { bookmarks, refetch: refetchBookmarks } = useReaderBookmarks(bookId);
-  const { highlights, refetch: refetchHighlights } = useReaderHighlights(bookId);
+  const shouldLoadReaderArtifacts = Boolean(readerSession && readerManifest);
+  const { bookmarks, refetch: refetchBookmarks } = useReaderBookmarks(bookId, {
+    enabled: shouldLoadReaderArtifacts,
+  });
+  const { highlights, refetch: refetchHighlights } = useReaderHighlights(bookId, {
+    enabled: shouldLoadReaderArtifacts,
+  });
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [renderError, setRenderError] = useState<string | null>(null);

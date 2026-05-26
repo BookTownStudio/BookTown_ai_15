@@ -22,6 +22,7 @@ import { addBookToShelf as addBookToShelfRaw } from "../shelves/addBookToShelf";
 import { removeBookFromShelf as removeBookFromShelfRaw } from "../shelves/removeBookFromShelf";
 import { moveBookBetweenShelves as moveBookBetweenShelvesRaw } from "../shelves/moveBookBetweenShelves";
 import { listShelfEntries as listShelfEntriesRaw } from "../shelves/listShelfEntries";
+import { getBookShelfMembership as getBookShelfMembershipRaw } from "../shelves/getBookShelfMembership";
 import {
   listUserShelves as listUserShelvesRaw,
   getShelf as getShelfRaw,
@@ -52,6 +53,7 @@ export const addBookToShelf = wrapCallableV2("addBookToShelf", addBookToShelfRaw
 export const removeBookFromShelf = wrapCallableV2("removeBookFromShelf", removeBookFromShelfRaw);
 export const moveBookBetweenShelves = wrapCallableV2("moveBookBetweenShelves", moveBookBetweenShelvesRaw);
 export const listShelfEntries = wrapCallableV2("listShelfEntries", listShelfEntriesRaw);
+export const getBookShelfMembership = wrapCallableV2("getBookShelfMembership", getBookShelfMembershipRaw);
 export const listUserShelves = wrapCallableV2("listUserShelves", listUserShelvesRaw);
 export const getShelf = wrapCallableV2("getShelf", getShelfRaw);
 export const createShelf = wrapCallableV2("createShelf", createShelfRaw);

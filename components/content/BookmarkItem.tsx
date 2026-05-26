@@ -10,6 +10,7 @@ import { useBookmarkToggle } from '../../lib/hooks/useBookmarkToggle.ts';
 import { useQuery } from '../../lib/react-query.ts';
 import { queryKeys } from '../../lib/queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
+import { QuoteCardDataAdapter } from './QuoteCardDataAdapter.ts';
 
 // Data hooks
 import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
@@ -60,11 +61,12 @@ interface QuoteItemProps extends ItemProps {
 const QuoteItem: React.FC<QuoteItemProps> = ({ lang, quote, isLoading }) => {
     if (isLoading) return <LoadingCard />;
     if (!quote) return null;
+    const card = QuoteCardDataAdapter.fromQuote(quote);
 
     return (
         <div className="flex-grow overflow-hidden">
-            <BilingualText role="Quote" className="!text-base line-clamp-2">"{lang === 'en' ? quote.textEn : quote.textAr}"</BilingualText>
-            <BilingualText role="Caption" className="mt-2 text-right truncate">— {lang === 'en' ? quote.sourceEn : quote.sourceAr}</BilingualText>
+            <BilingualText role="Quote" className="!text-base line-clamp-2">"{lang === 'en' ? card.textEn : card.textAr}"</BilingualText>
+            <BilingualText role="Caption" className="mt-2 text-right truncate">— {lang === 'en' ? card.sourceEn : card.sourceAr}</BilingualText>
         </div>
     );
 };

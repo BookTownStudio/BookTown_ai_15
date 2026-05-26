@@ -10,6 +10,7 @@ import { useUserShelves } from './useUserShelves.ts';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { buildLegacyBookView } from '../books/buildLegacyBookView.ts';
 import { isCurrentlyReadingShelf } from '../shelves/systemShelves.ts';
+import { bookShelfMembershipQueryKey } from './useBookShelfStatus.ts';
 
 import {
   addBookToShelf,
@@ -180,6 +181,10 @@ export const useToggleBookOnShelf = () => {
       queryClient.invalidateQueries({
         queryKey: queryKeys.user.shelfEntries(uid, vars.shelfId) as unknown as any[]
       });
+
+      queryClient.invalidateQueries({
+        queryKey: bookShelfMembershipQueryKey(uid, vars.bookId)
+      });
     }
   });
 };
@@ -301,6 +306,10 @@ export const useRemoveBookFromShelf = () => {
 
       queryClient.invalidateQueries({
         queryKey: queryKeys.user.shelfEntries(uid, vars.shelfId) as unknown as any[]
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: bookShelfMembershipQueryKey(uid, vars.bookId)
       });
     }
   });

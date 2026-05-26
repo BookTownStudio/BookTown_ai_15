@@ -3,7 +3,7 @@ import React, { useCallback, useRef, useMemo, useState } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
-import { useInfiniteNotifications, useMarkAllAsRead, useUnreadNotificationsCount } from '../../lib/hooks/useNotifications.ts';
+import { useInfiniteNotifications, useMarkAllAsRead, useNotificationSummary } from '../../lib/hooks/useNotifications.ts';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import BilingualText from '../../components/ui/BilingualText.tsx';
 import NotificationCard from '../../components/content/NotificationCard.tsx';
@@ -135,7 +135,7 @@ const NotificationsFeedScreen: React.FC = () => {
     } = useInfiniteNotifications();
     
     const { mutate: markAllAsRead, isPending: isMarking } = useMarkAllAsRead();
-    const { data: unreadCount } = useUnreadNotificationsCount();
+    const { data: notificationSummary } = useNotificationSummary();
 
     const handleBack = () => navigate(currentView.params?.from || { type: 'tab', id: 'home' });
 
@@ -231,7 +231,7 @@ const NotificationsFeedScreen: React.FC = () => {
         );
     };
 
-    const hasUnread = (unreadCount || 0) > 0;
+    const hasUnread = (notificationSummary?.unreadCount || 0) > 0;
 
     return (
         <div className="h-[100dvh] flex flex-col bg-gray-50 dark:bg-slate-900 overflow-hidden">

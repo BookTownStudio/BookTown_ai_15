@@ -89,3 +89,75 @@ if (violations.length > 0) {
 }
 
 console.log('[production-truth] Runtime fixture import boundary passed.');
+
+const authorityValidatorPath = path.join(
+  ROOT,
+  'functions/src/authority/authorityWriteValidator.ts'
+);
+const authorityValidator = readFileSync(authorityValidatorPath, 'utf8');
+const requiredAuthorityTokens = [
+  'PROTECTED_AUTHORITY_FIELDS',
+  'AUTHORITY_WRITERS',
+  'validateAuthorityMutation',
+  'book_identity',
+  'edition_identity',
+  'attachment_ownership',
+  'review_ownership',
+  'quote_ownership',
+  'shelf_membership',
+  'reader_continuity',
+  'throw new HttpsError("permission-denied"',
+  'throw new HttpsError("invalid-argument"',
+];
+
+const missingAuthorityTokens = requiredAuthorityTokens.filter(
+  (token) => !authorityValidator.includes(token)
+);
+
+if (missingAuthorityTokens.length > 0) {
+  console.error('[production-truth] Authority write validator is incomplete:');
+  for (const token of missingAuthorityTokens) {
+    console.error(` - missing ${token}`);
+  }
+  process.exit(1);
+}
+
+console.log('[production-truth] Authority write validator boundary passed.');
+
+const operationalMetricsPath = path.join(
+  ROOT,
+  'functions/src/operations/operationalMetrics.ts'
+);
+const operationalMetricsSource = readFileSync(operationalMetricsPath, 'utf8');
+const requiredOperationalTokens = [
+  'operational_metrics',
+  'runtime_health_projection',
+  'beta_observability_summary',
+  'reader_bootstrap_duration',
+  'search_latency',
+  'home_console_latency',
+  'reader_startup_failure',
+  'signed_url_failure',
+  'continuity_migration_success',
+  'continuity_migration_failure',
+  'review_aggregate_retry',
+  'quote_projection_failure',
+  'notification_projection_failure',
+  'shelf_membership_query_latency',
+  'callable_error_rate',
+  'firestore_read_amplification',
+  'cache_hit_ratio',
+];
+const missingOperationalTokens = requiredOperationalTokens.filter(
+  (token) => !operationalMetricsSource.includes(token)
+);
+
+if (missingOperationalTokens.length > 0) {
+  console.error('[production-truth] Operational telemetry projection contract is incomplete:');
+  for (const token of missingOperationalTokens) {
+    console.error(` - missing ${token}`);
+  }
+  process.exit(1);
+}
+
+console.log('[production-truth] Operational telemetry projection boundary passed.');

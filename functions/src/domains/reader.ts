@@ -7,7 +7,10 @@ import { getReaderProgress as getReaderProgressRaw } from "../reader/getReaderPr
 import { getReaderBookmarks as getReaderBookmarksRaw } from "../reader/getReaderBookmarks";
 import { getReaderHighlights as getReaderHighlightsRaw } from "../reader/getReaderHighlights";
 import { getReaderInsights as getReaderInsightsRaw } from "../reader/getReaderInsights";
-import { getOrCreateReadingSession as getOrCreateReadingSessionRaw } from "../reader/getOrCreateReadingSession";
+import {
+  getOrCreateReadingSession as getOrCreateReadingSessionRaw,
+  getReaderBootstrap as getReaderBootstrapRaw,
+} from "../reader/getOrCreateReadingSession";
 import { updateReadingSessionNarration as updateReadingSessionNarrationRaw } from "../reader/updateReadingSessionNarration";
 import { requestEbookOfflineAccess as requestEbookOfflineAccessRaw } from "../reader/requestEbookOfflineAccess";
 import { getReaderManifest as getReaderManifestRaw } from "../reader/getReaderManifest";
@@ -23,6 +26,7 @@ export const getReaderBookmarks = wrapCallableV2("getReaderBookmarks", getReader
 export const getReaderHighlights = wrapCallableV2("getReaderHighlights", getReaderHighlightsRaw);
 export const getReaderInsights = wrapCallableV2("getReaderInsights", getReaderInsightsRaw);
 export const getOrCreateReadingSession = wrapCallableV2("getOrCreateReadingSession", getOrCreateReadingSessionRaw);
+export const getReaderBootstrap = wrapCallableV2("getReaderBootstrap", getReaderBootstrapRaw);
 export const updateReadingSessionNarration = wrapCallableV2("updateReadingSessionNarration", updateReadingSessionNarrationRaw);
 export const getReaderManifest = wrapCallableV2("getReaderManifest", getReaderManifestRaw);
 export const syncReaderOperations = wrapCallableV2("syncReaderOperations", syncReaderOperationsRaw);

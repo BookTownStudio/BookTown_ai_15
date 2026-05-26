@@ -20,12 +20,15 @@ interface ReaderHighlightsResponse {
   highlights: ReaderHighlight[];
 }
 
-export function useReaderHighlights(bookId?: string) {
+export function useReaderHighlights(
+  bookId?: string,
+  options: { enabled?: boolean } = {}
+) {
   const { user } = useAuth();
 
   const query = useQuery({
     queryKey: ['readerHighlights', user?.uid || 'anon', bookId || 'none'],
-    enabled: Boolean(user?.uid && bookId),
+    enabled: (options.enabled ?? true) && Boolean(user?.uid && bookId),
     staleTime: 1000 * 30,
     gcTime: 1000 * 60 * 10,
     queryFn: async (): Promise<ReaderHighlight[]> => {

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyPublicRatingCounterDelta,
   applyPublicReviewCounterDelta,
+  buildReviewAggregateOperationId,
 } from "./aggregationTriggers";
 
 describe("aggregationTriggers public review counters", () => {
@@ -82,5 +83,38 @@ describe("aggregationTriggers public rating counters", () => {
       ratingSum: 11,
       averageRating: 3.6667,
     });
+  });
+});
+
+describe("aggregationTriggers review aggregate operation id", () => {
+  it("uses the Firestore event id as the retry-safe operation id", () => {
+    expect(
+      buildReviewAggregateOperationId({
+        eventId: "event-123",
+        reviewId: "user-1_book-1",
+        bookId: "book-1",
+        beforeExists: false,
+        afterExists: true,
+        beforeActive: false,
+        afterActive: true,
+        beforeRating: 0,
+        afterRating: 5,
+      })
+    ).toBe("review_aggregate:event-123");
+  });
+
+  it("falls back to a deterministic mutation fingerprint when event id is absent", () => {
+    const input = {
+      reviewId: "user-1_book-1",
+      bookId: "book-1",
+      beforeExists: true,
+      afterExists: true,
+      beforeActive: true,
+      afterActive: true,
+      beforeRating: 3,
+      afterRating: 4,
+    };
+
+    expect(buildReviewAggregateOperationId(input)).toBe(buildReviewAggregateOperationId(input));
   });
 });

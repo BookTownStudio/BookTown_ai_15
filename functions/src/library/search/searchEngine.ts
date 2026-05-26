@@ -185,6 +185,12 @@ export interface UnifiedSearchResult {
   form?: string;
   subForm?: string;
   externalReadableSources?: ExternalReadableSourceRecord[];
+  readerAuthority?: {
+    hasReadableAttachment: boolean;
+    attachmentId?: string | null;
+    source?: string | null;
+    updatedAt?: string | null;
+  };
   isbn13?: string;
   isbn10?: string;
   canonicalKey?: string;
@@ -2207,6 +2213,19 @@ function mapCanonicalBook(
   const seriesName = asNonEmptyString(data.seriesName);
   const seriesPosition = asNumber(data.seriesPosition);
   const publishedYear = asNumber(data.publishedYear);
+  const readerAuthorityRaw = asRecord(data.readerAuthority);
+  const readerAuthorityAttachmentId = asNonEmptyString(readerAuthorityRaw?.attachmentId);
+  const readerAuthoritySource = asNonEmptyString(readerAuthorityRaw?.source);
+  const readerAuthorityUpdatedAt = asNonEmptyString(readerAuthorityRaw?.updatedAt);
+  const readerAuthority =
+    readerAuthorityRaw?.hasReadableAttachment === true && readerAuthorityAttachmentId
+      ? {
+          hasReadableAttachment: true,
+          attachmentId: readerAuthorityAttachmentId,
+          ...(readerAuthoritySource ? { source: readerAuthoritySource } : {}),
+          ...(readerAuthorityUpdatedAt ? { updatedAt: readerAuthorityUpdatedAt } : {}),
+        }
+      : { hasReadableAttachment: false };
 
   return {
     id: docId,
@@ -2239,6 +2258,7 @@ function mapCanonicalBook(
     hasEbook: ownedReadSignals.hasEbook,
     downloadable: ownedReadSignals.downloadable,
     isEbookAvailable: ownedReadSignals.isEbookAvailable,
+    readerAuthority,
     confidence: rank.confidence,
     rank: rank.rankTier,
     ...readSearchOntologyMetadata(data),
@@ -3074,6 +3094,7 @@ function mapExternalCandidateToRanked(
     hasEbook: false,
     downloadable: false,
     isEbookAvailable: false,
+    readerAuthority: { hasReadableAttachment: false },
     ...(candidate.externalReadableSources
       ? { externalReadableSources: candidate.externalReadableSources }
       : {}),

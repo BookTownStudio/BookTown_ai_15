@@ -2490,6 +2490,50 @@ export const apiContracts = {
       }
     ),
 
+    getBookShelfMembership: defineContract(
+      z
+        .object({
+          uid: z.string().min(1),
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          uid: z.string().min(1),
+          bookId: z.string().min(1),
+          source: z.literal("shelf_books"),
+          membershipAuthority: z.literal("shelf_books"),
+          isOnAnyShelf: z.boolean(),
+          shelfIds: z.array(z.string().min(1)).max(50),
+          shelfNames: z.array(z.string()).max(50),
+          shelves: z
+            .array(
+              z
+                .object({
+                  shelfId: z.string().min(1),
+                  shelfName: z.string(),
+                })
+                .strict()
+            )
+            .max(50),
+          hasMore: z.boolean(),
+          readingState: z
+            .object({
+              exists: z.boolean(),
+              status_state: z
+                .enum(["reading", "paused", "abandoned", "completed", "rereading"])
+                .nullable(),
+              updatedAt: z.string().nullable(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useBookShelfStatus.ts"],
+      }
+    ),
+
     adminMergeCanonicalBooks: defineContract(
       z
         .object({
@@ -3261,6 +3305,7 @@ export const apiContracts = {
           bookId: z.string().min(1),
           rating: z.number().int().min(1).max(5),
           text: z.string().min(1).max(2000),
+          reviewTags: z.array(z.string().min(1).max(48)).max(12).optional(),
           visibility: reviewVisibilitySchema.optional(),
           recommendationContext: recommendationOriginSchema.optional(),
         })
@@ -4147,6 +4192,57 @@ export const apiContracts = {
       }
     ),
 
+    getReaderBootstrap: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          signedUrl: z.string().url(),
+          resumePage: z.number().int().nonnegative(),
+          format: z.enum(["pdf", "epub", "unknown"]),
+          lastPosition: readerLastPositionSchema.nullable().optional(),
+          resumeAnchor: canonicalAnchorV1Schema.nullable().optional(),
+          continuity: z
+            .object({
+              mode: z.enum(["anchor", "approximate_position", "start"]),
+              approximate: z.boolean(),
+              manifestVersion: z.number().int().positive(),
+              anchorSource: z
+                .enum(["reading_progress", "reading_sessions"])
+                .nullable()
+                .optional(),
+              compatibilityStatus: readerContinuityCompatibilityStatusSchema.optional(),
+              sourceSignatureHash: z.string().min(1).optional(),
+              attachmentId: z.string().min(1).nullable().optional(),
+              sourceType: z.string().min(1).optional(),
+              continuityMigrationSuccess: z.number().int().nonnegative().optional(),
+              continuityMigrationFailure: z.number().int().nonnegative().optional(),
+              approximateResumeCount: z.number().int().nonnegative().optional(),
+              staleAnchorRejectedCount: z.number().int().nonnegative().optional(),
+            })
+            .strict()
+            .optional(),
+          narration: readerNarrationSessionStateSchema.nullable().optional(),
+          manifest: z.record(z.string(), z.unknown()),
+          bootstrap: z
+            .object({
+              schemaVersion: z.literal(1),
+              artifactsLazyLoaded: z.boolean(),
+              bookmarkCompatibilitySummary: z.record(z.string(), z.unknown()).optional(),
+              highlightCompatibilitySummary: z.record(z.string(), z.unknown()).optional(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useReaderSessionBootstrap.ts"],
+      }
+    ),
+
     getReaderManifest: defineContract(
       z
         .object({
@@ -4640,6 +4736,21 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/firebaseDbService.ts", "lib/hooks/useFollowShelf.ts"],
+      }
+    ),
+
+    getNotificationSummary: defineContract(
+      z.object({}).strict(),
+      z
+        .object({
+          unreadCount: z.number().int().min(0),
+          latestNotificationAt: z.string().nullable(),
+          lastReadAt: z.string().nullable(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useNotifications.ts"],
       }
     ),
 

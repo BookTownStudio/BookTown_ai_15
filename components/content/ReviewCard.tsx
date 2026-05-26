@@ -1,6 +1,7 @@
 // components/content/ReviewCard.tsx
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Review } from '../../types/entities.ts';
+import { ReviewCardDataAdapter } from './ReviewCardDataAdapter.ts';
 
 import { useI18n } from '../../store/i18n.tsx';
 import { useAuth } from '../../lib/auth.tsx';
@@ -24,13 +25,14 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
   showBookContext = false,
   onOpenBook,
 }) => {
+  const card = useMemo(() => ReviewCardDataAdapter.fromReview(review), [review]);
   const { lang, isRTL } = useI18n();
   const { user } = useAuth();
   const [isActionsOpen, setIsActionsOpen] = useState(false);
   const [isBookCoverFailed, setIsBookCoverFailed] = useState(false);
   const actionsMenuRef = useRef<HTMLDivElement | null>(null);
 
-  const isOwner = Boolean(user?.uid && user.uid === review.userId);
+  const isOwner = Boolean(user?.uid && user.uid === card.userId);
   const deleteReview = useDeleteReview();
 
   /**
@@ -38,24 +40,24 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
    * Calculated before render to prevent flickering/overlap.
    */
   const displayName = useMemo(() => {
-    return review.authorName || (lang === 'en' ? 'Anonymous' : 'مستخدم');
-  }, [review.authorName, lang]);
+    return card.authorName || (lang === 'en' ? 'Anonymous' : 'مستخدم');
+  }, [card.authorName, lang]);
 
   const displayHandle = useMemo(() => {
-    if (!review.authorHandle || review.authorHandle === review.authorName) return null;
-    return `@${review.authorHandle.replace('@', '')}`;
-  }, [review.authorHandle, review.authorName]);
+    if (!card.authorHandle || card.authorHandle === card.authorName) return null;
+    return `@${card.authorHandle.replace('@', '')}`;
+  }, [card.authorHandle, card.authorName]);
 
-  const authorAvatar = review.authorAvatar || '/avatar.png';
+  const authorAvatar = card.authorAvatar || '/avatar.png';
   const bookTitle =
     lang === 'ar'
-      ? (review.bookTitleAr || review.bookTitleEn || 'كتاب غير معروف')
-      : (review.bookTitleEn || review.bookTitleAr || 'Unknown book');
+      ? (card.bookTitleAr || card.bookTitleEn || 'كتاب غير معروف')
+      : (card.bookTitleEn || card.bookTitleAr || 'Unknown book');
   const bookAuthor =
     lang === 'ar'
-      ? (review.bookAuthorAr || review.bookAuthorEn || '')
-      : (review.bookAuthorEn || review.bookAuthorAr || '');
-  const bookCover = review.bookCoverThumbUrl || review.bookCoverUrl || '';
+      ? (card.bookAuthorAr || card.bookAuthorEn || '')
+      : (card.bookAuthorEn || card.bookAuthorAr || '');
+  const bookCover = card.bookCoverThumbUrl || card.bookCoverUrl || '';
 
   useEffect(() => {
     setIsBookCoverFailed(false);
@@ -76,18 +78,18 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
   }, [isActionsOpen]);
 
   const openBook = () => {
-    if (!onOpenBook || !review.bookId) return;
+    if (!onOpenBook || !card.bookId) return;
     onOpenBook(review);
   };
 
   const handleDelete = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!review.bookId || deleteReview.isPending) return;
+    if (!card.bookId || deleteReview.isPending) return;
     const confirmed = window.confirm(
       lang === 'en' ? 'Delete this review?' : 'هل تريد حذف هذه المراجعة؟'
     );
     if (!confirmed) return;
-    await deleteReview.mutateAsync({ bookId: review.bookId });
+    await deleteReview.mutateAsync({ bookId: card.bookId });
     setIsActionsOpen(false);
   };
 
@@ -106,13 +108,13 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
     <div
       className={cn(
         "py-4 border-b border-white/10 last:border-b-0 animate-fade-in group",
-        onOpenBook && review.bookId ? "cursor-pointer" : ""
+        onOpenBook && card.bookId ? "cursor-pointer" : ""
       )}
-      role={onOpenBook && review.bookId ? "button" : undefined}
-      tabIndex={onOpenBook && review.bookId ? 0 : undefined}
+      role={onOpenBook && card.bookId ? "button" : undefined}
+      tabIndex={onOpenBook && card.bookId ? 0 : undefined}
       onClick={openBook}
       onKeyDown={(e) => {
-        if (!onOpenBook || !review.bookId) return;
+        if (!onOpenBook || !card.bookId) return;
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
           openBook();
@@ -183,7 +185,7 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
 	                  key={i}
 	                  className={cn(
 	                    'h-3.5 w-3.5',
-	                    i < review.rating ? 'text-yellow-400' : 'text-white/10'
+	                    i < card.rating ? 'text-yellow-400' : 'text-white/10'
 	                  )}
 	                />
 	              ))}
@@ -237,9 +239,9 @@ const ReviewCard: React.FC<ReviewCardProps> = ({
 
         {/* Text */}
         <div className={cn("w-full px-1", isRTL && "text-right")}>
-          {review.text && (
+          {card.text && (
             <p className="mt-1 text-[15px] text-white/80 leading-relaxed font-serif break-words">
-              {review.text}
+              {card.text}
             </p>
           )}
 

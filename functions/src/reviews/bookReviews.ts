@@ -2,9 +2,10 @@ import { HttpsError, onCall } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import {
-  resolveAuthoritativeRecommendationOrigin,
-  sanitizeRecommendationOrigin,
-} from "../attribution/recommendationOrigin";
+  BOOK_REVIEW_PROJECTION_COLLECTION,
+  bookReviewProjectionId,
+  canonicalReviewId,
+} from "../projections/reviewProjections";
 
 const db = admin.firestore();
 
@@ -16,11 +17,12 @@ const MAX_CURSOR_LENGTH = 96;
 const MAX_BOOK_REVIEW_LIMIT = 50;
 const DEFAULT_BOOK_REVIEW_LIMIT = 20;
 const REVIEW_QUERY_INDEX_HINT =
-  "books/*/reviews(visibility,updatedAtIso) and user_reviews(uid,domain,visibility,updatedAtIso)";
+  "book_review_projection(bookId,visibility,updatedAtIso)";
 const BOOK_REVIEW_QUERY_SHAPE =
-  "books/{bookId}/reviews.where(visibility==public).orderBy(updatedAtIso desc).limit(limit+1)";
+  "book_review_projection.where(bookId==bookId,visibility==public).orderBy(updatedAtIso desc).limit(limit+1)";
 
 type BookReviewVisibility = "public" | "private";
+type BookReviewStatus = "active" | "deleted";
 
 type ReviewBookSnapshot = {
   bookTitleEn: string;
@@ -124,6 +126,20 @@ function sanitizeVisibility(value: unknown): BookReviewVisibility {
   return value === "private" ? "private" : "public";
 }
 
+function sanitizeReviewTags(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const output: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const normalized = entry.trim().slice(0, 48);
+    if (normalized && !output.includes(normalized)) {
+      output.push(normalized);
+    }
+    if (output.length >= 12) break;
+  }
+  return output;
+}
+
 function sanitizeString(value: unknown, maxLen: number): string {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLen);
@@ -186,22 +202,6 @@ function hasBookSnapshot(snapshot: ReviewBookSnapshot): boolean {
   );
 }
 
-async function resolveBookSnapshot(bookId: string): Promise<ReviewBookSnapshot> {
-  const bookSnap = await db.collection("books").doc(bookId).get();
-  if (!bookSnap.exists) {
-    return {
-      bookTitleEn: "",
-      bookTitleAr: "",
-      bookAuthorEn: "",
-      bookAuthorAr: "",
-      bookCoverThumbUrl: "",
-      bookCoverUrl: "",
-    };
-  }
-
-  return normalizeBookSnapshotFromSource(bookSnap.data() || {});
-}
-
 function normalizeReviewItem(
   docId: string,
   source: Record<string, unknown>,
@@ -216,7 +216,7 @@ function normalizeReviewItem(
     ...bookSnapshot,
     userId: sanitizeString(source.userId, MAX_UID_LENGTH),
     rating: normalizeStoredRating(source.rating),
-    text: sanitizeString(source.text, MAX_REVIEW_TEXT_LENGTH),
+    text: sanitizeString(source.reviewText ?? source.text, MAX_REVIEW_TEXT_LENGTH),
     authorName: sanitizeString(source.authorName, 120),
     authorHandle: sanitizeString(source.authorHandle, 120),
     authorAvatar: normalizeUrl(source.authorAvatar),
@@ -231,35 +231,6 @@ function normalizeReviewItem(
   };
 }
 
-async function resolveAuthorIdentity(uid: string): Promise<{
-  authorName: string;
-  authorHandle: string;
-  authorAvatar: string;
-}> {
-  const publicSnap = await db.collection("public_profiles").doc(uid).get();
-  if (publicSnap.exists) {
-    const data = publicSnap.data() || {};
-    const name = sanitizeString(data.name, 120) || "Anonymous";
-    const handle = sanitizeString(data.handle, 120).replace(/^@/, "");
-    return {
-      authorName: name,
-      authorHandle: handle || uid.slice(0, 12),
-      authorAvatar: normalizeUrl(data.avatarUrl),
-    };
-  }
-
-  const userSnap = await db.collection("users").doc(uid).get();
-  const data = userSnap.exists ? userSnap.data() || {} : {};
-  const name =
-    sanitizeString(data.name, 120) || sanitizeString(data.displayName, 120) || "Anonymous";
-  const handle = sanitizeString(data.handle, 120).replace(/^@/, "");
-  return {
-    authorName: name,
-    authorHandle: handle || uid.slice(0, 12),
-    authorAvatar: normalizeUrl(data.avatarUrl),
-  };
-}
-
 export const upsertBookReview = onCall({ cors: true }, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
@@ -269,114 +240,34 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
   const bookId = ensureBookId(request.data?.bookId);
   const rating = sanitizeRating(request.data?.rating);
   const text = sanitizeText(request.data?.text);
+  const reviewTags = sanitizeReviewTags(request.data?.reviewTags);
   const visibility = sanitizeVisibility(request.data?.visibility);
-  const recommendationOriginInput = sanitizeRecommendationOrigin(
-    request.data?.recommendationContext
-  );
   const nowIso = new Date().toISOString();
 
-  const { authorName, authorHandle, authorAvatar } = await resolveAuthorIdentity(uid);
-  const bookSnapshot = await resolveBookSnapshot(bookId);
-  const reviewRef = db.collection("books").doc(bookId).collection("reviews").doc(uid);
-  const ratingRef = db.collection("books").doc(bookId).collection("ratings").doc(uid);
-  const projectionRef = db.collection("user_reviews").doc(`${uid}_${bookId}`);
+  const reviewRef = db.collection("reviews").doc(canonicalReviewId(uid, bookId));
 
   const created = await db.runTransaction(async (tx) => {
     const existingSnap = await tx.get(reviewRef);
-    const existingRatingSnap = await tx.get(ratingRef);
     const existingData = existingSnap.exists ? existingSnap.data() || {} : {};
-    const existingRecommendationOrigin = sanitizeRecommendationOrigin(
-      existingData.recommendationOrigin
-    );
-    const recommendationOrigin =
-      existingRecommendationOrigin ||
-      (recommendationOriginInput
-        ? await resolveAuthoritativeRecommendationOrigin({
-          uid,
-          bookId,
-          input: recommendationOriginInput,
-          tx,
-        })
-        : null);
     const createdAt = existingSnap.exists
       ? existingSnap.data()?.createdAt ?? existingSnap.data()?.createdAtIso ?? nowIso
-      : existingRatingSnap.exists
-        ? existingRatingSnap.data()?.createdAt ?? existingRatingSnap.data()?.createdAtIso ?? nowIso
         : nowIso;
-    const isNew = !existingSnap.exists;
-
-    tx.set(
-      ratingRef,
-      {
-        id: uid,
-        domain: "book",
-        visibility,
-        bookId,
-        ...bookSnapshot,
-        userId: uid,
-        rating,
-        authorName,
-        authorHandle,
-        authorAvatar,
-        updatedAtIso: nowIso,
-        updatedAt: nowIso,
-        createdAtIso: toIso(createdAt),
-        createdAt,
-        sourcePath: ratingRef.path,
-      },
-      { merge: true }
-    );
+    const isNew = !existingSnap.exists || existingData.status === "deleted";
 
     tx.set(
       reviewRef,
       {
-        id: uid,
+        id: `${uid}_${bookId}`,
         domain: "book",
-        visibility,
-        bookId,
-        ...bookSnapshot,
-        userId: uid,
-        rating,
-        text,
-        authorName,
-        authorHandle,
-        authorAvatar,
-        upvotes: 0,
-        downvotes: 0,
-        commentsCount: 0,
-        updatedAtIso: nowIso,
-        updatedAt: nowIso,
-        createdAtIso: toIso(createdAt),
-        createdAt,
-        ...(recommendationOrigin ? { recommendationOrigin } : {}),
-      },
-      { merge: true }
-    );
-
-    tx.set(
-      projectionRef,
-      {
-        id: uid,
-        domain: "book",
+        status: "active" satisfies BookReviewStatus,
         visibility,
         uid,
-        userId: uid,
         bookId,
-        ...bookSnapshot,
         rating,
-        text,
-        authorName,
-        authorHandle,
-        authorAvatar,
-        upvotes: 0,
-        downvotes: 0,
-        commentsCount: 0,
-        updatedAtIso: nowIso,
+        reviewText: text,
+        reviewTags,
         updatedAt: nowIso,
-        createdAtIso: toIso(createdAt),
         createdAt,
-        sourcePath: reviewRef.path,
-        ...(recommendationOrigin ? { recommendationOrigin } : {}),
       },
       { merge: true }
     );
@@ -410,14 +301,19 @@ export const deleteBookReview = onCall({ cors: true }, async (request) => {
 
   const uid = ensureUid(request.auth.uid, "auth.uid");
   const bookId = ensureBookId(request.data?.bookId);
-  const reviewRef = db.collection("books").doc(bookId).collection("reviews").doc(uid);
-  const ratingRef = db.collection("books").doc(bookId).collection("ratings").doc(uid);
-  const projectionRef = db.collection("user_reviews").doc(`${uid}_${bookId}`);
+  const reviewRef = db.collection("reviews").doc(canonicalReviewId(uid, bookId));
+  const nowIso = new Date().toISOString();
 
   await db.runTransaction(async (tx) => {
-    tx.delete(ratingRef);
-    tx.delete(reviewRef);
-    tx.delete(projectionRef);
+    tx.set(
+      reviewRef,
+      {
+        status: "deleted" satisfies BookReviewStatus,
+        visibility: "private" satisfies BookReviewVisibility,
+        updatedAt: nowIso,
+      },
+      { merge: true }
+    );
   });
 
   logger.info("[REVIEWS][DELETE_BOOK_REVIEW_OK]", {
@@ -446,9 +342,8 @@ export const listBookReviews = onCall({ cors: true }, async (request) => {
 
   try {
     let publicQuery = db
-      .collection("books")
-      .doc(bookId)
-      .collection("reviews")
+      .collection(BOOK_REVIEW_PROJECTION_COLLECTION)
+      .where("bookId", "==", bookId)
       .where("visibility", "==", "public")
       .orderBy("updatedAtIso", "desc")
       .limit(limitSize + 1);
@@ -473,13 +368,11 @@ export const listBookReviews = onCall({ cors: true }, async (request) => {
         : undefined;
 
     const ownReviewSnap = await db
-      .collection("books")
-      .doc(bookId)
-      .collection("reviews")
-      .doc(viewerUid)
+      .collection(BOOK_REVIEW_PROJECTION_COLLECTION)
+      .doc(bookReviewProjectionId(viewerUid, bookId))
       .get();
     const ownReview =
-      ownReviewSnap.exists
+      ownReviewSnap.exists && ownReviewSnap.data()?.status !== "deleted"
         ? normalizeReviewItem(ownReviewSnap.id, ownReviewSnap.data() || {}, bookId)
         : null;
 

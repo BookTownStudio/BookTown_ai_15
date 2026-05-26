@@ -13,6 +13,10 @@ import {
 interface ReaderSessionBootstrapState {
   session: ReaderSessionSnapshot | null;
   manifest: ReaderManifestSnapshot | null;
+  summaries: {
+    bookmarkCompatibilitySummary?: Record<string, unknown>;
+    highlightCompatibilitySummary?: Record<string, unknown>;
+  } | null;
   isLoading: boolean;
   error: string | null;
 }
@@ -125,6 +129,7 @@ function normalizeReaderManifest(value: unknown): ReaderManifestSnapshot | null 
 export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstrapState {
   const [session, setSession] = useState<ReaderSessionSnapshot | null>(null);
   const [manifest, setManifest] = useState<ReaderManifestSnapshot | null>(null);
+  const [summaries, setSummaries] = useState<ReaderSessionBootstrapState['summaries']>(null);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(bookId));
   const [error, setError] = useState<string | null>(null);
 
@@ -132,6 +137,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
     if (!bookId) {
       setSession(null);
       setManifest(null);
+      setSummaries(null);
       setError(null);
       setIsLoading(false);
       return;
@@ -148,34 +154,32 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
       payload: { bookId, phase: 'bootstrap' },
     });
 
-    const sessionFn = httpsCallable<{ bookId: string }, ReaderSessionSnapshot>(
+    const bootstrapFn = httpsCallable<{ bookId: string }, ReaderSessionSnapshot & {
+      manifest?: ReaderManifestSnapshot | null;
+      bootstrap?: {
+        bookmarkCompatibilitySummary?: Record<string, unknown>;
+        highlightCompatibilitySummary?: Record<string, unknown>;
+      };
+    }>(
       getFunctions(),
-      'getOrCreateReadingSession'
-    );
-    const manifestFn = httpsCallable<{ bookId: string }, ReaderManifestSnapshot>(
-      getFunctions(),
-      'getReaderManifest'
+      'getReaderBootstrap'
     );
 
-    Promise.allSettled([
-      sessionFn({ bookId }),
-      manifestFn({ bookId }),
-    ])
-      .then(([sessionResult, manifestResult]) => {
+    bootstrapFn({ bookId })
+      .then((bootstrapResult) => {
         if (!active) return;
-        if (sessionResult.status === 'rejected') {
-          throw sessionResult.reason;
-        }
 
+        const bootstrapPayload = normalizeEnvelope<ReaderSessionSnapshot & {
+          manifest?: ReaderManifestSnapshot | null;
+          bootstrap?: {
+            bookmarkCompatibilitySummary?: Record<string, unknown>;
+            highlightCompatibilitySummary?: Record<string, unknown>;
+          };
+        }>(bootstrapResult.data);
         const nextSession = validateReaderSession(
-          normalizeEnvelope<ReaderSessionSnapshot>(sessionResult.value.data)
+          bootstrapPayload
         );
-        const nextManifest =
-          manifestResult.status === 'fulfilled'
-            ? normalizeReaderManifest(
-                normalizeEnvelope<ReaderManifestSnapshot>(manifestResult.value.data)
-              )
-            : null;
+        const nextManifest = normalizeReaderManifest(bootstrapPayload.manifest);
         const durationMs = Number((performance.now() - startedAt).toFixed(2));
 
         markReaderTelemetry('reader_bootstrap_success', {
@@ -195,7 +199,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
           },
         });
 
-        if (manifestResult.status === 'rejected' || !nextManifest) {
+        if (!nextManifest) {
           markReaderTelemetry('reader_manifest_failed', {
             bookId,
             phase: 'manifest_hydration',
@@ -234,6 +238,10 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
 
         setSession(nextSession);
         setManifest(nextManifest);
+        setSummaries({
+          bookmarkCompatibilitySummary: bootstrapPayload.bootstrap?.bookmarkCompatibilitySummary,
+          highlightCompatibilitySummary: bootstrapPayload.bootstrap?.highlightCompatibilitySummary,
+        });
       })
       .catch((err: any) => {
         if (!active) return;
@@ -258,6 +266,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
         setError(String(err?.message || err));
         setSession(null);
         setManifest(null);
+        setSummaries(null);
       })
       .finally(() => {
         if (active) setIsLoading(false);
@@ -272,9 +281,10 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
     () => ({
       session,
       manifest,
+      summaries,
       isLoading,
       error,
     }),
-    [session, manifest, isLoading, error]
+    [session, manifest, summaries, isLoading, error]
   );
 }

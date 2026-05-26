@@ -1,6 +1,10 @@
 import { onDocumentCreated, onDocumentDeleted, onDocumentUpdated } from "firebase-functions/v2/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
+import {
+    buildNotificationSummaryPatch,
+    notificationSummaryRef,
+} from "../notifications/notificationSummary";
 
 const db = admin.firestore();
 
@@ -75,6 +79,7 @@ export const projectActivityToNotification = onDocumentCreated("activity_log/{ac
     const dedupeId = `${recipientUid}_${type}_${activity.actor.uid}_${activity.object.entity_id}`;
     const notifRef = db.collection('notifications').doc(dedupeId);
     const unreadRef = db.collection('users').doc(recipientUid).collection('meta').doc('unread');
+    const summaryRef = notificationSummaryRef(recipientUid);
 
     const actorSnap = await db.collection('users').doc(activity.actor.uid).get();
     const actorName = actorSnap.exists ? actorSnap.data()?.name : 'Someone';
@@ -152,6 +157,14 @@ export const projectActivityToNotification = onDocumentCreated("activity_log/{ac
                 notificationsCount: admin.firestore.FieldValue.increment(1),
                 lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
+            transaction.set(summaryRef, buildNotificationSummaryPatch({
+                unreadCount: admin.firestore.FieldValue.increment(1),
+                latestNotificationAt: admin.firestore.FieldValue.serverTimestamp(),
+            }), { merge: true });
+        } else {
+            transaction.set(summaryRef, buildNotificationSummaryPatch({
+                latestNotificationAt: admin.firestore.FieldValue.serverTimestamp(),
+            }), { merge: true });
         }
     });
 });
@@ -167,15 +180,21 @@ export const onNotificationStateChanged = onDocumentUpdated("notifications/{id}"
     if (!before || !after) return;
     if (before.read === false && after.read === true) {
         const unreadRef = db.collection('users').doc(after.uid).collection('meta').doc('unread');
+        const summaryRef = notificationSummaryRef(after.uid);
         await db.runTransaction(async (transaction) => {
             const unreadSnap = await transaction.get(unreadRef);
             const current = unreadSnap.exists
                 ? Math.max(0, Number(unreadSnap.data()?.notificationsCount || 0))
                 : 0;
+            const nextUnreadCount = Math.max(0, current - 1);
             transaction.set(unreadRef, {
-                notificationsCount: Math.max(0, current - 1),
+                notificationsCount: nextUnreadCount,
                 lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp()
             }, { merge: true });
+            transaction.set(summaryRef, buildNotificationSummaryPatch({
+                unreadCount: nextUnreadCount,
+                lastReadAt: admin.firestore.FieldValue.serverTimestamp(),
+            }), { merge: true });
         });
     }
 });
@@ -206,15 +225,21 @@ export const onPostDeletedCleanupNotifications = onDocumentDeleted("posts/{postI
     await Promise.all(
         Array.from(recipientCounts.entries()).map(([uid, count]) => {
             const unreadRef = db.collection("users").doc(uid).collection("meta").doc("unread");
+            const summaryRef = notificationSummaryRef(uid);
             return db.runTransaction(async (transaction) => {
                 const unreadSnap = await transaction.get(unreadRef);
                 const current = unreadSnap.exists
                     ? Math.max(0, Number(unreadSnap.data()?.notificationsCount || 0))
                     : 0;
+                const nextUnreadCount = Math.max(0, current - count);
                 transaction.set(unreadRef, {
-                    notificationsCount: Math.max(0, current - count),
+                    notificationsCount: nextUnreadCount,
                     lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 }, { merge: true });
+                transaction.set(summaryRef, buildNotificationSummaryPatch({
+                    unreadCount: nextUnreadCount,
+                    lastReadAt: admin.firestore.FieldValue.serverTimestamp(),
+                }), { merge: true });
             });
         })
     );

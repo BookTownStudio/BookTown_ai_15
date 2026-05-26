@@ -6,8 +6,6 @@ import {
     query,
     orderBy,
     limit,
-    doc,
-    getDoc,
     getDocs,
     where,
     startAfter,
@@ -26,6 +24,12 @@ const cursorRegistry = new Map<string, QueryDocumentSnapshot<DocumentData>>();
 type NotificationsPage = {
     notifications: Notification[];
     nextCursor?: string;
+};
+
+type NotificationSummary = {
+    unreadCount: number;
+    latestNotificationAt: string | null;
+    lastReadAt: string | null;
 };
 
 const toIsoDate = (value: any): string => {
@@ -178,30 +182,32 @@ export const useInfiniteNotifications = () => {
  * useUnreadNotificationsCount
  * Backend-authoritative counter.
  */
-export const useUnreadNotificationsCount = () => {
+export const useNotificationSummary = () => {
     const { user } = useAuth();
     const uid = user?.uid;
 
-    return useQuery<number>({
-        queryKey: [...queryKeys.user.notifications(uid), 'unread-count'],
+    return useQuery<NotificationSummary>({
+        queryKey: [...queryKeys.user.notifications(uid), 'summary'],
         queryFn: async () => {
-            if (!uid) return 0;
-
-            const db = getFirebaseDb();
-            if (!db) return 0;
-
-            const ref = doc(db, 'users', uid, 'meta', 'unread');
-            const snap = await getDoc(ref);
-
-            if (snap.exists()) {
-                return snap.data().notificationsCount || 0;
+            if (!uid) {
+                return { unreadCount: 0, latestNotificationAt: null, lastReadAt: null };
             }
-            return 0;
+            return callCallableEndpoint<Record<string, never>, NotificationSummary>(
+                'getNotificationSummary',
+                {}
+            );
         },
         enabled: !!uid,
         staleTime: 1000 * 30,
-        refetchInterval: 1000 * 60,
     });
+};
+
+export const useUnreadNotificationsCount = () => {
+    const summary = useNotificationSummary();
+    return {
+        ...summary,
+        data: summary.data?.unreadCount ?? 0,
+    };
 };
 
 /**

@@ -10,6 +10,7 @@ import { HighlightIcon } from '../../icons/HighlightIcon.tsx';
 import { ShareIcon } from '../../icons/ShareIcon.tsx';
 import { CogIcon } from '../../icons/CogIcon.tsx';
 import { useNavigation } from '../../../store/navigation.tsx';
+import { QuoteCardDataAdapter } from '../../content/QuoteCardDataAdapter.ts';
 
 interface SavedQuoteItemProps {
     quote: Quote;
@@ -18,13 +19,14 @@ interface SavedQuoteItemProps {
 const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
     const { lang } = useI18n();
     const { navigate, currentView } = useNavigation();
+    const card = QuoteCardDataAdapter.fromQuote(quote);
 
     const handleOpenDetails = () => {
         navigate({
             type: 'immersive',
             id: 'quoteDetails',
             params: {
-                quoteId: quote.id,
+                quoteId: card.id,
                 from: currentView,
             },
         });
@@ -37,15 +39,15 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
             id: 'postComposer',
             params: {
                 from: currentView,
-                attachment: { type: 'quote', id: quote.legacyQuoteId || quote.id }
+                attachment: { type: 'quote', id: card.canonicalQuoteId || card.id }
             }
         });
     };
 
     const handleSourceClick = (e: React.MouseEvent) => {
         e.stopPropagation();
-        if (quote.bookId) {
-            navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: quote.bookId, from: currentView } });
+        if (card.bookId) {
+            navigate({ type: 'immersive', id: 'bookDetails', params: { bookId: card.bookId, from: currentView } });
         }
     };
 
@@ -53,15 +55,15 @@ const SavedQuoteItem: React.FC<SavedQuoteItemProps> = ({ quote }) => {
     return (
         <GlassCard onClick={handleOpenDetails} className="cursor-pointer">
             <BilingualText role="Quote" className="text-white">
-                "{lang === 'en' ? quote.textEn : quote.textAr}"
+                "{lang === 'en' ? card.textEn : card.textAr}"
             </BilingualText>
             <button
                 onClick={handleSourceClick}
-                disabled={!quote.bookId}
+                disabled={!card.bookId}
                 className="w-full text-right block disabled:cursor-default group"
             >
                 <BilingualText role="Caption" className="mt-4 group-enabled:hover:text-accent transition-colors">
-                    — {lang === 'en' ? quote.sourceEn : quote.sourceAr}
+                    — {lang === 'en' ? card.sourceEn : card.sourceAr}
                 </BilingualText>
             </button>
 

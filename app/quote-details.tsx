@@ -6,6 +6,7 @@ import Button from '../components/ui/Button.tsx';
 import BilingualText from '../components/ui/BilingualText.tsx';
 import { ChevronLeftIcon } from '../components/icons/ChevronLeftIcon.tsx';
 import { useQuoteDetails } from '../lib/hooks/useQuoteDetails.ts';
+import { QuoteCardDataAdapter } from '../components/content/QuoteCardDataAdapter.ts';
 import LoadingSpinner from '../components/ui/LoadingSpinner.tsx';
 import { ShareIcon } from '../components/icons/ShareIcon.tsx';
 import { BookmarkIcon } from '../components/icons/BookmarkIcon.tsx';
@@ -71,12 +72,19 @@ const QuoteDetailsScreen: React.FC = () => {
                     {isLoading && <LoadingSpinner />}
                     {quote && (
                         <div className="max-w-2xl mx-auto">
+                            {(() => {
+                                const card = QuoteCardDataAdapter.fromQuote(quote);
+                                return (
+                                  <>
                             <BilingualText role="Quote" className="!text-3xl sm:!text-4xl !text-white !border-white/50">
-                                "{lang === 'en' ? quote.textEn : quote.textAr}"
+                                "{lang === 'en' ? card.textEn : card.textAr}"
                             </BilingualText>
                             <BilingualText role="Body" className="mt-6 !text-lg text-white/70">
-                                — {lang === 'en' ? quote.sourceEn : quote.sourceAr}
+                                — {lang === 'en' ? card.sourceEn : card.sourceAr}
                             </BilingualText>
+                                  </>
+                                );
+                            })()}
 
                             <div className="mt-12 flex items-center justify-center gap-4">
                                 <Button variant="primary" onClick={handleSaveQuote} disabled={isSaving}>

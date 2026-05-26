@@ -9,7 +9,7 @@ import { BellIcon } from '../icons/BellIcon.tsx';
 import { EmailIcon } from '../icons/EmailIcon.tsx';
 import { MessageSquareWarningIcon } from '../icons/MessageSquareWarningIcon.tsx';
 import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
-import { useUnreadNotificationsCount } from '../../lib/hooks/useNotifications.ts';
+import { useNotificationSummary } from '../../lib/hooks/useNotifications.ts';
 import { isBetaFeedbackTriggerEnabled } from '../../lib/featureFlags.ts';
 import { useFeedbackLauncher } from '../../lib/feedback/useFeedbackLauncher.ts';
 
@@ -23,10 +23,11 @@ interface AppNavProps {
 const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = false, onBack }) => {
   const { isRTL, lang } = useI18n();
   const { openDrawer, navigate, currentView } = useNavigation();
-  const { data: unreadCount } = useUnreadNotificationsCount();
+  const { data: notificationSummary } = useNotificationSummary();
   const launchFeedback = useFeedbackLauncher();
 
-  const showBadge = unreadCount !== undefined && unreadCount > 0;
+  const unreadCount = notificationSummary?.unreadCount ?? 0;
+  const showBadge = unreadCount > 0;
   const showBetaFeedback = isBetaFeedbackTriggerEnabled();
   const showLeftFeedback =
     showBetaFeedback &&

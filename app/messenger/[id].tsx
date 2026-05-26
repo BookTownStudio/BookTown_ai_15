@@ -22,6 +22,7 @@ import { AttachmentListV1 } from '../../components/content/AttachmentRendererV1.
 import Modal from '../../components/ui/Modal.tsx';
 import SelectBookModal from '../../components/modals/SelectBookModal.tsx';
 import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
+import { QuoteCardDataAdapter } from '../../components/content/QuoteCardDataAdapter.ts';
 import SelectPublicationModal from '../../components/modals/SelectPublicationModal.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { QuoteIcon } from '../../components/icons/QuoteIcon.tsx';
@@ -432,7 +433,8 @@ const MessengerChatScreen: React.FC = () => {
     };
 
     const handleQuoteSelect = (quote: Quote) => {
-        const canonicalQuoteId = quote.canonicalQuoteId || quote.id;
+        const card = QuoteCardDataAdapter.fromQuote(quote);
+        const canonicalQuoteId = card.canonicalQuoteId || card.id;
         if (!canonicalQuoteId) {
             showToast(
                 lang === 'en'
@@ -444,8 +446,8 @@ const MessengerChatScreen: React.FC = () => {
         setAttachment({
             type: 'quote',
             entityId: canonicalQuoteId,
-            ...(quote.ownerId ? { quoteOwnerId: quote.ownerId } : {}),
-            quoteText: (lang === 'en' ? quote.textEn : quote.textAr) || quote.textEn,
+            ...(card.ownerId ? { quoteOwnerId: card.ownerId } : {}),
+            quoteText: (lang === 'en' ? card.textEn : card.textAr) || card.textEn,
         });
         setQuotePickerOpen(false);
     };

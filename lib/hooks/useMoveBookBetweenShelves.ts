@@ -9,6 +9,7 @@ import { useToast } from '../../store/toast.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { useUserShelves } from './useUserShelves.ts';
 import { isCurrentlyReadingShelf } from '../shelves/systemShelves.ts';
+import { bookShelfMembershipQueryKey } from './useBookShelfStatus.ts';
 
 const SYSTEM_CURRENTLY_READING_SHELF_ID = 'currently-reading';
 
@@ -208,6 +209,10 @@ export const useMoveBookBetweenShelves = () => {
       queryClient.invalidateQueries({
         queryKey:
           queryKeys.user.shelfEntries(uid, vars.toShelfId) as unknown as any[]
+      });
+
+      queryClient.invalidateQueries({
+        queryKey: bookShelfMembershipQueryKey(uid, vars.book.id)
       });
     }
   });

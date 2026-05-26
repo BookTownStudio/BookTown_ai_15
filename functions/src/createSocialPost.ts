@@ -8,6 +8,7 @@ import {
   buildPostRenderProjection,
   buildRenderProjectionEntity,
 } from "./social/postRenderProjection";
+import { SOCIAL_QUOTE_PROJECTION_COLLECTION } from "./projections/quoteProjections";
 
 type StructuredEntityType =
   | "book"
@@ -218,40 +219,12 @@ async function assertStructuredEntityAccessible(
   }
 
   if (entity.type === "quote") {
-    const rootSnap = await db.collection("quotes").doc(entity.entityId).get();
-    if (rootSnap.exists) {
-      const quote = (rootSnap.data() ?? {}) as Record<string, unknown>;
-      const ownerId = readNonEmptyString(quote.ownerId);
-      if (ownerId !== uid && quote.isPublic === false) {
-        throw new HttpsError(
-          "permission-denied",
-          "Referenced quote is not accessible."
-        );
-      }
-      return {
-        type: "quote",
-        entityId: entity.entityId,
-        ...(ownerId ? { entityOwnerId: ownerId } : {}),
-        renderEntity: buildRenderProjectionEntity({
-          type: "quote",
-          id: entity.entityId,
-          ownerId,
-          data: quote,
-        }),
-      };
-    }
-
-    const ownerId = entity.entityOwnerId || uid;
-    const legacySnap = await db
-      .collection("users")
-      .doc(ownerId)
-      .collection("quotes")
-      .doc(entity.entityId)
-      .get();
-    if (!legacySnap.exists) {
+    const quoteSnap = await db.collection(SOCIAL_QUOTE_PROJECTION_COLLECTION).doc(entity.entityId).get();
+    if (!quoteSnap.exists) {
       throw new HttpsError("not-found", "Referenced quote not found.");
     }
-    const quote = (legacySnap.data() ?? {}) as Record<string, unknown>;
+    const quote = (quoteSnap.data() ?? {}) as Record<string, unknown>;
+    const ownerId = readNonEmptyString(quote.ownerId) || readNonEmptyString(quote.authorUid);
     if (ownerId !== uid && quote.isPublic === false) {
       throw new HttpsError(
         "permission-denied",
@@ -259,21 +232,13 @@ async function assertStructuredEntityAccessible(
       );
     }
 
-    const canonicalQuoteId = readNonEmptyString(quote.canonicalQuoteId);
-    if (!canonicalQuoteId) {
-      throw new HttpsError(
-        "failed-precondition",
-        "Referenced quote is missing canonical identity."
-      );
-    }
-
     return {
       type: "quote",
-      entityId: canonicalQuoteId,
+      entityId: entity.entityId,
       ...(ownerId ? { entityOwnerId: ownerId } : {}),
       renderEntity: buildRenderProjectionEntity({
         type: "quote",
-        id: canonicalQuoteId,
+        id: entity.entityId,
         ownerId,
         data: quote,
       }),

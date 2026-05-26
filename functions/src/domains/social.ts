@@ -27,6 +27,7 @@ import {
   toggleBookmark as toggleBookmarkRaw,
 } from "../social/bookmarks";
 import {
+  getNotificationSummary as getNotificationSummaryRaw,
   markAllNotificationsRead as markAllNotificationsReadRaw,
   markNotificationRead as markNotificationReadRaw,
 } from "../social/notifications";
@@ -57,6 +58,7 @@ export const repostSocialPost = wrapCallableV2("repostSocialPost", repostSocialP
 export const blockUser = wrapCallableV2("blockUser", blockUserRaw);
 export const toggleBookmark = wrapCallableV2("toggleBookmark", toggleBookmarkRaw);
 export const followShelf = wrapCallableV2("followShelf", followShelfRaw);
+export const getNotificationSummary = wrapCallableV2("getNotificationSummary", getNotificationSummaryRaw);
 export const markNotificationRead = wrapCallableV2("markNotificationRead", markNotificationReadRaw);
 export const markAllNotificationsRead = wrapCallableV2("markAllNotificationsRead", markAllNotificationsReadRaw);
 export const reportSocialPost = wrapCallableV2("reportSocialPost", reportSocialPostRaw);

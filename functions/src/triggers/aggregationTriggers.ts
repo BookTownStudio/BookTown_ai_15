@@ -14,10 +14,21 @@ import { processMetricEventIdempotently } from "../analytics/metricIdempotency";
 import {
   emitIntelligenceSignalSafe,
 } from "../intelligence/profileBuilder";
+import {
+  BOOK_REVIEW_PROJECTION_COLLECTION,
+  REVIEW_PROJECTION_VERSION,
+  SOCIAL_REVIEW_PROJECTION_COLLECTION,
+  USER_REVIEW_PROJECTION_COLLECTION,
+  bookReviewProjectionId,
+  socialReviewProjectionId,
+  userReviewProjectionId,
+} from "../projections/reviewProjections";
+import { recordOperationalMetric } from "../operations/operationalMetrics";
 
 const db = admin.firestore();
 const ENVIRONMENT = process.env.APP_ENV === "staging" ? "staging" : "prod";
 const APP_VERSION = process.env.APP_VERSION || "unknown";
+const REVIEW_AGGREGATE_EVENT_LEDGER_COLLECTION = "review_aggregate_event_ledger";
 
 async function safeLogSystemEvent(
   params: Parameters<typeof logSystemEvent>[0]
@@ -545,6 +556,10 @@ function normalizeReviewVisibility(value: unknown): "public" | "private" {
   return value === "private" ? "private" : "public";
 }
 
+function normalizeReviewStatus(value: unknown): "active" | "deleted" {
+  return value === "deleted" ? "deleted" : "active";
+}
+
 export function applyPublicReviewCounterDelta(params: {
   currentReviews: number;
   beforePublic: boolean;
@@ -598,6 +613,126 @@ export function applyPublicRatingCounterDelta(params: {
     ratingSum: nextRatingSum,
     averageRating,
   };
+}
+
+function normalizeLedgerId(value: string): string {
+  return value
+    .trim()
+    .replace(/[^A-Za-z0-9_.:-]+/g, "_")
+    .slice(0, 500);
+}
+
+export function buildReviewAggregateOperationId(params: {
+  eventId?: string;
+  reviewId: string;
+  bookId: string;
+  beforeExists: boolean;
+  afterExists: boolean;
+  beforeActive: boolean;
+  afterActive: boolean;
+  beforeRating: number;
+  afterRating: number;
+}): string {
+  const eventId = typeof params.eventId === "string" ? params.eventId.trim() : "";
+  if (eventId) {
+    return normalizeLedgerId(`review_aggregate:${eventId}`);
+  }
+
+  return normalizeLedgerId([
+    "review_aggregate",
+    params.reviewId,
+    params.bookId,
+    params.beforeExists ? "before_exists" : "before_missing",
+    params.afterExists ? "after_exists" : "after_missing",
+    params.beforeActive ? "before_public" : "before_nonpublic",
+    params.afterActive ? "after_public" : "after_nonpublic",
+    `before_rating_${params.beforeRating}`,
+    `after_rating_${params.afterRating}`,
+  ].join(":"));
+}
+
+async function applyReviewAggregateMutationIdempotently(params: {
+  operationId: string;
+  reviewId: string;
+  bookId: string;
+  beforeActive: boolean;
+  afterActive: boolean;
+  beforeRating: number;
+  afterRating: number;
+}): Promise<boolean> {
+  const statsRef = db.collection("book_stats").doc(params.bookId);
+  const ledgerRef = db
+    .collection(REVIEW_AGGREGATE_EVENT_LEDGER_COLLECTION)
+    .doc(params.operationId);
+  let processed = false;
+
+  await db.runTransaction(async (tx) => {
+    const ledgerSnap = await tx.get(ledgerRef);
+    if (ledgerSnap.exists) {
+      return;
+    }
+
+    const statsSnap = await tx.get(statsRef);
+    const counters = statsSnap.exists ? (statsSnap.data()?.counters || {}) : {};
+    const currentReviews =
+      typeof counters.reviews === "number"
+        ? Math.max(0, Math.trunc(counters.reviews))
+        : 0;
+    const currentRatingsCount =
+      typeof counters.ratingsCount === "number"
+        ? Math.max(0, Math.trunc(counters.ratingsCount))
+        : 0;
+    const currentRatingSum =
+      typeof counters.ratingSum === "number" && Number.isFinite(counters.ratingSum)
+        ? counters.ratingSum
+        : 0;
+    const nextReviews = applyPublicReviewCounterDelta({
+      currentReviews,
+      beforePublic: params.beforeActive,
+      afterPublic: params.afterActive,
+    });
+    const nextRatingCounters = applyPublicRatingCounterDelta({
+      currentRatingsCount,
+      currentRatingSum,
+      beforePublic: params.beforeActive,
+      afterPublic: params.afterActive,
+      beforeRating: params.beforeRating,
+      afterRating: params.afterRating,
+    });
+
+    tx.create(ledgerRef, {
+      operationId: params.operationId,
+      reviewId: params.reviewId,
+      bookId: params.bookId,
+      beforeActive: params.beforeActive,
+      afterActive: params.afterActive,
+      beforeRating: params.beforeRating,
+      afterRating: params.afterRating,
+      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    tx.set(
+      statsRef,
+      {
+        counters: {
+          ...counters,
+          reviews: nextReviews,
+          ratingsCount: nextRatingCounters.ratingsCount,
+          ratingSum: nextRatingCounters.ratingSum,
+          averageRating: nextRatingCounters.averageRating,
+        },
+        reviews: nextReviews,
+        ratingsCount: nextRatingCounters.ratingsCount,
+        averageRating: nextRatingCounters.averageRating,
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+        lastReviewAggregateOperationId: params.operationId,
+      },
+      { merge: true }
+    );
+    processed = true;
+  });
+
+  return processed;
 }
 
 function toIso(value: unknown): string {
@@ -688,7 +823,230 @@ async function resolveProjectionBookSnapshot(
   return normalizeProjectionBookSnapshot((bookSnap.data() || {}) as Record<string, unknown>);
 }
 
+async function resolveProjectionAuthorIdentity(uid: string): Promise<{
+  authorName: string;
+  authorHandle: string;
+  authorAvatar: string;
+}> {
+  const publicSnap = await db.collection("public_profiles").doc(uid).get();
+  if (publicSnap.exists) {
+    const data = publicSnap.data() || {};
+    const name = sanitizeProjectionString(data.name, 120) || "Anonymous";
+    const handle = sanitizeProjectionString(data.handle, 120).replace(/^@/, "");
+    return {
+      authorName: name,
+      authorHandle: handle || uid.slice(0, 12),
+      authorAvatar: sanitizeProjectionUrl(data.avatarUrl),
+    };
+  }
+
+  const userSnap = await db.collection("users").doc(uid).get();
+  const data = userSnap.exists ? userSnap.data() || {} : {};
+  const name =
+    sanitizeProjectionString(data.name, 120) ||
+    sanitizeProjectionString(data.displayName, 120) ||
+    "Anonymous";
+  const handle = sanitizeProjectionString(data.handle, 120).replace(/^@/, "");
+  return {
+    authorName: name,
+    authorHandle: handle || uid.slice(0, 12),
+    authorAvatar: sanitizeProjectionUrl(data.avatarUrl),
+  };
+}
+
 export const onBookReviewWritten = onDocumentWritten(
+  "reviews/{reviewId}",
+  async (event) => {
+    const before = event.data?.before?.data() as Record<string, unknown> | undefined;
+    const after = event.data?.after?.data() as Record<string, unknown> | undefined;
+    const reviewId = event.params.reviewId;
+    const beforeExists = !!before;
+    const afterExists = !!after;
+    const beforeBookId =
+      typeof before?.bookId === "string" && before.bookId.trim().length > 0
+        ? before.bookId.trim()
+        : null;
+    const afterBookId =
+      typeof after?.bookId === "string" && after.bookId.trim().length > 0
+        ? after.bookId.trim()
+        : null;
+    const bookId = afterBookId || beforeBookId;
+    if (!bookId) return;
+
+    const beforeRating = normalizeReviewRating(before?.rating);
+    const afterRating = normalizeReviewRating(after?.rating);
+    const beforeActive =
+      beforeExists &&
+      normalizeReviewStatus(before?.status) === "active" &&
+      normalizeReviewVisibility(before?.visibility) === "public";
+    const afterActive =
+      afterExists &&
+      normalizeReviewStatus(after?.status) === "active" &&
+      normalizeReviewVisibility(after?.visibility) === "public";
+    const beforeUserId =
+      typeof before?.uid === "string" && before.uid.trim().length > 0
+        ? before.uid.trim()
+        : typeof before?.userId === "string" && before.userId.trim().length > 0
+          ? before.userId.trim()
+          : null;
+    const afterUserId =
+      typeof after?.uid === "string" && after.uid.trim().length > 0
+        ? after.uid.trim()
+        : typeof after?.userId === "string" && after.userId.trim().length > 0
+          ? after.userId.trim()
+          : null;
+
+    const aggregateOperationId = buildReviewAggregateOperationId({
+      eventId: event.id,
+      reviewId,
+      bookId,
+      beforeExists,
+      afterExists,
+      beforeActive,
+      afterActive,
+      beforeRating,
+      afterRating,
+    });
+    const aggregateProcessed = await applyReviewAggregateMutationIdempotently({
+      operationId: aggregateOperationId,
+      reviewId,
+      bookId,
+      beforeActive,
+      afterActive,
+      beforeRating,
+      afterRating,
+    });
+    if (!aggregateProcessed) {
+      await recordOperationalMetric({
+        name: "review_aggregate_retry",
+        value: 1,
+        unit: "count",
+        dimensions: {
+          bookId,
+          operationId: aggregateOperationId,
+        },
+      });
+      console.warn("[REVIEWS][AGGREGATE_DUPLICATE_SKIPPED]", {
+        reviewId,
+        bookId,
+        operationId: aggregateOperationId,
+        sourceEventId: event.id,
+      });
+    }
+
+    if (afterExists && afterUserId && normalizeReviewStatus(after?.status) === "active") {
+      const bookSnapshot = await resolveProjectionBookSnapshot(
+        bookId,
+        (after || {}) as Record<string, unknown>
+      );
+      const authorIdentity = await resolveProjectionAuthorIdentity(afterUserId);
+      const afterRecommendationOrigin = sanitizeRecommendationOrigin(after?.recommendationOrigin);
+      const projection = {
+        id: reviewId,
+        domain: "book",
+        projectionVersion: REVIEW_PROJECTION_VERSION,
+        visibility: normalizeReviewVisibility(after?.visibility),
+        uid: afterUserId,
+        userId: afterUserId,
+        bookId,
+        ...bookSnapshot,
+        rating: afterRating,
+        text:
+          typeof after?.reviewText === "string"
+            ? after.reviewText.slice(0, 2000)
+            : typeof after?.text === "string"
+              ? after.text.slice(0, 2000)
+              : "",
+        ...authorIdentity,
+        upvotes: 0,
+        downvotes: 0,
+        commentsCount: 0,
+        updatedAt: after?.updatedAt ?? after?.updatedAtIso ?? toIso(new Date()),
+        updatedAtIso: toIso(after?.updatedAtIso ?? after?.updatedAt),
+        createdAt: after?.createdAt ?? after?.updatedAt ?? toIso(new Date()),
+        createdAtIso: toIso(after?.createdAtIso ?? after?.createdAt),
+        sourcePath: `reviews/${reviewId}`,
+        ...(afterRecommendationOrigin
+          ? { recommendationOrigin: afterRecommendationOrigin }
+          : {}),
+      };
+      await Promise.all([
+        db.collection(USER_REVIEW_PROJECTION_COLLECTION).doc(userReviewProjectionId(afterUserId, bookId)).set(
+          { ...projection, projectionSurface: "user" },
+          { merge: true }
+        ),
+        db.collection(BOOK_REVIEW_PROJECTION_COLLECTION).doc(bookReviewProjectionId(afterUserId, bookId)).set(
+          { ...projection, projectionSurface: "book" },
+          { merge: true }
+        ),
+        db.collection(SOCIAL_REVIEW_PROJECTION_COLLECTION).doc(socialReviewProjectionId(afterUserId, bookId)).set(
+          { ...projection, projectionSurface: "social" },
+          { merge: true }
+        ),
+      ]);
+    }
+
+    const projectionUid = afterUserId || beforeUserId;
+    if ((!afterExists || normalizeReviewStatus(after?.status) !== "active") && projectionUid) {
+      await Promise.all([
+        db.collection(USER_REVIEW_PROJECTION_COLLECTION).doc(userReviewProjectionId(projectionUid, bookId)).delete(),
+        db.collection(BOOK_REVIEW_PROJECTION_COLLECTION).doc(bookReviewProjectionId(projectionUid, bookId)).delete(),
+        db.collection(SOCIAL_REVIEW_PROJECTION_COLLECTION).doc(socialReviewProjectionId(projectionUid, bookId)).delete(),
+      ]);
+    }
+
+    const changedUid = afterUserId || beforeUserId;
+    if (changedUid) {
+      const recommendationOrigin =
+        sanitizeRecommendationOrigin(after?.recommendationOrigin) ??
+        sanitizeRecommendationOrigin(before?.recommendationOrigin);
+      await emitIntelligenceSignalSafe({
+        uid: changedUid,
+        signalType:
+          !beforeActive && afterActive
+            ? "review_created"
+            : beforeActive && !afterActive
+              ? "review_deleted"
+              : "review_updated",
+        signalFamily: "engagement",
+        payload: {
+          bookId,
+          reviewId,
+          beforeExists,
+          afterExists,
+          beforeRating,
+          afterRating,
+          ...(recommendationOrigin ? { recommendationOrigin } : {}),
+        },
+        sourceEventId: event.id,
+        sourcePath: `reviews/${reviewId}`,
+      });
+    }
+
+    if (!beforeActive && afterActive) {
+      await ensureSystemMetricsInitialized();
+      await processMetricEventIdempotently(event.id, async (tx) => {
+        incrementGlobalMetricInTransaction(tx, "totalReviews", 1);
+      });
+      if (afterUserId) {
+        await safeLogSystemEvent({
+          type: "review_created",
+          uid: afterUserId,
+          entityId: reviewId,
+          dedupeKey: event.id,
+          metadata: {
+            source: "trigger.onReviewWritten",
+            bookId,
+          },
+          environment: ENVIRONMENT,
+          appVersion: APP_VERSION,
+        });
+      }
+    }
+  }
+);
+
+export const onLegacyBookReviewWritten = onDocumentWritten(
   "books/{bookId}/reviews/{reviewId}",
   async (event) => {
     const before = event.data?.before?.data() as Record<string, unknown> | undefined;
