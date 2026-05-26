@@ -436,6 +436,37 @@ const readerLastPositionSchema = z
   })
   .strict();
 
+const readerContinuityCompatibilityStatusSchema = z.enum([
+  "compatible",
+  "legacy_compatible",
+  "migrated",
+  "approximate",
+  "incompatible",
+]);
+
+const readerContinuitySourceProjectionSchema = z
+  .object({
+    manifestVersion: z.number().int().positive(),
+    sourceSignatureHash: z.string().min(1),
+    attachmentId: z.string().min(1).nullable(),
+    sourceType: z.string().min(1),
+  })
+  .strict();
+
+const readerArtifactCompatibilitySchema = readerContinuitySourceProjectionSchema
+  .extend({
+    status: readerContinuityCompatibilityStatusSchema,
+    reasons: z.array(z.string().min(1)),
+  })
+  .strict();
+
+const readerArtifactCompatibilitySummarySchema = readerContinuitySourceProjectionSchema
+  .extend({
+    staleAnchorRejectedCount: z.number().int().nonnegative(),
+    counts: z.record(z.string(), z.number().int().nonnegative()),
+  })
+  .strict();
+
 const readerNarrationSessionStateSchema = z
   .object({
     provider: z.literal("browser_speech_synthesis"),
@@ -4096,6 +4127,14 @@ export const apiContracts = {
                 .enum(["reading_progress", "reading_sessions"])
                 .nullable()
                 .optional(),
+              compatibilityStatus: readerContinuityCompatibilityStatusSchema.optional(),
+              sourceSignatureHash: z.string().min(1).optional(),
+              attachmentId: z.string().min(1).nullable().optional(),
+              sourceType: z.string().min(1).optional(),
+              continuityMigrationSuccess: z.number().int().nonnegative().optional(),
+              continuityMigrationFailure: z.number().int().nonnegative().optional(),
+              approximateResumeCount: z.number().int().nonnegative().optional(),
+              staleAnchorRejectedCount: z.number().int().nonnegative().optional(),
             })
             .strict()
             .optional(),
@@ -5583,6 +5622,10 @@ export const apiContracts = {
           exists: z.boolean(),
           bookId: z.string().min(1),
           progress: z.number().min(0).max(1),
+          status_state: z
+            .enum(["reading", "paused", "abandoned", "completed", "rereading"])
+            .nullable()
+            .optional(),
           lastPosition: readerLastPositionSchema.nullable(),
           lastAnchor: canonicalAnchorV1Schema.nullable().optional(),
           anchorManifestVersion: z.number().int().positive().nullable().optional(),
@@ -5613,10 +5656,17 @@ export const apiContracts = {
                 cfi: z.string().nullable(),
                 anchor: canonicalAnchorV1Schema.nullable().optional(),
                 anchorManifestVersion: z.number().int().positive().nullable().optional(),
+                compatibility: readerArtifactCompatibilitySchema.optional(),
                 updatedAt: z.number().int().nonnegative().nullable(),
               })
               .strict()
           ),
+          compatibility: readerArtifactCompatibilitySummarySchema
+            .extend({
+              bookmarkCompatibilityRate: z.number().min(0).max(1),
+            })
+            .strict()
+            .optional(),
         })
         .strict(),
       "httpsCallable",
@@ -5645,10 +5695,17 @@ export const apiContracts = {
                 cfi: z.string().nullable(),
                 anchor: canonicalAnchorV1Schema.nullable().optional(),
                 anchorManifestVersion: z.number().int().positive().nullable().optional(),
+                compatibility: readerArtifactCompatibilitySchema.optional(),
                 updatedAt: z.number().int().nonnegative().nullable(),
               })
               .strict()
           ),
+          compatibility: readerArtifactCompatibilitySummarySchema
+            .extend({
+              highlightCompatibilityRate: z.number().min(0).max(1),
+            })
+            .strict()
+            .optional(),
         })
         .strict(),
       "httpsCallable",

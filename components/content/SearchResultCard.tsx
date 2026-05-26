@@ -6,9 +6,11 @@ import BilingualText from '../ui/BilingualText.tsx';
 import Button from '../ui/Button.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
-import { EyeIcon } from '../icons/EyeIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
+import { useBookCatalog } from '../../lib/hooks/useBookCatalog.ts';
+import { useReaderProgress } from '../../lib/hooks/useReaderProgress.ts';
+import OtherEditionsSheet from '../books/OtherEditionsSheet.tsx';
 
 type SemanticChip = {
   key: string;
@@ -17,6 +19,8 @@ type SemanticChip = {
   kind?: 'tradition' | 'form' | 'subform';
   value?: string;
 };
+
+type PrimarySearchAction = 'continue' | 'read' | 'get';
 
 export interface SearchResultCardProps {
   result: SearchResultDTO;
@@ -42,13 +46,12 @@ export interface SearchResultCardProps {
  * 🔒 SearchResultCard — Discovery & Insertion Safe
  *
  * - Card click → open details
- * - Eye → read ebook (if available)
+ * - Primary action consumes readerAuthority / reading_progress projections
  * - Plus → explicit add mutation
  * - actionSlot → context-specific action chrome without forking layout
  *
  * Guarantees:
  * - Stable DOM
- * - No hooks
  * - No upstream coupling
  */
 const SearchResultCard: React.FC<SearchResultCardProps> = ({
@@ -64,7 +67,12 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   className = ''
 }) => {
   const [didAdd, setDidAdd] = useState(false);
+  const [isEditionsSheetOpen, setIsEditionsSheetOpen] = useState(false);
   const addFeedbackTimerRef = useRef<number | null>(null);
+  const { data: catalogBook } = useBookCatalog(result.bookId, {
+    enabled: Boolean(result.bookId && result.resultType === 'canonical'),
+  });
+  const { progress: readerProgress } = useReaderProgress(result.bookId);
 
   useEffect(() => {
     return () => {
@@ -84,8 +92,27 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       ? result.authorEn || ''
       : result.authorAr || result.authorEn || '';
 
-  const canRead = result.acquired && !!onRead;
   const canAdd = typeof onAdd === 'function';
+  const hasActiveReadingProgress = Boolean(
+    readerProgress?.exists &&
+      (
+        readerProgress.status_state === 'reading' ||
+        readerProgress.status_state === 'paused' ||
+        readerProgress.status_state === 'rereading'
+      )
+  );
+  const hasReadableAttachment = catalogBook?.readerAuthority?.hasReadableAttachment === true;
+  const primaryAction: PrimarySearchAction = hasActiveReadingProgress
+    ? 'continue'
+    : hasReadableAttachment
+    ? 'read'
+    : 'get';
+  const primaryActionLabel =
+    primaryAction === 'continue'
+      ? (lang === 'en' ? 'Continue' : 'تابع')
+      : primaryAction === 'read'
+      ? (lang === 'en' ? 'Read' : 'اقرأ')
+      : (lang === 'en' ? 'Get' : 'احصل عليه');
   const groupedEditionText =
     result.editionPresence === 'grouped'
       ? lang === 'en'
@@ -111,30 +138,27 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     });
   }
 
-  if (result.ebookClass === 'in_app') {
+  if (hasReadableAttachment) {
     semanticChips.push({
-      key: 'ebook',
-      label: lang === 'en' ? 'In-App Ebook' : 'كتاب داخل التطبيق',
+      key: 'booktown-readable',
+      label: lang === 'en' ? 'Available in BookTown' : 'متاح في بوكتاون',
       className: 'border-amber-400/25 bg-amber-400/10 text-amber-200',
     });
   }
 
-  if (!result.acquired && result.available && result.readAccess === 'trusted_external') {
+  if (result.externalReadableSources && result.externalReadableSources.length > 0) {
     semanticChips.push({
-      key: 'available',
-      label:
-        lang === 'en'
-          ? `Available via ${result.readProvider === 'openLibrary'
-              ? 'OpenLibrary'
-              : result.readProvider === 'gutenberg'
-              ? 'Gutenberg'
-              : result.readProvider === 'hindawi'
-              ? 'Hindawi'
-              : result.readProvider === 'gallica'
-              ? 'Gallica'
-              : 'External'}`
-          : 'متاح للقراءة',
+      key: 'external-readable',
+      label: lang === 'en' ? 'External ebook' : 'كتاب خارجي',
       className: 'border-cyan-400/25 bg-cyan-400/10 text-cyan-200',
+    });
+  }
+
+  if (result.workType === 'edition' || result.editionPresence === 'edition') {
+    semanticChips.push({
+      key: 'physical',
+      label: lang === 'en' ? 'Physical' : 'ورقي',
+      className: 'border-white/15 bg-white/5 text-white/70',
     });
   }
 
@@ -212,163 +236,182 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     }, 900);
   };
 
+  const handleSearchPrimaryAction = (event: React.MouseEvent) => {
+    event.stopPropagation();
+    if (isBusy || isDisabled) return;
+
+    if (primaryAction === 'continue' || primaryAction === 'read') {
+      onRead?.(result);
+      return;
+    }
+
+    setIsEditionsSheetOpen(true);
+  };
+
   return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={handlePrimaryAction}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          handlePrimaryAction();
-        }
-      }}
-      className={cn(
-        'flex gap-3 p-3 rounded-xl',
-        'bg-slate-800/60 border border-white/10',
-        'hover:bg-slate-800 transition-colors',
-        'focus:outline-none focus:ring-2 focus:ring-accent',
-        isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-        className
-      )}
-      aria-disabled={isDisabled}
-    >
-      {/* Cover */}
-      <div className="w-14 h-20 flex-shrink-0 bg-slate-700 rounded-md overflow-hidden">
-        {result.coverUrl ? (
-          <img
-            src={result.coverUrl}
-            alt={title}
-            className="w-full h-full object-cover"
-            loading="lazy"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center p-1">
+    <>
+      <div
+        role="button"
+        tabIndex={0}
+        onClick={handlePrimaryAction}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            handlePrimaryAction();
+          }
+        }}
+        className={cn(
+          'flex gap-3 p-3 rounded-xl',
+          'bg-slate-800/60 border border-white/10',
+          'hover:bg-slate-800 transition-colors',
+          'focus:outline-none focus:ring-2 focus:ring-accent',
+          isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+          className
+        )}
+        aria-disabled={isDisabled}
+      >
+        {/* Cover */}
+        <div className="w-14 h-20 flex-shrink-0 bg-slate-700 rounded-md overflow-hidden">
+          {result.coverUrl ? (
+            <img
+              src={result.coverUrl}
+              alt={title}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center p-1">
+              {title}
+            </div>
+          )}
+        </div>
+
+        {/* Metadata */}
+        <div className="flex-grow min-w-0">
+          <BilingualText className="font-semibold text-sm leading-tight line-clamp-2">
             {title}
-          </div>
-        )}
-      </div>
-
-      {/* Metadata */}
-      <div className="flex-grow min-w-0">
-        <BilingualText className="font-semibold text-sm leading-tight line-clamp-2">
-          {title}
-        </BilingualText>
-
-        {author && (
-          <BilingualText
-            role="Caption"
-            className="text-white/70 mt-0.5 line-clamp-1"
-          >
-            {author}
           </BilingualText>
-        )}
 
-        {(visibleChips.length > 0 || groupedEditionText) && (
-          <div className="mt-2 space-y-1.5">
-            {visibleChips.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {visibleChips.map((chip) => {
-                  const chipClassName = cn(
-                    'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
-                    chip.kind && onSemanticChipClick && 'cursor-pointer hover:bg-white/10',
-                    chip.className
-                  );
+          {author && (
+            <BilingualText
+              role="Caption"
+              className="text-white/70 mt-0.5 line-clamp-1"
+            >
+              {author}
+            </BilingualText>
+          )}
 
-                  return chip.kind && chip.value && onSemanticChipClick ? (
-                    <button
-                      key={chip.key}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSemanticChipClick({
-                          kind: chip.kind,
-                          value: chip.value,
-                          result,
-                        });
-                      }}
-                      className={chipClassName}
-                    >
-                      {chip.label}
-                    </button>
-                  ) : (
-                    <span key={chip.key} className={chipClassName}>
-                      {chip.label}
-                    </span>
-                  );
-                })}
-              </div>
-            )}
+          <BilingualText role="Caption" className="mt-1 text-white/45 text-[11px] leading-tight">
+            {[result.language, result.workType].filter(Boolean).join(' · ')}
+          </BilingualText>
 
-            {groupedEditionText && (
-              <BilingualText
-                role="Caption"
-                className="text-white/55 text-[11px] leading-tight"
-              >
-                {groupedEditionText}
-              </BilingualText>
-            )}
-          </div>
-        )}
-      </div>
+          {(visibleChips.length > 0 || groupedEditionText) && (
+            <div className="mt-2 space-y-1.5">
+              {visibleChips.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {visibleChips.map((chip) => {
+                    const chipClassName = cn(
+                      'inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.08em]',
+                      chip.kind && onSemanticChipClick && 'cursor-pointer hover:bg-white/10',
+                      chip.className
+                    );
 
-      {/* Actions */}
-      <div className="flex flex-col gap-2 justify-center items-center">
-        {actionSlot ? (
-          <div onClick={(e) => e.stopPropagation()}>{actionSlot}</div>
-        ) : null}
+                    return chip.kind && chip.value && onSemanticChipClick ? (
+                      <button
+                        key={chip.key}
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onSemanticChipClick({
+                            kind: chip.kind,
+                            value: chip.value,
+                            result,
+                          });
+                        }}
+                        className={chipClassName}
+                      >
+                        {chip.label}
+                      </button>
+                    ) : (
+                      <span key={chip.key} className={chipClassName}>
+                        {chip.label}
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
 
-        {canRead && (
-          <button
-            type="button"
-            disabled={isBusy || isDisabled}
-            title={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
-            onClick={(e) => {
-              e.stopPropagation();
-              onRead?.(result);
-            }}
-            className={cn(
-              'p-2 rounded-full border transition-colors',
-              'bg-white/5 border-white/10 hover:bg-white/10 cursor-pointer'
-            )}
-            aria-label={lang === 'en' ? 'Read ebook' : 'اقرأ الكتاب'}
-          >
-            <EyeIcon className="h-4 w-4 text-white/90" />
-          </button>
-        )}
+              {groupedEditionText && (
+                <BilingualText
+                  role="Caption"
+                  className="text-white/55 text-[11px] leading-tight"
+                >
+                  {groupedEditionText}
+                </BilingualText>
+              )}
+            </div>
+          )}
+        </div>
 
-        {!actionSlot && canAdd && (
+        {/* Actions */}
+        <div className="flex flex-col gap-2 justify-center items-center">
           <Button
-            variant="icon"
-            aria-label={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
-            title={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
-            className={cn(
-              "!h-10 !w-10 !min-h-10 !min-w-10",
-              "!rounded-full !border !border-accent/45",
-              "!bg-accent/20 !text-accent shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_20px_rgba(0,0,0,0.22)]",
-              "transition-all hover:!bg-accent/30 hover:!border-accent/70",
-              "active:scale-95 focus-visible:!ring-2 focus-visible:!ring-accent focus-visible:!ring-offset-2 focus-visible:!ring-offset-slate-950",
-              didAdd && "!bg-accent/30 !border-accent/80"
-            )}
+            variant="ghost"
             disabled={isBusy || isDisabled}
-            onClick={(e) => {
-              e.stopPropagation();
-              if (isDisabled) return;
-              onAdd?.(result);
-              triggerAddFeedback();
-            }}
+            onClick={handleSearchPrimaryAction}
+            className="!h-9 !rounded-full border border-white/10 !px-4 !text-xs"
           >
-            {isBusy ? (
-              <LoadingSpinner className="!h-4 !w-4" />
-            ) : didAdd ? (
-              <CheckCircleIcon className="h-5 w-5 text-accent" />
-            ) : (
-              <PlusIcon className="h-8 w-8" />
-            )}
+            {primaryActionLabel}
           </Button>
-        )}
+
+          {actionSlot ? (
+            <div onClick={(e) => e.stopPropagation()}>{actionSlot}</div>
+          ) : null}
+
+          {!actionSlot && canAdd && (
+            <Button
+              variant="icon"
+              aria-label={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
+              title={lang === 'en' ? 'Add book' : 'إضافة كتاب'}
+              className={cn(
+                "!h-10 !w-10 !min-h-10 !min-w-10",
+                "!rounded-full !border !border-accent/45",
+                "!bg-accent/20 !text-accent shadow-[0_0_0_1px_rgba(255,255,255,0.06),0_8px_20px_rgba(0,0,0,0.22)]",
+                "transition-all hover:!bg-accent/30 hover:!border-accent/70",
+                "active:scale-95 focus-visible:!ring-2 focus-visible:!ring-accent focus-visible:!ring-offset-2 focus-visible:!ring-offset-slate-950",
+                didAdd && "!bg-accent/30 !border-accent/80"
+              )}
+              disabled={isBusy || isDisabled}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isDisabled) return;
+                onAdd?.(result);
+                triggerAddFeedback();
+              }}
+            >
+              {isBusy ? (
+                <LoadingSpinner className="!h-4 !w-4" />
+              ) : didAdd ? (
+                <CheckCircleIcon className="h-5 w-5 text-accent" />
+              ) : (
+                <PlusIcon className="h-8 w-8" />
+              )}
+            </Button>
+          )}
+        </div>
       </div>
-    </div>
+      <OtherEditionsSheet
+        isOpen={isEditionsSheetOpen}
+        onClose={() => setIsEditionsSheetOpen(false)}
+        bookId={result.bookId}
+        lang={lang}
+        title={title}
+        author={author}
+        coverUrl={result.coverUrl}
+        coverMode="uploaded"
+        externalReadableSources={result.externalReadableSources}
+      />
+    </>
   );
 };
 

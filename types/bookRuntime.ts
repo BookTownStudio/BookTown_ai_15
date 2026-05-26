@@ -21,6 +21,7 @@ export interface BookDetailsRuntimeDTO extends BookPublicViewDTO {
   ebookAttachmentId?: string;
   ebookStoragePath?: string;
   downloadable?: boolean;
+  readerAuthority?: Book["readerAuthority"];
   providerExternalIds?: string[];
   externalReadableSources?: ExternalReadableSourceDTO[];
 }
@@ -58,6 +59,7 @@ export function toBookDetailsRuntimeDTO(book: Book): BookDetailsRuntimeDTO {
     ...(book.ebookAttachmentId ? { ebookAttachmentId: book.ebookAttachmentId } : {}),
     ...(book.ebookStoragePath ? { ebookStoragePath: book.ebookStoragePath } : {}),
     ...(book.downloadable === true ? { downloadable: true } : {}),
+    ...(book.readerAuthority ? { readerAuthority: book.readerAuthority } : {}),
     ...(book.providerExternalIds ? { providerExternalIds: book.providerExternalIds } : {}),
     ...(book.externalReadableSources ? { externalReadableSources: book.externalReadableSources } : {}),
   };

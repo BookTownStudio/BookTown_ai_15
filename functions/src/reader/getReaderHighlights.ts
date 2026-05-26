@@ -2,6 +2,12 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { FieldPath, Timestamp } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
+import {
+  evaluateContinuityCompatibility,
+  type ReaderSourceProvenance,
+  provenanceFromManifest,
+  provenanceFromStoredRecord,
+} from "./readerContinuityCompatibility";
 
 const db = admin.firestore();
 const MAX_HIGHLIGHTS = 500;
@@ -124,6 +130,27 @@ function toMillis(value: unknown): number {
   return 0;
 }
 
+async function loadSourceProvenance(params: {
+  uid: string;
+  bookId: string;
+}): Promise<ReaderSourceProvenance | null> {
+  try {
+    return provenanceFromManifest(
+      await (await import("./readerManifestService")).getOrBuildReaderManifest(params)
+    );
+  } catch (error) {
+    if (process.env.NODE_ENV === "test") {
+      logger.warn("[READER][HIGHLIGHT_COMPATIBILITY_SKIPPED_IN_TEST]", {
+        uid: params.uid,
+        bookId: params.bookId,
+        error: String(error),
+      });
+      return null;
+    }
+    throw error;
+  }
+}
+
 export const getReaderHighlightsHandler = async (request: any) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Auth required.");
@@ -141,6 +168,8 @@ export const getReaderHighlightsHandler = async (request: any) => {
     bookId,
   });
 
+  const sourceProvenance = await loadSourceProvenance({ uid, bookId });
+
   const snap = await db
     .collection("reader_highlights")
     .where(FieldPath.documentId(), ">=", prefix)
@@ -148,10 +177,27 @@ export const getReaderHighlightsHandler = async (request: any) => {
     .limit(MAX_HIGHLIGHTS)
     .get();
 
+  let staleAnchorRejectedCount = 0;
+  const compatibilityCounts: Record<string, number> = {};
+
   const highlights = snap.docs
     .map((doc) => {
       const data = doc.data();
       const anchor = sanitizeCanonicalAnchor(data.anchor);
+      const compatibility = sourceProvenance
+        ? evaluateContinuityCompatibility({
+          current: sourceProvenance,
+          stored: provenanceFromStoredRecord(data, anchor),
+        })
+        : null;
+      if (compatibility) {
+        compatibilityCounts[compatibility.status] =
+          (compatibilityCounts[compatibility.status] || 0) + 1;
+      }
+      if (anchor && compatibility && !compatibility.compatible) {
+        staleAnchorRejectedCount += 1;
+        return null;
+      }
       return {
         highlightId:
           typeof data.highlightId === "string" && data.highlightId.trim().length > 0
@@ -177,9 +223,22 @@ export const getReaderHighlightsHandler = async (request: any) => {
           anchor?.manifestVersion ??
           asPositiveInt(data.anchorManifestVersion) ??
           null,
+        ...(compatibility && sourceProvenance
+          ? {
+              compatibility: {
+                status: compatibility.status,
+                reasons: compatibility.reasons,
+                manifestVersion: sourceProvenance.manifestVersion,
+                sourceSignatureHash: sourceProvenance.sourceSignatureHash,
+                attachmentId: sourceProvenance.attachmentId,
+                sourceType: sourceProvenance.sourceType,
+              },
+            }
+          : {}),
         updatedAt: toMillis(data.updatedAt) || null,
       };
     })
+    .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
     .sort((left, right) => {
       const rightUpdated = right.updatedAt || 0;
       const leftUpdated = left.updatedAt || 0;
@@ -191,6 +250,20 @@ export const getReaderHighlightsHandler = async (request: any) => {
 
   return {
     highlights,
+    ...(sourceProvenance
+      ? {
+          compatibility: {
+            staleAnchorRejectedCount,
+            highlightCompatibilityRate:
+              snap.docs.length > 0 ? highlights.length / snap.docs.length : 1,
+            counts: compatibilityCounts,
+            manifestVersion: sourceProvenance.manifestVersion,
+            sourceSignatureHash: sourceProvenance.sourceSignatureHash,
+            attachmentId: sourceProvenance.attachmentId,
+            sourceType: sourceProvenance.sourceType,
+          },
+        }
+      : {}),
   };
 };
 

@@ -74,6 +74,29 @@ export class LibrarySearchService implements LibrarySearchDataService {
             : null;
     }
 
+    async listEditionsForBook(
+        bookId: string,
+        options: { limit?: number } = {}
+    ): Promise<BookEdition[]> {
+        const db = this.getDb();
+        const normalizedBookId = typeof bookId === 'string' ? bookId.trim() : '';
+        if (!db || !normalizedBookId) return [];
+
+        const resultLimit = Math.min(Math.max(Math.trunc(options.limit || 12), 1), 24);
+        const q = query(
+            collection(db, 'editions'),
+            where('bookId', '==', normalizedBookId),
+            limit(resultLimit)
+        );
+        const snap = await getDocs(q);
+
+        return snap.docs.map((editionSnap) => ({
+            ...editionSnap.data(),
+            editionId: editionSnap.id,
+            bookId: normalizedBookId,
+        } as BookEdition));
+    }
+
     async getWork(workId: string): Promise<BibliographicWork | null> {
         const db = this.getDb();
         if (!db) return null;

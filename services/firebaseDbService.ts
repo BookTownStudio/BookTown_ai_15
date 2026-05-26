@@ -591,6 +591,11 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
     source.ebookAttachmentId.trim().length > 0
       ? { ebookAttachmentId: source.ebookAttachmentId.trim() }
       : {}),
+    ...(source.readerAuthority &&
+    typeof source.readerAuthority === "object" &&
+    !Array.isArray(source.readerAuthority)
+      ? { readerAuthority: source.readerAuthority as Book["readerAuthority"] }
+      : {}),
   });
 };
 

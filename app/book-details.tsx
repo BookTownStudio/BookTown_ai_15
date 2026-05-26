@@ -25,6 +25,8 @@ import SelectShelfModal from '../components/modals/SelectShelfModal.tsx';
 import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import GlassCard from '../components/ui/GlassCard.tsx';
 import CanonicalCoverArtwork from '../components/content/CanonicalCoverArtwork.tsx';
+import Modal from '../components/ui/Modal.tsx';
+import OtherEditionsSheet from '../components/books/OtherEditionsSheet.tsx';
 
 import {
   ShareIcon,
@@ -33,10 +35,9 @@ import {
   QuoteIcon,
   EllipsisIcon,
   ShelvesIcon,
-  SendIcon,
   EditIcon,
   BookIcon,
-  ChevronLeftIcon
+  ChevronLeftIcon,
 } from '../components/icons';
 
 import { cn } from '../lib/utils.ts';
@@ -50,59 +51,16 @@ import { ensureCanonicalBook } from '../lib/books/ensureCanonicalBook.ts';
 import { parseExternalRouteBookId, resolveIngestionSource } from '../lib/books/searchNavigation.ts';
 import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
-import { acquireExternalEbookForRead } from '../lib/books/acquireExternalEbookForRead.ts';
 import type { GraphRelationshipType } from '../types/literaryGraph.ts';
-import { useQueryClient } from '../lib/react-query.ts';
-import { enterReadingState } from '../lib/actions/enterReadingState.ts';
+import { useReaderProgress } from '../lib/hooks/useReaderProgress.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
-const ACQUISITION_CONFIRM_MAX_ATTEMPTS = 3;
-const ACQUISITION_CONFIRM_DELAY_MS = 500;
+type PrimaryBookAction = 'continue' | 'read' | 'get';
 
-type AcquisitionState = 'idle' | 'pending' | 'success' | 'failed';
-type ReadabilityStatus = 'none' | 'in_app' | 'trusted_external';
-
-function getCanonicalEbookAttachmentId(
-  value: Pick<BookDetailsRuntimeDTO, 'ebookAttachmentId'> | null | undefined
-): string | null {
-  const raw = value?.ebookAttachmentId;
-  return typeof raw === 'string' && raw.trim().length > 0 ? raw.trim() : null;
-}
-
-function hasReadableCopy(value: BookDetailsRuntimeDTO | null | undefined): boolean {
+function hasReadableAttachmentAuthority(value: BookDetailsRuntimeDTO | null | undefined): boolean {
   if (!value) return false;
-  return Boolean(
-    getCanonicalEbookAttachmentId(value) ||
-      (typeof value.ebookStoragePath === 'string' && value.ebookStoragePath.trim().length > 0)
-  );
-}
-
-function resolveReadabilityStatus(params: {
-  bookDetails: BookDetailsRuntimeDTO | null;
-  pendingSearchResult: SearchResultDTO | undefined;
-  hasReadableEbook: boolean;
-}): ReadabilityStatus {
-  const { bookDetails, pendingSearchResult, hasReadableEbook } = params;
-  if (hasReadableEbook || pendingSearchResult?.readAccess === 'in_app') {
-    return 'in_app';
-  }
-
-  if (
-    pendingSearchResult?.available === true &&
-    pendingSearchResult?.readAccess === 'trusted_external'
-  ) {
-    return 'trusted_external';
-  }
-
-  const readability = (bookDetails as unknown as { readability?: { status?: unknown } } | null)?.readability;
-  return readability?.status === 'trusted_external' ? 'trusted_external' : 'none';
-}
-
-function waitForAcquisitionConfirmation(ms: number): Promise<void> {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, ms);
-  });
+  return value.readerAuthority?.hasReadableAttachment === true;
 }
 
 function parseRecommendationContext(
@@ -171,7 +129,6 @@ const BookDetailsScreen: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
   const { mutate: toggleBook } = useToggleBookOnShelf();
-  const queryClient = useQueryClient();
 
   const params =
     currentView.type === 'immersive'
@@ -183,7 +140,6 @@ const BookDetailsScreen: React.FC = () => {
   const pendingAction = typeof params?.pendingAction === 'string' ? params.pendingAction : 'NONE';
   const pendingShelfId = typeof params?.pendingShelfId === 'string' ? params.pendingShelfId : '';
   const pendingSearchResult = (params?.searchResult as SearchResultDTO | undefined) || undefined;
-  const autoAcquireOnOpen = params?.autoAcquireOnOpen === true;
   const recommendationContext = parseRecommendationContext(params?.recommendationContext);
   const hasExternalPendingSearch = pendingSearchResult?.resultType === 'external';
   const directExternalRoute = useMemo(
@@ -196,14 +152,10 @@ const BookDetailsScreen: React.FC = () => {
   const [isResolvingExternal, setIsResolvingExternal] = useState(false);
   const [externalResolveFailed, setExternalResolveFailed] = useState(false);
   const [prepareTimedOut, setPrepareTimedOut] = useState(false);
-  const [acquisitionState, setAcquisitionState] = useState<AcquisitionState>('idle');
-  const [acquisitionErrorMessage, setAcquisitionErrorMessage] = useState<string | null>(null);
-  const [confirmedReadableAttachmentId, setConfirmedReadableAttachmentId] = useState<string | null>(null);
-  const [isManualContinuityBusy, setIsManualContinuityBusy] = useState(false);
+  const [isAcquisitionSheetOpen, setIsAcquisitionSheetOpen] = useState(false);
   const ingestionStartedRef = useRef<string>('');
   const resolvedCanonicalRef = useRef<string | null>(null);
   const pendingActionRef = useRef<string>('');
-  const autoAcquireStartedRef = useRef<string>('');
 
   const isSurpriseRoute = originalBookId === 'surprise';
   const bookId =
@@ -213,9 +165,9 @@ const BookDetailsScreen: React.FC = () => {
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
   const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
+  const { progress: readerProgress } = useReaderProgress(bookId);
   const {
     isSavedOnPhysicalShelf = false,
-    isCurrentlyReadingFromProgress = false,
   } = useBookShelfStatus(bookId);
   const { data: semanticGraph } = useBookSemanticGraph(bookId, {
     enabled: Boolean(bookId && book),
@@ -229,15 +181,11 @@ const BookDetailsScreen: React.FC = () => {
     ingestionStartedRef.current = '';
     resolvedCanonicalRef.current = null;
     pendingActionRef.current = '';
-    autoAcquireStartedRef.current = '';
     setResolvedExternalBookId(null);
     setIsResolvingExternal(false);
     setExternalResolveFailed(false);
     setPrepareTimedOut(false);
-    setAcquisitionState('idle');
-    setAcquisitionErrorMessage(null);
-    setConfirmedReadableAttachmentId(null);
-    setIsManualContinuityBusy(false);
+    setIsAcquisitionSheetOpen(false);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
 
   useEffect(() => {
@@ -508,6 +456,7 @@ const BookDetailsScreen: React.FC = () => {
   }, [reviews, user?.uid]);
 
   const [isShelfModalOpen, setIsShelfModalOpen] = useState(false);
+  const [isReviewsModalOpen, setIsReviewsModalOpen] = useState(false);
   const [isAddingReview, setIsAddingReview] = useState(false);
   const [isEditingReview, setIsEditingReview] = useState(false);
   const [userRating, setUserRating] = useState(0);
@@ -534,28 +483,34 @@ const BookDetailsScreen: React.FC = () => {
     () => (book ? toBookDetailsRuntimeDTO(book) : null),
     [book]
   );
-  const liveReadableAttachmentId = getCanonicalEbookAttachmentId(bookDetails);
-  const hasReadableEbook =
-    hasReadableCopy(bookDetails) || Boolean(confirmedReadableAttachmentId);
-  const readabilityStatus = resolveReadabilityStatus({
-    bookDetails,
-    pendingSearchResult,
-    hasReadableEbook,
-  });
-  const availabilityCount = readabilityStatus === 'none' ? 0 : 1;
-  const canPrepareReadableCopy =
-    !hasReadableEbook &&
-    availabilityCount > 0 &&
-    readabilityStatus === 'trusted_external';
-  const canAttemptRead = hasReadableEbook;
-  const isPreparingReadableCopy = acquisitionState === 'pending';
-  const canTrackManualContinuity = Boolean(
-    bookId &&
-      book &&
-      availabilityCount > 0 &&
-      !hasReadableEbook &&
-      !canPrepareReadableCopy
+  const hasReadableAttachment = hasReadableAttachmentAuthority(bookDetails);
+  const hasActiveReadingProgress = Boolean(
+    readerProgress?.exists &&
+      (
+        readerProgress.status_state === 'reading' ||
+        readerProgress.status_state === 'paused' ||
+        readerProgress.status_state === 'rereading'
+      )
   );
+  const primaryAction: PrimaryBookAction = hasActiveReadingProgress
+    ? 'continue'
+    : hasReadableAttachment
+    ? 'read'
+    : 'get';
+  const primaryActionLabel =
+    primaryAction === 'continue'
+      ? (lang === 'en' ? 'Continue Reading' : 'تابع القراءة')
+      : primaryAction === 'read'
+      ? (lang === 'en' ? 'Read' : 'اقرأ')
+      : (lang === 'en' ? 'Get' : 'احصل عليه');
+  const readingStatusLabel =
+    hasActiveReadingProgress
+      ? (lang === 'en' ? 'Reading' : 'قيد القراءة')
+      : readerProgress?.status_state === 'completed'
+      ? (lang === 'en' ? 'Completed' : 'مكتمل')
+      : readerProgress?.status_state === 'abandoned'
+      ? (lang === 'en' ? 'Paused' : 'متوقف')
+      : (lang === 'en' ? 'Not started' : 'لم يبدأ');
 
   const displayBook = useMemo(() => {
     if (bookDetails) return bookDetails;
@@ -563,24 +518,6 @@ const BookDetailsScreen: React.FC = () => {
 
     return buildPendingSearchBookView(pendingSearchResult, bookId);
   }, [bookDetails, bookId, pendingSearchResult]);
-
-  useEffect(() => {
-    if (!liveReadableAttachmentId) return;
-    setConfirmedReadableAttachmentId((current) =>
-      current === liveReadableAttachmentId ? current : liveReadableAttachmentId
-    );
-    setAcquisitionErrorMessage(null);
-    setAcquisitionState((current) => (current === 'pending' || current === 'failed' ? 'success' : current));
-  }, [liveReadableAttachmentId]);
-
-  const acquisitionFailedMessage =
-    lang === 'en'
-      ? 'This ebook could not be prepared. Please try again.'
-      : 'تعذر تجهيز هذا الكتاب الإلكتروني. حاول مرة أخرى.';
-  const acquisitionConfirmationFailedMessage =
-    lang === 'en'
-      ? 'The ebook was not confirmed after preparation. Please try again.'
-      : 'لم يتم تأكيد الكتاب الإلكتروني بعد التجهيز. حاول مرة أخرى.';
 
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;
@@ -598,71 +535,10 @@ const BookDetailsScreen: React.FC = () => {
     }).catch(() => {});
   };
 
-  const confirmReadableAttachment = async (): Promise<string | null> => {
-    if (liveReadableAttachmentId) {
-      return liveReadableAttachmentId;
-    }
+  const handlePrimaryAction = () => {
+    if (!bookId) return;
 
-    for (let attempt = 1; attempt <= ACQUISITION_CONFIRM_MAX_ATTEMPTS; attempt += 1) {
-      const refreshed = await refetch();
-      const attachmentId = getCanonicalEbookAttachmentId(refreshed.data);
-      if (attachmentId) {
-        return attachmentId;
-      }
-      if (attempt < ACQUISITION_CONFIRM_MAX_ATTEMPTS) {
-        await waitForAcquisitionConfirmation(ACQUISITION_CONFIRM_DELAY_MS);
-      }
-    }
-
-    return null;
-  };
-
-  const prepareReadableCopy = async (silent: boolean): Promise<boolean> => {
-    if (!bookId || isPreparingReadableCopy || !canPrepareReadableCopy) {
-      if (!silent && availabilityCount === 0) {
-        showToast(lang === 'en' ? 'No ebook available.' : 'لا يتوفر كتاب إلكتروني.');
-      }
-      return false;
-    }
-
-    try {
-      setAcquisitionState('pending');
-      setAcquisitionErrorMessage(null);
-      if (!silent) {
-        showToast(lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...');
-      }
-      await acquireExternalEbookForRead({ bookId });
-      const attachmentId = await confirmReadableAttachment();
-      if (!attachmentId) {
-        setAcquisitionState('failed');
-        setAcquisitionErrorMessage(acquisitionConfirmationFailedMessage);
-        return false;
-      }
-      setConfirmedReadableAttachmentId(attachmentId);
-      setAcquisitionState('success');
-      if (!silent) {
-        showToast(lang === 'en' ? 'Ebook is ready.' : 'الكتاب الإلكتروني جاهز.');
-      }
-      return true;
-    } catch (error) {
-      console.error('[BOOK_DETAILS][READ_ACQUIRE_FAILED]', error);
-      setAcquisitionState('failed');
-      setAcquisitionErrorMessage(acquisitionFailedMessage);
-      if (!silent) {
-        showToast(
-          lang === 'en'
-            ? 'This book could not be prepared for reading.'
-            : 'تعذر تجهيز هذا الكتاب للقراءة.'
-        );
-      }
-      return false;
-    }
-  };
-
-  const handleRead = async () => {
-    if (!bookId || isPreparingReadableCopy || isManualContinuityBusy) return;
-
-    if (hasReadableEbook) {
+    if (primaryAction === 'continue' || primaryAction === 'read') {
       navigate({
         type: 'immersive',
         id: 'reader',
@@ -671,69 +547,17 @@ const BookDetailsScreen: React.FC = () => {
       return;
     }
 
-    if (canPrepareReadableCopy) {
-      await prepareReadableCopy(false);
-      return;
-    }
-
-    if (canTrackManualContinuity) {
-      let progress: number | undefined;
-      if (isCurrentlyReadingFromProgress) {
-        const raw = window.prompt(
-          lang === 'en'
-            ? 'Enter reading progress percentage (0-100).'
-            : 'أدخل نسبة التقدم في القراءة (0-100).'
-        );
-        if (raw === null) return;
-        const parsed = Number(raw);
-        if (!Number.isFinite(parsed) || parsed < 0 || parsed > 100) {
-          showToast(lang === 'en' ? 'Progress must be between 0 and 100.' : 'يجب أن تكون النسبة بين 0 و100.');
-          return;
-        }
-        progress = parsed / 100;
-      }
-
-      setIsManualContinuityBusy(true);
-      try {
-        await enterReadingState({
-          bookId,
-          targetState: 'reading',
-          ...(typeof progress === 'number' ? { progress } : {}),
-        });
-        queryClient.invalidateQueries({ queryKey: ['currentlyReading'] });
-        showToast(
-          isCurrentlyReadingFromProgress
-            ? (lang === 'en' ? 'Reading progress updated.' : 'تم تحديث تقدم القراءة.')
-            : (lang === 'en' ? 'Added to Currently Reading.' : 'تمت الإضافة إلى تقرأ الآن.')
-        );
-      } catch (error) {
-        console.error('[BOOK_DETAILS][MANUAL_CONTINUITY_FAILED]', error);
-        showToast(
-          lang === 'en'
-            ? 'Unable to update reading progress.'
-            : 'تعذر تحديث تقدم القراءة.'
-        );
-      } finally {
-        setIsManualContinuityBusy(false);
-      }
-    }
+    setIsAcquisitionSheetOpen(true);
   };
 
-  useEffect(() => {
-    if (!autoAcquireOnOpen || !bookId || hasReadableEbook || !canPrepareReadableCopy) return;
+  const handleOpenQuotes = () => {
+    if (!bookId) return;
+    navigate({ type: 'immersive', id: 'quotes', params: { bookId, from: currentView } });
+  };
 
-    const acquisitionKey = `${bookId}:${pendingSearchResult?.id || 'canonical'}`;
-    if (autoAcquireStartedRef.current === acquisitionKey) return;
-    autoAcquireStartedRef.current = acquisitionKey;
-
-    void prepareReadableCopy(true);
-  }, [
-    autoAcquireOnOpen,
-    bookId,
-    canPrepareReadableCopy,
-    hasReadableEbook,
-    pendingSearchResult?.id,
-  ]);
+  const handleOpenReviews = () => {
+    setIsReviewsModalOpen(true);
+  };
 
   const handlePublishReview = async () => {
     if (!bookId || !user?.uid) return;
@@ -966,12 +790,28 @@ const BookDetailsScreen: React.FC = () => {
                   <span className="mr-1.5 text-sm font-black">{(displayBook?.rating || 0).toFixed(1)}</span>
                   <span className="text-[10px] tracking-tighter text-white/30">({(displayBook?.ratingsCount || 0).toLocaleString()})</span>
                 </div>
+                <div className="rounded-full border border-white/10 bg-white/5 px-2.5 py-1 text-xs font-semibold text-white/60">
+                  {readingStatusLabel}
+                </div>
               </div>
             </div>
           </section>
 
-          {/* Action Row */}
-          <section className="grid grid-cols-4 gap-3 lg:gap-4">
+          {/* Primary Action */}
+          <section>
+            <Button
+              variant="primary"
+              onClick={handlePrimaryAction}
+              disabled={!bookId}
+              className="!h-14 w-full !rounded-2xl !text-base"
+            >
+              <EyeIcon className="mr-2 h-5 w-5" />
+              {primaryActionLabel}
+            </Button>
+          </section>
+
+          {/* Secondary Actions */}
+          <section className="grid grid-cols-5 gap-3 lg:gap-4">
             <button
               onClick={() => setIsShelfModalOpen(true)}
               disabled={!bookId || !book}
@@ -986,12 +826,6 @@ const BookDetailsScreen: React.FC = () => {
                 {lang === 'en' ? 'Shelf' : 'الرف'}
               </span>
             </button>
-            <button className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3">
-              <QuoteIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
-                {lang === 'en' ? 'Quotes' : 'اقتباسات'}
-              </span>
-            </button>
             <button
               onClick={handleShare}
               className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
@@ -1002,125 +836,40 @@ const BookDetailsScreen: React.FC = () => {
               </span>
             </button>
             <button
-              onClick={handleRead}
-              disabled={
-                availabilityCount === 0 ||
-                isPreparingReadableCopy ||
-                isManualContinuityBusy ||
-                (!canAttemptRead && !canPrepareReadableCopy && !canTrackManualContinuity)
-              }
+              onClick={handleOpenQuotes}
+              disabled={!bookId}
               className={cn(
-                'flex aspect-square items-center justify-center rounded-2xl border transition-all lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
-                canAttemptRead
-                  ? 'border-accent bg-accent text-black shadow-lg shadow-accent/25 ring-1 ring-accent/40'
-                  : canPrepareReadableCopy
-                  ? 'border-cyan-400/40 bg-cyan-400/10 text-cyan-100'
-                  : canTrackManualContinuity
-                  ? 'border-emerald-400/35 bg-emerald-400/10 text-emerald-100'
-                  : 'border-white/10 bg-white/5 opacity-20'
+                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                !bookId && 'opacity-40'
               )}
             >
-              {isPreparingReadableCopy || isManualContinuityBusy ? <LoadingSpinner className="!h-5 !w-5" /> : <EyeIcon className={cn('h-6 w-6', canAttemptRead && 'h-6.5 w-6.5')} />}
-              <span className={cn('hidden text-xs font-semibold tracking-wide lg:block', canAttemptRead ? 'text-black/80' : 'text-white/70')}>
-                {isPreparingReadableCopy
-                  ? (lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...')
-                  : isManualContinuityBusy
-                  ? (lang === 'en' ? 'Updating...' : 'جارٍ التحديث...')
-                  : canAttemptRead
-                  ? (lang === 'en' ? 'Read' : 'اقرأ')
-                  : acquisitionState === 'failed' && canPrepareReadableCopy
-                  ? (lang === 'en' ? 'Retry ebook' : 'أعد تجهيز الكتاب الإلكتروني')
-                  : canPrepareReadableCopy
-                  ? (lang === 'en' ? 'Prepare ebook' : 'جهّز الكتاب الإلكتروني')
-                  : canTrackManualContinuity && isCurrentlyReadingFromProgress
-                  ? (lang === 'en' ? 'Update Progress' : 'تحديث التقدم')
-                  : canTrackManualContinuity
-                  ? (lang === 'en' ? 'Start Reading' : 'ابدأ القراءة')
-                  : (lang === 'en' ? 'Unavailable' : 'غير متاح')}
+              <QuoteIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Quotes' : 'اقتباسات'}
+              </span>
+            </button>
+            <button
+              onClick={handleOpenReviews}
+              disabled={!bookId}
+              className={cn(
+                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                !bookId && 'opacity-40'
+              )}
+            >
+              <EditIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Review' : 'مراجعة'}
+              </span>
+            </button>
+            <button
+              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
+            >
+              <EllipsisIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'More' : 'المزيد'}
               </span>
             </button>
           </section>
-
-          {availabilityCount === 0 && (
-            <section className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-white">{lang === 'en' ? 'No ebook available' : 'لا يتوفر كتاب إلكتروني'}</p>
-                <p className="mt-1 text-xs text-white/60">
-                  {lang === 'en'
-                    ? 'Add to shelf, find an external edition, or upload your own ebook.'
-                    : 'أضفه إلى الرف، أو ابحث عن طبعة خارجية، أو ارفع نسختك الإلكترونية.'}
-                </p>
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                <Button
-                  variant="ghost"
-                  onClick={() => setIsShelfModalOpen(true)}
-                  disabled={!bookId || !book}
-                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
-                >
-                  {lang === 'en' ? 'Add to shelf' : 'أضف إلى الرف'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
-                >
-                  {lang === 'en' ? 'Find external edition' : 'ابحث عن طبعة خارجية'}
-                </Button>
-                <Button
-                  variant="ghost"
-                  className="!h-9 !rounded-full border border-white/10 !px-3 !text-xs !text-white"
-                >
-                  {lang === 'en' ? 'Upload your own ebook' : 'ارفع كتابك الإلكتروني'}
-                </Button>
-              </div>
-            </section>
-          )}
-
-          {availabilityCount > 0 && acquisitionState !== 'idle' && (
-            <section
-              className={cn(
-                'flex items-center justify-between gap-3 rounded-2xl border px-4 py-3',
-                acquisitionState === 'pending'
-                  ? 'border-cyan-400/25 bg-cyan-400/10'
-                  : acquisitionState === 'failed'
-                  ? 'border-rose-400/25 bg-rose-400/10'
-                  : 'border-emerald-400/25 bg-emerald-400/10'
-              )}
-            >
-              <div className="min-w-0">
-                <p
-                  className={cn(
-                    'text-sm font-semibold',
-                    acquisitionState === 'pending'
-                      ? 'text-cyan-100'
-                      : acquisitionState === 'failed'
-                      ? 'text-rose-100'
-                      : 'text-emerald-100'
-                  )}
-                >
-                  {acquisitionState === 'pending'
-                    ? (lang === 'en' ? 'Preparing ebook...' : 'جارٍ تجهيز الكتاب الإلكتروني...')
-                    : acquisitionState === 'failed'
-                    ? (lang === 'en' ? 'Ebook preparation failed.' : 'فشل تجهيز الكتاب الإلكتروني.')
-                    : (lang === 'en' ? 'Ebook ready to read.' : 'الكتاب الإلكتروني جاهز للقراءة.')}
-                </p>
-                {acquisitionState === 'failed' && acquisitionErrorMessage ? (
-                  <p className="mt-1 text-xs text-rose-100/80">{acquisitionErrorMessage}</p>
-                ) : null}
-              </div>
-              {acquisitionState === 'failed' && canPrepareReadableCopy ? (
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    void prepareReadableCopy(false);
-                  }}
-                  className="!h-9 !shrink-0 !rounded-full border border-rose-200/20 !px-4 !text-xs !text-rose-50"
-                >
-                  {lang === 'en' ? 'Retry' : 'إعادة المحاولة'}
-                </Button>
-              ) : null}
-            </section>
-          )}
 
           {/* Summary */}
           <section className="space-y-3">
@@ -1240,6 +989,62 @@ const BookDetailsScreen: React.FC = () => {
       {bookId && book && (
         <SelectShelfModal isOpen={isShelfModalOpen} onClose={() => setIsShelfModalOpen(false)} bookId={bookId} book={book} recommendationContext={recommendationContext} />
       )}
+      <OtherEditionsSheet
+        isOpen={isAcquisitionSheetOpen}
+        onClose={() => setIsAcquisitionSheetOpen(false)}
+        bookId={bookId}
+        lang={lang}
+        title={displayBook ? (lang === 'en' ? displayBook.titleEn : displayBook.titleAr || displayBook.titleEn) : undefined}
+        author={displayBook ? (lang === 'en' ? displayBook.authorEn : displayBook.authorAr || displayBook.authorEn) : undefined}
+        coverUrl={displayBook?.coverUrl}
+        coverMode={displayBook?.coverMode}
+        fallbackCover={displayBook?.fallbackCover}
+        externalReadableSources={bookDetails?.externalReadableSources}
+      />
+      <Modal isOpen={isReviewsModalOpen} onClose={() => setIsReviewsModalOpen(false)}>
+        <div className="space-y-5 pt-2 text-slate-950 dark:text-white">
+          <div className="flex items-center justify-between gap-4 pr-8">
+            <BilingualText role="H2" className="!text-xl !font-bold">
+              {lang === 'en' ? 'Reviews' : 'المراجعات'}
+            </BilingualText>
+            {user && !existingUserReview ? (
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setIsAddingReview(true);
+                  setIsReviewsModalOpen(false);
+                }}
+                className="!h-9 !shrink-0 !rounded-full border border-black/10 !px-4 !text-xs dark:border-white/10"
+              >
+                <EditIcon className="mr-2 h-3 w-3" />
+                {lang === 'en' ? 'Write' : 'اكتب'}
+              </Button>
+            ) : null}
+          </div>
+          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+            {isReviewsLoading ? (
+              <div className="flex min-h-32 items-center justify-center">
+                <LoadingSpinner />
+              </div>
+            ) : reviews.length > 0 ? (
+              reviews.map((review) => (
+                <ReviewCard
+                  key={`modal_${review.bookId}_${review.userId}`}
+                  review={review}
+                  onEdit={() => {
+                    setIsReviewsModalOpen(false);
+                    setIsEditingReview(true);
+                  }}
+                />
+              ))
+            ) : (
+              <p className="py-8 text-center text-sm text-slate-500 dark:text-white/55">
+                {lang === 'en' ? 'No reviews yet.' : 'لا توجد مراجعات بعد.'}
+              </p>
+            )}
+          </div>
+        </div>
+      </Modal>
     </PageTransition>
   );
 };

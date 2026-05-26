@@ -37,6 +37,29 @@ export const BookCardSkeleton: React.FC<{ layout: 'grid' | 'list' | 'row' }> = (
     );
 };
 
+export const HomeRailSkeleton: React.FC<{
+    count?: number;
+    variant?: 'book' | 'town';
+}> = ({ count = 3, variant = 'book' }) => {
+    return (
+        <div className="flex touch-pan-x snap-x gap-4 overflow-x-auto overscroll-x-contain scroll-px-1 scrollbar-hide px-1 pb-4 pt-3">
+            {Array.from({ length: count }, (_, index) => {
+                if (variant === 'town') {
+                    return (
+                        <div key={index} className="w-64 shrink-0 space-y-3 rounded-lg border border-white/10 p-4">
+                            <Skeleton className="h-32 w-full rounded-lg" />
+                            <Skeleton className="h-4 w-2/3" />
+                            <Skeleton className="h-3 w-1/2" />
+                        </div>
+                    );
+                }
+
+                return <BookCardSkeleton key={index} layout="list" />;
+            })}
+        </div>
+    );
+};
+
 export const ShelfSkeleton: React.FC = () => {
     return (
         <div className="mb-8">

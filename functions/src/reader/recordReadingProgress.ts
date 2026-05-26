@@ -13,6 +13,10 @@ import {
   resolveAuthoritativeRecommendationOrigin,
   sanitizeRecommendationOrigin,
 } from "../attribution/recommendationOrigin";
+import {
+  provenanceFromManifest,
+  writeSourceProvenance,
+} from "./readerContinuityCompatibility";
 
 const db = admin.firestore();
 
@@ -219,6 +223,11 @@ export const recordReadingProgressHandler = async (request: any) => {
       }
       : null);
   const normalizedLastAnchor = sanitizeCanonicalAnchor(lastAnchor);
+  const sourceProvenance = normalizedLastAnchor
+    ? provenanceFromManifest(
+      await (await import("./readerManifestService")).getOrBuildReaderManifest({ uid, bookId })
+    )
+    : null;
 
   const progressId = `${uid}_${bookId}`;
   const progressRef = db.collection("reading_progress").doc(progressId);
@@ -274,6 +283,9 @@ export const recordReadingProgressHandler = async (request: any) => {
       if (normalizedLastAnchor) {
         payload.lastAnchor = normalizedLastAnchor;
         payload.anchorManifestVersion = normalizedLastAnchor.manifestVersion;
+        if (sourceProvenance) {
+          writeSourceProvenance(payload, sourceProvenance);
+        }
       }
 
       tx.set(progressRef, payload, { merge: true });

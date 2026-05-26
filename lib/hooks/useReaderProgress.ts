@@ -23,6 +23,7 @@ interface ReaderProgress {
   exists: boolean;
   bookId: string;
   progress: number; // 0.0 → 1.0
+  status_state?: "reading" | "paused" | "abandoned" | "completed" | "rereading" | null;
   lastPosition: any | null;
   lastAnchor?: CanonicalAnchorV1 | null;
   anchorManifestVersion?: number | null;
@@ -122,6 +123,7 @@ export function useReaderProgress(bookId?: string) {
             exists: true,
             bookId,
             progress: payload.percentage,
+            status_state: "reading",
             lastPosition: payload.lastPosition ?? null,
             updatedAt: new Date(),
           });

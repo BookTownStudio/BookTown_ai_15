@@ -3,6 +3,13 @@ import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { getOrBuildReaderManifest } from "./readerManifestService";
+import {
+  attemptStableAnchorMigration,
+  evaluateContinuityCompatibility,
+  provenanceFromManifest,
+  provenanceFromStoredRecord,
+  writeSourceProvenance,
+} from "./readerContinuityCompatibility";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -221,13 +228,6 @@ function resolveFallbackResumePage(params: {
   return { resumePage: 1, usedApproximateFallback: false };
 }
 
-function isAnchorCompatible(
-  anchor: Record<string, unknown> | null,
-  manifestVersion: number
-): boolean {
-  return anchor?.manifestVersion === manifestVersion;
-}
-
 /**
  * Canonical Reader Session (V3)
  * - Resolves through server-built reader manifest
@@ -302,10 +302,25 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
           progress?: unknown;
           lastPosition?: unknown;
           lastAnchor?: unknown;
+          manifestVersion?: unknown;
+          anchorManifestVersion?: unknown;
+          sourceSignatureHash?: unknown;
+          attachmentId?: unknown;
+          sourceType?: unknown;
+          editionId?: unknown;
         } | undefined)
       : null;
     const sessionData = sessionSnap.exists
-      ? (sessionSnap.data() as { resumeAnchor?: unknown; narration?: unknown } | undefined)
+      ? (sessionSnap.data() as {
+          resumeAnchor?: unknown;
+          narration?: unknown;
+          manifestVersion?: unknown;
+          anchorManifestVersion?: unknown;
+          sourceSignatureHash?: unknown;
+          attachmentId?: unknown;
+          sourceType?: unknown;
+          editionId?: unknown;
+        } | undefined)
       : null;
 
     const lastPosition = sanitizeReaderLastPosition(progressData?.lastPosition);
@@ -318,24 +333,59 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
     const resumePage = fallback.resumePage;
     const progressResumeAnchor = sanitizeCanonicalAnchor(progressData?.lastAnchor);
     const storedResumeAnchor = sanitizeCanonicalAnchor(sessionData?.resumeAnchor);
-    const progressAnchorCompatible = isAnchorCompatible(
-      progressResumeAnchor,
-      manifest.version
-    );
-    const storedAnchorCompatible = isAnchorCompatible(
-      storedResumeAnchor,
-      manifest.version
-    );
-    const resumeAnchor = progressAnchorCompatible
+    const sourceProvenance = provenanceFromManifest(manifest);
+    const progressCompatibility = evaluateContinuityCompatibility({
+      current: sourceProvenance,
+      stored: provenanceFromStoredRecord(progressData, progressResumeAnchor),
+    });
+    const storedCompatibility = evaluateContinuityCompatibility({
+      current: sourceProvenance,
+      stored: provenanceFromStoredRecord(sessionData, storedResumeAnchor),
+    });
+
+    let resumeAnchor = progressCompatibility.compatible
       ? progressResumeAnchor
-      : storedAnchorCompatible
+      : storedCompatibility.compatible
         ? storedResumeAnchor
         : null;
-    const resumeAnchorSource: ResumeAnchorSource | null = progressAnchorCompatible
+    let resumeAnchorSource: ResumeAnchorSource | null = progressCompatibility.compatible
       ? "reading_progress"
-      : storedAnchorCompatible
+      : storedCompatibility.compatible
         ? "reading_sessions"
         : null;
+    let compatibilityStatus =
+      progressCompatibility.compatible
+        ? progressCompatibility.status
+        : storedCompatibility.compatible
+          ? storedCompatibility.status
+          : "incompatible";
+    let continuityMigrationSuccess = 0;
+    let continuityMigrationFailure = 0;
+
+    if (!resumeAnchor && (progressResumeAnchor || storedResumeAnchor)) {
+      const migrationCandidate =
+        (await attemptStableAnchorMigration({
+          uid,
+          bookId,
+          anchor: progressResumeAnchor,
+          current: sourceProvenance,
+        })) ||
+        (await attemptStableAnchorMigration({
+          uid,
+          bookId,
+          anchor: storedResumeAnchor,
+          current: sourceProvenance,
+        }));
+
+      if (migrationCandidate) {
+        resumeAnchor = migrationCandidate.anchor;
+        resumeAnchorSource = progressResumeAnchor ? "reading_progress" : "reading_sessions";
+        compatibilityStatus = "migrated";
+        continuityMigrationSuccess = 1;
+      } else {
+        continuityMigrationFailure = 1;
+      }
+    }
     const continuityMode: ResumeContinuityMode = resumeAnchor
       ? "anchor"
       : fallback.usedApproximateFallback
@@ -356,22 +406,33 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       resumePage,
       format: manifest.format,
       manifestVersion: manifest.version,
+      sourceSignatureHash: sourceProvenance.sourceSignatureHash,
+      attachmentId: sourceProvenance.attachmentId,
+      sourceType: sourceProvenance.sourceType,
       continuityMode,
       continuityIsApproximate: continuityMode === "approximate_position",
       continuitySource: resumeAnchorSource || "reading_progress",
+      continuityCompatibilityStatus: compatibilityStatus,
+      continuityMigrationSuccess,
+      continuityMigrationFailure,
+      approximateResumeCount: continuityMode === "approximate_position" ? 1 : 0,
+      staleAnchorRejectedCount:
+        (progressResumeAnchor && !progressCompatibility.compatible ? 1 : 0) +
+        (storedResumeAnchor && !storedCompatibility.compatible ? 1 : 0),
       updatedAt: now,
       ...(isNewSession ? { createdAt: now } : {}),
     };
 
     if (resumeAnchor) {
       sessionPayload.resumeAnchor = resumeAnchor;
+      writeSourceProvenance(sessionPayload, sourceProvenance);
     } else {
       sessionPayload.resumeAnchor = FieldValue.delete();
     }
 
     if (
-      (progressResumeAnchor && !progressAnchorCompatible) ||
-      (storedResumeAnchor && !storedAnchorCompatible)
+      (progressResumeAnchor && !progressCompatibility.compatible) ||
+      (storedResumeAnchor && !storedCompatibility.compatible)
     ) {
       logger.warn("[READER][STALE_RESUME_ANCHOR_IGNORED]", {
         uid,
@@ -379,6 +440,8 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
         manifestVersion: manifest.version,
         progressAnchorVersion: progressResumeAnchor?.manifestVersion ?? null,
         sessionAnchorVersion: storedResumeAnchor?.manifestVersion ?? null,
+        progressReasons: progressCompatibility.reasons,
+        sessionReasons: storedCompatibility.reasons,
         fallbackResumePage: resumePage,
         continuityMode,
       });
@@ -398,6 +461,9 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
       manifestVersion: manifest.version,
       continuityMode,
       resumeAnchorSource,
+      compatibilityStatus,
+      continuityMigrationSuccess,
+      continuityMigrationFailure,
     });
 
     return {
@@ -411,6 +477,16 @@ export const getOrCreateReadingSessionHandler = async (request: any) => {
         approximate: continuityMode === "approximate_position",
         manifestVersion: manifest.version,
         anchorSource: resumeAnchorSource,
+        compatibilityStatus,
+        sourceSignatureHash: sourceProvenance.sourceSignatureHash,
+        attachmentId: sourceProvenance.attachmentId,
+        sourceType: sourceProvenance.sourceType,
+        continuityMigrationSuccess,
+        continuityMigrationFailure,
+        approximateResumeCount: continuityMode === "approximate_position" ? 1 : 0,
+        staleAnchorRejectedCount:
+          (progressResumeAnchor && !progressCompatibility.compatible ? 1 : 0) +
+          (storedResumeAnchor && !storedCompatibility.compatible ? 1 : 0),
       },
       narration,
     };

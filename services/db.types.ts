@@ -208,6 +208,7 @@ export interface LibrarySearchDataService {
   ): Promise<BookEdition[]>;
 
   getEdition(editionId: string): Promise<BookEdition | null>;
+  listEditionsForBook(bookId: string, options?: { limit?: number }): Promise<BookEdition[]>;
   getWork(workId: string): Promise<BibliographicWork | null>;
 
   ingestExternalResult(

@@ -25,6 +25,13 @@ export type QuoteProvenance = {
   sourceAuthorId?: string;
   savedFromOwnerId?: string;
   savedFromQuoteId?: string;
+  readerSource?: {
+    sourceSignatureHash: string;
+    attachmentId: string | null;
+    manifestVersion: number;
+    sourceType: string;
+    editionId?: string | null;
+  };
 };
 
 type CanonicalQuote = {
@@ -122,6 +129,7 @@ export type CanonicalQuoteCreateInput = {
   savedFromQuoteId?: string;
   authorNameOverride?: string;
   bookTitleOverride?: string;
+  readerSource?: QuoteProvenance["readerSource"];
 };
 
 export type PreparedCanonicalQuoteWrite = {
@@ -158,6 +166,45 @@ function normalizeRequiredString(
   }
 
   return normalized;
+}
+
+function normalizeReaderQuoteProvenance(value: unknown): QuoteProvenance["readerSource"] {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const record = value as Record<string, unknown>;
+  const sourceSignatureHash = normalizeOptionalString(
+    record.sourceSignatureHash,
+    "readerProvenance.sourceSignatureHash",
+    120
+  );
+  const sourceType = normalizeOptionalString(
+    record.sourceType,
+    "readerProvenance.sourceType",
+    80
+  );
+  const attachmentId =
+    record.attachmentId === null
+      ? null
+      : normalizeOptionalString(record.attachmentId, "readerProvenance.attachmentId", 180);
+  const editionId =
+    record.editionId === null
+      ? null
+      : normalizeOptionalString(record.editionId, "readerProvenance.editionId", 180);
+  const manifestVersion =
+    typeof record.manifestVersion === "number" && Number.isFinite(record.manifestVersion)
+      ? Math.trunc(record.manifestVersion)
+      : null;
+
+  if (!sourceSignatureHash || !sourceType || !manifestVersion || manifestVersion <= 0) {
+    return undefined;
+  }
+
+  return {
+    sourceSignatureHash,
+    attachmentId: attachmentId ?? null,
+    manifestVersion,
+    sourceType,
+    ...(editionId !== undefined ? { editionId } : {}),
+  };
 }
 
 function normalizeOptionalString(
@@ -302,6 +349,7 @@ function parseQuoteProvenance(value: unknown): QuoteProvenance | undefined {
     typeof raw.savedFromQuoteId === "string" && raw.savedFromQuoteId.trim()
       ? raw.savedFromQuoteId.trim()
       : undefined;
+  const readerSource = normalizeReaderQuoteProvenance(raw.readerSource);
 
   return {
     sourceType,
@@ -310,6 +358,7 @@ function parseQuoteProvenance(value: unknown): QuoteProvenance | undefined {
     ...(sourceAuthorId ? { sourceAuthorId } : {}),
     ...(savedFromOwnerId ? { savedFromOwnerId } : {}),
     ...(savedFromQuoteId ? { savedFromQuoteId } : {}),
+    ...(readerSource ? { readerSource } : {}),
   };
 }
 
@@ -318,6 +367,7 @@ export function buildQuoteProvenance(params: {
   authorId?: string;
   savedFromOwnerId?: string;
   savedFromQuoteId?: string;
+  readerSource?: QuoteProvenance["readerSource"];
 }): QuoteProvenance {
   const sourceType = params.bookId ? "book" : params.authorId ? "author" : "manual";
   const verificationStatus =
@@ -334,6 +384,7 @@ export function buildQuoteProvenance(params: {
     ...(params.authorId ? { sourceAuthorId: params.authorId } : {}),
     ...(params.savedFromOwnerId ? { savedFromOwnerId: params.savedFromOwnerId } : {}),
     ...(params.savedFromQuoteId ? { savedFromQuoteId: params.savedFromQuoteId } : {}),
+    ...(params.readerSource ? { readerSource: params.readerSource } : {}),
   };
 }
 
@@ -1013,6 +1064,7 @@ export async function prepareCanonicalQuoteWrite(
     authorId: canonicalLinks.authorId,
     savedFromOwnerId: input.savedFromOwnerId,
     savedFromQuoteId: input.savedFromQuoteId,
+    readerSource: input.readerSource,
   });
   const searchTextNormalized = normalizeQuoteSearchText([
     input.textEn,
@@ -1455,6 +1507,7 @@ export const createQuote = onCall({ cors: true }, async (request) => {
     bookId: normalizeOptionalString(data.bookId, "bookId", 180),
     authorId: normalizeOptionalString(data.authorId, "authorId", 180),
     isPublic: data.isPublic === undefined ? true : data.isPublic === true,
+    readerSource: normalizeReaderQuoteProvenance(data.readerProvenance),
   };
   const nowIso = new Date().toISOString();
   const quoteRef = quoteCollection(uid).doc();
@@ -1468,6 +1521,7 @@ export const createQuote = onCall({ cors: true }, async (request) => {
     authorId: rawQuote.authorId,
     isPublic: rawQuote.isPublic,
     originType: "user_authored",
+    readerSource: rawQuote.readerSource,
   });
 
   await quoteRef.set({

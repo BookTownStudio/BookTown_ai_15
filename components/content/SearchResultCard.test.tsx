@@ -2,10 +2,28 @@
 
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import SearchResultCard from './SearchResultCard.tsx';
 import type { SearchResultDTO } from '../../types/bookSearch.ts';
 import { I18nProvider } from '../../store/i18n.tsx';
+
+const hookMocks = vi.hoisted(() => ({
+  useBookCatalog: vi.fn(),
+  useReaderProgress: vi.fn(),
+  useBookEditions: vi.fn(),
+}));
+
+vi.mock('../../lib/hooks/useBookCatalog.ts', () => ({
+  useBookCatalog: hookMocks.useBookCatalog,
+}));
+
+vi.mock('../../lib/hooks/useReaderProgress.ts', () => ({
+  useReaderProgress: hookMocks.useReaderProgress,
+}));
+
+vi.mock('../../lib/hooks/useBookEditions.ts', () => ({
+  useBookEditions: hookMocks.useBookEditions,
+}));
 
 function buildResult(overrides: Partial<SearchResultDTO> = {}): SearchResultDTO {
   return {
@@ -46,7 +64,13 @@ function buildResult(overrides: Partial<SearchResultDTO> = {}): SearchResultDTO 
 }
 
 describe('SearchResultCard', () => {
-  it('shows the read eye only after the result is acquired', () => {
+  beforeEach(() => {
+    hookMocks.useBookCatalog.mockReturnValue({ data: null });
+    hookMocks.useReaderProgress.mockReturnValue({ progress: null });
+    hookMocks.useBookEditions.mockReturnValue({ data: [], isLoading: false });
+  });
+
+  it('uses readerAuthority for Read and reading_progress for Continue', () => {
     const onRead = vi.fn();
     const { rerender } = render(
       <I18nProvider>
@@ -64,7 +88,15 @@ describe('SearchResultCard', () => {
       </I18nProvider>
     );
 
-    expect(screen.queryByLabelText('Read ebook')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Get' })).toBeTruthy();
+
+    hookMocks.useBookCatalog.mockReturnValue({
+      data: {
+        readerAuthority: {
+          hasReadableAttachment: true,
+        },
+      },
+    });
 
     rerender(
       <I18nProvider>
@@ -85,7 +117,30 @@ describe('SearchResultCard', () => {
       </I18nProvider>
     );
 
-    fireEvent.click(screen.getByLabelText('Read ebook'));
+    fireEvent.click(screen.getByRole('button', { name: 'Read' }));
     expect(onRead).toHaveBeenCalledTimes(1);
+
+    hookMocks.useReaderProgress.mockReturnValue({
+      progress: {
+        exists: true,
+        bookId: 'book_1',
+        progress: 0.2,
+        status_state: 'reading',
+        lastPosition: null,
+      },
+    });
+
+    rerender(
+      <I18nProvider>
+        <SearchResultCard
+          result={buildResult()}
+          lang="en"
+          onRead={onRead}
+        />
+      </I18nProvider>
+    );
+
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onRead).toHaveBeenCalledTimes(2);
   });
 });

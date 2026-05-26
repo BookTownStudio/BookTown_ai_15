@@ -11,6 +11,11 @@ import {
   resolveAuthoritativeRecommendationOrigin,
   sanitizeRecommendationOrigin,
 } from "../attribution/recommendationOrigin";
+import {
+  type ReaderSourceProvenance,
+  provenanceFromManifest,
+  writeSourceProvenance,
+} from "./readerContinuityCompatibility";
 
 const db = admin.firestore();
 
@@ -28,6 +33,7 @@ interface ReaderSyncOperation {
   bookId: string;
   clientTimestampMs: number;
   payload?: Record<string, unknown>;
+  sourceProvenance?: ReaderSourceProvenance;
 }
 
 interface ReaderSyncError {
@@ -486,6 +492,9 @@ async function applyProgressOperationInTx(params: {
   if (lastAnchor) {
     progressPayload.lastAnchor = lastAnchor;
     progressPayload.anchorManifestVersion = lastAnchor.manifestVersion;
+    if (op.sourceProvenance) {
+      writeSourceProvenance(progressPayload, op.sourceProvenance);
+    }
   }
 
   tx.set(progressRef, progressPayload, { merge: true });
@@ -553,6 +562,9 @@ async function applyOperationInTx(params: {
     if (anchor) {
       highlightPayload.anchor = anchor;
       highlightPayload.anchorManifestVersion = anchor.manifestVersion;
+      if (op.sourceProvenance) {
+        writeSourceProvenance(highlightPayload, op.sourceProvenance);
+      }
     }
 
     tx.set(
@@ -588,6 +600,9 @@ async function applyOperationInTx(params: {
     if (anchor) {
       bookmarkPayload.anchor = anchor;
       bookmarkPayload.anchorManifestVersion = anchor.manifestVersion;
+      if (op.sourceProvenance) {
+        writeSourceProvenance(bookmarkPayload, op.sourceProvenance);
+      }
     }
 
     tx.set(
@@ -647,10 +662,44 @@ export const syncReaderOperationsHandler = async (request: any) => {
     }
   }
 
+  const manifestCache = new Map<string, ReaderSourceProvenance>();
+  for (const op of sanitizedOps) {
+    const anchor =
+      op.type === "upsert_progress"
+        ? sanitizeCanonicalAnchor(op.payload?.lastAnchor)
+        : op.type === "upsert_highlight" || op.type === "upsert_bookmark"
+          ? sanitizeCanonicalAnchor(op.payload?.anchor)
+          : null;
+    if (!anchor) continue;
+
+    try {
+      let provenance = manifestCache.get(op.bookId);
+      if (!provenance) {
+        provenance = provenanceFromManifest(
+          await (await import("./readerManifestService")).getOrBuildReaderManifest({
+            uid,
+            bookId: op.bookId,
+          })
+        );
+        manifestCache.set(op.bookId, provenance);
+      }
+      op.sourceProvenance = provenance;
+    } catch (error: any) {
+      errors.push({
+        opId: op.opId,
+        code: error instanceof HttpsError ? error.code : "failed-precondition",
+        message: String(error?.message || error),
+      });
+    }
+  }
+
   let applied = 0;
   let deduped = 0;
 
   for (const op of sanitizedOps) {
+    if (errors.some((entry) => entry.opId === op.opId)) {
+      continue;
+    }
     try {
       const result = await db.runTransaction(async (tx) => {
         const dedupeId = `${uid}_${op.idempotencyKey}`;

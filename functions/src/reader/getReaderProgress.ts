@@ -232,6 +232,14 @@ export const getReaderProgressHandler = async (request: any) => {
     exists: true,
     bookId: data.bookId,
     progress: data.progress ?? 0,
+    status_state:
+      data.status_state === "reading" ||
+      data.status_state === "paused" ||
+      data.status_state === "abandoned" ||
+      data.status_state === "completed" ||
+      data.status_state === "rereading"
+        ? data.status_state
+        : null,
     lastPosition,
     lastAnchor,
     anchorManifestVersion,

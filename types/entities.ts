@@ -290,6 +290,12 @@ export interface Book {
     ebookAttachmentId?: string; // Reference to secure binary attachment
     ebookStoragePath?: string;
     downloadable?: boolean;
+    readerAuthority?: {
+        hasReadableAttachment?: boolean;
+        attachmentId?: string | null;
+        source?: string;
+        updatedAt?: unknown;
+    };
     providerExternalIds?: string[];
     externalReadableSources?: Array<{
         provider: 'openLibrary' | 'gutenberg' | 'hindawi' | 'gallica';

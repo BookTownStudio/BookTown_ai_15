@@ -16,12 +16,14 @@ import { usePrefetch } from '../../lib/hooks/usePrefetch.ts';
 import { useRemoveBookFromShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
 import MoveBookModal from '../modals/MoveBookModal.tsx';
 import CanonicalCoverArtwork from './CanonicalCoverArtwork.tsx';
+import type { BookCardData } from './BookCardDataAdapter.ts';
 
 interface BookCardProps {
   bookId: string;
-  book?: Book; // optional hint ONLY
+  book?: Book | BookCardData; // optional hint ONLY
   shelfId?: string;
   layout: 'grid' | 'list' | 'row';
+  variant?: 'default' | 'homeRail';
   progress?: number;
   className?: string;
 }
@@ -31,6 +33,7 @@ const BookCard: React.FC<BookCardProps> = ({
   book: providedBook,
   shelfId,
   layout,
+  variant = 'default',
   progress,
   className = ''
 }) => {
@@ -81,8 +84,15 @@ const BookCard: React.FC<BookCardProps> = ({
     [book, lang]
   );
 
-  const hasInAppEbook = !!book?.ebookAttachmentId || !!book?.isEbookAvailable;
-  const hasExternalBuy = !!book?.isEbookAvailable;
+  const hasInAppEbook =
+    Boolean(book && 'ebookAttachmentId' in book && book.ebookAttachmentId) ||
+    Boolean(book && 'isEbookAvailable' in book && book.isEbookAvailable === true);
+  const hasExternalBuy = Boolean(
+    book && 'isEbookAvailable' in book && book.isEbookAvailable === true
+  );
+  const showAvailabilityBadge = variant !== 'homeRail';
+  const homeRailReason =
+    variant === 'homeRail' && book && 'reason' in book ? book.reason : undefined;
 
   // ----------------------------------
   // Callbacks
@@ -155,34 +165,35 @@ const BookCard: React.FC<BookCardProps> = ({
           />
         )}
 
-        {/* Availability Badge — ALWAYS RENDERED */}
-        <div
-          className={cn(
-            'absolute bottom-1 right-1 p-1 rounded-full backdrop-blur-sm border transition-all',
-            (hasInAppEbook || hasExternalBuy)
-              ? 'bg-black/60 border-white/10'
-              : 'bg-black/40 border-white/10 opacity-40'
-          )}
-          title={
-            hasInAppEbook
-              ? lang === 'en'
-                ? 'Read in app'
-                : 'متاح للقراءة'
-              : hasExternalBuy
+        {showAvailabilityBadge && (
+          <div
+            className={cn(
+              'absolute bottom-1 right-1 p-1 rounded-full backdrop-blur-sm border transition-all',
+              (hasInAppEbook || hasExternalBuy)
+                ? 'bg-black/60 border-white/10'
+                : 'bg-black/40 border-white/10 opacity-40'
+            )}
+            title={
+              hasInAppEbook
                 ? lang === 'en'
-                  ? 'Available to buy'
-                  : 'متوفر للشراء'
-                : lang === 'en'
-                  ? 'No ebook available'
-                  : 'لا يوجد كتاب إلكتروني'
-          }
-        >
-          {hasInAppEbook ? (
-            <EyeIcon className="h-3 w-3 text-white" />
-          ) : (
-            <BasketIcon className="h-3 w-3 text-white" />
-          )}
-        </div>
+                  ? 'Read in app'
+                  : 'متاح للقراءة'
+                : hasExternalBuy
+                  ? lang === 'en'
+                    ? 'Available to buy'
+                    : 'متوفر للشراء'
+                  : lang === 'en'
+                    ? 'No ebook available'
+                    : 'لا يوجد كتاب إلكتروني'
+            }
+          >
+            {hasInAppEbook ? (
+              <EyeIcon className="h-3 w-3 text-white" />
+            ) : (
+              <BasketIcon className="h-3 w-3 text-white" />
+            )}
+          </div>
+        )}
 
         {/* Ellipsis menu (ONLY inside shelf) */}
         {shelfId && (
@@ -232,6 +243,7 @@ const BookCard: React.FC<BookCardProps> = ({
     lang,
     isRTL,
     shelfId,
+    showAvailabilityBadge,
     hasInAppEbook,
     hasExternalBuy
   ]);
@@ -265,7 +277,11 @@ const BookCard: React.FC<BookCardProps> = ({
       <div
         className={cn(
           'flex flex-col',
-          layout === 'list' ? 'w-32 mr-4 flex-shrink-0' : 'w-full',
+          variant === 'homeRail'
+            ? 'w-36 flex-shrink-0 snap-start sm:w-40'
+            : layout === 'list'
+              ? 'w-32 mr-4 flex-shrink-0'
+              : 'w-full',
           className
         )}
         onMouseEnter={handleMouseEnter}
@@ -287,6 +303,12 @@ const BookCard: React.FC<BookCardProps> = ({
             {author}
           </BilingualText>
         </button>
+
+        {homeRailReason && (
+          <p className="mt-2 line-clamp-2 text-xs leading-snug text-slate-500 dark:text-white/55">
+            {homeRailReason}
+          </p>
+        )}
       </div>
 
       {shelfId && showMoveModal && (
@@ -294,7 +316,7 @@ const BookCard: React.FC<BookCardProps> = ({
           isOpen={showMoveModal}
           onClose={() => setShowMoveModal(false)}
           bookId={bookId}
-          book={book}
+          book={book as Book}
           fromShelfId={shelfId}
         />
       )}

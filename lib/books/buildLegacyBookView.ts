@@ -95,6 +95,17 @@ function readFallbackCover(value: unknown): Book["fallbackCover"] | undefined {
   };
 }
 
+function readReaderAuthority(value: unknown): Book["readerAuthority"] | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  return {
+    hasReadableAttachment: raw.hasReadableAttachment === true,
+    attachmentId: readString(raw.attachmentId) || null,
+    ...(readString(raw.source) ? { source: readString(raw.source) } : {}),
+    ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt } : {}),
+  };
+}
+
 export function buildLegacyBookView(seed: LegacyBookSeed): Book {
   const id =
     readString(seed.id)
@@ -198,6 +209,13 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
       ? { ebookStoragePath: seed.ebookStoragePath.trim() }
       : {}),
     ...(seed.downloadable === true ? { downloadable: true } : {}),
+    ...(readReaderAuthority((seed as { readerAuthority?: unknown }).readerAuthority)
+      ? {
+          readerAuthority: readReaderAuthority(
+            (seed as { readerAuthority?: unknown }).readerAuthority
+          ),
+        }
+      : {}),
     ...(readStringArray((seed as { providerExternalIds?: unknown }).providerExternalIds)
       ? {
           providerExternalIds: readStringArray(

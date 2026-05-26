@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import AppNav from '../../components/navigation/AppNav.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import BookCard from '../../components/content/BookCard.tsx';
+import { BookCardDataAdapter } from '../../components/content/BookCardDataAdapter.ts';
 import { useNavigation } from '../../store/navigation.tsx';
 import CollapsibleSection from '../../components/ui/CollapsibleSection.tsx';
 import HomeSearchBar from '../../components/content/HomeSearchBar.tsx';
@@ -14,8 +15,7 @@ import AddBookModal from '../../components/modals/AddBookModal.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import { useSearchHistory } from '../../lib/hooks/useSearchHistory.ts';
 import { useIdentifyBook } from '../../lib/hooks/useAiMutations.ts';
-import { BookCardSkeleton } from '../../components/ui/Skeletons.tsx';
-import Skeleton from '../../components/ui/Skeleton.tsx';
+import { BookCardSkeleton, HomeRailSkeleton } from '../../components/ui/Skeletons.tsx';
 import ErrorState from '../../components/ui/ErrorState.tsx';
 import EmptyState from '../../components/ui/EmptyState.tsx';
 import PageTransition from '../../components/ui/PageTransition.tsx';
@@ -36,10 +36,6 @@ import { useUnifiedBookSearch } from '../../lib/hooks/useUnifiedBookSearch.ts';
 import UnifiedSearchFilterToggle from '../../components/content/UnifiedSearchFilterToggle.tsx';
 import { useHomeSearchState } from '../../store/home-search.tsx';
 import { callCallableEndpoint } from '../../lib/callable.ts';
-import {
-  acquireExternalEbookForRead,
-  buildAcquireExternalReadParams,
-} from '../../lib/books/acquireExternalEbookForRead.ts';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { SocialIcon } from '../../components/icons/SocialIcon.tsx';
 import { ChevronDownIcon } from '../../components/icons/ChevronDownIcon.tsx';
@@ -58,18 +54,6 @@ import { enterReadingState } from '../../lib/actions/enterReadingState.ts';
 import { getSelectableOrganizationalShelves } from '../../lib/shelves/systemShelves.ts';
 import type { Shelf } from '../../types/entities.ts';
 
-function homeBookToCardBook(item: HomeConsoleBookItem): any {
-  return {
-    id: item.bookId,
-    titleEn: item.title,
-    titleAr: item.title,
-    authorEn: item.author,
-    authorAr: item.author,
-    coverUrl: item.coverUrl,
-    isEbookAvailable: true,
-  };
-}
-
 function isStarterSelection(selection: ContinuitySelection): selection is ContinuityStarterSelection {
   return typeof selection === 'object' && selection !== null && 'kind' in selection && 'starter' in selection;
 }
@@ -84,13 +68,17 @@ function isCanonicalStarter(selection: ContinuitySelection): selection is Extrac
 const DISCOVER_STREAMS = [
   'Hidden Gems',
   'Arab Voices',
-  'Recently Discussed',
-  'Philosophical Fiction',
+  'Books for Rainy Nights',
   'Forgotten Classics',
+  'Books That Changed Cinema',
   'Short Reflective Reads',
+  'Philosophical Fiction',
 ] as const;
 
 type DiscoverStream = typeof DISCOVER_STREAMS[number];
+
+const HOME_RAIL_CLASS =
+  'flex touch-pan-x snap-x gap-4 overflow-x-auto overscroll-x-contain scroll-px-1 scrollbar-hide px-1 pb-4 pt-3';
 
 type ContinuityBookSelection = {
   id: string;
@@ -105,7 +93,6 @@ type ContinuityBookSelection = {
     author?: string;
     theme: 'ink' | 'emerald' | 'gold' | 'plum';
   };
-  isEbookAvailable: boolean;
 };
 
 type ContinuityStarterPoolRecord = {
@@ -509,7 +496,6 @@ const HomeScreen: React.FC = () => {
         type: 'immersive',
         id: 'bookDetails',
         params: buildBookDetailsParams(result, currentView, {
-          autoAcquireOnOpen: ebookOnly && result.available && !result.acquired,
           searchQuery: searchQuery.trim(),
           clickedRank: clickedRankFor(result.id),
           clickTracked: true,
@@ -524,16 +510,10 @@ const HomeScreen: React.FC = () => {
   };
 
   const handleReadResult = async (result: SearchResultDTO) => {
-    if (busyId || result.ebookClass === 'unavailable') return;
+    if (busyId || !result.bookId) return;
 
     try {
-      const acquisitionParams = buildAcquireExternalReadParams(result);
-      if (!acquisitionParams) {
-        throw new Error('INVALID_ACQUISITION_PARAMS');
-      }
-
       setBusyId(result.id);
-      showToast(lang === 'en' ? 'Preparing your copy...' : 'جارٍ تجهيز نسختك...');
       trackSearchClick({
         query: searchQuery,
         clickedRank: clickedRankFor(result.id),
@@ -542,13 +522,12 @@ const HomeScreen: React.FC = () => {
           bookId: result.bookId || result.externalId || result.id,
         },
       });
-      const acquired = await acquireExternalEbookForRead(acquisitionParams);
 
       navigate({
         type: 'immersive',
         id: 'reader',
         params: {
-          bookId: acquired.bookId,
+          bookId: result.bookId,
           from: currentView,
         },
       });
@@ -556,8 +535,8 @@ const HomeScreen: React.FC = () => {
       console.error('[HOME][READ_OPEN_FAILED]', err);
       showToast(
         lang === 'en'
-          ? 'This book could not be prepared for reading.'
-          : 'تعذر تجهيز هذا الكتاب للقراءة.'
+          ? 'This book could not be opened for reading.'
+          : 'تعذر فتح هذا الكتاب للقراءة.'
       );
     } finally {
       setBusyId(null);
@@ -606,7 +585,6 @@ const HomeScreen: React.FC = () => {
       authorEn: result.authorEn,
       authorAr: result.authorAr,
       coverUrl: result.coverUrl,
-      isEbookAvailable: result.ebookClass === 'in_app',
     });
 
   const handleSelectHomeShelf = async (
@@ -1012,7 +990,7 @@ const HomeScreen: React.FC = () => {
   );
 
   const renderContinueReadingRow = () => (
-    <div className="flex overflow-x-auto scrollbar-hide snap-x gap-4 pt-3 pb-4 px-1">
+    <div className={HOME_RAIL_CLASS}>
       {continueReadingRow?.items.map(item => {
         const progress = Math.round((item.progress ?? 0) * 100);
 
@@ -1119,17 +1097,18 @@ const HomeScreen: React.FC = () => {
                 {renderSearchResults()}
               </div>
             ) : (
-              <div className="space-y-12 mt-8">
+                <div className="space-y-12 mt-8">
                 <CollapsibleSection
                   titleEn="Continue Reading"
                   titleAr="أكمل القراءة"
-                  isOpen={isContinueOpen}
-                  onToggle={() => setIsContinueOpen(v => !v)}
+                  isOpen={hasContinueReadingItems || isContinueOpen}
+                  onToggle={() => {
+                    if (hasContinueReadingItems) return;
+                    setIsContinueOpen(v => !v);
+                  }}
                 >
                   {isHomeConsoleLoading ? (
-                    <div className="flex gap-4 py-4 overflow-hidden">
-                      {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
-                    </div>
+                    <HomeRailSkeleton />
                   ) : hasContinueReadingItems ? (
                     <motion.div
                       variants={staggerContainer}
@@ -1138,48 +1117,60 @@ const HomeScreen: React.FC = () => {
                     >
                       {renderContinueReadingRow()}
                     </motion.div>
-                  ) : renderContinueReadingRow()}
+                  ) : (
+                    <EmptyState
+                      icon={BookIcon}
+                      titleEn="Start your reading journey"
+                      titleAr="ابدأ رحلة القراءة"
+                      messageEn="Books you begin reading will appear here."
+                      messageAr="ستظهر هنا الكتب التي تبدأ بقراءتها."
+                    />
+                  )}
                 </CollapsibleSection>
 
                 {(
                   <div className="[&_h1]:!text-lg md:[&_h1]:!text-xl [&_h1]:!font-semibold [&_h1]:!text-slate-700 dark:[&_h1]:!text-slate-300">
                     <CollapsibleSection
-                      titleEn="Ready to Read"
+                      titleEn="Read Now in BookTown"
                       titleAr="جاهز للقراءة"
                       isOpen={isReadNowOpen}
                       onToggle={() => setIsReadNowOpen(v => !v)}
                     >
                       {isHomeConsoleLoading ? (
-                        <div className="flex gap-4 py-4 overflow-hidden">
-                          {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
-                        </div>
+                        <HomeRailSkeleton />
                       ) : isHomeConsoleError ? (
                         <ErrorState
-                          title={lang === 'en' ? 'Ready to Read unavailable' : 'جاهز للقراءة غير متاح'}
+                          title={lang === 'en' ? 'Read Now in BookTown unavailable' : 'جاهز للقراءة غير متاح'}
                           message={lang === 'en' ? 'This row is temporarily unavailable.' : 'هذا الصف غير متاح مؤقتاً.'}
                         />
                       ) : (
-                      <motion.div
-                        className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
-                        variants={staggerContainer}
-                        initial="hidden"
-                        animate="show"
-                      >
-                        {(readNowRow?.items ?? []).map(item => (
-                          <motion.div key={item.bookId} variants={listItemVariants} className="snap-start">
-                            <BookCard
-                              bookId={item.bookId}
-                              book={homeBookToCardBook(item)}
-                              layout="list"
-                            />
-                            {item.reason && (
-                              <p className="mt-2 w-40 sm:w-44 line-clamp-2 text-xs leading-snug text-slate-500 dark:text-white/55">
-                                {item.reason}
-                              </p>
-                            )}
+                        (readNowRow?.items ?? []).length > 0 ? (
+                          <motion.div
+                            className={HOME_RAIL_CLASS}
+                            variants={staggerContainer}
+                            initial="hidden"
+                            animate="show"
+                          >
+                            {(readNowRow?.items ?? []).map(item => (
+                              <motion.div key={item.bookId} variants={listItemVariants} className="snap-start">
+                                <BookCard
+                                  bookId={item.bookId}
+                                  book={BookCardDataAdapter.fromHomeConsoleItem(item)}
+                                  layout="list"
+                                  variant="homeRail"
+                                />
+                              </motion.div>
+                            ))}
                           </motion.div>
-                        ))}
-                      </motion.div>
+                        ) : (
+                          <EmptyState
+                            icon={BookIcon}
+                            titleEn="No readable books yet"
+                            titleAr="لا توجد كتب جاهزة بعد"
+                            messageEn="Readable BookTown books will appear here when available."
+                            messageAr="ستظهر هنا كتب بوكتاون الجاهزة للقراءة عند توفرها."
+                          />
+                        )
                       )}
                     </CollapsibleSection>
                   </div>
@@ -1248,9 +1239,7 @@ const HomeScreen: React.FC = () => {
                     <div className={`grid transition-all duration-300 ease-in-out ${isRecommendationsOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                       <div className="overflow-hidden pt-2">
                     {isHomeConsoleLoading ? (
-                      <div className="flex gap-4 py-4 overflow-hidden">
-                        {[1, 2, 3].map(i => <BookCardSkeleton key={i} layout="list" />)}
-                      </div>
+                      <HomeRailSkeleton />
                     ) : isHomeConsoleError ? (
                       <ErrorState
                         title={lang === 'en' ? 'Discovery unavailable' : 'الاكتشاف غير متاح'}
@@ -1262,31 +1251,31 @@ const HomeScreen: React.FC = () => {
                       />
                     ) : dynamicDiscoveryRow && dynamicDiscoveryRow.items.length > 0 ? (
                       <motion.div
-                        className="flex overflow-x-auto scrollbar-hide snap-x pt-2 pb-4"
+                        className={HOME_RAIL_CLASS}
                         variants={staggerContainer}
                         initial="hidden"
                         animate="show"
                       >
                         {dynamicDiscoveryRow.items.map(item => (
-                          <motion.div
-                            key={item.bookId}
-                            variants={listItemVariants}
-                            className="snap-start"
-                          >
+                          <motion.div key={item.bookId} variants={listItemVariants} className="snap-start">
                             <BookCard
                               bookId={item.bookId}
-                              book={homeBookToCardBook(item)}
+                              book={BookCardDataAdapter.fromHomeConsoleItem(item)}
                               layout="list"
+                              variant="homeRail"
                             />
-                            {item.reason && (
-                              <p className="mt-2 w-40 sm:w-44 line-clamp-2 text-xs leading-snug text-slate-500 dark:text-white/55">
-                                {item.reason}
-                              </p>
-                            )}
                           </motion.div>
                         ))}
                       </motion.div>
-                    ) : null}
+                    ) : (
+                      <EmptyState
+                        icon={BookIcon}
+                        titleEn="Nothing to discover yet"
+                        titleAr="لا توجد اكتشافات بعد"
+                        messageEn="Curated discoveries will appear here when available."
+                        messageAr="ستظهر هنا الاكتشافات المنسقة عند توفرها."
+                      />
+                    )}
                       </div>
                     </div>
                   </section>
@@ -1302,22 +1291,14 @@ const HomeScreen: React.FC = () => {
                     onToggle={() => setIsTownOpen(v => !v)}
                   >
                     {isHomeConsoleLoading ? (
-                      <div className="flex gap-4 py-4 overflow-hidden">
-                        {[1, 2, 3].map(i => (
-                          <div key={i} className="w-64 shrink-0 space-y-3 rounded-lg border border-white/10 p-4">
-                            <Skeleton className="h-32 w-full rounded-lg" />
-                            <Skeleton className="h-4 w-2/3" />
-                            <Skeleton className="h-3 w-1/2" />
-                          </div>
-                        ))}
-                      </div>
+                      <HomeRailSkeleton variant="town" />
                     ) : isHomeConsoleError ? (
                       <ErrorState
                         title={lang === 'en' ? 'From the Town unavailable' : 'من البلدة غير متاح'}
                         message={lang === 'en' ? 'This row is temporarily unavailable.' : 'هذا الصف غير متاح مؤقتاً.'}
                       />
                     ) : fromTheTownRow && fromTheTownRow.items.length > 0 ? (
-                      <div className="flex overflow-x-auto scrollbar-hide snap-x gap-4 pt-2 pb-4">
+                      <div className={HOME_RAIL_CLASS}>
                         {fromTheTownRow.items.map(item => (
                           <button
                             key={item.signalId}
@@ -1350,7 +1331,15 @@ const HomeScreen: React.FC = () => {
                           </button>
                         ))}
                       </div>
-                    ) : null}
+                    ) : (
+                      <EmptyState
+                        icon={SocialIcon}
+                        titleEn="No town updates yet"
+                        titleAr="لا توجد تحديثات من البلدة بعد"
+                        messageEn="Literary community activity will appear here when available."
+                        messageAr="سيظهر هنا نشاط المجتمع الأدبي عند توفره."
+                      />
+                    )}
                   </CollapsibleSection>
                 </div>
                 )}
