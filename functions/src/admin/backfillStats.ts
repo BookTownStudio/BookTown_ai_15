@@ -101,111 +101,11 @@ export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
     }
 
     /* =====================================================
-       3. LIBRARY REBUILD (AUTHORITATIVE)
+       3. LIBRARY REBUILD
        ===================================================== */
-    logger.info("[BACKFILL] Rebuilding user library canonical sets...");
-
-    // Clear existing canonical set (authoritative rebuild)
-    const existingLibBooks = await db.collection("user_library_books").get();
-    for (let i = 0; i < existingLibBooks.docs.length; i += BATCH_SIZE) {
-      const batch = db.batch();
-      const chunk = existingLibBooks.docs.slice(i, i + BATCH_SIZE);
-      chunk.forEach((d) => batch.delete(d.ref));
-      await batch.commit();
-    }
-
-    // Temporary in-memory aggregation:
-    // userId -> Map(bookId -> { shelfIds:Set, hasProgress:boolean })
-    const userLibraryMap = new Map<
-      string,
-      Map<string, { shelfIds: Set<string>; hasProgress: boolean }>
-    >();
-
-    /* ---- 3a. From shelf_books ---- */
-    const shelfBooksDocs = await db.collection("shelf_books").get();
-    for (const sbDoc of shelfBooksDocs.docs) {
-      const data = sbDoc.data() as any;
-      const ownerId = data.ownerId;
-      const shelfId = data.shelfId;
-      const bookId = data.bookId;
-
-      if (!ownerId || !shelfId || !bookId) continue;
-
-      if (!userLibraryMap.has(ownerId)) {
-        userLibraryMap.set(ownerId, new Map());
-      }
-
-      const userMap = userLibraryMap.get(ownerId)!;
-      if (!userMap.has(bookId)) {
-        userMap.set(bookId, {
-          shelfIds: new Set(),
-          hasProgress: false,
-        });
-      }
-      userMap.get(bookId)!.shelfIds.add(shelfId);
-    }
-
-    /* ---- 3b. From reading_progress ---- */
-    const progressDocs = await db.collection("reading_progress").get();
-    for (const prog of progressDocs.docs) {
-      const data = prog.data() as any;
-      const uid = data.uid || data.userId;
-      const bookId = data.bookId;
-
-      if (!uid || !bookId) continue;
-
-      if (!userLibraryMap.has(uid)) {
-        userLibraryMap.set(uid, new Map());
-      }
-
-      const userMap = userLibraryMap.get(uid)!;
-      if (!userMap.has(bookId)) {
-        userMap.set(bookId, {
-          shelfIds: new Set(),
-          hasProgress: true,
-        });
-      } else {
-        userMap.get(bookId)!.hasProgress = true;
-      }
-    }
-
-    /* ---- 3c. Persist canonical library books + counters ---- */
-    for (const [uid, booksMap] of userLibraryMap.entries()) {
-      let totalBooks = 0;
-
-      for (const [bookId, state] of booksMap.entries()) {
-        if (state.shelfIds.size === 0 && state.hasProgress === false) {
-          continue;
-        }
-
-        await db
-          .collection("user_library_books")
-          .doc(`${uid}_${bookId}`)
-          .set({
-            uid,
-            bookId,
-            shelfIds: Array.from(state.shelfIds),
-            hasProgress: state.hasProgress,
-            rebuiltAt: timestamp,
-          });
-
-        totalBooks++;
-        results.libraryBooks++;
-      }
-
-      await db
-        .collection("user_stats")
-        .doc(uid)
-        .set(
-          {
-            "counters.totalBooks": totalBooks,
-            lastBackfilledAt: timestamp,
-          },
-          { merge: true }
-        );
-
-      results.libraryCounters++;
-    }
+    logger.info(
+      "[BACKFILL] Skipping user_library_books. Use recoverUserLibraryBooks for bounded Phase 8A recovery."
+    );
 
     /* =====================================================
        4. SHELF COUNTERS (PHYSICAL ONLY)

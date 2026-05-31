@@ -1255,12 +1255,14 @@ export const followUser = onCall({ cors: true }, async (request) => {
     if (existing.exists) return;
 
     tx.set(followerRef, {
+      followerUid,
       uid: followerUid,
       targetUid,
       createdAt,
     });
 
     tx.set(followingRef, {
+      followerUid,
       uid: targetUid,
       targetUid,
       createdAt,

@@ -68,6 +68,11 @@ export { scheduledLibrarianQuotaCleanup } from "../admin/cleanupLibrarianQuota";
 export { recoverQuoteProjections } from "../admin/recoverQuoteProjections";
 export { recoverReviewProjections } from "../admin/recoverReviewProjections";
 export { recoverNotificationSummary } from "../admin/recoverNotificationSummary";
+export { recoverUserLibraryBooks } from "../admin/recoverUserLibraryBooks";
+export { recoverFollowGraph } from "../admin/recoverFollowGraph";
+export { recoverPostEngagementStats } from "../admin/recoverPostEngagementStats";
+export { recoverBookStats } from "../admin/recoverBookStats";
+export { recoverUserStatsDomains } from "../admin/recoverUserStatsDomains";
 export {
   recoverSearchFeed,
   recoverSearchBookmarks,

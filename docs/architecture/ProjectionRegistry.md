@@ -27,18 +27,26 @@ A projection is production-ready only when it has a documented authority source,
 | quote fanout projections | `fanout_projection` | `quotes/{quoteId}` | `user_quotes`, `book_quote_projection`, `social_quote_projection` | `onQuoteProjectionWritten`, `recoverQuoteProjections` | quote APIs, social composer quote attachments, quote discovery | Yes | Yes | No | Yes | Yes | `production_ready` | `production_ready` | none |
 | review fanout projections | `fanout_projection` | `reviews/{reviewId}` | `user_reviews`, `book_review_projection`, `social_review_projection` | `onBookReviewWritten`, `recoverReviewProjections` | `listBookReviews`, profile review hydration, social review surfaces | Yes | Yes | No | Yes | Yes | `production_ready` | `production_ready` | none |
 | legacy user review projection | `compatibility_projection` | `books/{bookId}/reviews/{reviewId}` | `user_reviews` | `backfillUserReviewsProjection.cjs` | profile compatibility reads | Yes | No | No | No | No | `beta_ready` | `deprecated` | sunset plan or align with canonical review projection |
-| book review/rating aggregate | `aggregate_projection` | `reviews`, legacy `books/*/reviews`, `books/*/ratings` | `book_stats` counters and flat fields | review trigger, `scheduledReviewAggregateReconcile`, `backfillDerivedStats` | book cards, review APIs, search ranking | Partial | Partial | Yes | Partial | No | `beta_ready` | `production_ready` | canonical-only reconcile, hot-book strategy above 10k cap, runbook, failure ledger |
+| book review/rating aggregate | `aggregate_projection` | `reviews/{reviewId}` only; legacy `books/*/reviews` and `books/*/ratings` are compatibility-only | `book_stats` counters and flat fields | canonical review trigger, `recoverBookStats` | book cards, review APIs, search ranking | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| book catalog counter projection | `compatibility_projection` | `reviews/{reviewId}` only | `books.rating`, `books.ratingsCount`, `books.reviewCount`, `books.reviewsCount` | `recoverBookStats` | home discovery, recommendations, book cards, AI book context | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | notification summary | `aggregate_projection` | `notifications/{notificationId}`, `activity_log` | `notification_summary`, `users/{uid}/meta/unread` | notification triggers, `recoverNotificationSummary` | notification feed, unread badges | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | notification search index | `search_projection` | `notifications/{id}` | `search_notifications` | `syncNotificationToSearchIndex`, `recoverSearchNotifications` | notification search/admin surfaces | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | post search feed | `search_projection` | `posts`, `post_stats` | `search_feed` | post/search triggers, `recoverSearchFeed` | social search, discovery feed search | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | search bookmark projection | `search_projection` | `users/{uid}/bookmarks`, `venue_bookmarks`, `event_bookmarks` | `search_bookmarks` | bookmark search triggers, `recoverSearchBookmarks` | search personalization/bookmark filters | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
-| post stats | `aggregate_projection` | likes, comments, reposts, bookmarks | `post_stats`, mirrored `posts.counters` | social triggers, `backfillDerivedStats` | feeds, social cards, search ranking | Partial | Partial | No | No | No | `not_ready` | `production_ready` | checkpointed rebuild, deterministic reconcile, failure ledger, runbook |
+| social user stats | `aggregate_projection` | `users/{targetUid}/followers/{followerUid}`, `users/{followerUid}/following/{targetUid}` | `user_stats.followers`, `user_stats.following` | follow callables/triggers, `recoverFollowGraph` | profile UI, profile stats callable, admin | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| public profile counters | `aggregate_projection` | `users/{targetUid}/followers/{followerUid}`, `users/{followerUid}/following/{targetUid}` | `public_profiles.followerCount`, `public_profiles.followingCount` | follow triggers, `recoverFollowGraph` | profile UI/search | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| post engagement stats | `aggregate_projection` | `users/{uid}/likes/{postId}`, `users/{uid}/reposts/{postId}`, `users/{uid}/bookmarks/{entityId}` where `type=post`, `posts/{postId}/comments/{commentId}` | `post_stats`, mirrored `posts.counters` | social triggers, `recoverPostEngagementStats` | feeds, social cards, search ranking | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | post analytics | `aggregate_projection` | `activity_log` | `post_analytics` | `syncActivityToAnalytics` | analytics/admin surfaces | No | No | No | No | No | `not_ready` | `production_ready` | idempotent event ledger, rebuild from activity log, verification, runbook |
 | activity log derived notifications | `fanout_projection` | social actions/posts/follows | `activity_log`, then `notifications` | activity triggers and notification trigger | notifications, analytics | No | No | No | No | No | `not_ready` | `production_ready` | replay procedure, failure ledger, runbook |
-| public profile counters | `aggregate_projection` | follower docs | `public_profiles.followerCount`, `public_profiles.followingCount` | follow triggers | profile UI/search | Partial | No | No | No | No | `not_ready` | `production_ready` | bounded counter reconcile, verification, runbook |
-| user stats | `aggregate_projection` | followers, following, shelves, library, attachments, profile fields | `user_stats` | backfills, cleanup jobs, recompute utilities | profile UI, admin | Partial | Partial | No | No | No | `not_ready` | `production_ready` | split by domain, checkpointing, verification, failure ledger, runbook |
+| library user stats | `aggregate_projection` | `user_library_books` | `user_stats.libraryBooks`, `user_stats.counters.totalBooks` | `recoverUserStatsDomains` | profile UI, admin | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| shelf user stats | `aggregate_projection` | `shelves` | `user_stats.shelvesCreated`, `user_stats.counters.totalShelves` | `recoverUserStatsDomains` | profile UI, admin | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| content user stats | `aggregate_projection` | `posts`, `reviews`, `quotes` | `user_stats.posts`, `user_stats.reviews`, `user_stats.quotes` | `recoverUserStatsDomains` | profile UI, admin, profile quality | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| writing user stats | `aggregate_projection` | `users/*/projects` | `user_stats.projects`, `user_stats.wordsWritten` | `recoverUserStatsDomains` | profile quality, admin | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| profile quality stats | `aggregate_projection` | `users`, certified domain stats | `user_stats.profileCompletionScore`, `user_stats.pcsVersion` | `recoverUserStatsDomains` | profile UI, matchmaker | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| storage user stats | `aggregate_projection` | `attachments`, storage metadata | `user_stats.storageUsageBytes`, `user_stats.attachmentStorageFiles` | `recoverUserStatsDomains` | admin, quota checks | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
+| user stats compatibility envelope | `compatibility_projection` | certified user stats domains plus `social_user_stats` | `user_stats` | `recoverUserStatsDomains`, domain recoveries | profile UI, admin | Yes | Yes | Yes | Yes | Yes | `deprecated` | `deprecated` | none |
 | shelf display projections | `compatibility_projection` | `shelf_books` | generated shelf DTO book counts/covers; legacy shelf fields | shelf callables | shelf UI, profile shelves | Partial | Partial | No | Partial | No | `beta_ready` | `production_ready` | formal registry entry, rebuild contract, verification, runbook |
-| user library books | `aggregate_projection` | `shelf_books`, `reading_progress` | `user_library_books` | aggregation triggers, `backfillDerivedStats` | library/profile/search/admin | Partial | No | No | No | No | `not_ready` | `production_ready` | non-destructive checkpointed rebuild, shadow/swap or targeted repair, verification, runbook |
+| user library books | `aggregate_projection` | `shelf_books`, `reading_progress` | `user_library_books` | aggregation triggers, `recoverUserLibraryBooks` | library/profile/search/admin | Yes | Yes | Yes | Yes | Yes | `production_ready` | `production_ready` | none |
 | reading progress compatibility fields | `compatibility_projection` | `reading_progress` | normalized canonical fields on `reading_progress` | reader callables, `backfillReadingProgressCanonical` | reader insights, continue reading, shelf status | Yes | Partial | No | Partial | No | `beta_ready` | `production_ready` | runbook, failure ledger, scheduled verification |
 | reader insight response projection | `compatibility_projection` | `reading_progress`, `reader_events` | callable DTO only | `getReaderInsights` | Home/Read continue reading | N/A | Partial | N/A | Partial | No | `beta_ready` | `production_ready` | documented verification and runbook for query/index health |
 | reader manifests | `media_derivative_projection` | readable book attachment/storage object | `reader_manifests` | `getReaderManifest` / manifest service | reader bootstrap | Partial | Partial | No | Partial | No | `beta_ready` | `production_ready` | manifest rebuild job, failed-manifest ledger, runbook |
@@ -74,7 +82,7 @@ flowchart TD
   Quotes["quotes"] --> QuoteProj["user_quotes / book_quote_projection / social_quote_projection"]
   Reviews["reviews"] --> ReviewProj["user_reviews / book_review_projection / social_review_projection"]
   Reviews --> BookStats["book_stats"]
-  LegacyReviews["books/*/reviews + ratings"] --> BookStats
+  LegacyReviews["books/*/reviews + ratings (legacy compatibility only)"] -. excluded from certification .-> BookStats
   Activity["activity_log"] --> Notifications["notifications"]
   Notifications --> NotificationSummary["notification_summary + users/*/meta/unread"]
   Notifications --> SearchNotifications["search_notifications"]
@@ -101,10 +109,10 @@ flowchart TD
 
 | Status | Count | Projections |
 |---|---:|---|
-| `production_ready` | 10 | `user_quotes`, `book_quote_projection`, `social_quote_projection`, `user_reviews`, `book_review_projection`, `social_review_projection`, `notification_summary`, `search_feed`, `search_bookmarks`, `search_notifications`. |
-| `beta_ready` | 25 | legacy user review projection; book review/rating aggregate; shelf display projections; reading progress compatibility fields; reader insight response projection; reader manifests; reader EPUB indexes; reader highlights/bookmarks; reader events; reader sync idempotency; attachment metadata; attachment image derivatives; cover jobs; book search fields; reader authority projection; compatibility readability fields; catalog identity projections; authored author link projection; system metrics; system events; operational runtime health; runtime anomaly projections; intelligence signal queue; intelligence aggregates; deletion/cascade cleanup projections |
-| `not_ready` | 13 | post stats; post analytics; activity log derived notifications; public profile counters; user stats; user library books; reader audit/diagnostics; attachment cleanup counters; social post render projection; projected viewer state; analytics daily exports; remaining unimplemented executable registry entries |
-| `deprecated` | 0 current | Recommended future deprecated status: legacy review/readability compatibility surfaces after replacement. |
+| `production_ready` | 22 | `user_quotes`, `book_quote_projection`, `social_quote_projection`, `user_reviews`, `book_review_projection`, `social_review_projection`, `notification_summary`, `search_feed`, `search_bookmarks`, `search_notifications`, `user_library_books`, `social_user_stats`, `public_profile_counters`, `post_engagement_stats`, `book_stats`, `book_catalog_counter_projection`, `library_user_stats`, `shelf_user_stats`, `content_user_stats`, `writing_user_stats`, `profile_quality_stats`, `storage_user_stats`. |
+| `beta_ready` | 24 | legacy user review projection; shelf display projections; reading progress compatibility fields; reader insight response projection; reader manifests; reader EPUB indexes; reader highlights/bookmarks; reader events; reader sync idempotency; attachment metadata; attachment image derivatives; cover jobs; book search fields; reader authority projection; compatibility readability fields; catalog identity projections; authored author link projection; system metrics; system events; operational runtime health; runtime anomaly projections; intelligence signal queue; intelligence aggregates; deletion/cascade cleanup projections |
+| `not_ready` | 7 | post analytics; activity log derived notifications; reader audit/diagnostics; attachment cleanup counters; social post render projection; projected viewer state; analytics daily exports |
+| `deprecated` | 2 | `post_stats`, `user_stats` compatibility envelope |
 
 ## Production Ready Projections
 
@@ -122,12 +130,23 @@ The quote, review, notification summary, and search projection families are Phas
 | `search_feed` | bounded rebuild, dry-run, checkpoint support, verification, reconciliation, stale-field drift detection, failure ledger, health update, runbook |
 | `search_bookmarks` | bounded rebuild, dry-run, checkpoint support, verification, reconciliation, failure ledger, health update, runbook |
 | `search_notifications` | bounded rebuild, dry-run, checkpoint support, verification, reconciliation, stale-field drift detection, failure ledger, health update, runbook |
+| `user_library_books` | bounded deterministic rebuild from `shelf_books` and `reading_progress`, dry-run, checkpoint support, verification, reconciliation, failure ledger, health update, runbook |
+| `social_user_stats` | canonical follow graph schema verification, mirror repair, dry-run, checkpoint support, reconciliation, failure ledger, health update, runbook |
+| `public_profile_counters` | deterministic follower/following counter recompute from follow graph authority, dry-run, checkpoint support, reconciliation, failure ledger, health update, runbook |
+| `post_engagement_stats` | deterministic exact recompute from user-centric likes/reposts/bookmarks and post comments, dry-run, checkpoint support, reconciliation, failure ledger, health update, runbook |
+| `book_stats` | canonical reviews-only exact recompute, dry-run, checkpoint support, verification, reconciliation, failure ledger, health update, runbook |
+| `book_catalog_counter_projection` | catalog compatibility counters repaired from canonical reviews without changing ranking behavior |
+| `library_user_stats` | recovered from `user_library_books` into the `user_stats` compatibility envelope |
+| `shelf_user_stats` | recovered from non-virtual `shelves` into the `user_stats` compatibility envelope |
+| `content_user_stats` | recovered from `posts`, `reviews`, and `quotes` into the `user_stats` compatibility envelope |
+| `writing_user_stats` | recovered from `users/*/projects` into the `user_stats` compatibility envelope |
+| `profile_quality_stats` | profile completion score recovered from `users` and certified domain stats |
+| `storage_user_stats` | attachment storage bytes/files recovered from attachment metadata |
 
 ## Beta Ready Projections
 
 | Projection | Why Beta Ready | Production Gap |
 |---|---|---|
-| book review/rating aggregate | scheduled bounded reconcile exists | hot-book cap, canonical mismatch, runbook/failure ledger |
 | book search fields | bounded backfill over books/editions exists | no runbook/failure ledger/verification report |
 | reader authority projection | backfill script exists | needs production contract and verification |
 | reader manifests/indexes | generated deterministically from storage | needs reprocess job and failure ledger |
@@ -139,8 +158,6 @@ The quote, review, notification summary, and search projection families are Phas
 
 | Projection | Blocking Reason |
 |---|---|
-| user_library_books | global destructive in-memory rebuild path |
-| post_stats/user_stats/public profile counters | global or partial counter repairs only |
 | social render projection/projected viewer state | embedded snapshots with no rebuild policy |
 | analytics daily exports | scheduled write only, no rerun by date |
 
@@ -173,7 +190,6 @@ No projection is currently marked deprecated in code. Phase 8A should mark these
 | Projection |
 |---|
 | post analytics |
-| user library books |
 | social render projections |
 | projected viewer state |
 | attachment cleanup counters |
@@ -196,6 +212,24 @@ All audited projections except the quote, review, notification summary, and sear
 | Embedded projection fields | Stale schema fields persist silently | Define replacement/purge semantics |
 | Hot entity caps | High-volume books/posts can be skipped forever | Add segmented reconciliation or escalation workflow |
 
+## User Library Recovery Audit
+
+Phase 8A.8 replaced the unsafe `user_library_books` production recovery dependency with `recoverUserLibraryBooks`.
+
+| Finding | Previous Path | Risk | Replacement |
+|---|---|---|---|
+| destructive rebuild | `backfillDerivedStats` deleted every `user_library_books` document before rebuilding | incident recovery could erase healthy projection data and amplify partial failures | no production recovery path deletes the full projection collection |
+| global scan | `backfillDerivedStats` read all `user_library_books`, all `shelf_books`, and all `reading_progress` | unbounded reads time out and do not scale to 1M+ users | checkpointed `shelf_books` then `reading_progress` pages with hard batch max `100` |
+| in-memory reconstruction | global `Map<uid, Map<bookId,...>>` aggregated the full authority corpus | memory grows with dataset size | per-candidate deterministic recompute for one `{uid, bookId}` at a time |
+| projection-to-projection risk | broad stats backfill coupled library projection with `user_stats` counter writes | unrelated projections could fail in the same operational run | user library recovery writes only `user_library_books` through the Phase 8A control plane |
+| missing observability | failures were not written to `projection_failure_ledger` | operators could not replay or classify failures | all recovery failures write ledger records and update `projection_health` |
+
+Current rebuild path: `recoverUserLibraryBooks` derives each projection document exclusively from `shelf_books` and `reading_progress`.
+
+Current verification path: bounded authority candidates are compared against `user_library_books/{uid_bookId}` for missing records, stale shelf membership, stale reading state, orphan records, and authority drift.
+
+Current reconciliation path: `report_only` records drift without mutation; write recovery repairs stale/missing records or deletes bounded orphan records. Full execution is checkpointed and restartable.
+
 ## Risk Scoring
 
 Scale: 1 low, 5 critical. Total is the sum of data loss risk, projection drift risk, user-visible impact, scalability risk, and recovery complexity.
@@ -207,7 +241,7 @@ Scale: 1 low, 5 critical. Total is the sum of data loss risk, projection drift r
 | 3 | review fanout projections | 3 | 5 | 5 | 4 | 4 | 21 |
 | 4 | search_feed | 2 | 5 | 5 | 5 | 4 | 21 |
 | 5 | user_library_books | 4 | 4 | 5 | 5 | 3 | 21 |
-| 6 | post_stats | 2 | 5 | 5 | 5 | 3 | 20 |
+| 6 | post analytics | 1 | 4 | 3 | 4 | 4 | 16 |
 | 7 | reader manifests/indexes | 3 | 4 | 5 | 4 | 4 | 20 |
 | 8 | attachment derivatives | 3 | 4 | 5 | 4 | 4 | 20 |
 | 9 | search_bookmarks | 2 | 4 | 4 | 5 | 4 | 19 |
@@ -232,7 +266,7 @@ Scale: 1 low, 5 critical. Total is the sum of data loss risk, projection drift r
 5. Implement canonical review fanout recovery. Completed in Phase 8A.5.
 6. Implement `search_feed` rebuild and stale-field verification. Completed in Phase 8A.7.
 7. Implement `search_bookmarks` and `search_notifications` recovery. Completed in Phase 8A.7.
-8. Replace destructive `user_library_books` rebuild with checkpointed targeted recovery.
+8. Replace destructive `user_library_books` rebuild with checkpointed targeted recovery. Completed in Phase 8A.8.
 9. Split `backfillDerivedStats` into post/user/book/shelf scoped checkpointed jobs.
 10. Add post stats and public profile counter reconciliation.
 11. Add reader manifest/index reprocess and verification runbook.
@@ -256,7 +290,7 @@ Scale: 1 low, 5 critical. Total is the sum of data loss risk, projection drift r
 | P8A-004 | Notification summary rebuild | notification summary | per-user and checkpointed full rebuild supported |
 | P8A-005 | Review projection rebuild | review fanout | top-level `reviews` rebuilds all three surfaces |
 | P8A-006 | Search projection rebuild | search feed/bookmarks/notifications | stale/missing docs verified and repairable |
-| P8A-007 | User library recovery replacement | `user_library_books` | no global delete, no in-memory full scan |
+| P8A-007 | User library recovery replacement | `user_library_books` | Completed: no global delete, no in-memory full scan; bounded checkpointed recovery, verification, reconciliation, health, and runbook |
 | P8A-008 | Stats reconciliation split | `post_stats`, `book_stats`, `user_stats` | each stat domain checkpointed independently |
 | P8A-009 | Reader manifest recovery | reader manifests/indexes | failed/stale manifests reprocessable |
 | P8A-010 | Attachment derivative recovery | attachment metadata/renditions | failed derivatives retryable and verifiable |
