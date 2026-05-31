@@ -199,7 +199,7 @@ const ReadScreen: React.FC = () => {
   );
 
   const bookCount = userStats?.booksRead ?? 0;
-  const shelfCount = userStats?.shelvesCreated ?? sortedShelves.length;
+  const shelfCount = sortedShelves.length;
 
   return (
     <PageShell scrollable={false}>

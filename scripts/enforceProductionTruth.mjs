@@ -133,6 +133,8 @@ const requiredOperationalTokens = [
   'operational_metrics',
   'runtime_health_projection',
   'beta_observability_summary',
+  'runtime_anomaly_projection',
+  'runtime_anomaly_events',
   'reader_bootstrap_duration',
   'search_latency',
   'home_console_latency',
@@ -147,6 +149,16 @@ const requiredOperationalTokens = [
   'callable_error_rate',
   'firestore_read_amplification',
   'cache_hit_ratio',
+  'reader_bootstrap_latency_spike',
+  'search_latency_spike',
+  'callable_error_rate_spike',
+  'signed_url_failure_spike',
+  'continuity_migration_failures',
+  'review_aggregate_retry_spike',
+  'notification_projection_failures',
+  'shelf_membership_latency_spike',
+  'cache_miss_spike',
+  'detectRuntimeAnomaly',
 ];
 const missingOperationalTokens = requiredOperationalTokens.filter(
   (token) => !operationalMetricsSource.includes(token)

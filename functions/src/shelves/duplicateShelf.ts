@@ -64,6 +64,26 @@ function readRecommendationOrigin(value: unknown): Record<string, unknown> | und
   return undefined;
 }
 
+function toIsoString(value: unknown): string | undefined {
+  if (!value) return undefined;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value.trim() : parsed.toISOString();
+  }
+  if (value instanceof Date) {
+    return value.toISOString();
+  }
+  if (
+    value &&
+    typeof value === "object" &&
+    "toDate" in value &&
+    typeof (value as { toDate?: unknown }).toDate === "function"
+  ) {
+    return (value as { toDate: () => Date }).toDate().toISOString();
+  }
+  return undefined;
+}
+
 export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, async (request) => {
   if (!request.auth?.uid) {
     throw new HttpsError("unauthenticated", "Authentication required.");
@@ -220,6 +240,8 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     entriesCount: copiedBookIds.length,
   });
 
+  const copiedFromCreatedAt = toIsoString(sourceCreatedAt);
+
   return {
     id: duplicateRef.id,
     ownerId: uid,
@@ -227,15 +249,16 @@ export const duplicateShelf = onCall<DuplicateShelfRequest>({ cors: true }, asyn
     membershipBookIds: copiedBookIds,
     titleEn,
     titleAr,
-    entries: entriesProjection,
+    bookIds: copiedBookIds,
     ...(orderedBookIds ? { orderedBookIds } : {}),
     ...(userCoverUrl ? { userCoverUrl } : {}),
     visibility,
     isSystem: false,
+    bookCount: copiedBookIds.length,
     copiedFrom: {
       shelfId: sourceShelfId,
       ownerId: sourceOwnerId,
-      createdAt: sourceCreatedAt,
+      ...(copiedFromCreatedAt ? { createdAt: copiedFromCreatedAt } : {}),
       copiedAt: new Date().toISOString(),
     },
     createdAt: new Date().toISOString(),

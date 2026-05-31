@@ -313,6 +313,8 @@ export const createShelf = onCall<CreateShelfRequest>({ cors: true }, async (req
   return {
     id: shelfRef.id,
     ownerId: uid,
+    membershipAuthority: "shelf_books",
+    membershipBookIds: [],
     titleEn,
     titleAr,
     bookIds: [],

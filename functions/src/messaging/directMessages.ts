@@ -1,6 +1,10 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
 import { SOCIAL_QUOTE_PROJECTION_COLLECTION } from "../projections/quoteProjections";
+import {
+  buildNotificationSummaryPatch,
+  notificationSummaryRef,
+} from "../notifications/notificationSummary";
 
 const db = admin.firestore();
 
@@ -769,6 +773,7 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
       const notificationId = `dm_${conversationId}_${messageRef.id}_${peerUid}`;
       const notificationRef = db.collection("notifications").doc(notificationId);
       const unreadRef = db.collection("users").doc(peerUid).collection("meta").doc("unread");
+      const summaryRef = notificationSummaryRef(peerUid);
 
       transaction.set(notificationRef, {
         uid: peerUid,
@@ -796,6 +801,14 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
           notificationsCount: admin.firestore.FieldValue.increment(1),
           lastUpdatedAt: now,
         },
+        { merge: true }
+      );
+      transaction.set(
+        summaryRef,
+        buildNotificationSummaryPatch({
+          unreadCount: admin.firestore.FieldValue.increment(1),
+          latestNotificationAt: now,
+        }),
         { merge: true }
       );
     }

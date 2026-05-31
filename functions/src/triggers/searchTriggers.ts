@@ -13,7 +13,7 @@ const db = admin.firestore();
  * resolveIndexingEligibility
  * Internal utility to verify if a post meets POST_INDEXING_POLICY_V1 criteria.
  */
-function isEligibleForIndexing(data: any): boolean {
+export function isEligibleForIndexing(data: any): boolean {
     const visibility =
         typeof data.visibility === "string"
             ? data.visibility
@@ -31,7 +31,7 @@ function isEligibleForIndexing(data: any): boolean {
     );
 }
 
-function buildPostSearchProjection(postId: string, data: any): Record<string, unknown> {
+export function buildPostSearchProjection(postId: string, data: any): Record<string, unknown> {
     const rawText =
         typeof data?.content === "string"
             ? data.content
@@ -64,6 +64,22 @@ function buildPostSearchProjection(postId: string, data: any): Record<string, un
     };
 }
 
+export async function buildSearchFeedProjectionFromAuthorities(
+    postId: string,
+    data: Record<string, unknown>
+): Promise<Record<string, unknown> | null> {
+    if (!isEligibleForIndexing(data)) return null;
+    const statsSnap = await db.collection("post_stats").doc(postId).get();
+    const stats = statsSnap.exists ? (statsSnap.data() || {}) : {};
+    return {
+        ...buildPostSearchProjection(postId, data),
+        likesCount: stats.likesCount || 0,
+        commentsCount: stats.commentsCount || 0,
+        repostsCount: stats.repostsCount || 0,
+        bookmarksCount: stats.bookmarksCount || 0,
+    };
+}
+
 /**
  * syncPostToSearchIndex
  * Trigger: onUpdate (posts/{postId})
@@ -84,10 +100,11 @@ export const syncPostToSearchIndex = onDocumentUpdated("posts/{postId}", async (
     }
     
     // 2. Construct Canonical Index Document (DATA_CONTRACT_V1)
-    const projection = buildPostSearchProjection(postId, newData);
+    const projection = await buildSearchFeedProjectionFromAuthorities(postId, newData);
+    if (!projection) return;
 
     try {
-        await indexRef.set(projection, { merge: true });
+        await indexRef.set(projection);
     } catch (error) {
         logger.error(`[INDEX][ERROR] Failed to sync ${postId} to search_feed`, error);
     }
@@ -165,12 +182,26 @@ async function writeBookmarkProjection(params: {
     entityType: 'post' | 'venue' | 'event' | 'quote';
 }) {
     const { uid, entityId, entityType } = params;
-    await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).set({
+    await db.collection('search_bookmarks').doc(`${uid}_${entityId}`).set(buildSearchBookmarkProjection({
         uid,
         entityId,
         entityType,
         createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
+    }));
+}
+
+export function buildSearchBookmarkProjection(params: {
+    uid: string;
+    entityId: string;
+    entityType: 'post' | 'venue' | 'event' | 'quote';
+    createdAt?: unknown;
+}): Record<string, unknown> {
+    return {
+        uid: params.uid,
+        entityId: params.entityId,
+        entityType: params.entityType,
+        createdAt: params.createdAt ?? admin.firestore.FieldValue.serverTimestamp(),
+    };
 }
 
 async function deleteBookmarkProjection(uid: string, entityId: string) {
@@ -227,17 +258,23 @@ export const syncNotificationToSearchIndex = onDocumentCreated("notifications/{i
 
     const id = event.params.id;
     
-    const projection = {
+    const projection = buildSearchNotificationProjection(id, data);
+
+    await db.collection('search_notifications').doc(id).set(projection);
+});
+
+export function buildSearchNotificationProjection(id: string, data: Record<string, unknown>): Record<string, unknown> {
+    const actor = data.actor && typeof data.actor === "object" ? data.actor as Record<string, unknown> : {};
+    const target = data.target && typeof data.target === "object" ? data.target as Record<string, unknown> : {};
+    return {
         uid: data.uid,
         type: data.type,
-        actorId: data.actorId || data.actor?.uid || null,
-        entityId: data.entityId || data.target?.entity_id || null,
-        entityType: data.entityType || data.target?.entity_type || null,
+        actorId: data.actorId || actor.uid || null,
+        entityId: data.entityId || target.entity_id || null,
+        entityType: data.entityType || target.entity_type || null,
         postId: data.postId || null,
         createdAt: data.createdAt,
         read: data.read === true,
         indexedAt: admin.firestore.FieldValue.serverTimestamp()
     };
-
-    await db.collection('search_notifications').doc(id).set(projection);
-});
+}

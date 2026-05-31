@@ -3,6 +3,7 @@ import { admin } from "../firebaseAdmin";
 import {
   BETA_OBSERVABILITY_SUMMARY_COLLECTION,
   OPERATIONAL_METRICS_COLLECTION,
+  RUNTIME_ANOMALY_PROJECTION_COLLECTION,
   RUNTIME_HEALTH_PROJECTION_COLLECTION,
 } from "../operations/operationalMetrics";
 import { withControlAuth } from "./withControlAuth";
@@ -55,6 +56,25 @@ function mapMetric(doc: FirebaseFirestore.QueryDocumentSnapshot): Record<string,
   };
 }
 
+function mapAnomaly(doc: FirebaseFirestore.QueryDocumentSnapshot): Record<string, unknown> {
+  const data = doc.data();
+  return {
+    id: doc.id,
+    detector: typeof data.detector === "string" ? data.detector : doc.id,
+    metricName: typeof data.metricName === "string" ? data.metricName : null,
+    severity: typeof data.severity === "string" ? data.severity : "warning",
+    threshold: typeof data.threshold === "number" ? data.threshold : null,
+    comparison: typeof data.comparison === "string" ? data.comparison : null,
+    observedValue: typeof data.observedValue === "number" ? data.observedValue : null,
+    observedUnit: typeof data.observedUnit === "string" ? data.observedUnit : null,
+    anomalyCount: typeof data.anomalyCount === "number" ? data.anomalyCount : 0,
+    status: typeof data.status === "string" ? data.status : "active",
+    lastAnomalyEventId:
+      typeof data.lastAnomalyEventId === "string" ? data.lastAnomalyEventId : null,
+    updatedAt: toIso(data.updatedAt),
+  };
+}
+
 async function readProjection(collectionName: string, docId: string): Promise<Record<string, unknown>> {
   const snap = await db.collection(collectionName).doc(docId).get();
   const data = snap.exists ? snap.data() || {} : {};
@@ -67,13 +87,18 @@ async function readProjection(collectionName: string, docId: string): Promise<Re
 
 export const getOperationalDashboard = withControlAuth<ControlPayload, {
   metrics: Record<string, unknown>[];
+  anomalies: Record<string, unknown>[];
   runtimeHealth: Record<string, unknown>;
   betaSummary: Record<string, unknown>;
 }>("moderator", "getOperationalDashboard", async (caller) => {
   const payload = readPayload(caller);
   const limit = readLimit(payload);
-  const [metricsSnap, runtimeHealth, betaSummary] = await Promise.all([
+  const [metricsSnap, anomaliesSnap, runtimeHealth, betaSummary] = await Promise.all([
     db.collection(OPERATIONAL_METRICS_COLLECTION)
+      .orderBy("updatedAt", "desc")
+      .limit(limit)
+      .get(),
+    db.collection(RUNTIME_ANOMALY_PROJECTION_COLLECTION)
       .orderBy("updatedAt", "desc")
       .limit(limit)
       .get(),
@@ -83,8 +108,24 @@ export const getOperationalDashboard = withControlAuth<ControlPayload, {
 
   return {
     metrics: metricsSnap.docs.map(mapMetric),
+    anomalies: anomaliesSnap.docs.map(mapAnomaly),
     runtimeHealth,
     betaSummary,
+  };
+});
+
+export const getRuntimeAnomalies = withControlAuth<ControlPayload, {
+  anomalies: Record<string, unknown>[];
+}>("moderator", "getRuntimeAnomalies", async (caller) => {
+  const payload = readPayload(caller);
+  const limit = readLimit(payload);
+  const anomaliesSnap = await db.collection(RUNTIME_ANOMALY_PROJECTION_COLLECTION)
+    .orderBy("updatedAt", "desc")
+    .limit(limit)
+    .get();
+
+  return {
+    anomalies: anomaliesSnap.docs.map(mapAnomaly),
   };
 });
 

@@ -841,6 +841,8 @@ const shelfSchema = z
     ownerId: z.string().min(1),
     titleEn: z.string().min(1).max(120),
     titleAr: z.string().min(1).max(120),
+    membershipAuthority: z.literal("shelf_books").optional(),
+    membershipBookIds: z.array(z.string().min(1)).optional(),
     descriptionEn: z.string().max(280).optional(),
     descriptionAr: z.string().max(280).optional(),
     bookIds: z.array(z.string()),

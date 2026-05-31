@@ -65,6 +65,14 @@ export { scheduledNotificationCleanup } from "../admin/cleanupNotifications";
 export { scheduledAttachmentCleanup } from "../admin/cleanupAttachments";
 export { scheduledReviewAggregateReconcile } from "../admin/reconcileReviewAggregates";
 export { scheduledLibrarianQuotaCleanup } from "../admin/cleanupLibrarianQuota";
+export { recoverQuoteProjections } from "../admin/recoverQuoteProjections";
+export { recoverReviewProjections } from "../admin/recoverReviewProjections";
+export { recoverNotificationSummary } from "../admin/recoverNotificationSummary";
+export {
+  recoverSearchFeed,
+  recoverSearchBookmarks,
+  recoverSearchNotifications,
+} from "../admin/recoverSearchProjections";
 export {
   listDeletionRequests,
   createDeletionRequest,
@@ -82,6 +90,7 @@ export {
 } from "../control/systemEventsAdmin";
 export {
   getOperationalDashboard,
+  getRuntimeAnomalies,
   getRuntimeHealthSummary,
 } from "../control/operationalDashboard";
 export { purgeDeletedUsers } from "../control/purgeDeletedUsers";

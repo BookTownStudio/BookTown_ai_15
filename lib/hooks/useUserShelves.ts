@@ -10,9 +10,11 @@ import { queryKeys } from '../queryKeys.ts';
 import { callCallableEndpoint } from '../callable.ts';
 
 const WANT_TO_READ_SUFFIX = '_want-to-read';
+const FINISHED_SUFFIX = '_finished';
 const WANT_TO_READ_TITLE = 'want to read';
-const repairedWantToReadUids = new Set<string>();
-const inFlightWantToReadRepairUids = new Set<string>();
+const FINISHED_TITLE = 'finished';
+const repairedDefaultShelfUids = new Set<string>();
+const inFlightDefaultShelfRepairUids = new Set<string>();
 
 function normalizeShelfText(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -24,8 +26,14 @@ function normalizeShelfText(value: unknown): string {
     .trim();
 }
 
-function hasSemanticWantToReadShelf(shelves: Shelf[], uid: string): boolean {
-  const expectedSystemId = `${uid}${WANT_TO_READ_SUFFIX}`.toLowerCase();
+function hasSemanticSystemShelf(
+  shelves: Shelf[],
+  uid: string,
+  semanticId: 'want-to-read' | 'finished',
+  title: string
+): boolean {
+  const suffix = semanticId === 'want-to-read' ? WANT_TO_READ_SUFFIX : FINISHED_SUFFIX;
+  const expectedSystemId = `${uid}${suffix}`.toLowerCase();
 
   return shelves.some((shelf) => {
     const normalizedId = shelf.id.trim().toLowerCase();
@@ -34,12 +42,19 @@ function hasSemanticWantToReadShelf(shelves: Shelf[], uid: string): boolean {
 
     return (
       normalizedId === expectedSystemId
-      || normalizedId === 'want-to-read'
-      || normalizedId.endsWith(WANT_TO_READ_SUFFIX)
-      || normalizedTitleEn === WANT_TO_READ_TITLE
-      || normalizedTitleAr === WANT_TO_READ_TITLE
+      || normalizedId === semanticId
+      || normalizedId.endsWith(suffix)
+      || normalizedTitleEn === title
+      || normalizedTitleAr === title
     );
   });
+}
+
+export function hasRequiredDefaultShelves(shelves: Shelf[], uid: string): boolean {
+  return (
+    hasSemanticSystemShelf(shelves, uid, 'want-to-read', WANT_TO_READ_TITLE) &&
+    hasSemanticSystemShelf(shelves, uid, 'finished', FINISHED_TITLE)
+  );
 }
 
 /**
@@ -88,12 +103,12 @@ export const useUserShelves = (ownerId?: string) => {
     if (!isOwnerView || !effectiveUid) return;
     if (query.isLoading || query.isError) return;
     if (!Array.isArray(query.data)) return;
-    if (repairedWantToReadUids.has(effectiveUid)) return;
-    if (inFlightWantToReadRepairUids.has(effectiveUid)) return;
-    if (hasSemanticWantToReadShelf(query.data, effectiveUid)) return;
+    if (repairedDefaultShelfUids.has(effectiveUid)) return;
+    if (inFlightDefaultShelfRepairUids.has(effectiveUid)) return;
+    if (hasRequiredDefaultShelves(query.data, effectiveUid)) return;
 
-    repairedWantToReadUids.add(effectiveUid);
-    inFlightWantToReadRepairUids.add(effectiveUid);
+    repairedDefaultShelfUids.add(effectiveUid);
+    inFlightDefaultShelfRepairUids.add(effectiveUid);
 
     void callCallableEndpoint<{}, { ok: boolean; created?: string[] }>(
       'createDefaultShelves',
@@ -105,13 +120,13 @@ export const useUserShelves = (ownerId?: string) => {
         });
       })
       .catch((error) => {
-        console.error('[SHELVES][REPAIR_WANT_TO_READ_FAILED]', {
+        console.error('[SHELVES][REPAIR_DEFAULT_SHELVES_FAILED]', {
           uid: effectiveUid,
           error,
         });
       })
       .finally(() => {
-        inFlightWantToReadRepairUids.delete(effectiveUid);
+        inFlightDefaultShelfRepairUids.delete(effectiveUid);
       });
   }, [
     effectiveUid,
