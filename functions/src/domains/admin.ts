@@ -73,6 +73,18 @@ export { recoverFollowGraph } from "../admin/recoverFollowGraph";
 export { recoverPostEngagementStats } from "../admin/recoverPostEngagementStats";
 export { recoverBookStats } from "../admin/recoverBookStats";
 export { recoverUserStatsDomains } from "../admin/recoverUserStatsDomains";
+export { recoverActivityLogNotifications } from "../admin/recoverActivityLogNotifications";
+export {
+  recoverPostAnalytics,
+  recoverAnalyticsDailyExports,
+} from "../admin/recoverAnalyticsProjections";
+export { recoverAttachmentCleanupCounters } from "../admin/recoverAttachmentCleanupCounters";
+export {
+  recoverSocialPostRenderProjection,
+  recoverProjectedViewerState,
+} from "../admin/recoverSocialRenderAndViewerState";
+export { recoverReaderAuditDiagnostics } from "../admin/recoverReaderAuditDiagnostics";
+export { recoverTier1PublicBetaProjection } from "../admin/recoverTier1PublicBetaProjections";
 export {
   recoverSearchFeed,
   recoverSearchBookmarks,
