@@ -246,7 +246,7 @@ export const PROJECTION_REGISTRY_ENTRIES: RegisteredProjectionDefinition[] = [
     requiredIndexes: ["events(__name__)", "event_stats(__name__)"],
     runbookPath: `${RUNBOOK_ROOT}/EventStatsRecoveryRunbook.md`,
     recoveryGaps: [],
-    notes: "Event Stats recovery recomputes exact RSVP counts from events/{eventId}/rsvps/{userId}; venue_stats remains deprecated and excluded.",
+    notes: "Event Stats recovery recomputes exact RSVP counts from events/{eventId}/rsvps/{userId}; runtime triggers, admin backfill, and repair all emit the canonical event_stats schema. venue_stats remains deprecated and excluded.",
   }),
   defineProjection({
     ...searchProjectionBase,

@@ -129,7 +129,7 @@ flowchart TD
 | `production_ready` | 52 | `user_quotes`, `book_quote_projection`, `social_quote_projection`, `user_reviews`, `book_review_projection`, `social_review_projection`, `notification_summary`, `event_stats`, `search_feed`, `search_bookmarks`, `search_notifications`, `user_library_books`, `social_user_stats`, `public_profile_counters`, `post_engagement_stats`, `book_stats`, `book_catalog_counter_projection`, `library_user_stats`, `shelf_user_stats`, `content_user_stats`, `writing_user_stats`, `profile_quality_stats`, `storage_user_stats`, `activity_log_notifications`, `post_analytics`, `analytics_daily_exports`, `attachment_cleanup_counters`, `social_post_render_projection`, `projected_viewer_state`, `reader_audit_diagnostics`, `reader_authority_projection`, `reader_manifests`, `reader_epub_indexes`, `reader_sync_idempotency`, `reading_progress_compatibility_fields`, `runtime_health_projection`, `runtime_anomaly_projection`, `book_search_fields`, `deletion_cascade_cleanup_projection`, `reader_events`, `reader_highlights_bookmarks`, `reader_insights_dto`, `attachment_metadata`, `attachment_image_derivatives`, `cover_derivatives`, `catalog_identity_projection`, `authored_author_link_projection`, `shelf_display_projection`, `system_metrics`, `system_events`, `intelligence_signal_queue`, `intelligence_aggregates`. |
 | `beta_ready` | 0 | none |
 | `not_ready` | 0 | none |
-| `deprecated` | 4 | `post_stats`, `user_stats` compatibility envelope, compatibility readability fields, legacy user review projection |
+| `deprecated` | 4 | `legacy_user_reviews_projection`, `user_stats`, `post_stats`, `compatibility_readability_fields` |
 
 ## Production Ready Projections
 
@@ -167,32 +167,34 @@ No registered projection remains `beta_ready` after Phase 8A.19.
 
 ## Not Ready Projections
 
-No registered projection remains `not_ready` after Phase 8A.17.
+No registered projection remains `not_ready` after Phase 8A.19.
 
 ## Deprecated Projections
 
 | Projection | Replacement |
 |---|---|
-| legacy `books/*/reviews` to `user_reviews` projection | top-level `reviews` canonical projection rebuild |
-| readability compatibility fields (`downloadable`, `isEbookAvailable`) | `readerAuthority` |
-| legacy shelf display fields | `shelf_books` backed DTO projection |
-| `venue_stats` | no certified replacement; excluded as legacy derivative |
+| `legacy_user_reviews_projection` | top-level `reviews/{reviewId}` canonical review fanout |
+| `user_stats` | certified domain projections: `social_user_stats`, `library_user_stats`, `shelf_user_stats`, `content_user_stats`, `writing_user_stats`, `profile_quality_stats`, `storage_user_stats`, `attachment_cleanup_counters` |
+| `post_stats` | `post_engagement_stats` for certified engagement counters; retained as compatibility projection collection |
+| `compatibility_readability_fields` | `reader_authority_projection` |
 
 ## Remaining Production Certification Gaps
 
 No executable registry entry is missing required rebuild, verification, reconciliation where applicable, failure ledger, checkpoint, structured report, health, or runbook metadata.
 
-## Recovery Gap Analysis
+## Historical Recovery Gap Closure
 
-| Gap | Impact | Required Phase 8A Fix |
-|---|---|---|
-| Trigger-only projections | Missed events create permanent drift | Add deterministic rebuild from canonical authority |
-| Partial fanout not ledged | Operators cannot see or replay partial failures | Add projection failure ledger and retry status |
-| Global destructive backfills | Unsafe for production datasets | Replace with checkpointed targeted recovery |
-| No verification reports | Rebuild success cannot be proven | Add pre/post verification stage |
-| No runbooks | Solo operator cannot recover under incident pressure | Add runbook per projection |
-| Embedded projection fields | Stale schema fields persist silently | Define replacement/purge semantics |
-| Hot entity caps | High-volume books/posts can be skipped forever | Add segmented reconciliation or escalation workflow |
+The Phase 8A recovery gap list is closed. The executable registry reports no `beta_ready` or `not_ready` projections, no missing runbooks, and no production-ready projection with unresolved recovery gaps.
+
+| Historical Gap | Closure State |
+|---|---|
+| Trigger-only projections | Closed by deterministic recovery handlers or documented deprecation/exclusion. |
+| Partial fanout not ledged | Closed by projection failure ledger integration for production recovery families. |
+| Global destructive backfills | Closed by checkpointed, bounded recovery handlers with hard batch limits. |
+| Missing verification report coverage | Closed by structured verification reports for production recovery families. |
+| Missing runbook coverage | Closed; executable registry reports zero missing runbooks. |
+| Embedded projection fields | Closed by certified compatibility projection entries or explicit deprecated/excluded classifications. |
+| Hot entity caps | Closed by bounded, checkpointed recovery scopes and escalation semantics in runbooks. |
 
 ## User Library Recovery Audit
 

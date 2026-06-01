@@ -7,12 +7,15 @@ Projection: `event_stats`
 
 Canonical authority is `events/{eventId}/rsvps/{userId}`.
 
-The projection is `event_stats/{eventId}` with:
+The certified canonical projection is `event_stats/{eventId}` with:
 
-- `rsvps`
-- `updatedAt`
+- `rsvps`: exact RSVP document count
+- `rsvpsCount`: compatibility count field for existing readers
+- `counters.rsvps`: compatibility nested counter field for existing readers
+- `updatedAt`: projection update timestamp
+- `lastUpdatedAt`: compatibility update timestamp
 
-Compatibility fields such as `rsvpsCount`, `counters.rsvps`, `lastUpdatedAt`, and `lastBackfilledAt` may exist and must be preserved.
+Operational marker fields such as `lastRecoveredAt` and `lastBackfilledAt` may exist and must be preserved. Runtime triggers, admin backfill, and recovery repair must all emit the canonical required fields above.
 
 ## Non-Authority
 

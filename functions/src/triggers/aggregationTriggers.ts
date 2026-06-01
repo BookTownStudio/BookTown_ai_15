@@ -61,17 +61,20 @@ async function updateStatCounter(
   const ref = db.collection(collection).doc(docId);
   const postRef = collection === "post_stats" ? db.collection("posts").doc(docId) : null;
   await processMetricEventIdempotently(eventId, async (tx) => {
-    tx.set(
-      ref,
-      {
-        counters: {
-          [field]: admin.firestore.FieldValue.increment(delta),
-        },
-        [`${field}Count`]: admin.firestore.FieldValue.increment(delta),
-        lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    const projectionPatch: Record<string, unknown> = {
+      counters: {
+        [field]: admin.firestore.FieldValue.increment(delta),
       },
-      { merge: true }
-    );
+      [`${field}Count`]: admin.firestore.FieldValue.increment(delta),
+      lastUpdatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    if (collection === "event_stats" && field === "rsvps") {
+      projectionPatch.rsvps = admin.firestore.FieldValue.increment(delta);
+      projectionPatch.updatedAt = admin.firestore.FieldValue.serverTimestamp();
+    }
+
+    tx.set(ref, projectionPatch, { merge: true });
     if (postRef) {
       tx.set(
         postRef,

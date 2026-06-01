@@ -31,16 +31,35 @@ describe("event stats certification wiring", () => {
     expect(source).not.toContain("FieldValue.increment");
   });
 
-  it("detects flat, compatibility, and timestamp drift", () => {
+  it("accepts canonical runtime, backfill, and recovery documents", () => {
     const expected: ExpectedEventStatsCounters = { rsvps: 2 };
     const timestamp = { toMillis: () => 1 };
 
-    expect(eventStatsMatches(expected, {
+    const runtimeDocument = {
       rsvps: 2,
       rsvpsCount: 2,
       counters: { rsvps: 2 },
       updatedAt: timestamp,
-    })).toBe(true);
+      lastUpdatedAt: timestamp,
+    };
+    const backfilledDocument = {
+      ...runtimeDocument,
+      lastBackfilledAt: timestamp,
+    };
+    const recoveredDocument = {
+      ...runtimeDocument,
+      lastRecoveredAt: timestamp,
+    };
+
+    expect(eventStatsMatches(expected, runtimeDocument)).toBe(true);
+    expect(eventStatsMatches(expected, backfilledDocument)).toBe(true);
+    expect(eventStatsMatches(expected, recoveredDocument)).toBe(true);
+  });
+
+  it("rejects malformed event stats documents", () => {
+    const expected: ExpectedEventStatsCounters = { rsvps: 2 };
+    const timestamp = { toMillis: () => 1 };
+
     expect(eventStatsMatches(expected, {
       rsvps: 2,
       rsvpsCount: 1,
@@ -52,6 +71,31 @@ describe("event stats certification wiring", () => {
       rsvpsCount: 2,
       counters: { rsvps: 2 },
     })).toBe(false);
+    expect(eventStatsMatches(expected, {
+      rsvpsCount: 2,
+      counters: { rsvps: 2 },
+      updatedAt: timestamp,
+    })).toBe(false);
+    expect(eventStatsMatches(expected, {
+      rsvps: 2,
+      rsvpsCount: 2,
+      updatedAt: timestamp,
+    })).toBe(false);
+  });
+
+  it("aligns runtime trigger and backfill writers to the canonical schema", () => {
+    const triggers = readFunctionsFile("src/triggers/aggregationTriggers.ts");
+    const backfill = readFunctionsFile("src/admin/backfillStats.ts");
+
+    expect(triggers).toContain('collection === "event_stats" && field === "rsvps"');
+    expect(triggers).toContain("projectionPatch.rsvps");
+    expect(triggers).toContain("projectionPatch.updatedAt");
+    expect(backfill).toContain("counters: {");
+    expect(backfill).toContain("rsvps: rsvpCount");
+    expect(backfill).toContain("rsvpsCount: rsvpCount");
+    expect(backfill).toContain("updatedAt: timestamp");
+    expect(backfill).toContain("lastUpdatedAt: timestamp");
+    expect(backfill).toContain("lastBackfilledAt: timestamp");
   });
 
   it("documents event stats recovery and venue stats exclusion", () => {
@@ -60,6 +104,9 @@ describe("event stats certification wiring", () => {
     const registry = readFunctionsFile("../docs/architecture/ProjectionRegistry.md");
 
     expect(eventRunbook).toContain("events/{eventId}/rsvps/{userId}");
+    expect(eventRunbook).toContain("counters.rsvps");
+    expect(eventRunbook).toContain("rsvpsCount");
+    expect(eventRunbook).toContain("lastUpdatedAt");
     expect(eventRunbook).toContain('"mode": "dry_run"');
     expect(eventRunbook).toContain('"reconciliationMode": "repair"');
     expect(eventRunbook).toContain('"scope": "checkpointed_full"');

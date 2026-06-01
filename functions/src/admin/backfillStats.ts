@@ -205,9 +205,16 @@ for (const shelfDoc of shelfDocs.docs) {
         .collection(`events/${docSnap.id}/rsvps`)
         .count()
         .get();
+      const rsvpCount = rsvps.data().count;
       await db.collection("event_stats").doc(docSnap.id).set(
         {
-          rsvps: rsvps.data().count,
+          counters: {
+            rsvps: rsvpCount,
+          },
+          rsvps: rsvpCount,
+          rsvpsCount: rsvpCount,
+          updatedAt: timestamp,
+          lastUpdatedAt: timestamp,
           lastBackfilledAt: timestamp,
         },
         { merge: true }
