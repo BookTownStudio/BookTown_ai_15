@@ -27,7 +27,15 @@ const DEFAULT_BATCH_SIZE = 100;
 const HARD_MAX_BATCH_SIZE = 100;
 
 type Tier1ProjectionName =
+  | "attachment_metadata"
+  | "attachment_image_derivatives"
+  | "authored_author_link_projection"
+  | "catalog_identity_projection"
+  | "cover_derivatives"
   | "reader_authority_projection"
+  | "reader_events"
+  | "reader_highlights_bookmarks"
+  | "reader_insights_dto"
   | "reader_manifests"
   | "reader_epub_indexes"
   | "reader_sync_idempotency"
@@ -35,7 +43,12 @@ type Tier1ProjectionName =
   | "runtime_health_projection"
   | "runtime_anomaly_projection"
   | "book_search_fields"
-  | "deletion_cascade_cleanup_projection";
+  | "deletion_cascade_cleanup_projection"
+  | "system_metrics"
+  | "system_events"
+  | "intelligence_signal_queue"
+  | "intelligence_aggregates"
+  | "shelf_display_projection";
 
 type Tier1Scope = "single_entity" | "single_user" | "collection_page" | "checkpointed_full";
 type ReconciliationMode = "report_only" | "repair";
@@ -76,12 +89,78 @@ type Candidate = {
 };
 
 const CONFIGS: Record<Tier1ProjectionName, ProjectionConfig> = {
+  attachment_metadata: {
+    projectionName: "attachment_metadata",
+    authorityCollection: "attachments",
+    projectionCollection: "attachments",
+    ownerField: "uploader.uid",
+    projectionOwnerField: "uploader.uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["storagePath", "processingStatus"],
+  },
+  attachment_image_derivatives: {
+    projectionName: "attachment_image_derivatives",
+    authorityCollection: "attachments",
+    projectionCollection: "attachments",
+    ownerField: "uploader.uid",
+    projectionOwnerField: "uploader.uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["storagePath", "renditions"],
+  },
+  authored_author_link_projection: {
+    projectionName: "authored_author_link_projection",
+    authorityCollection: "author_user_links",
+    projectionCollection: "author_user_links",
+    ownerField: "ownerUid",
+    projectionOwnerField: "ownerUid",
+    isProjectionMaterialized: true,
+  },
+  catalog_identity_projection: {
+    projectionName: "catalog_identity_projection",
+    authorityCollection: "book_identity",
+    projectionCollection: "book_identity",
+    isProjectionMaterialized: true,
+    requiredFields: ["bookId"],
+  },
+  cover_derivatives: {
+    projectionName: "cover_derivatives",
+    authorityCollection: "cover_jobs",
+    projectionCollection: "cover_jobs",
+    isProjectionMaterialized: true,
+    requiredFields: ["status"],
+  },
   reader_authority_projection: {
     projectionName: "reader_authority_projection",
     authorityCollection: "books",
     projectionCollection: "books",
     isProjectionMaterialized: true,
     requiredFields: ["readerAuthority"],
+  },
+  reader_events: {
+    projectionName: "reader_events",
+    authorityCollection: "reader_events",
+    projectionCollection: "reader_events",
+    ownerField: "uid",
+    projectionOwnerField: "uid",
+    isProjectionMaterialized: true,
+  },
+  reader_highlights_bookmarks: {
+    projectionName: "reader_highlights_bookmarks",
+    authorityCollection: "reader_highlights",
+    projectionCollection: "reader_highlights",
+    ownerField: "uid",
+    projectionOwnerField: "uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["uid", "bookId"],
+  },
+  reader_insights_dto: {
+    projectionName: "reader_insights_dto",
+    authorityCollection: "reading_progress",
+    projectionCollection: "reading_progress",
+    ownerField: "uid",
+    projectionOwnerField: "uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["uid", "bookId"],
   },
   reader_manifests: {
     projectionName: "reader_manifests",
@@ -136,6 +215,45 @@ const CONFIGS: Record<Tier1ProjectionName, ProjectionConfig> = {
     ownerField: "targetUid",
     projectionOwnerField: "targetUid",
     isProjectionMaterialized: true,
+  },
+  system_metrics: {
+    projectionName: "system_metrics",
+    authorityCollection: "system_metrics",
+    projectionCollection: "system_metrics",
+    isProjectionMaterialized: true,
+  },
+  system_events: {
+    projectionName: "system_events",
+    authorityCollection: "system_events",
+    projectionCollection: "system_events",
+    isProjectionMaterialized: true,
+  },
+  intelligence_signal_queue: {
+    projectionName: "intelligence_signal_queue",
+    authorityCollection: "intelligence_signal_queue",
+    projectionCollection: "intelligence_signal_queue",
+    ownerField: "uid",
+    projectionOwnerField: "uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["uid", "signalType", "signalFamily"],
+  },
+  intelligence_aggregates: {
+    projectionName: "intelligence_aggregates",
+    authorityCollection: "user_intelligence_profiles",
+    projectionCollection: "user_intelligence_profiles",
+    ownerField: "uid",
+    projectionOwnerField: "uid",
+    isProjectionMaterialized: true,
+    requiredFields: ["schemaVersion", "privacyTier"],
+  },
+  shelf_display_projection: {
+    projectionName: "shelf_display_projection",
+    authorityCollection: "shelf_books",
+    projectionCollection: "shelf_books",
+    ownerField: "ownerId",
+    projectionOwnerField: "ownerId",
+    isProjectionMaterialized: true,
+    requiredFields: ["shelfId", "bookId"],
   },
 };
 

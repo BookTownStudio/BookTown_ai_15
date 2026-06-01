@@ -72,6 +72,7 @@ export { recoverUserLibraryBooks } from "../admin/recoverUserLibraryBooks";
 export { recoverFollowGraph } from "../admin/recoverFollowGraph";
 export { recoverPostEngagementStats } from "../admin/recoverPostEngagementStats";
 export { recoverBookStats } from "../admin/recoverBookStats";
+export { recoverEventStats } from "../admin/recoverEventStats";
 export { recoverUserStatsDomains } from "../admin/recoverUserStatsDomains";
 export { recoverActivityLogNotifications } from "../admin/recoverActivityLogNotifications";
 export {
