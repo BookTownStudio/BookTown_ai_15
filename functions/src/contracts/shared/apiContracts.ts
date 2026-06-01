@@ -527,6 +527,26 @@ const searchBookSchema = z
           .strict()
       )
       .optional(),
+    readerAuthority: z
+      .object({
+        hasReadableAttachment: z.boolean(),
+        attachmentId: z.string().nullable().optional(),
+        source: z.string().nullable().optional(),
+        updatedAt: z.string().nullable().optional(),
+      })
+      .strict()
+      .optional(),
+    readingProgressProjection: z
+      .object({
+        exists: z.boolean(),
+        status_state: z
+          .enum(["reading", "paused", "abandoned", "completed", "rereading"])
+          .nullable()
+          .optional(),
+        updatedAt: z.string().nullable().optional(),
+      })
+      .strict()
+      .optional(),
     rawBook: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
