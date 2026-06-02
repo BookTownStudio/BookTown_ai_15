@@ -1,5 +1,10 @@
 const admin = require("firebase-admin");
+const {
+  assertSafeFirestoreScript,
+  readBoundedCollectionPage,
+} = require("./firestoreScriptSafety.cjs");
 
+const safety = assertSafeFirestoreScript("addCanonicalFingerprints");
 admin.initializeApp();
 const db = admin.firestore();
 
@@ -23,7 +28,7 @@ function buildFingerprint(book) {
 }
 
 async function run() {
-  const snap = await db.collection("books").get();
+  const snap = await readBoundedCollectionPage(db.collection("books"), safety);
 
   let updated = 0;
   let skipped = 0;
@@ -43,13 +48,15 @@ async function run() {
       continue;
     }
 
-    await doc.ref.update({
-      canonicalFingerprint: fingerprint
-    });
+    if (!safety.dryRun) {
+      await doc.ref.update({
+        canonicalFingerprint: fingerprint
+      });
+    }
 
     updated++;
 
-    console.log("updated:", data.title, "→", fingerprint);
+    console.log(safety.dryRun ? "would update:" : "updated:", data.title, "→", fingerprint);
   }
 
   console.log("\nDone");

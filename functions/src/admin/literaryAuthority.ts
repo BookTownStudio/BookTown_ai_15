@@ -440,6 +440,8 @@ type AdminDeleteCanonicalSeedListInput = {
 
 type AdminDeleteAllBooksInput = {
   confirmation?: unknown;
+  dryRun?: unknown;
+  allowEmulatorDeleteAllBooks?: unknown;
 };
 
 type AdminDestructiveOperation =
@@ -462,6 +464,10 @@ type DeleteCanonicalBookCascadeOptions = {
 };
 
 const ADMIN_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION = 1;
+const ADMIN_DELETE_CASCADE_QUERY_LIMIT = 501;
+const ADMIN_DELETE_CASCADE_MAX_DOCS_PER_QUERY = ADMIN_DELETE_CASCADE_QUERY_LIMIT - 1;
+const ADMIN_DELETE_ALL_BOOKS_DRY_RUN_LIMIT = 51;
+const ADMIN_DELETE_ALL_BOOKS_DRY_RUN_MAX_DOCS = ADMIN_DELETE_ALL_BOOKS_DRY_RUN_LIMIT - 1;
 const ADMIN_DESTRUCTIVE_ALLOWED_OPERATIONS = new Set<AdminDestructiveOperation>([
   "adminMergeCanonicalBooks",
   "adminMergeCanonicalDuplicateGroup",
@@ -469,6 +475,22 @@ const ADMIN_DESTRUCTIVE_ALLOWED_OPERATIONS = new Set<AdminDestructiveOperation>(
   "adminDeleteCanonicalSeedList",
   "adminDeleteAllBooks",
 ]);
+
+function assertAdminCascadeQueryWithinBudget(
+  snap: FirebaseFirestore.QuerySnapshot<DocumentData>,
+  label: string
+): void {
+  if (snap.size > ADMIN_DELETE_CASCADE_MAX_DOCS_PER_QUERY) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Admin delete cascade exceeded ${label} safety limit.`
+    );
+  }
+}
+
+function isEmulatorRuntime(): boolean {
+  return process.env.FUNCTIONS_EMULATOR === "true" || Boolean(process.env.FIREBASE_EMULATOR_HUB);
+}
 
 const ADMIN_MERGE_EDITION_PATCH_FIELDS = new Set([
   "bookId",
@@ -2268,7 +2290,8 @@ function readParentBookCandidates(source: Record<string, unknown>): string[] {
 }
 
 async function getDocsForCollectionPath(path: string): Promise<FirebaseFirestore.QueryDocumentSnapshot<DocumentData>[]> {
-  const snap = await db.collection(path).get();
+  const snap = await db.collection(path).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get();
+  assertAdminCascadeQueryWithinBudget(snap, path);
   return snap.docs;
 }
 
@@ -3614,10 +3637,11 @@ async function buildDeleteExecutionPlan(inputId: string): Promise<DeleteExecutio
   }
 
   const editionSnapshots = await Promise.all([
-    db.collection("editions").where("bookId", "==", bookId).get(),
-    db.collection("editions").where("workId", "==", bookId).get(),
-    db.collection("editions").where("canonicalBookId", "==", bookId).get(),
+    db.collection("editions").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("editions").where("workId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("editions").where("canonicalBookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
   ]);
+  editionSnapshots.forEach((snap, index) => assertAdminCascadeQueryWithinBudget(snap, `editions:${index}`));
 
   for (const snap of editionSnapshots) {
     for (const doc of snap.docs) {
@@ -3636,7 +3660,7 @@ async function buildDeleteExecutionPlan(inputId: string): Promise<DeleteExecutio
   const editionIds = Array.from(editionRefs.values()).map((ref) => ref.id);
   const attachmentIds = new Set<string>();
   const parentAttachmentQueries = editionIds.map((editionId) =>
-    db.collection("attachments").where("parentId", "==", editionId).get()
+    db.collection("attachments").where("parentId", "==", editionId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get()
   );
   const [
     identitySnap,
@@ -3654,21 +3678,42 @@ async function buildDeleteExecutionPlan(inputId: string): Promise<DeleteExecutio
     attachmentByBookSnap,
     ...attachmentByEditionSnaps
   ] = await Promise.all([
-    db.collection("book_identity").where("bookId", "==", bookId).get(),
-    db.collection("book_ingestions").where("bookId", "==", bookId).get(),
-    db.collection("reading_progress").where("bookId", "==", bookId).get(),
-    db.collection("user_library_books").where("bookId", "==", bookId).get(),
-    db.collection("quotes").where("bookId", "==", bookId).get(),
-    db.collection("quotes").where("sourceBookId", "==", bookId).get(),
-    db.collection("user_reviews").where("bookId", "==", bookId).get(),
-    db.collection("reader_highlights").where("bookId", "==", bookId).get(),
-    db.collection("reader_bookmarks").where("bookId", "==", bookId).get(),
-    db.collection("reader_events").where("bookId", "==", bookId).get(),
-    db.collection("reader_audit").where("bookId", "==", bookId).get(),
-    db.collection("reader_sync_idempotency").where("bookId", "==", bookId).get(),
-    db.collection("attachments").where("bookId", "==", bookId).get(),
+    db.collection("book_identity").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("book_ingestions").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reading_progress").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("user_library_books").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("quotes").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("quotes").where("sourceBookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("user_reviews").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reader_highlights").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reader_bookmarks").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reader_events").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reader_audit").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("reader_sync_idempotency").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
+    db.collection("attachments").where("bookId", "==", bookId).limit(ADMIN_DELETE_CASCADE_QUERY_LIMIT).get(),
     ...parentAttachmentQueries,
   ]);
+  [
+    [identitySnap, "book_identity"],
+    [ingestionSnap, "book_ingestions"],
+    [readingProgressSnap, "reading_progress"],
+    [librarySnap, "user_library_books"],
+    [quoteBookSnap, "quotes.bookId"],
+    [quoteSourceSnap, "quotes.sourceBookId"],
+    [userReviewSnap, "user_reviews"],
+    [readerHighlightSnap, "reader_highlights"],
+    [readerBookmarkSnap, "reader_bookmarks"],
+    [readerEventSnap, "reader_events"],
+    [readerAuditSnap, "reader_audit"],
+    [readerSyncSnap, "reader_sync_idempotency"],
+    [attachmentByBookSnap, "attachments.bookId"],
+  ].forEach(([snap, label]) => assertAdminCascadeQueryWithinBudget(
+    snap as FirebaseFirestore.QuerySnapshot<DocumentData>,
+    String(label)
+  ));
+  attachmentByEditionSnaps.forEach((snap, index) =>
+    assertAdminCascadeQueryWithinBudget(snap, `attachments.parentId:${index}`)
+  );
 
   for (const doc of identitySnap.docs) {
     addDocRef(identityRefs, doc.ref, collectionCounts, "book_identity");
@@ -5082,9 +5127,10 @@ export const adminDeleteCanonicalSeedList = onCall({ cors: true }, async (reques
 
 export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
   const caller = assertRoleFromClaims(request.auth, "superadmin");
+  const input = (request.data as AdminDeleteAllBooksInput | null | undefined) ?? {};
 
   const confirmation = readRequiredString(
-    (request.data as AdminDeleteAllBooksInput | null | undefined)?.confirmation,
+    input.confirmation,
     "confirmation",
     64
   );
@@ -5097,12 +5143,28 @@ export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
     resourceId: "books",
   });
 
-  const booksSnap = await db.collection("books").get();
+  const dryRun = input.dryRun !== false;
+  const allowEmulatorDeleteAllBooks = input.allowEmulatorDeleteAllBooks === true;
+  if (!dryRun && (!isEmulatorRuntime() || !allowEmulatorDeleteAllBooks)) {
+    throw new HttpsError(
+      "failed-precondition",
+      "adminDeleteAllBooks is quarantined. Non-dry-run execution is restricted to emulator with allowEmulatorDeleteAllBooks=true."
+    );
+  }
+
+  const booksSnap = await db.collection("books").orderBy("__name__").limit(ADMIN_DELETE_ALL_BOOKS_DRY_RUN_LIMIT).get();
+  if (booksSnap.size > ADMIN_DELETE_ALL_BOOKS_DRY_RUN_MAX_DOCS) {
+    throw new HttpsError(
+      "failed-precondition",
+      "adminDeleteAllBooks refused because the catalog exceeds the bounded dry-run safety limit."
+    );
+  }
+
   let deletedCount = 0;
   const cascade = emptyDeleteCascadeCounts();
 
   for (const doc of booksSnap.docs) {
-    const result = await deleteCanonicalBookCascade(doc.id);
+    const result = await deleteCanonicalBookCascade(doc.id, { dryRun });
     if (!result.deleted) continue;
     deletedCount += 1;
     cascade.books += result.cascade.books;
@@ -5139,12 +5201,16 @@ export const adminDeleteAllBooks = onCall({ cors: true }, async (request) => {
     resourceId: "books",
     payload: {
       deletedCount,
+      dryRun,
+      inspectedCount: booksSnap.size,
       cascade,
     },
   });
 
   return {
+    dryRun,
     deletedCount,
+    inspectedCount: booksSnap.size,
     cascade,
   };
 });

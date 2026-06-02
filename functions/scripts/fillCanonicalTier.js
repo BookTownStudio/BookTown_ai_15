@@ -1,10 +1,15 @@
 const admin = require("firebase-admin");
+const {
+  assertSafeFirestoreScript,
+  readBoundedCollectionPage,
+} = require("./firestoreScriptSafety.cjs");
 
+const safety = assertSafeFirestoreScript("fillCanonicalTier");
 admin.initializeApp();
 const db = admin.firestore();
 
 async function run() {
-  const snap = await db.collection("books").get();
+  const snap = await readBoundedCollectionPage(db.collection("books"), safety);
 
   const batch = db.batch();
 
@@ -12,14 +17,18 @@ async function run() {
     const data = doc.data();
 
     if (!data.canonicalTier) {
-      batch.update(doc.ref, {
-        canonicalTier: 1
-      });
-      console.log("tier added:", data.title);
+      if (!safety.dryRun) {
+        batch.update(doc.ref, {
+          canonicalTier: 1
+        });
+      }
+      console.log(safety.dryRun ? "would add tier:" : "tier added:", data.title);
     }
   });
 
-  await batch.commit();
+  if (!safety.dryRun) {
+    await batch.commit();
+  }
 
   console.log("canonicalTier repair complete.");
 }

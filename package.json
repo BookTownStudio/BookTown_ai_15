@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "production-truth:check": "node scripts/enforceProductionTruth.mjs && node scripts/betaReadinessGuardrails.mjs",
+    "firestore:safety": "node scripts/firestoreSafetyCheck.mjs",
     "typecheck:runtime": "tsc --noEmit -p tsconfig.json",
     "typecheck:tests": "tsc --noEmit -p tsconfig.tests.json",
     "typecheck:fixtures": "tsc --noEmit -p tsconfig.fixtures.json",
@@ -42,7 +43,7 @@
     "clsx": "^2.1.1",
     "csv-parse": "^6.2.1",
     "epubjs": "^0.3.93",
-    "firebase": "^12.4.0",
+    "firebase": "^12.14.0",
     "firebase-admin": "^13.8.0",
     "firebase-functions": "^7.2.5",
     "framer-motion": "^12.23.26",

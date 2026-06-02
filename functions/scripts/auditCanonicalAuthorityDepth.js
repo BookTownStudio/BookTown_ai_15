@@ -1,10 +1,15 @@
 const admin = require("firebase-admin");
+const {
+  assertSafeFirestoreScript,
+  readBoundedCollectionPage,
+} = require("./firestoreScriptSafety.cjs");
 
+const safety = assertSafeFirestoreScript("auditCanonicalAuthorityDepth");
 admin.initializeApp();
 const db = admin.firestore();
 
 async function run() {
-  const snap = await db.collection("books").get();
+  const snap = await readBoundedCollectionPage(db.collection("books"), safety);
 
   const weak = [];
 

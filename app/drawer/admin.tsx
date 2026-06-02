@@ -42,7 +42,7 @@ import {
 import { useTransitionModerationStage, useApplyModerationAction } from '../../lib/hooks/useModeration.ts';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '../../lib/react-query.ts';
 import { db } from '../../lib/firebase.ts';
-import { collection, getDocs, orderBy, query } from 'firebase/firestore';
+import { collection, getDocs, limit, orderBy, query } from 'firebase/firestore';
 import {
   type AdminFeedbackDetail,
   type AdminFeedbackFilters,
@@ -125,7 +125,7 @@ const ModerationTab: React.FC = () => {
   const { data: reports, isLoading, refetch } = useQuery<any[]>({
     queryKey: ['admin_reports'],
     queryFn: async () => {
-      const snap = await getDocs(query(collection(db.raw, 'reports'), orderBy('createdAt', 'desc')));
+      const snap = await getDocs(query(collection(db.raw, 'reports'), orderBy('createdAt', 'desc'), limit(100)));
       return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     },
   });

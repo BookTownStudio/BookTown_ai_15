@@ -8,6 +8,25 @@ import {
   assertRoleFromClaims,
 } from "../shared/auth";
 
+function assertLegacyBackfillLocalOnly(data: unknown): void {
+  const payload = data && typeof data === "object" ? data as Record<string, unknown> : {};
+  const explicitLocalOverride = payload.allowLegacyLocalBackfill === true;
+  const runningInEmulator =
+    process.env.FUNCTIONS_EMULATOR === "true" ||
+    Boolean(process.env.FIREBASE_EMULATOR_HUB);
+
+  if (!runningInEmulator || !explicitLocalOverride) {
+    logger.error("[BACKFILL] Refused legacy global stats backfill outside explicit local/emulator execution.", {
+      runningInEmulator,
+      explicitLocalOverride,
+    });
+    throw new HttpsError(
+      "failed-precondition",
+      "backfillDerivedStats is quarantined. Use bounded Phase 8A recovery in production; local/emulator use requires allowLegacyLocalBackfill=true."
+    );
+  }
+}
+
 /**
  * backfillDerivedStats
  * Admin-only utility to synchronize aggregate counters with existence documents.
@@ -16,6 +35,7 @@ import {
 export const backfillDerivedStats = onCall({ cors: true }, async (request) => {
   const caller = await assertActiveAuthenticatedUser(request.auth);
   assertRoleFromClaims(caller, "superadmin");
+  assertLegacyBackfillLocalOnly(request.data);
 
   const db = admin.firestore();
   const BATCH_SIZE = 250;

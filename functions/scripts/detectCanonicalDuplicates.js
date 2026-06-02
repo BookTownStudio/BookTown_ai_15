@@ -1,5 +1,10 @@
 const admin = require("firebase-admin");
+const {
+  assertSafeFirestoreScript,
+  readBoundedCollectionPage,
+} = require("./firestoreScriptSafety.cjs");
 
+const safety = assertSafeFirestoreScript("detectCanonicalDuplicates");
 admin.initializeApp();
 const db = admin.firestore();
 
@@ -14,7 +19,7 @@ function normalize(text = "") {
 }
 
 async function run() {
-  const snap = await db.collection("books").get();
+  const snap = await readBoundedCollectionPage(db.collection("books"), safety);
 
   const map = new Map();
 

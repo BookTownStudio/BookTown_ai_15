@@ -775,6 +775,24 @@
       ]
     },
     {
+      "collectionGroup": "book_review_projection",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "bookId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "visibility",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "updatedAtIso",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "user_reviews",
       "queryScope": "COLLECTION",
       "fields": [

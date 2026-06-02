@@ -4,6 +4,7 @@ import { admin } from "./firebaseAdmin";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 
 const MAX_CASCADE_DELETE_DOCS = 450;
+const CASCADE_QUERY_LIMIT = MAX_CASCADE_DELETE_DOCS + 1;
 const WRITE_PROJECT_DESTRUCTIVE_AUTHORITY_CONTRACT_VERSION = 1;
 const WRITE_PROJECT_DESTRUCTIVE_OPERATION = "deleteWriteProject";
 
@@ -16,6 +17,18 @@ function assertWriteProjectDestructiveAuthority(params: {
   }
   if (!params.projectId || !params.projectId.trim()) {
     throw new HttpsError("invalid-argument", "Project deletion requires a project id.");
+  }
+}
+
+function assertQueryWithinCascadeBudget(
+  snap: FirebaseFirestore.QuerySnapshot,
+  label: string
+): void {
+  if (snap.size > MAX_CASCADE_DELETE_DOCS) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Project delete cascade exceeded ${label} safety limit.`
+    );
   }
 }
 
@@ -85,10 +98,14 @@ export const deleteWriteProject = onCall({ cors: true }, async (request) => {
     const [projectSnap, shareSnap, publishedSnap, publishOpsSnap, duplicateOpsSnap] = await Promise.all([
       projectRef.get(),
       shareRef.get(),
-      userRef.collection("published_books").where("projectId", "==", canonicalProjectId).get(),
-      userRef.collection("project_publish_ops").where("projectId", "==", canonicalProjectId).get(),
-      userRef.collection("project_duplicate_ops").where("sourceProjectId", "==", canonicalProjectId).get(),
+      userRef.collection("published_books").where("projectId", "==", canonicalProjectId).limit(CASCADE_QUERY_LIMIT).get(),
+      userRef.collection("project_publish_ops").where("projectId", "==", canonicalProjectId).limit(CASCADE_QUERY_LIMIT).get(),
+      userRef.collection("project_duplicate_ops").where("sourceProjectId", "==", canonicalProjectId).limit(CASCADE_QUERY_LIMIT).get(),
     ]);
+
+    assertQueryWithinCascadeBudget(publishedSnap, "published_books");
+    assertQueryWithinCascadeBudget(publishOpsSnap, "project_publish_ops");
+    assertQueryWithinCascadeBudget(duplicateOpsSnap, "project_duplicate_ops");
 
     if (!projectSnap.exists) {
       throw new HttpsError("not-found", "Project was not found.");

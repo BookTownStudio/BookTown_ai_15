@@ -1,4 +1,10 @@
 import { admin } from "../firebaseAdmin";
+import { HttpsError } from "firebase-functions/v2/https";
+
+const MAX_MANUSCRIPT_SECTIONS = 250;
+const MAX_CHUNKS_PER_SECTION = 500;
+const MANUSCRIPT_SECTION_QUERY_LIMIT = MAX_MANUSCRIPT_SECTIONS + 1;
+const MANUSCRIPT_CHUNK_QUERY_LIMIT = MAX_CHUNKS_PER_SECTION + 1;
 
 type WriteContentDoc = {
   version: 1;
@@ -30,15 +36,35 @@ export async function loadChunkedProjectManuscript(params: {
     .doc(params.uid)
     .collection("projects")
     .doc(params.projectId);
-  const sectionsSnap = await projectRef.collection("sections").orderBy("order", "asc").get();
+  const sectionsSnap = await projectRef
+    .collection("sections")
+    .orderBy("order", "asc")
+    .limit(MANUSCRIPT_SECTION_QUERY_LIMIT)
+    .get();
 
   if (sectionsSnap.empty) {
     return null;
   }
+  if (sectionsSnap.size > MAX_MANUSCRIPT_SECTIONS) {
+    throw new HttpsError(
+      "failed-precondition",
+      `Project manuscript exceeds the maximum supported section count of ${MAX_MANUSCRIPT_SECTIONS}.`
+    );
+  }
 
   const chunksBySection = await Promise.all(
     sectionsSnap.docs.map(async (sectionDoc) => {
-      const chunksSnap = await sectionDoc.ref.collection("chunks").orderBy("order", "asc").get();
+      const chunksSnap = await sectionDoc.ref
+        .collection("chunks")
+        .orderBy("order", "asc")
+        .limit(MANUSCRIPT_CHUNK_QUERY_LIMIT)
+        .get();
+      if (chunksSnap.size > MAX_CHUNKS_PER_SECTION) {
+        throw new HttpsError(
+          "failed-precondition",
+          `Project manuscript section exceeds the maximum supported chunk count of ${MAX_CHUNKS_PER_SECTION}.`
+        );
+      }
       return chunksSnap.docs
         .map((chunkDoc) => {
           const data = chunkDoc.data() as Record<string, unknown>;
