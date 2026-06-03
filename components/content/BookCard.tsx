@@ -26,6 +26,7 @@ interface BookCardProps {
   variant?: 'default' | 'homeRail';
   progress?: number;
   className?: string;
+  onClick?: () => void;
 }
 
 const BookCard: React.FC<BookCardProps> = ({
@@ -35,7 +36,8 @@ const BookCard: React.FC<BookCardProps> = ({
   layout,
   variant = 'default',
   progress,
-  className = ''
+  className = '',
+  onClick
 }) => {
   // ----------------------------------
   // Hooks (never conditional)
@@ -119,6 +121,16 @@ const BookCard: React.FC<BookCardProps> = ({
   const handleImageError = useCallback(() => {
     setImageError(true);
   }, []);
+
+  const handleCardKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!onClick) return;
+      if (event.key !== 'Enter' && event.key !== ' ') return;
+      event.preventDefault();
+      onClick();
+    },
+    [onClick]
+  );
 
   // ----------------------------------
   // Menu actions
@@ -282,9 +294,14 @@ const BookCard: React.FC<BookCardProps> = ({
             : layout === 'list'
               ? 'w-32 mr-4 flex-shrink-0'
               : 'w-full',
+          onClick && 'cursor-pointer',
           className
         )}
         onMouseEnter={handleMouseEnter}
+        onClick={onClick}
+        onKeyDown={handleCardKeyDown}
+        role={onClick ? 'button' : undefined}
+        tabIndex={onClick ? 0 : undefined}
       >
         <div className="aspect-[2/3] w-full mb-3">{coverNode}</div>
 

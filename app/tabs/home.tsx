@@ -1109,7 +1109,7 @@ const HomeScreen: React.FC = () => {
                 >
                   {isHomeConsoleLoading ? (
                     <HomeRailSkeleton />
-                  ) : hasContinueReadingItems ? (
+                  ) : (
                     <motion.div
                       variants={staggerContainer}
                       initial="hidden"
@@ -1117,14 +1117,6 @@ const HomeScreen: React.FC = () => {
                     >
                       {renderContinueReadingRow()}
                     </motion.div>
-                  ) : (
-                    <EmptyState
-                      icon={BookIcon}
-                      titleEn="Start your reading journey"
-                      titleAr="ابدأ رحلة القراءة"
-                      messageEn="Books you begin reading will appear here."
-                      messageAr="ستظهر هنا الكتب التي تبدأ بقراءتها."
-                    />
                   )}
                 </CollapsibleSection>
 
@@ -1158,6 +1150,16 @@ const HomeScreen: React.FC = () => {
                                   book={BookCardDataAdapter.fromHomeConsoleItem(item)}
                                   layout="list"
                                   variant="homeRail"
+                                  onClick={() =>
+                                    navigate({
+                                      type: 'immersive',
+                                      id: 'reader',
+                                      params: {
+                                        bookId: item.bookId,
+                                        from: currentView
+                                      }
+                                    })
+                                  }
                                 />
                               </motion.div>
                             ))}

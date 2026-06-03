@@ -19,7 +19,7 @@
     "skipLibCheck": true,
     "esModuleInterop": true,
 
-    "moduleResolution": "node",
+    "moduleResolution": "node10",
     "types": ["node"]
   },
 

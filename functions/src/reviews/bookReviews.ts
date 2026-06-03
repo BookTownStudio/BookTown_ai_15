@@ -1,4 +1,5 @@
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { FieldPath } from "firebase-admin/firestore";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
 import {
@@ -54,6 +55,12 @@ type BookReviewItem = {
   upvotes: number;
   downvotes: number;
   commentsCount: number;
+};
+
+type ProfileIdentity = {
+  name: string;
+  handle: string;
+  avatarUrl: string;
 };
 
 function ensureUid(value: unknown, field = "uid"): string {
@@ -156,6 +163,70 @@ function normalizeUrl(value: unknown): string {
   } catch {
     return "";
   }
+}
+
+function normalizeProfileHandle(value: unknown, uid: string): string {
+  const raw = sanitizeString(value, 120);
+  if (!raw) return uid ? `@${uid.slice(0, 12)}` : "@user";
+  return raw.startsWith("@") ? raw : `@${raw}`;
+}
+
+function fallbackAvatar(seed: string): string {
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "user")}`;
+}
+
+function normalizeProfileIdentity(uid: string, data: Record<string, unknown>): ProfileIdentity {
+  const name =
+    sanitizeString(data.name, 120) ||
+    sanitizeString(data.displayName, 120) ||
+    "Unknown";
+  return {
+    name,
+    handle: normalizeProfileHandle(data.handle ?? data.username, uid),
+    avatarUrl: normalizeUrl(data.avatarUrl) || fallbackAvatar(uid || name),
+  };
+}
+
+function chunk<T>(values: readonly T[], size: number): T[][] {
+  const output: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    output.push(values.slice(index, index + size));
+  }
+  return output;
+}
+
+async function readProfileIdentityMap(userIds: string[]): Promise<Map<string, ProfileIdentity>> {
+  const uniqueIds = Array.from(new Set(userIds.filter((value) => value.length > 0)));
+  const identityMap = new Map<string, ProfileIdentity>();
+  await Promise.all(
+    chunk(uniqueIds, 10).map(async (uidBatch) => {
+      const snap = await db
+        .collection("public_profiles")
+        .where(FieldPath.documentId(), "in", uidBatch)
+        .get();
+      snap.docs.forEach((docSnap) => {
+        identityMap.set(
+          docSnap.id,
+          normalizeProfileIdentity(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>)
+        );
+      });
+    })
+  );
+  return identityMap;
+}
+
+function applyCurrentIdentityToReview(
+  review: BookReviewItem,
+  identityMap: ReadonlyMap<string, ProfileIdentity>
+): BookReviewItem {
+  const identity = identityMap.get(review.userId);
+  if (!identity) return review;
+  return {
+    ...review,
+    authorName: identity.name,
+    authorHandle: identity.handle,
+    authorAvatar: identity.avatarUrl,
+  };
 }
 
 function toIso(value: unknown): string {
@@ -383,6 +454,8 @@ export const listBookReviews = onCall({ cors: true }, async (request) => {
     merged.sort(
       (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     );
+    const identityMap = await readProfileIdentityMap(merged.map((item) => item.userId));
+    const identityResolved = merged.map((item) => applyCurrentIdentityToReview(item, identityMap));
 
     logger.info("[REVIEWS][LIST_BOOK_REVIEWS_OK]", {
       revision: REVIEW_STACK_REVISION,
@@ -391,13 +464,13 @@ export const listBookReviews = onCall({ cors: true }, async (request) => {
       limitSize,
       cursor,
       queryShape: BOOK_REVIEW_QUERY_SHAPE,
-      resultCount: merged.length,
+      resultCount: identityResolved.length,
       hasMore,
       nextCursor: nextCursor ?? null,
     });
 
     return {
-      items: merged,
+      items: identityResolved,
       hasMore,
       ...(nextCursor ? { nextCursor } : {}),
       revision: REVIEW_STACK_REVISION,

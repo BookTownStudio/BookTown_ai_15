@@ -474,6 +474,24 @@ function normalizeProfilePost(docId: string, source: Record<string, unknown>): P
   };
 }
 
+function applyProfileIdentityToPost(post: ProfilePost, profile: PublicProfile): ProfilePost {
+  return {
+    ...post,
+    authorName: profile.name,
+    authorHandle: profile.handle,
+    authorAvatar: profile.avatarUrl,
+  };
+}
+
+function applyProfileIdentityToReview(review: ProfileReview, profile: PublicProfile): ProfileReview {
+  return {
+    ...review,
+    authorName: profile.name,
+    authorHandle: profile.handle,
+    authorAvatar: profile.avatarUrl,
+  };
+}
+
 function canViewPost(
   post: ProfilePost,
   viewerUid: string,
@@ -1365,7 +1383,7 @@ export const listProfilePosts = onCall({ cors: true }, async (request) => {
       continue;
     }
 
-    items.push(normalizedPost);
+    items.push(applyProfileIdentityToPost(normalizedPost, profile));
     if (items.length >= limitSize) {
       hasMore = true;
       break;
@@ -1406,13 +1424,7 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
           .limit(limitSize + 1);
 
     const pagedQuery = cursor ? profileQuery.startAfter(cursor) : profileQuery;
-    let snap = await pagedQuery.get();
-
-    // Migration hydration path for pre-projection reviews.
-    if (!cursor && snap.empty) {
-      await hydrateUserReviewProjection(targetUid, Math.min(180, limitSize * 6));
-      snap = await profileQuery.get();
-    }
+    const snap = await pagedQuery.get();
 
     const normalized = snap.docs.map((reviewDoc) =>
       normalizeProfileReview(
@@ -1423,9 +1435,10 @@ export const listProfileReviews = onCall({ cors: true }, async (request) => {
     );
 
     const hasMore = normalized.length > limitSize;
-    const items = await enrichProfileReviewsWithBookSnapshot(
+    const enrichedItems = await enrichProfileReviewsWithBookSnapshot(
       normalized.slice(0, limitSize)
     );
+    const items = enrichedItems.map((item) => applyProfileIdentityToReview(item, profile));
     const nextCursor =
       hasMore && items.length > 0
         ? sanitizeString(

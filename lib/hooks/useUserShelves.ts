@@ -15,6 +15,9 @@ const WANT_TO_READ_TITLE = 'want to read';
 const FINISHED_TITLE = 'finished';
 const repairedDefaultShelfUids = new Set<string>();
 const inFlightDefaultShelfRepairUids = new Set<string>();
+const isShelfDiagnosticsEnabled =
+  import.meta.env.DEV === true ||
+  String((import.meta as any).env?.VITE_ENABLE_BETA_FEEDBACK_TRIGGER ?? '').toLowerCase() === 'true';
 
 function normalizeShelfText(value: unknown): string {
   if (typeof value !== 'string') return '';
@@ -61,7 +64,7 @@ export function hasRequiredDefaultShelves(shelves: Shelf[], uid: string): boolea
  * useUserShelves
  */
 export const useUserShelves = (ownerId?: string) => {
-  const { effectiveUid, isAuthReady } = useAuth() as any;
+  const { effectiveUid, isAuthReady } = useAuth();
 
   const queryClient = useQueryClient();
   const finalUid = ownerId || effectiveUid;
@@ -98,6 +101,26 @@ export const useUserShelves = (ownerId?: string) => {
     refetchOnReconnect: false,
     refetchOnMount: false,
   });
+
+  useEffect(() => {
+    if (!isShelfDiagnosticsEnabled || !query.isError) return;
+    const message =
+      query.error instanceof Error && query.error.message.trim().length > 0
+        ? query.error.message
+        : 'Unknown shelf loading error.';
+    console.warn('[SHELVES][LOAD_FAILED]', {
+      ownerId: finalUid ?? null,
+      authUid: effectiveUid ?? null,
+      isOwnerView,
+      message,
+    });
+  }, [
+    effectiveUid,
+    finalUid,
+    isOwnerView,
+    query.error,
+    query.isError,
+  ]);
 
   useEffect(() => {
     if (!isOwnerView || !effectiveUid) return;
@@ -148,7 +171,7 @@ export const useShelfEntries = (
   ownerId?: string,
   options?: { resolveBooks?: boolean; limit?: number; enabled?: boolean }
 ) => {
-  const { effectiveUid, isAuthReady } = useAuth() as any;
+  const { effectiveUid, isAuthReady } = useAuth();
 
   const finalUid = ownerId || effectiveUid;
 

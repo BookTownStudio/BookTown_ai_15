@@ -527,12 +527,38 @@ const BookDetailsScreen: React.FC = () => {
     );
   };
 
-  const handleShare = () => {
-    if (!displayBook || !navigator.share) return;
-    navigator.share({
-      title: lang === 'en' ? displayBook.titleEn : displayBook.titleAr,
-      url: window.location.href
-    }).catch(() => {});
+  const handleShare = async () => {
+    if (!displayBook) {
+      showToast(lang === 'en' ? 'Unable to share this book.' : 'تعذرت مشاركة هذا الكتاب.');
+      return;
+    }
+
+    const shareUrl =
+      typeof window !== 'undefined' && bookId
+        ? `${window.location.origin}/book/${encodeURIComponent(bookId)}`
+        : window.location.href;
+    const title = lang === 'en' ? displayBook.titleEn : displayBook.titleAr || displayBook.titleEn;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title,
+          url: shareUrl
+        });
+        return;
+      } catch (error) {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+      }
+    }
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      showToast(lang === 'en' ? 'Link copied.' : 'تم نسخ الرابط.');
+    } catch {
+      showToast(lang === 'en' ? 'Unable to copy link.' : 'تعذر نسخ الرابط.');
+    }
   };
 
   const handlePrimaryAction = () => {

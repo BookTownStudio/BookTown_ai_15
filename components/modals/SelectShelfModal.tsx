@@ -8,6 +8,8 @@ import { useBookShelfStatus } from '../../lib/hooks/useBookShelfStatus.ts';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { BookIcon } from '../icons/BookIcon.tsx';
 import { CheckIcon } from '../icons/CheckIcon.tsx';
+import EmptyState from '../ui/EmptyState.tsx';
+import Button from '../ui/Button.tsx';
 import { Book } from '../../types/entities.ts';
 import type { LibrarianRecommendationContext } from '../../types/librarian.ts';
 import { getSelectableOrganizationalShelves } from '../../lib/shelves/systemShelves.ts';
@@ -38,13 +40,23 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
   recommendationContext,
 }) => {
   const { lang } = useI18n();
-  const { data: shelves, isLoading } = useUserShelves();
+  const {
+    data: shelves,
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useUserShelves();
   const { mutate: toggleBook, isPending: isToggling } =
     useToggleBookOnShelf();
 
   // Canonical membership state
   const { isOnShelf } = useBookShelfStatus(bookId);
   const selectableShelves = getSelectableOrganizationalShelves(shelves);
+  const shelfLoadError =
+    error instanceof Error && error.message.trim().length > 0
+      ? error.message
+      : '';
 
   /**
    * Emit shelf intent only.
@@ -73,6 +85,35 @@ const SelectShelfModal: React.FC<SelectShelfModalProps> = ({
         <div className="flex justify-center">
           <LoadingSpinner />
         </div>
+      ) : isError ? (
+        <EmptyState
+          icon={BookIcon}
+          titleEn="Shelves unavailable"
+          titleAr="الرفوف غير متاحة"
+          messageEn={
+            shelfLoadError
+              ? 'Your shelves could not be loaded. Try again.'
+              : 'Your shelves could not be loaded right now.'
+          }
+          messageAr="تعذر تحميل رفوفك الآن. حاول مرة أخرى."
+          action={
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void refetch()}
+            >
+              {lang === 'en' ? 'Retry' : 'إعادة المحاولة'}
+            </Button>
+          }
+        />
+      ) : selectableShelves.length === 0 ? (
+        <EmptyState
+          icon={BookIcon}
+          titleEn="No selectable shelves"
+          titleAr="لا توجد رفوف متاحة"
+          messageEn="Create or repair your shelves from the Read tab, then try again."
+          messageAr="أنشئ رفاً من تبويب القراءة، ثم حاول مرة أخرى."
+        />
       ) : (
         <div className="space-y-2 max-h-64 overflow-y-auto">
           {selectableShelves.map(shelf => {

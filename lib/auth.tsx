@@ -34,6 +34,9 @@ interface AuthContextType {
     guestId: string | null;
     isLoading: boolean;
     isInitialized: boolean;
+    isBootstrapReady: boolean;
+    isAuthReady: boolean;
+    bootstrapError: string | null;
     error: string | null;
     isLoggingIn: boolean;
     login: (email: string, pass: string) => void;
@@ -56,6 +59,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const [isLoading, setIsLoading] = useState(true);
     const [isInitialized, setIsInitialized] = useState(false);
+    const [isBootstrapReady, setIsBootstrapReady] = useState(false);
+    const [bootstrapError, setBootstrapError] = useState<string | null>(null);
     const [isLoggingIn, setIsLoggingIn] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [claimsRole, setClaimsRole] = useState<string | null>(null);
@@ -81,9 +86,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 localStorage.removeItem('booktown-lastposition');
                 lastIdentityRef.current = identity;
                 setIsInitialized(false);
+                setIsBootstrapReady(false);
+                setBootstrapError(null);
             }
 
             setUser(firebaseUser);
+
             if (firebaseUser) {
                 const tokenResult = await firebaseUser.getIdTokenResult();
                 const roleFromClaims =
@@ -98,6 +106,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (firebaseUser) {
                 setIsGuest(false);
                 setGuestId(null);
+                let bootstrapSucceeded = bootstrapUidRef.current === firebaseUser.uid;
+
+                if (!bootstrapSucceeded) {
+                    bootstrapUidRef.current = firebaseUser.uid;
+                    const bootstrapFn = httpsCallable(getFirebaseFunctions(), "bootstrapCurrentUser");
+
+                    try {
+                        await bootstrapFn({});
+                        bootstrapSucceeded = true;
+                    } catch (err) {
+                        console.error("[AUTH][BOOTSTRAP_CURRENT_USER_FAILED]", err);
+                        bootstrapUidRef.current = null;
+                        const message =
+                            err instanceof Error && err.message.trim().length > 0
+                                ? err.message
+                                : "User bootstrap failed.";
+                        setBootstrapError(message);
+                    }
+                }
+
+                setIsBootstrapReady(bootstrapSucceeded);
+            } else {
+                bootstrapUidRef.current = null;
+                setIsBootstrapReady(true);
+                setBootstrapError(null);
             }
 
             // Terminal auth state transition reached; end any in-flight login spinner.
@@ -119,25 +152,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
     }, [firebaseAuth, guestId, isGuest]);
 
-    useEffect(() => {
-        if (!user?.uid) {
-            bootstrapUidRef.current = null;
-            return;
-        }
-
-        if (bootstrapUidRef.current === user.uid) {
-            return;
-        }
-        bootstrapUidRef.current = user.uid;
-
-        const bootstrapFn = httpsCallable(getFirebaseFunctions(), "bootstrapCurrentUser");
-        void bootstrapFn({}).catch((err) => {
-            console.error("[AUTH][BOOTSTRAP_CURRENT_USER_FAILED]", err);
-            bootstrapUidRef.current = null;
-        });
-    }, [user]);
-
     const isAdmin = isAdminRole(role);
+    const isAuthReady = isInitialized && (!user || isBootstrapReady);
 
     // -----------------------
     // Auth Actions
@@ -162,6 +178,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         setIsLoggingIn(false);
         setIsGuest(false);
         setGuestId(null);
+        setIsBootstrapReady(false);
+        setBootstrapError(null);
 
         try {
             await signOut(firebaseAuth);
@@ -170,6 +188,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         }
 
         setUser(null);
+        bootstrapUidRef.current = null;
+        setIsBootstrapReady(true);
         queryClient.setUid(null);
     };
 
@@ -228,6 +248,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         guestId,
         isLoading,
         isInitialized,
+        isBootstrapReady,
+        isAuthReady,
+        bootstrapError,
         error,
         isLoggingIn,
         login,

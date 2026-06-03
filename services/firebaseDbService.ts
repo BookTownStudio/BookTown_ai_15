@@ -710,6 +710,32 @@ const toShelf = (source: Record<string, unknown>): Shelf => {
   };
 };
 
+const isShelfDiagnosticsEnabled =
+  import.meta.env.DEV === true ||
+  String((import.meta as any).env?.VITE_ENABLE_BETA_FEEDBACK_TRIGGER ?? '').toLowerCase() === 'true';
+
+const logShelfNormalizationFailure = (
+  source: Record<string, unknown>,
+  error: unknown
+): void => {
+  if (!isShelfDiagnosticsEnabled) return;
+  const shelfId = normalizeString(source.id, 190) || null;
+  const ownerId = normalizeString(source.ownerId, 128) || null;
+  const reason =
+    error instanceof Error && error.message.trim().length > 0
+      ? error.message
+      : String(error || 'Unknown normalization failure.');
+
+  console.warn("[SHELVES][DTO_NORMALIZATION_FAILED]", {
+    shelfId,
+    ownerId,
+    reason,
+    hasTitleEn: typeof source.titleEn === "string" && source.titleEn.trim().length > 0,
+    hasTitleAr: typeof source.titleAr === "string" && source.titleAr.trim().length > 0,
+    hasMembershipAuthority: source.membershipAuthority === "shelf_books",
+  });
+};
+
 /* =========================
    USERS
 ========================= */
@@ -1563,7 +1589,8 @@ class FirebaseShelfService {
       .map((item) => {
         try {
           return toShelf(item);
-        } catch {
+        } catch (error) {
+          logShelfNormalizationFailure(item, error);
           return null;
         }
       })

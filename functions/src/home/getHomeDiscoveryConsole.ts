@@ -84,6 +84,7 @@ type HomeDiagnostics = {
   recommendationAggressionScore: number;
   lowConfidenceExplanations: number;
   staleRecommendationCount: number;
+  unreadableAttachmentSuppressions: number;
   editorialHardPins: number;
   editorialSoftBoosts: number;
   editorialOccupancyAttempts: number;
@@ -403,6 +404,60 @@ function hasReadableAttachmentProjection(data: Record<string, unknown>): boolean
   );
 }
 
+function resolveReadableAttachmentId(data: Record<string, unknown>): string {
+  const readerAuthority =
+    data.readerAuthority && typeof data.readerAuthority === "object" && !Array.isArray(data.readerAuthority)
+      ? data.readerAuthority as Record<string, unknown>
+      : null;
+  return asString(data.ebookAttachmentId, 160) || asString(readerAuthority?.attachmentId, 160);
+}
+
+async function canReaderOpenProjectedAttachment(
+  bookId: string,
+  data: Record<string, unknown>,
+  diagnostics: HomeDiagnostics
+): Promise<boolean> {
+  const attachmentId = resolveReadableAttachmentId(data);
+  if (!attachmentId) {
+    diagnostics.unreadableAttachmentSuppressions += 1;
+    return false;
+  }
+
+  try {
+    const snap = await db.collection("attachments").doc(attachmentId).get();
+    diagnostics.firestoreDocumentsRead += snap.exists ? 1 : 0;
+    if (!snap.exists) {
+      diagnostics.unreadableAttachmentSuppressions += 1;
+      logger.warn("[HOME][READ_NOW_ATTACHMENT_MISSING]", { bookId, attachmentId });
+      return false;
+    }
+
+    const attachment = (snap.data() ?? {}) as Record<string, unknown>;
+    const visibility = asString(attachment.visibility, 32).toLowerCase();
+    const storagePath = asString(attachment.storagePath, 2048);
+    if (!storagePath || visibility === "private" || visibility === "restricted") {
+      diagnostics.unreadableAttachmentSuppressions += 1;
+      logger.warn("[HOME][READ_NOW_ATTACHMENT_NOT_READER_AUTHORIZED]", {
+        bookId,
+        attachmentId,
+        visibility: visibility || null,
+        hasStoragePath: storagePath.length > 0,
+      });
+      return false;
+    }
+
+    return true;
+  } catch (error) {
+    diagnostics.unreadableAttachmentSuppressions += 1;
+    logger.warn("[HOME][READ_NOW_ATTACHMENT_AUTH_CHECK_FAILED]", {
+      bookId,
+      attachmentId,
+      error: String(error),
+    });
+    return false;
+  }
+}
+
 async function readEvergreenBookFallback(
   uid: string,
   diagnostics: HomeDiagnostics,
@@ -423,6 +478,7 @@ async function readEvergreenBookFallback(
       const data = (docSnap.data() ?? {}) as Record<string, unknown>;
       if (!isPublicReadableBook(data) || !canUserReadBook(data, uid)) continue;
       if (!hasReadableAttachmentProjection(data)) continue;
+      if (!(await canReaderOpenProjectedAttachment(docSnap.id, data, diagnostics))) continue;
       const item = mapBookItem(docSnap.id, data, 0.2 - items.length / 100);
       if (!item) continue;
       item.reason = "A quiet place to begin";
@@ -857,6 +913,7 @@ async function readReadNow(uid: string, diagnostics: HomeDiagnostics): Promise<H
     const data = (docSnap.data() ?? {}) as Record<string, unknown>;
     if (!isPublicReadableBook(data) || !canUserReadBook(data, uid)) continue;
     if (!hasReadableAttachmentProjection(data)) continue;
+    if (!(await canReaderOpenProjectedAttachment(docSnap.id, data, diagnostics))) continue;
     const item = mapBookItem(docSnap.id, data, 1 - rank / 100);
     if (!item) continue;
     items.push(item);
@@ -1112,6 +1169,7 @@ async function readActiveEditorialSlots(
 
 async function hydrateEditorialBooks(
   slots: EditorialSlot[],
+  uid: string,
   diagnostics: HomeDiagnostics
 ): Promise<HomeBookItem[]> {
   const bookSlots = slots.filter((slot) => slot.entityType === "book");
@@ -1132,7 +1190,15 @@ async function hydrateEditorialBooks(
       continue;
     }
     if (slot.rowType === "readNow") {
+      if (!canUserReadBook(data, uid)) {
+        diagnostics.invalidEditorialFiltered += 1;
+        continue;
+      }
       if (!hasReadableAttachmentProjection(data)) {
+        diagnostics.invalidEditorialFiltered += 1;
+        continue;
+      }
+      if (!(await canReaderOpenProjectedAttachment(snap.id, data, diagnostics))) {
         diagnostics.invalidEditorialFiltered += 1;
         continue;
       }
@@ -1498,6 +1564,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
     recommendationAggressionScore: 0,
     lowConfidenceExplanations: 0,
     staleRecommendationCount: 0,
+    unreadableAttachmentSuppressions: 0,
     editorialHardPins: 0,
     editorialSoftBoosts: 0,
     editorialOccupancyAttempts: 0,
@@ -1596,14 +1663,14 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
         subsystem: "read_now_editorial_hydration",
         diagnostics,
         fallback: [] as HomeBookItem[],
-        run: () => hydrateEditorialBooks(readNowEditorialSlots, diagnostics),
+        run: () => hydrateEditorialBooks(readNowEditorialSlots, uid, diagnostics),
       }),
       recoverable({
         uid,
         subsystem: "dynamic_editorial_hydration",
         diagnostics,
         fallback: [] as HomeBookItem[],
-        run: () => hydrateEditorialBooks(dynamicEditorialSlots, diagnostics),
+        run: () => hydrateEditorialBooks(dynamicEditorialSlots, uid, diagnostics),
       }),
       recoverable({
         uid,
@@ -1735,6 +1802,7 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
       recommendationFreshnessScore: diagnostics.recommendationFreshnessScore,
       lowConfidenceExplanations: diagnostics.lowConfidenceExplanations,
       staleRecommendationCount: diagnostics.staleRecommendationCount,
+      unreadableAttachmentSuppressions: diagnostics.unreadableAttachmentSuppressions,
       literaryCalmScore: diagnostics.literaryCalmScore,
       culturalCoherenceScore: diagnostics.culturalCoherenceScore,
       feedContaminationRisk: diagnostics.feedContaminationRisk,

@@ -179,6 +179,7 @@ const ProfileScreen: React.FC = () => {
   const [showCompactProfileBar, setShowCompactProfileBar] = useState(false);
   const [activePublicationMenuId, setActivePublicationMenuId] = useState<string | null>(null);
   const [publicationToUnpublish, setPublicationToUnpublish] = useState<ProfilePublicationRecord | null>(null);
+  const [openShelves, setOpenShelves] = useState<Record<string, boolean>>({});
 
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
@@ -796,7 +797,13 @@ const ProfileScreen: React.FC = () => {
                     <ShelfCarousel
                       key={shelf.id}
                       shelf={shelf}
-                      isOpen
+                      isOpen={openShelves[shelf.id] ?? true}
+                      onToggle={() =>
+                        setOpenShelves(prev => ({
+                          ...prev,
+                          [shelf.id]: !(prev[shelf.id] ?? true),
+                        }))
+                      }
                       layout="carousel"
                     />
                   ))

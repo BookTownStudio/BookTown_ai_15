@@ -61,15 +61,16 @@ const CANONICAL_DEFAULTS: Pick<NotificationPreferences, 'channels' | 'categories
  */
 export const useNotificationPreferences = () => {
     const queryClient = useQueryClient();
-    const { user } = useAuth();
+    const { user, isAuthReady } = useAuth();
     const uid = user?.uid;
+    const enabled = !!uid && isAuthReady;
 
     const queryKey = [...queryKeys.user.all(uid), 'notification_preferences', uid];
 
     const query = useQuery<NotificationPreferences>({
         queryKey,
         queryFn: async () => {
-            if (!uid) throw new Error("Unauthenticated");
+            if (!enabled || !uid) throw new Error("Unauthenticated");
             const ref = doc(db.raw, 'notification_preferences', uid);
             const snap = await getDoc(ref);
             
@@ -84,7 +85,7 @@ export const useNotificationPreferences = () => {
                 updatedAt: new Date().toISOString()
             };
         },
-        enabled: !!uid,
+        enabled,
     });
 
     const mutation = useMutation({

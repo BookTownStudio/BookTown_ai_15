@@ -116,8 +116,9 @@ const mapNotification = (id: string, data: Record<string, any>): Notification =>
  * Authoritative paged read path for user notifications.
  */
 export const useInfiniteNotifications = () => {
-    const { user } = useAuth();
+    const { user, isAuthReady } = useAuth();
     const uid = user?.uid;
+    const enabled = !!uid && isAuthReady;
 
     return useInfiniteQuery<
         NotificationsPage,
@@ -128,7 +129,7 @@ export const useInfiniteNotifications = () => {
     >({
         queryKey: [...queryKeys.user.notifications(uid), 'infinite'],
         queryFn: async ({ pageParam }): Promise<NotificationsPage> => {
-            if (!uid) return { notifications: [], nextCursor: undefined };
+            if (!enabled || !uid) return { notifications: [], nextCursor: undefined };
 
             const db = getFirebaseDb();
 
@@ -175,6 +176,7 @@ export const useInfiniteNotifications = () => {
         },
         initialPageParam: undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor,
+        enabled,
     });
 };
 
@@ -183,13 +185,14 @@ export const useInfiniteNotifications = () => {
  * Backend-authoritative counter.
  */
 export const useNotificationSummary = () => {
-    const { user } = useAuth();
+    const { user, isAuthReady } = useAuth();
     const uid = user?.uid;
+    const enabled = !!uid && isAuthReady;
 
     return useQuery<NotificationSummary>({
         queryKey: [...queryKeys.user.notifications(uid), 'summary'],
         queryFn: async () => {
-            if (!uid) {
+            if (!enabled || !uid) {
                 return { unreadCount: 0, latestNotificationAt: null, lastReadAt: null };
             }
             return callCallableEndpoint<Record<string, never>, NotificationSummary>(
@@ -197,7 +200,7 @@ export const useNotificationSummary = () => {
                 {}
             );
         },
-        enabled: !!uid,
+        enabled,
         staleTime: 1000 * 30,
     });
 };

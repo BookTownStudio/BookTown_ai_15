@@ -42,6 +42,12 @@ type HydratedEntity = {
   ownerId?: string;
 };
 
+type ProfileIdentity = {
+  name: string;
+  handle: string;
+  avatarUrl: string;
+};
+
 type FeedReadDiagnostics = {
   fallbackEntityHydrationReads: number;
   fallbackEntityHydrationRequests: number;
@@ -119,6 +125,65 @@ const base64UrlDecode = (raw: string): string =>
 function readTrimmedString(value: unknown, maxLength = 2048): string {
   if (typeof value !== "string") return "";
   return value.trim().slice(0, maxLength);
+}
+
+function normalizeProfileHandle(value: unknown, uid: string): string {
+  const raw = readTrimmedString(value, 120);
+  if (!raw) return uid ? `@${uid.slice(0, 12)}` : "@user";
+  return raw.startsWith("@") ? raw : `@${raw}`;
+}
+
+function fallbackAvatar(seed: string): string {
+  return `https://api.dicebear.com/7.x/initials/svg?seed=${encodeURIComponent(seed || "user")}`;
+}
+
+function normalizeProfileIdentity(uid: string, data: Record<string, unknown>): ProfileIdentity {
+  const name =
+    readTrimmedString(data.name, 120) ||
+    readTrimmedString(data.displayName, 120) ||
+    "Unknown";
+  return {
+    name,
+    handle: normalizeProfileHandle(data.handle ?? data.username, uid),
+    avatarUrl: readTrimmedString(data.avatarUrl, 2048) || fallbackAvatar(uid || name),
+  };
+}
+
+async function readProfileIdentityMap(authorIds: string[]): Promise<Map<string, ProfileIdentity>> {
+  const uniqueIds = Array.from(new Set(authorIds.filter((value) => value.length > 0)));
+  const identityMap = new Map<string, ProfileIdentity>();
+  const chunks = chunk(uniqueIds, FOLLOWING_BATCH_SIZE);
+
+  await Promise.all(
+    chunks.map(async (uidBatch) => {
+      const snap = await db
+        .collection("public_profiles")
+        .where(FieldPath.documentId(), "in", uidBatch)
+        .get();
+      snap.docs.forEach((docSnap) => {
+        identityMap.set(
+          docSnap.id,
+          normalizeProfileIdentity(docSnap.id, (docSnap.data() ?? {}) as Record<string, unknown>)
+        );
+      });
+    })
+  );
+
+  return identityMap;
+}
+
+function applyCurrentIdentityToPost(
+  post: NormalizedPost,
+  identityMap: ReadonlyMap<string, ProfileIdentity>
+): NormalizedPost {
+  const identity = identityMap.get(post.authorId);
+  if (!identity) return post;
+  return {
+    ...post,
+    authorName: identity.name,
+    authorHandle: identity.handle,
+    authorAvatar: identity.avatarUrl,
+  };
 }
 
 function toIsoString(value: unknown): string {
@@ -1007,12 +1072,18 @@ async function buildNormalizedPosts(
       viewerStateMap.get(post.id) ?? null
     )
   );
+  const identityMap = await readProfileIdentityMap(
+    normalized.map((post) => post.authorId)
+  );
+  const identityResolved = normalized.map((post) =>
+    applyCurrentIdentityToPost(post, identityMap)
+  );
   if (diagnostics) {
-    diagnostics.unresolvedHydrationCount += normalized.filter((post) =>
+    diagnostics.unresolvedHydrationCount += identityResolved.filter((post) =>
       Boolean(post.primaryEntityType && post.primaryEntityId && !post.hydratedEntity)
     ).length;
   }
-  return normalized;
+  return identityResolved;
 }
 
 async function readFollowingAuthorIds(
@@ -1408,11 +1479,24 @@ export const listSocialComments = onCall({ cors: true }, async (request) => {
       liked: false,
     }];
   });
+  const identityMap = await readProfileIdentityMap(
+    comments.map((comment) => comment.authorId)
+  );
+  const identityResolvedComments = comments.map((comment) => {
+    const identity = identityMap.get(comment.authorId);
+    if (!identity) return comment;
+    return {
+      ...comment,
+      authorName: identity.name,
+      authorHandle: identity.handle,
+      authorAvatar: identity.avatarUrl,
+    };
+  });
 
   const lastDoc = snap.docs[snap.docs.length - 1];
   if (!lastDoc || snap.docs.length < COMMENT_PAGE_SIZE) {
     return {
-      comments,
+      comments: identityResolvedComments,
       hasMore: false,
     };
   }
@@ -1427,7 +1511,7 @@ export const listSocialComments = onCall({ cors: true }, async (request) => {
   }
 
   return {
-    comments,
+    comments: identityResolvedComments,
     hasMore: true,
     nextCursor: encodeCommentCursor({
       v: 1,

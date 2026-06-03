@@ -7,7 +7,7 @@ import type { FirebaseApp } from "firebase/app";
 import {
   getToken as getAppCheckToken,
   initializeAppCheck,
-  ReCaptchaV3Provider,
+  ReCaptchaEnterpriseProvider,
   type AppCheck,
 } from "firebase/app-check";
 
@@ -146,7 +146,7 @@ function getOrInitAppCheck(): AppCheck | null {
   }
 
   appCheckInstance = initializeAppCheck(requireApp(), {
-    provider: new ReCaptchaV3Provider(siteKey),
+    provider: new ReCaptchaEnterpriseProvider(siteKey),
     isTokenAutoRefreshEnabled: true,
   });
   return appCheckInstance;
