@@ -751,6 +751,18 @@ const HomeScreen: React.FC = () => {
     }
   };
 
+  const handleOpenHomeConsoleBookDetails = (bookId: string) => {
+    if (!bookId) return;
+    navigate({
+      type: 'immersive',
+      id: 'bookDetails',
+      params: {
+        bookId,
+        from: currentView,
+      },
+    });
+  };
+
   const handleHomeScroll = (event: React.UIEvent<HTMLDivElement>) => {
     pendingScrollTopRef.current = event.currentTarget.scrollTop;
     if (scrollWriteRafRef.current !== null) return;
@@ -1150,16 +1162,7 @@ const HomeScreen: React.FC = () => {
                                   book={BookCardDataAdapter.fromHomeConsoleItem(item)}
                                   layout="list"
                                   variant="homeRail"
-                                  onClick={() =>
-                                    navigate({
-                                      type: 'immersive',
-                                      id: 'reader',
-                                      params: {
-                                        bookId: item.bookId,
-                                        from: currentView
-                                      }
-                                    })
-                                  }
+                                  onClick={() => handleOpenHomeConsoleBookDetails(item.bookId)}
                                 />
                               </motion.div>
                             ))}
@@ -1265,6 +1268,7 @@ const HomeScreen: React.FC = () => {
                               book={BookCardDataAdapter.fromHomeConsoleItem(item)}
                               layout="list"
                               variant="homeRail"
+                              onClick={() => handleOpenHomeConsoleBookDetails(item.bookId)}
                             />
                           </motion.div>
                         ))}

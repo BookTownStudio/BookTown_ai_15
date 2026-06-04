@@ -423,6 +423,18 @@ const ReaderScreen: React.FC = () => {
     else navigate({ type: 'tab', id: 'read' });
   }, [navigate, currentView]);
 
+  const handleOpenBookDetails = useCallback(() => {
+    if (!bookId) return;
+    navigate({
+      type: 'immersive',
+      id: 'bookDetails',
+      params: {
+        bookId,
+        from: currentView,
+      },
+    });
+  }, [bookId, currentView, navigate]);
+
   const handleListeningClick = useCallback(() => {
     const result = narration.togglePlayback();
     if (result.ok) return;
@@ -1145,6 +1157,7 @@ const ReaderScreen: React.FC = () => {
         isVisible={isChromeVisible}
         book={book}
         onBack={handleBack}
+        onBookDetailsClick={handleOpenBookDetails}
         progress={progressPercent}
         currentPage={currentPage}
         totalPages={totalPages}

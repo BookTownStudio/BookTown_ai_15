@@ -12,6 +12,7 @@ import { HighlightIcon } from '../icons/HighlightIcon.tsx';
 import { SettingsIcon } from '../icons/SettingsIcon.tsx';
 import { ViewListIcon } from '../icons/ViewListIcon.tsx';
 import { BookOpenIcon } from '../icons/BookOpenIcon.tsx';
+import { BookIcon } from '../icons/BookIcon.tsx';
 import { PlayIcon } from '../icons/PlayIcon.tsx';
 import { PauseIcon } from '../icons/PauseIcon.tsx';
 
@@ -19,6 +20,7 @@ interface ReaderChromeProps {
     isVisible: boolean;
     book: Book;
     onBack: () => void;
+    onBookDetailsClick?: () => void;
     progress: number;
     currentPage: number;
     totalPages: number;
@@ -38,6 +40,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
     isVisible,
     book,
     onBack,
+    onBookDetailsClick,
     progress,
     currentPage,
     totalPages,
@@ -81,6 +84,17 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                         <p className="text-xs opacity-60 truncate mt-0.5">{lang === 'en' ? book.authorEn : book.authorAr}</p>
                     </div>
                     <div className="flex items-center gap-1">
+                        {onBookDetailsClick && (
+                            <Button
+                                variant="ghost"
+                                onClick={onBookDetailsClick}
+                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                aria-label={lang === 'en' ? 'Open book details' : 'افتح تفاصيل الكتاب'}
+                                title={lang === 'en' ? 'Book details' : 'تفاصيل الكتاب'}
+                            >
+                                <BookIcon className="h-5 w-5" />
+                            </Button>
+                        )}
                         {onListeningClick && (
                             <Button variant="ghost" onClick={onListeningClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10" aria-label={listenLabel}>
                                 {narrationState === 'playing' ? (

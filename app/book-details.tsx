@@ -25,7 +25,6 @@ import SelectShelfModal from '../components/modals/SelectShelfModal.tsx';
 import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import GlassCard from '../components/ui/GlassCard.tsx';
 import CanonicalCoverArtwork from '../components/content/CanonicalCoverArtwork.tsx';
-import Modal from '../components/ui/Modal.tsx';
 import OtherEditionsSheet from '../components/books/OtherEditionsSheet.tsx';
 
 import {
@@ -35,8 +34,8 @@ import {
   QuoteIcon,
   EllipsisIcon,
   ShelvesIcon,
-  EditIcon,
   BookIcon,
+  BasketIcon,
   ChevronLeftIcon,
 } from '../components/icons';
 
@@ -56,6 +55,7 @@ import { useReaderProgress } from '../lib/hooks/useReaderProgress.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
+const INITIAL_REVIEW_COUNT = 3;
 type PrimaryBookAction = 'continue' | 'read' | 'get';
 
 function hasReadableAttachmentAuthority(value: BookDetailsRuntimeDTO | null | undefined): boolean {
@@ -153,6 +153,8 @@ const BookDetailsScreen: React.FC = () => {
   const [externalResolveFailed, setExternalResolveFailed] = useState(false);
   const [prepareTimedOut, setPrepareTimedOut] = useState(false);
   const [isAcquisitionSheetOpen, setIsAcquisitionSheetOpen] = useState(false);
+  const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
   const ingestionStartedRef = useRef<string>('');
   const resolvedCanonicalRef = useRef<string | null>(null);
   const pendingActionRef = useRef<string>('');
@@ -164,7 +166,7 @@ const BookDetailsScreen: React.FC = () => {
       : resolvedExternalBookId || (hasExternalHydrationCandidate ? undefined : originalBookId);
 
   const { data: book, isLoading: isBookLoading, isError, refetch } = useBookCatalog(bookId);
-  const { data: reviews = [], isLoading: isReviewsLoading } = useBookReviews(bookId);
+  const { data: reviews = [] } = useBookReviews(bookId);
   const { progress: readerProgress } = useReaderProgress(bookId);
   const {
     isSavedOnPhysicalShelf = false,
@@ -186,6 +188,8 @@ const BookDetailsScreen: React.FC = () => {
     setExternalResolveFailed(false);
     setPrepareTimedOut(false);
     setIsAcquisitionSheetOpen(false);
+    setIsShareMenuOpen(false);
+    setIsMoreMenuOpen(false);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
 
   useEffect(() => {
@@ -456,11 +460,12 @@ const BookDetailsScreen: React.FC = () => {
   }, [reviews, user?.uid]);
 
   const [isShelfModalOpen, setIsShelfModalOpen] = useState(false);
-  const [isReviewsModalOpen, setIsReviewsModalOpen] = useState(false);
   const [isAddingReview, setIsAddingReview] = useState(false);
   const [isEditingReview, setIsEditingReview] = useState(false);
+  const [showAllReviews, setShowAllReviews] = useState(false);
   const [userRating, setUserRating] = useState(0);
   const [reviewText, setReviewText] = useState('');
+  const [hasReviewComposerInteraction, setHasReviewComposerInteraction] = useState(false);
 
   useEffect(() => {
     if (existingUserReview && isEditingReview) {
@@ -469,6 +474,7 @@ const BookDetailsScreen: React.FC = () => {
     } else if (!isEditingReview && !isAddingReview) {
       setReviewText('');
       setUserRating(0);
+      setHasReviewComposerInteraction(false);
     }
   }, [existingUserReview, isEditingReview, isAddingReview]);
 
@@ -499,7 +505,7 @@ const BookDetailsScreen: React.FC = () => {
     : 'get';
   const primaryActionLabel =
     primaryAction === 'continue'
-      ? (lang === 'en' ? 'Continue Reading' : 'تابع القراءة')
+      ? (lang === 'en' ? 'Read' : 'اقرأ')
       : primaryAction === 'read'
       ? (lang === 'en' ? 'Read' : 'اقرأ')
       : (lang === 'en' ? 'Get' : 'احصل عليه');
@@ -519,6 +525,12 @@ const BookDetailsScreen: React.FC = () => {
     return buildPendingSearchBookView(pendingSearchResult, bookId);
   }, [bookDetails, bookId, pendingSearchResult]);
 
+  const canonicalBookUrl = useMemo(() => {
+    if (typeof window === 'undefined') return '';
+    const id = bookId || originalBookId;
+    return id ? `${window.location.origin}/books/${encodeURIComponent(id)}` : window.location.href;
+  }, [bookId, originalBookId]);
+
   const handleBack = () => {
     const from = currentView.type === 'immersive' ? currentView.params?.from : null;
     navigate(
@@ -527,38 +539,86 @@ const BookDetailsScreen: React.FC = () => {
     );
   };
 
-  const handleShare = async () => {
+  const handleCopyLink = async () => {
     if (!displayBook) {
       showToast(lang === 'en' ? 'Unable to share this book.' : 'تعذرت مشاركة هذا الكتاب.');
       return;
     }
 
-    const shareUrl =
-      typeof window !== 'undefined' && bookId
-        ? `${window.location.origin}/book/${encodeURIComponent(bookId)}`
-        : window.location.href;
+    try {
+      await navigator.clipboard.writeText(canonicalBookUrl);
+      setIsShareMenuOpen(false);
+      showToast(lang === 'en' ? 'Link copied.' : 'تم نسخ الرابط.');
+    } catch {
+      showToast(lang === 'en' ? 'Unable to copy link.' : 'تعذر نسخ الرابط.');
+    }
+  };
+
+  const handleShareExternally = async () => {
+    if (!displayBook) {
+      showToast(lang === 'en' ? 'Unable to share this book.' : 'تعذرت مشاركة هذا الكتاب.');
+      return;
+    }
+
     const title = lang === 'en' ? displayBook.titleEn : displayBook.titleAr || displayBook.titleEn;
 
     if (navigator.share) {
       try {
         await navigator.share({
           title,
-          url: shareUrl
+          url: canonicalBookUrl
         });
+        setIsShareMenuOpen(false);
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
           return;
         }
+        showToast(lang === 'en' ? 'Unable to share externally.' : 'تعذرت المشاركة خارجياً.');
+        return;
       }
     }
 
-    try {
-      await navigator.clipboard.writeText(shareUrl);
-      showToast(lang === 'en' ? 'Link copied.' : 'تم نسخ الرابط.');
-    } catch {
-      showToast(lang === 'en' ? 'Unable to copy link.' : 'تعذر نسخ الرابط.');
+    showToast(lang === 'en' ? 'External sharing is not available in this browser.' : 'المشاركة الخارجية غير متاحة في هذا المتصفح.');
+  };
+
+  const handlePostToTown = () => {
+    if (!bookId || !displayBook) return;
+
+    setIsShareMenuOpen(false);
+    navigate({
+      type: 'immersive',
+      id: 'postComposer',
+      params: {
+        from: currentView,
+        attachedBook: {
+          id: bookId,
+          titleEn: displayBook.titleEn,
+          titleAr: displayBook.titleAr,
+          authorEn: displayBook.authorEn,
+          authorAr: displayBook.authorAr,
+          coverUrl: displayBook.coverUrl,
+        },
+      },
+    });
+  };
+
+  const handleReportBook = () => {
+    setIsMoreMenuOpen(false);
+    showToast(
+      lang === 'en'
+        ? 'Book reporting is not available yet.'
+        : 'الإبلاغ عن الكتب غير متاح بعد.'
+    );
+  };
+
+  const handleShare = () => {
+    if (!displayBook) {
+      showToast(lang === 'en' ? 'Unable to share this book.' : 'تعذرت مشاركة هذا الكتاب.');
+      return;
     }
+    setIsMoreMenuOpen(false);
+    setIsShareMenuOpen((open) => !open);
   };
 
   const handlePrimaryAction = () => {
@@ -581,10 +641,6 @@ const BookDetailsScreen: React.FC = () => {
     navigate({ type: 'immersive', id: 'quotes', params: { bookId, from: currentView } });
   };
 
-  const handleOpenReviews = () => {
-    setIsReviewsModalOpen(true);
-  };
-
   const handlePublishReview = async () => {
     if (!bookId || !user?.uid) return;
     if (!reviewText.trim() || userRating <= 0) {
@@ -601,6 +657,9 @@ const BookDetailsScreen: React.FC = () => {
       });
       setIsAddingReview(false);
       setIsEditingReview(false);
+      setReviewText('');
+      setUserRating(0);
+      setHasReviewComposerInteraction(false);
       showToast(lang === 'en' ? 'Published.' : 'تم النشر.');
     } catch (err) {
       showToast('Error saving review.');
@@ -769,6 +828,80 @@ const BookDetailsScreen: React.FC = () => {
     Boolean(semanticGraph?.ontology.canonicalTradition) ||
     Boolean(semanticGraph?.ontology.form) ||
     semanticRelatedWorks.length > 0;
+  const shouldShowInlineComposer = Boolean(user && (!existingUserReview || showComposer));
+  const visibleReviews = showAllReviews ? reviews : reviews.slice(0, INITIAL_REVIEW_COUNT);
+  const hasMoreReviews = reviews.length > INITIAL_REVIEW_COUNT;
+  const connectionSection = hasSemanticGraph ? (
+    <section className="space-y-4">
+      <div className={cn('flex items-center justify-between gap-4', isRTL && 'flex-row-reverse text-right')}>
+        <BilingualText role="H2" className="!text-xl !font-bold">
+          {lang === 'en' ? 'Connections' : 'الصلات'}
+        </BilingualText>
+        {semanticGraph?.groups.explicitRelationshipCount ? (
+          <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/50">
+            {semanticGraph.groups.explicitRelationshipCount}
+          </span>
+        ) : null}
+      </div>
+
+      <div className={cn('flex flex-wrap gap-2', isRTL && 'justify-end')}>
+        {semanticGraph?.ontology.canonicalTradition ? (
+          <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
+            {formatOntologyLabel(semanticGraph.ontology.canonicalTradition)}
+          </span>
+        ) : null}
+        {semanticGraph?.ontology.form ? (
+          <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">
+            {formatOntologyLabel(semanticGraph.ontology.form)}
+          </span>
+        ) : null}
+        {semanticGraph?.ontology.subForm ? (
+          <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
+            {formatOntologyLabel(semanticGraph.ontology.subForm)}
+          </span>
+        ) : null}
+      </div>
+
+      {semanticRelatedWorks.length > 0 && (
+        <div className="grid gap-3 md:grid-cols-2">
+          {semanticRelatedWorks.slice(0, 6).map((item) => (
+            <button
+              key={`${item.relationshipType}:${item.bookId}`}
+              type="button"
+              onClick={() =>
+                navigate({
+                  type: 'immersive',
+                  id: 'bookDetails',
+                  params: { bookId: item.bookId, from: currentView },
+                })
+              }
+              className={cn(
+                'flex min-h-[84px] items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10',
+                isRTL && 'flex-row-reverse text-right'
+              )}
+            >
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/30">
+                <BookIcon className="h-5 w-5 text-white/70" />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">
+                  {lang === 'en' ? item.book.titleEn : item.book.titleAr || item.book.titleEn}
+                </p>
+                <p className="truncate text-xs text-white/50">
+                  {lang === 'en' ? item.book.authorEn : item.book.authorAr || item.book.authorEn}
+                </p>
+                <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/35">
+                  {RELATIONSHIP_LABELS[item.relationshipType]?.[lang] ||
+                    RELATIONSHIP_LABELS[item.relationshipType]?.en ||
+                    formatOntologyLabel(item.relationshipType)}
+                </p>
+              </div>
+            </button>
+          ))}
+        </div>
+      )}
+    </section>
+  ) : null;
 
   return (
     <PageTransition className="h-screen w-full overflow-y-auto bg-black text-white">
@@ -783,9 +916,30 @@ const BookDetailsScreen: React.FC = () => {
             >
               <ChevronLeftIcon className="h-6 w-6" />
             </Button>
-            <Button variant="icon" className="!bg-white/10 backdrop-blur-md !p-3">
-              <EllipsisIcon className="h-6 w-6" />
-            </Button>
+            <div className="relative">
+              <Button
+                variant="icon"
+                className="!bg-white/10 backdrop-blur-md !p-3"
+                aria-label={lang === 'en' ? 'More actions' : 'إجراءات أخرى'}
+                onClick={() => {
+                  setIsShareMenuOpen(false);
+                  setIsMoreMenuOpen((open) => !open);
+                }}
+              >
+                <EllipsisIcon className="h-6 w-6" />
+              </Button>
+              {isMoreMenuOpen && (
+                <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-xl backdrop-blur-md">
+                  <button
+                    type="button"
+                    onClick={handleReportBook}
+                    className="w-full px-4 py-3 text-left text-sm font-semibold text-white/80 hover:bg-white/10"
+                  >
+                    {lang === 'en' ? 'Report' : 'إبلاغ'}
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -823,21 +977,13 @@ const BookDetailsScreen: React.FC = () => {
             </div>
           </section>
 
-          {/* Primary Action */}
-          <section>
-            <Button
-              variant="primary"
-              onClick={handlePrimaryAction}
-              disabled={!bookId}
-              className="!h-14 w-full !rounded-2xl !text-base"
-            >
-              <EyeIcon className="mr-2 h-5 w-5" />
-              {primaryActionLabel}
-            </Button>
-          </section>
-
-          {/* Secondary Actions */}
-          <section className="grid grid-cols-5 gap-3 lg:gap-4">
+          {/* Hero Actions */}
+          <section
+            className={cn(
+              'relative grid gap-3 lg:gap-4',
+              primaryAction === 'get' ? 'grid-cols-4' : 'grid-cols-5'
+            )}
+          >
             <button
               onClick={() => setIsShelfModalOpen(true)}
               disabled={!bookId || !book}
@@ -850,15 +996,6 @@ const BookDetailsScreen: React.FC = () => {
               <ShelvesIcon className="h-6 w-6" />
               <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
                 {lang === 'en' ? 'Shelf' : 'الرف'}
-              </span>
-            </button>
-            <button
-              onClick={handleShare}
-              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
-            >
-              <ShareIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
-                {lang === 'en' ? 'Share' : 'مشاركة'}
               </span>
             </button>
             <button
@@ -875,24 +1012,70 @@ const BookDetailsScreen: React.FC = () => {
               </span>
             </button>
             <button
-              onClick={handleOpenReviews}
+              onClick={handleShare}
+              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
+            >
+              <ShareIcon className="h-6 w-6" />
+              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                {lang === 'en' ? 'Share' : 'مشاركة'}
+              </span>
+            </button>
+            {isShareMenuOpen && (
+              <div className="absolute left-1/2 top-full z-40 mt-3 w-[min(320px,calc(100vw-48px))] -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-md">
+                <button
+                  type="button"
+                  onClick={handlePostToTown}
+                  disabled={!bookId || !displayBook}
+                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10 disabled:opacity-40"
+                >
+                  {lang === 'en' ? 'Post to Town' : 'انشر في البلدة'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleShareExternally}
+                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10"
+                >
+                  {lang === 'en' ? 'Share Externally' : 'مشاركة خارجية'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyLink}
+                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10"
+                >
+                  {lang === 'en' ? 'Copy Link' : 'نسخ الرابط'}
+                </button>
+              </div>
+            )}
+            {primaryAction !== 'get' && (
+              <button
+                onClick={() => setIsAcquisitionSheetOpen(true)}
+                disabled={!bookId}
+                className={cn(
+                  'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                  !bookId && 'opacity-40'
+                )}
+              >
+                <BookIcon className="h-6 w-6" />
+                <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                  {lang === 'en' ? 'Editions' : 'الطبعات'}
+                </span>
+              </button>
+            )}
+            <button
+              onClick={handlePrimaryAction}
               disabled={!bookId}
               className={cn(
                 'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
                 !bookId && 'opacity-40'
               )}
             >
-              <EditIcon className="h-6 w-6" />
+              {primaryAction === 'get' ? (
+                <BasketIcon className="h-6 w-6" />
+              ) : (
+                <EyeIcon className="h-6 w-6" />
+              )}
               <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
-                {lang === 'en' ? 'Review' : 'مراجعة'}
-              </span>
-            </button>
-            <button
-              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
-            >
-              <EllipsisIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
-                {lang === 'en' ? 'More' : 'المزيد'}
+                {primaryActionLabel}
               </span>
             </button>
           </section>
@@ -903,112 +1086,77 @@ const BookDetailsScreen: React.FC = () => {
             <p className="text-base leading-relaxed text-white/80 font-serif">{lang === 'en' ? displayBook?.descriptionEn : displayBook?.descriptionAr || displayBook?.descriptionEn}</p>
           </section>
 
-          {hasSemanticGraph && (
-            <section className="space-y-4">
-              <div className={cn('flex items-center justify-between gap-4', isRTL && 'flex-row-reverse text-right')}>
-                <BilingualText role="H2" className="!text-xl !font-bold">
-                  {lang === 'en' ? 'Literary Graph' : 'الرسم الأدبي'}
-                </BilingualText>
-                {semanticGraph?.groups.explicitRelationshipCount ? (
-                  <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[10px] font-black uppercase tracking-widest text-white/50">
-                    {semanticGraph.groups.explicitRelationshipCount}
-                  </span>
-                ) : null}
-              </div>
-
-              <div className={cn('flex flex-wrap gap-2', isRTL && 'justify-end')}>
-                {semanticGraph?.ontology.canonicalTradition ? (
-                  <span className="rounded-full border border-amber-300/20 bg-amber-300/10 px-3 py-1 text-xs text-amber-100">
-                    {formatOntologyLabel(semanticGraph.ontology.canonicalTradition)}
-                  </span>
-                ) : null}
-                {semanticGraph?.ontology.form ? (
-                  <span className="rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs text-cyan-100">
-                    {formatOntologyLabel(semanticGraph.ontology.form)}
-                  </span>
-                ) : null}
-                {semanticGraph?.ontology.subForm ? (
-                  <span className="rounded-full border border-emerald-300/20 bg-emerald-300/10 px-3 py-1 text-xs text-emerald-100">
-                    {formatOntologyLabel(semanticGraph.ontology.subForm)}
-                  </span>
-                ) : null}
-              </div>
-
-              {semanticRelatedWorks.length > 0 && (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {semanticRelatedWorks.slice(0, 6).map((item) => (
-                    <button
-                      key={`${item.relationshipType}:${item.bookId}`}
-                      type="button"
-                      onClick={() =>
-                        navigate({
-                          type: 'immersive',
-                          id: 'bookDetails',
-                          params: { bookId: item.bookId, from: currentView },
-                        })
-                      }
-                      className={cn(
-                        'flex min-h-[84px] items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-3 text-left transition-colors hover:bg-white/10',
-                        isRTL && 'flex-row-reverse text-right'
-                      )}
-                    >
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-white/10 bg-black/30">
-                        <BookIcon className="h-5 w-5 text-white/70" />
-                      </div>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-semibold text-white">
-                          {lang === 'en' ? item.book.titleEn : item.book.titleAr || item.book.titleEn}
-                        </p>
-                        <p className="truncate text-xs text-white/50">
-                          {lang === 'en' ? item.book.authorEn : item.book.authorAr || item.book.authorEn}
-                        </p>
-                        <p className="mt-1 text-[10px] font-black uppercase tracking-widest text-white/35">
-                          {RELATIONSHIP_LABELS[item.relationshipType]?.[lang] ||
-                            RELATIONSHIP_LABELS[item.relationshipType]?.en ||
-                            formatOntologyLabel(item.relationshipType)}
-                        </p>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </section>
-          )}
-
           {/* Reviews */}
           <section className="space-y-6">
             <div className="flex items-center justify-between gap-4">
-              <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Critiques' : 'المراجعات'}</BilingualText>
-              {user && !existingUserReview && !showComposer && (
-                <Button variant="ghost" onClick={() => setIsAddingReview(true)} className="!h-9 !shrink-0 !rounded-full border border-white/10 !px-4 !text-xs">
-                  <EditIcon className="mr-2 h-3 w-3" />
-                  {lang === 'en' ? 'Write a review' : 'اكتب مراجعة'}
-                </Button>
-              )}
+              <BilingualText role="H2" className="!text-xl !font-bold">{lang === 'en' ? 'Reviews' : 'المراجعات'}</BilingualText>
             </div>
 
-            {user && showComposer && (
+            {shouldShowInlineComposer && (
               <GlassCard className="!bg-white/5 !p-0 overflow-hidden border-white/10 animate-fade-in-up">
                 <div className="flex items-center justify-between border-b border-white/5 px-6 py-4">
                   <BilingualText className="text-[10px] font-black uppercase tracking-widest text-white/40">{isEditingReview ? 'Edit Review' : 'New Review'}</BilingualText>
-                  <StarRatingInput rating={userRating} onRatingChange={setUserRating} size="sm" />
+                  <StarRatingInput
+                    rating={userRating}
+                    onRatingChange={(rating) => {
+                      setHasReviewComposerInteraction(true);
+                      setUserRating(rating);
+                    }}
+                    size="sm"
+                  />
                 </div>
                 <div className="p-6">
-                  <textarea value={reviewText} onChange={(e) => setReviewText(e.target.value)} placeholder="..." className="w-full resize-none bg-transparent text-base text-white font-serif focus:outline-none" rows={3} autoFocus />
+                  <textarea
+                    value={reviewText}
+                    onChange={(e) => {
+                      setHasReviewComposerInteraction(true);
+                      setReviewText(e.target.value);
+                    }}
+                    maxLength={MAX_REVIEW_LENGTH}
+                    placeholder="..."
+                    className="w-full resize-none bg-transparent text-base text-white font-serif focus:outline-none"
+                    rows={3}
+                    autoFocus
+                  />
                   <div className="mt-4 flex justify-end gap-3">
-                    <Button variant="ghost" onClick={() => { setIsAddingReview(false); setIsEditingReview(false); }} className="!text-xs">Cancel</Button>
-                    <Button variant="primary" disabled={submitReview.isPending} onClick={handlePublishReview} className="!h-9 !rounded-full !px-6 !text-sm">Save</Button>
+                    {hasReviewComposerInteraction && (
+                      <Button
+                        variant="ghost"
+                        onClick={() => {
+                          setIsAddingReview(false);
+                          setIsEditingReview(false);
+                          setHasReviewComposerInteraction(false);
+                        }}
+                        className="!text-xs"
+                      >
+                        Cancel
+                      </Button>
+                    )}
+                    <Button variant="primary" disabled={submitReview.isPending} onClick={handlePublishReview} className="!h-9 !rounded-full !px-6 !text-sm">Submit</Button>
                   </div>
                 </div>
               </GlassCard>
             )}
 
             <div className="space-y-4">
-              {reviews.map(r => (
+              {visibleReviews.map(r => (
                 <ReviewCard key={`${r.bookId}_${r.userId}`} review={r} onEdit={() => setIsEditingReview(true)} />
               ))}
+              {hasMoreReviews && (
+                <Button
+                  variant="ghost"
+                  onClick={() => setShowAllReviews((value) => !value)}
+                  className="!h-10 !rounded-full border border-white/10 !px-5 !text-sm"
+                >
+                  {showAllReviews
+                    ? (lang === 'en' ? 'Fewer Reviews' : 'مراجعات أقل')
+                    : (lang === 'en' ? 'More Reviews' : 'مراجعات أكثر')}
+                </Button>
+              )}
             </div>
           </section>
+
+          {connectionSection}
         </main>
       </div>
 
@@ -1027,50 +1175,6 @@ const BookDetailsScreen: React.FC = () => {
         fallbackCover={displayBook?.fallbackCover}
         externalReadableSources={bookDetails?.externalReadableSources}
       />
-      <Modal isOpen={isReviewsModalOpen} onClose={() => setIsReviewsModalOpen(false)}>
-        <div className="space-y-5 pt-2 text-slate-950 dark:text-white">
-          <div className="flex items-center justify-between gap-4 pr-8">
-            <BilingualText role="H2" className="!text-xl !font-bold">
-              {lang === 'en' ? 'Reviews' : 'المراجعات'}
-            </BilingualText>
-            {user && !existingUserReview ? (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  setIsAddingReview(true);
-                  setIsReviewsModalOpen(false);
-                }}
-                className="!h-9 !shrink-0 !rounded-full border border-black/10 !px-4 !text-xs dark:border-white/10"
-              >
-                <EditIcon className="mr-2 h-3 w-3" />
-                {lang === 'en' ? 'Write' : 'اكتب'}
-              </Button>
-            ) : null}
-          </div>
-          <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
-            {isReviewsLoading ? (
-              <div className="flex min-h-32 items-center justify-center">
-                <LoadingSpinner />
-              </div>
-            ) : reviews.length > 0 ? (
-              reviews.map((review) => (
-                <ReviewCard
-                  key={`modal_${review.bookId}_${review.userId}`}
-                  review={review}
-                  onEdit={() => {
-                    setIsReviewsModalOpen(false);
-                    setIsEditingReview(true);
-                  }}
-                />
-              ))
-            ) : (
-              <p className="py-8 text-center text-sm text-slate-500 dark:text-white/55">
-                {lang === 'en' ? 'No reviews yet.' : 'لا توجد مراجعات بعد.'}
-              </p>
-            )}
-          </div>
-        </div>
-      </Modal>
     </PageTransition>
   );
 };
