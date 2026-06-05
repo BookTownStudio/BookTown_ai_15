@@ -2,28 +2,10 @@
 
 import React from 'react';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import SearchResultCard from './SearchResultCard.tsx';
 import type { SearchResultDTO } from '../../types/bookSearch.ts';
 import { I18nProvider } from '../../store/i18n.tsx';
-
-const hookMocks = vi.hoisted(() => ({
-  useBookCatalog: vi.fn(),
-  useReaderProgress: vi.fn(),
-  useBookEditions: vi.fn(),
-}));
-
-vi.mock('../../lib/hooks/useBookCatalog.ts', () => ({
-  useBookCatalog: hookMocks.useBookCatalog,
-}));
-
-vi.mock('../../lib/hooks/useReaderProgress.ts', () => ({
-  useReaderProgress: hookMocks.useReaderProgress,
-}));
-
-vi.mock('../../lib/hooks/useBookEditions.ts', () => ({
-  useBookEditions: hookMocks.useBookEditions,
-}));
 
 function buildResult(overrides: Partial<SearchResultDTO> = {}): SearchResultDTO {
   return {
@@ -64,41 +46,11 @@ function buildResult(overrides: Partial<SearchResultDTO> = {}): SearchResultDTO 
 }
 
 describe('SearchResultCard', () => {
-  beforeEach(() => {
-    hookMocks.useBookCatalog.mockReturnValue({ data: null });
-    hookMocks.useReaderProgress.mockReturnValue({ progress: null });
-    hookMocks.useBookEditions.mockReturnValue({ data: [], isLoading: false });
-  });
-
-  it('uses readerAuthority for Read and reading_progress for Continue', () => {
+  it('removes search-level Read/Get CTAs while preserving card open and add actions', () => {
+    const onOpen = vi.fn();
+    const onAdd = vi.fn();
     const onRead = vi.fn();
-    const { rerender } = render(
-      <I18nProvider>
-        <SearchResultCard
-          result={buildResult({
-            available: true,
-            acquired: false,
-            readAccess: 'trusted_external',
-            readProvider: 'openLibrary',
-            ebookClass: 'external_link',
-          })}
-          lang="en"
-          onRead={onRead}
-        />
-      </I18nProvider>
-    );
-
-    expect(screen.getByRole('button', { name: 'Get' })).toBeTruthy();
-
-    hookMocks.useBookCatalog.mockReturnValue({
-      data: {
-        readerAuthority: {
-          hasReadableAttachment: true,
-        },
-      },
-    });
-
-    rerender(
+    render(
       <I18nProvider>
         <SearchResultCard
           result={buildResult({
@@ -107,40 +59,36 @@ describe('SearchResultCard', () => {
             readAccess: 'in_app',
             readProvider: 'booktown',
             ebookClass: 'in_app',
-            hasEbook: true,
-            downloadable: true,
-            isEbookAvailable: true,
+            readerAuthority: {
+              hasReadableAttachment: true,
+            },
+            readingProgressProjection: {
+              exists: true,
+              bookId: 'book_1',
+              progress: 0.2,
+              status_state: 'reading',
+              lastPosition: null,
+            },
           })}
           lang="en"
+          onOpen={onOpen}
+          onAdd={onAdd}
           onRead={onRead}
         />
       </I18nProvider>
     );
 
-    fireEvent.click(screen.getByRole('button', { name: 'Read' }));
-    expect(onRead).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('button', { name: 'Get' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Read' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Continue' })).toBeNull();
 
-    hookMocks.useReaderProgress.mockReturnValue({
-      progress: {
-        exists: true,
-        bookId: 'book_1',
-        progress: 0.2,
-        status_state: 'reading',
-        lastPosition: null,
-      },
-    });
+    fireEvent.click(screen.getByLabelText('Add book'));
+    expect(onAdd).toHaveBeenCalledTimes(1);
+    expect(onOpen).not.toHaveBeenCalled();
+    expect(onRead).not.toHaveBeenCalled();
 
-    rerender(
-      <I18nProvider>
-        <SearchResultCard
-          result={buildResult()}
-          lang="en"
-          onRead={onRead}
-        />
-      </I18nProvider>
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
-    expect(onRead).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getAllByRole('button')[0]);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onRead).not.toHaveBeenCalled();
   });
 });

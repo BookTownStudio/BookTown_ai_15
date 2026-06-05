@@ -57,6 +57,7 @@ const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
 const INITIAL_REVIEW_COUNT = 3;
 type PrimaryBookAction = 'continue' | 'read' | 'get';
+type AcquisitionSheetTrigger = 'editions' | 'get' | null;
 
 function hasReadableAttachmentAuthority(value: BookDetailsRuntimeDTO | null | undefined): boolean {
   if (!value) return false;
@@ -153,8 +154,11 @@ const BookDetailsScreen: React.FC = () => {
   const [externalResolveFailed, setExternalResolveFailed] = useState(false);
   const [prepareTimedOut, setPrepareTimedOut] = useState(false);
   const [isAcquisitionSheetOpen, setIsAcquisitionSheetOpen] = useState(false);
+  const [acquisitionSheetTrigger, setAcquisitionSheetTrigger] = useState<AcquisitionSheetTrigger>(null);
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const shareMenuRef = useRef<HTMLDivElement | null>(null);
+  const shareButtonRef = useRef<HTMLButtonElement | null>(null);
   const ingestionStartedRef = useRef<string>('');
   const resolvedCanonicalRef = useRef<string | null>(null);
   const pendingActionRef = useRef<string>('');
@@ -188,9 +192,25 @@ const BookDetailsScreen: React.FC = () => {
     setExternalResolveFailed(false);
     setPrepareTimedOut(false);
     setIsAcquisitionSheetOpen(false);
+    setAcquisitionSheetTrigger(null);
     setIsShareMenuOpen(false);
     setIsMoreMenuOpen(false);
   }, [originalBookId, pendingSearchResult?.id, pendingAction, pendingShelfId]);
+
+  useEffect(() => {
+    if (!isShareMenuOpen) return;
+
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (shareMenuRef.current?.contains(target)) return;
+      if (shareButtonRef.current?.contains(target)) return;
+      setIsShareMenuOpen(false);
+    };
+
+    document.addEventListener('pointerdown', handlePointerDown);
+    return () => document.removeEventListener('pointerdown', handlePointerDown);
+  }, [isShareMenuOpen]);
 
   useEffect(() => {
     if (pendingSearchResult) {
@@ -546,8 +566,8 @@ const BookDetailsScreen: React.FC = () => {
     }
 
     try {
-      await navigator.clipboard.writeText(canonicalBookUrl);
       setIsShareMenuOpen(false);
+      await navigator.clipboard.writeText(canonicalBookUrl);
       showToast(lang === 'en' ? 'Link copied.' : 'تم نسخ الرابط.');
     } catch {
       showToast(lang === 'en' ? 'Unable to copy link.' : 'تعذر نسخ الرابط.');
@@ -560,6 +580,7 @@ const BookDetailsScreen: React.FC = () => {
       return;
     }
 
+    setIsShareMenuOpen(false);
     const title = lang === 'en' ? displayBook.titleEn : displayBook.titleAr || displayBook.titleEn;
 
     if (navigator.share) {
@@ -568,7 +589,6 @@ const BookDetailsScreen: React.FC = () => {
           title,
           url: canonicalBookUrl
         });
-        setIsShareMenuOpen(false);
         return;
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') {
@@ -633,12 +653,19 @@ const BookDetailsScreen: React.FC = () => {
       return;
     }
 
+    setAcquisitionSheetTrigger('get');
     setIsAcquisitionSheetOpen(true);
   };
 
   const handleOpenQuotes = () => {
     if (!bookId) return;
     navigate({ type: 'immersive', id: 'quotes', params: { bookId, from: currentView } });
+  };
+
+  const handleOpenEditions = () => {
+    if (!bookId) return;
+    setAcquisitionSheetTrigger('editions');
+    setIsAcquisitionSheetOpen(true);
   };
 
   const handlePublishReview = async () => {
@@ -665,6 +692,26 @@ const BookDetailsScreen: React.FC = () => {
       showToast('Error saving review.');
     }
   };
+
+  const heroActionClassName = (isActive = false) =>
+    cn(
+      'flex aspect-square items-center justify-center rounded-2xl border bg-white/5 text-white/80',
+      'transition-[background-color,border-color,color,transform,box-shadow] duration-150',
+      'hover:border-white/20 hover:bg-white/10 hover:text-white',
+      'active:scale-[0.97] active:border-accent/50 active:bg-accent/15 active:text-white',
+      'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950',
+      'disabled:cursor-not-allowed disabled:hover:border-white/10 disabled:hover:bg-white/5',
+      'lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+      isActive
+        ? 'border-accent/50 bg-accent/15 text-white shadow-[0_0_0_1px_rgba(56,189,248,0.18),0_18px_44px_rgba(2,8,23,0.38)]'
+        : 'border-white/10'
+    );
+
+  const heroActionLabelClassName = (isActive = false) =>
+    cn(
+      'hidden text-xs font-semibold tracking-wide lg:block',
+      isActive ? 'text-white' : 'text-white/70'
+    );
 
   if (isResolvingExternal && !resolvedExternalBookId && !displayBook) {
     if (prepareTimedOut) {
@@ -950,8 +997,16 @@ const BookDetailsScreen: React.FC = () => {
           <section className={cn('flex items-start gap-5 lg:gap-8', isRTL && 'flex-row-reverse')}>
             <div className="w-32 flex-shrink-0 overflow-hidden rounded-xl border border-white/10 bg-slate-800 shadow-2xl aspect-[2/3] lg:w-[180px]">
               <CanonicalCoverArtwork
-                title={lang === 'en' ? displayBook?.titleEn : displayBook?.titleAr}
-                author={lang === 'en' ? displayBook?.authorEn : displayBook?.authorAr}
+                title={
+                  lang === 'en'
+                    ? (displayBook?.titleEn ?? displayBook?.titleAr ?? 'Unknown Title')
+                    : (displayBook?.titleAr ?? displayBook?.titleEn ?? 'عنوان غير معروف')
+                }
+                author={
+                  lang === 'en'
+                    ? (displayBook?.authorEn ?? displayBook?.authorAr ?? 'Unknown Author')
+                    : (displayBook?.authorAr ?? displayBook?.authorEn ?? 'مؤلف غير معروف')
+                }
                 coverUrl={displayBook?.coverUrl}
                 coverMode={displayBook?.coverMode}
                 fallbackCover={displayBook?.fallbackCover}
@@ -988,13 +1043,13 @@ const BookDetailsScreen: React.FC = () => {
               onClick={() => setIsShelfModalOpen(true)}
               disabled={!bookId || !book}
               className={cn(
-                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                heroActionClassName(isShelfModalOpen || isSavedOnPhysicalShelf),
                 isSavedOnPhysicalShelf && 'bg-accent/10 text-accent',
                 (!bookId || !book) && 'opacity-40'
               )}
             >
               <ShelvesIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+              <span className={heroActionLabelClassName(isShelfModalOpen)}>
                 {lang === 'en' ? 'Shelf' : 'الرف'}
               </span>
             </button>
@@ -1002,45 +1057,54 @@ const BookDetailsScreen: React.FC = () => {
               onClick={handleOpenQuotes}
               disabled={!bookId}
               className={cn(
-                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                heroActionClassName(false),
                 !bookId && 'opacity-40'
               )}
             >
               <QuoteIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+              <span className={heroActionLabelClassName(false)}>
                 {lang === 'en' ? 'Quotes' : 'اقتباسات'}
               </span>
             </button>
             <button
+              ref={shareButtonRef}
               onClick={handleShare}
-              className="flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3"
+              className={heroActionClassName(isShareMenuOpen)}
+              aria-expanded={isShareMenuOpen}
             >
               <ShareIcon className="h-6 w-6" />
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+              <span className={heroActionLabelClassName(isShareMenuOpen)}>
                 {lang === 'en' ? 'Share' : 'مشاركة'}
               </span>
             </button>
             {isShareMenuOpen && (
-              <div className="absolute left-1/2 top-full z-40 mt-3 w-[min(320px,calc(100vw-48px))] -translate-x-1/2 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-2xl backdrop-blur-md">
+              <div
+                ref={shareMenuRef}
+                className="absolute left-1/2 top-full z-40 mt-3 w-[min(320px,calc(100vw-48px))] -translate-x-1/2 overflow-hidden rounded-2xl border border-white/10 bg-slate-950 shadow-2xl shadow-black/40 backdrop-blur-md"
+              >
                 <button
                   type="button"
                   onClick={handlePostToTown}
                   disabled={!bookId || !displayBook}
-                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10 disabled:opacity-40"
+                  className={cn(
+                    'block min-h-[44px] w-full px-4 py-3 text-left text-sm font-semibold text-white/85 transition-colors',
+                    'hover:bg-white/10 active:bg-accent/15 focus-visible:bg-white/10 focus-visible:outline-none',
+                    'disabled:cursor-not-allowed disabled:opacity-40'
+                  )}
                 >
                   {lang === 'en' ? 'Post to Town' : 'انشر في البلدة'}
                 </button>
                 <button
                   type="button"
                   onClick={handleShareExternally}
-                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10"
+                  className="block min-h-[44px] w-full px-4 py-3 text-left text-sm font-semibold text-white/85 transition-colors hover:bg-white/10 active:bg-accent/15 focus-visible:bg-white/10 focus-visible:outline-none"
                 >
                   {lang === 'en' ? 'Share Externally' : 'مشاركة خارجية'}
                 </button>
                 <button
                   type="button"
                   onClick={handleCopyLink}
-                  className="block w-full px-4 py-3 text-left text-sm font-semibold text-white/85 hover:bg-white/10"
+                  className="block min-h-[44px] w-full px-4 py-3 text-left text-sm font-semibold text-white/85 transition-colors hover:bg-white/10 active:bg-accent/15 focus-visible:bg-white/10 focus-visible:outline-none"
                 >
                   {lang === 'en' ? 'Copy Link' : 'نسخ الرابط'}
                 </button>
@@ -1048,15 +1112,15 @@ const BookDetailsScreen: React.FC = () => {
             )}
             {primaryAction !== 'get' && (
               <button
-                onClick={() => setIsAcquisitionSheetOpen(true)}
+                onClick={handleOpenEditions}
                 disabled={!bookId}
                 className={cn(
-                  'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                  heroActionClassName(isAcquisitionSheetOpen && acquisitionSheetTrigger === 'editions'),
                   !bookId && 'opacity-40'
                 )}
               >
                 <BookIcon className="h-6 w-6" />
-                <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+                <span className={heroActionLabelClassName(isAcquisitionSheetOpen && acquisitionSheetTrigger === 'editions')}>
                   {lang === 'en' ? 'Editions' : 'الطبعات'}
                 </span>
               </button>
@@ -1065,7 +1129,7 @@ const BookDetailsScreen: React.FC = () => {
               onClick={handlePrimaryAction}
               disabled={!bookId}
               className={cn(
-                'flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-white/5 transition-colors lg:h-[180px] lg:aspect-auto lg:flex-col lg:gap-3',
+                heroActionClassName(isAcquisitionSheetOpen && acquisitionSheetTrigger === 'get'),
                 !bookId && 'opacity-40'
               )}
             >
@@ -1074,7 +1138,7 @@ const BookDetailsScreen: React.FC = () => {
               ) : (
                 <EyeIcon className="h-6 w-6" />
               )}
-              <span className="hidden text-xs font-semibold tracking-wide text-white/70 lg:block">
+              <span className={heroActionLabelClassName(isAcquisitionSheetOpen && acquisitionSheetTrigger === 'get')}>
                 {primaryActionLabel}
               </span>
             </button>
@@ -1165,7 +1229,10 @@ const BookDetailsScreen: React.FC = () => {
       )}
       <OtherEditionsSheet
         isOpen={isAcquisitionSheetOpen}
-        onClose={() => setIsAcquisitionSheetOpen(false)}
+        onClose={() => {
+          setIsAcquisitionSheetOpen(false);
+          setAcquisitionSheetTrigger(null);
+        }}
         bookId={bookId}
         lang={lang}
         title={displayBook ? (lang === 'en' ? displayBook.titleEn : displayBook.titleAr || displayBook.titleEn) : undefined}

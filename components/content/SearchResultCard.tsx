@@ -8,7 +8,6 @@ import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
-import OtherEditionsSheet from '../books/OtherEditionsSheet.tsx';
 
 type SemanticChip = {
   key: string;
@@ -17,8 +16,6 @@ type SemanticChip = {
   kind?: 'tradition' | 'form' | 'subform';
   value?: string;
 };
-
-type PrimarySearchAction = 'continue' | 'read' | 'get';
 
 export interface SearchResultCardProps {
   result: SearchResultDTO;
@@ -44,7 +41,7 @@ export interface SearchResultCardProps {
  * 🔒 SearchResultCard — Discovery & Insertion Safe
  *
  * - Card click → open details
- * - Primary action consumes readerAuthority / reading_progress projections
+ * - Read/Get decisions are owned by Book Details
  * - Plus → explicit add mutation
  * - actionSlot → context-specific action chrome without forking layout
  *
@@ -57,7 +54,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   lang,
   onAdd,
   onOpen,
-  onRead,
   onSemanticChipClick,
   isBusy = false,
   isDisabled = false,
@@ -65,7 +61,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   className = ''
 }) => {
   const [didAdd, setDidAdd] = useState(false);
-  const [isEditionsSheetOpen, setIsEditionsSheetOpen] = useState(false);
   const addFeedbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -87,26 +82,7 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       : result.authorAr || result.authorEn || '';
 
   const canAdd = typeof onAdd === 'function';
-  const hasActiveReadingProgress = Boolean(
-    result.readingProgressProjection?.exists &&
-      (
-        result.readingProgressProjection.status_state === 'reading' ||
-        result.readingProgressProjection.status_state === 'paused' ||
-        result.readingProgressProjection.status_state === 'rereading'
-      )
-  );
   const hasReadableAttachment = result.readerAuthority?.hasReadableAttachment === true;
-  const primaryAction: PrimarySearchAction = hasActiveReadingProgress
-    ? 'continue'
-    : hasReadableAttachment
-    ? 'read'
-    : 'get';
-  const primaryActionLabel =
-    primaryAction === 'continue'
-      ? (lang === 'en' ? 'Continue' : 'تابع')
-      : primaryAction === 'read'
-      ? (lang === 'en' ? 'Read' : 'اقرأ')
-      : (lang === 'en' ? 'Get' : 'احصل عليه');
   const groupedEditionText =
     result.editionPresence === 'grouped'
       ? lang === 'en'
@@ -230,40 +206,27 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     }, 900);
   };
 
-  const handleSearchPrimaryAction = (event: React.MouseEvent) => {
-    event.stopPropagation();
-    if (isBusy || isDisabled) return;
-
-    if (primaryAction === 'continue' || primaryAction === 'read') {
-      onRead?.(result);
-      return;
-    }
-
-    setIsEditionsSheetOpen(true);
-  };
-
   return (
-    <>
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={handlePrimaryAction}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ' ') {
-            e.preventDefault();
-            handlePrimaryAction();
-          }
-        }}
-        className={cn(
-          'flex gap-3 p-3 rounded-xl',
-          'bg-slate-800/60 border border-white/10',
-          'hover:bg-slate-800 transition-colors',
-          'focus:outline-none focus:ring-2 focus:ring-accent',
-          isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
-          className
-        )}
-        aria-disabled={isDisabled}
-      >
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={handlePrimaryAction}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          handlePrimaryAction();
+        }
+      }}
+      className={cn(
+        'flex gap-3 p-3 rounded-xl',
+        'bg-slate-800/60 border border-white/10',
+        'hover:bg-slate-800 transition-colors',
+        'focus:outline-none focus:ring-2 focus:ring-accent',
+        isDisabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer',
+        className
+      )}
+      aria-disabled={isDisabled}
+    >
         {/* Cover */}
         <div className="w-14 h-20 flex-shrink-0 bg-slate-700 rounded-md overflow-hidden">
           {result.coverUrl ? (
@@ -349,15 +312,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
 
         {/* Actions */}
         <div className="flex flex-col gap-2 justify-center items-center">
-          <Button
-            variant="ghost"
-            disabled={isBusy || isDisabled}
-            onClick={handleSearchPrimaryAction}
-            className="!h-9 !rounded-full border border-white/10 !px-4 !text-xs"
-          >
-            {primaryActionLabel}
-          </Button>
-
           {actionSlot ? (
             <div onClick={(e) => e.stopPropagation()}>{actionSlot}</div>
           ) : null}
@@ -394,18 +348,6 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
           )}
         </div>
       </div>
-      <OtherEditionsSheet
-        isOpen={isEditionsSheetOpen}
-        onClose={() => setIsEditionsSheetOpen(false)}
-        bookId={result.bookId}
-        lang={lang}
-        title={title}
-        author={author}
-        coverUrl={result.coverUrl}
-        coverMode="uploaded"
-        externalReadableSources={result.externalReadableSources}
-      />
-    </>
   );
 };
 

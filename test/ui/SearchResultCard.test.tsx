@@ -76,8 +76,9 @@ describe("SearchResultCard", () => {
     expect(screen.queryByLabelText("Add book")).toBeNull();
   });
 
-  it("renders read affordance only for in-app ebooks and dispatches the real callback", () => {
+  it("does not render search-level Read or Get actions", () => {
     const onRead = vi.fn();
+    const onOpen = vi.fn();
     render(
       <SearchResultCard
         result={buildResult({
@@ -86,15 +87,22 @@ describe("SearchResultCard", () => {
           acquired: true,
           downloadable: true,
           isEbookAvailable: true,
+          readerAuthority: {
+            hasReadableAttachment: true,
+          },
         })}
         lang="en"
-        onOpen={vi.fn()}
+        onOpen={onOpen}
         onRead={onRead}
       />
     );
 
-    fireEvent.click(screen.getByLabelText("Read ebook"));
-    expect(onRead).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("button", { name: "Read" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Get" })).toBeNull();
+
+    fireEvent.click(screen.getAllByRole("button")[0]);
+    expect(onOpen).toHaveBeenCalledTimes(1);
+    expect(onRead).not.toHaveBeenCalled();
   });
 
   it("renders add button only when a real mutation handler is provided", () => {
@@ -155,7 +163,9 @@ describe("SearchResultCard", () => {
         result={buildResult({
           workType: "work",
           editionPresence: "grouped",
-          ebookClass: "in_app",
+          readerAuthority: {
+            hasReadableAttachment: true,
+          },
           sourceClass: "external_provider",
           languageTruth: "mismatch",
           hasEbook: true,
@@ -168,7 +178,7 @@ describe("SearchResultCard", () => {
     );
 
     expect(screen.getByText("Canonical")).toBeInTheDocument();
-    expect(screen.getByText("In-App Ebook")).toBeInTheDocument();
+    expect(screen.getByText("Available in BookTown")).toBeInTheDocument();
     expect(screen.getByText("External")).toBeInTheDocument();
     expect(screen.getByText("Other language")).toBeInTheDocument();
     expect(screen.getByText("Other editions available")).toBeInTheDocument();

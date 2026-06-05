@@ -44,6 +44,7 @@ import type {
   ReaderFormat,
   ReaderHighlightOverlay,
   ReaderNarrationSnapshot,
+  ReaderSectionGraphSnapshot,
   ReaderTextSelection,
 } from '../lib/reader/runtime/contracts.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
@@ -55,12 +56,49 @@ import {
   resetReaderPerfMetrics,
   sampleReaderMemory,
 } from '../lib/reader/runtime/readerTelemetry.ts';
+import { cn } from '../lib/utils.ts';
 
 function inferFormatFromUrl(url: string): ReaderFormat {
   const lower = url.toLowerCase();
   if (lower.includes('.pdf')) return 'pdf';
   if (lower.includes('.epub') || lower.includes('.kepub')) return 'epub';
   return 'unknown';
+}
+
+type CurrentEpubReaderLocation = {
+  href: string | null;
+  spineIndex: number | null;
+};
+
+type EpubPageNavigation = {
+  goPrevious: () => void;
+  goNext: () => void;
+};
+
+function normalizeEpubHref(value: string | null | undefined): string | null {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  return trimmed.split('#')[0] || null;
+}
+
+function resolveCurrentSectionTitle(
+  sectionGraph: ReaderSectionGraphSnapshot | null,
+  location: CurrentEpubReaderLocation | null
+): string | null {
+  if (!sectionGraph || !location) return null;
+
+  const href = normalizeEpubHref(location.href);
+  if (!href) return null;
+
+  const candidates = sectionGraph.sections.filter((section) => {
+    if (!section.title) return false;
+    if (normalizeEpubHref(section.href) !== href) return false;
+    return location.spineIndex === null || section.spineIndex === location.spineIndex;
+  });
+
+  if (candidates.length !== 1) return null;
+  return candidates[0].title;
 }
 
 function parseRecommendationContext(
@@ -181,7 +219,7 @@ const ReaderScreen: React.FC = () => {
   const { currentView, navigate } = useNavigation();
   const { lang } = useI18n();
   const { showToast } = useToast();
-  const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
+  const { theme, readingMode, fontSize, fontStyle, lineHeight, margin } = useReadingPreferences();
   const { isOffline } = useOffline();
   const queryClient = useQueryClient();
 
@@ -195,6 +233,7 @@ const ReaderScreen: React.FC = () => {
 
   const [isChromeVisible, setIsChromeVisible] = useState(true);
   const [isSettingsVisible, setIsSettingsVisible] = useState(false);
+  const [readerActivityAt, setReaderActivityAt] = useState(() => Date.now());
 
   // -------------------------------------------------
   // A4.5 — Canonical Reading Session
@@ -202,6 +241,7 @@ const ReaderScreen: React.FC = () => {
   const {
     session: readerSession,
     manifest: readerManifest,
+    sectionGraph: readerSectionGraph,
     isLoading: loadingSession,
     error: sessionError,
   } = useReaderSessionBootstrap(bookId);
@@ -228,8 +268,13 @@ const ReaderScreen: React.FC = () => {
   const [isOfflineAssetBusy, setIsOfflineAssetBusy] = useState(false);
   const [pendingHighlightSelection, setPendingHighlightSelection] = useState<ReaderTextSelection | null>(null);
   const [narrationSnapshot, setNarrationSnapshot] = useState<ReaderNarrationSnapshot | null>(null);
+  const [currentEpubLocation, setCurrentEpubLocation] =
+    useState<CurrentEpubReaderLocation | null>(null);
+  const [epubPageNavigation, setEpubPageNavigation] = useState<EpubPageNavigation | null>(null);
   const [hasObservedRuntimePagination, setHasObservedRuntimePagination] = useState(false);
   const progressWriteTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const chromeAutoHideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastActivitySignalRef = useRef(0);
   const lastProgressFingerprintRef = useRef<string>('');
   const lastNarrationErrorRef = useRef<string>('');
   const latestEpubAnchorRef = useRef<Record<string, unknown> | null>(null);
@@ -330,6 +375,52 @@ const ReaderScreen: React.FC = () => {
     snapshot: narrationSnapshot,
     language: lang,
   });
+  const isChromeAutoHideBlocked = Boolean(
+    isSettingsVisible ||
+    pendingHighlightSelection ||
+    narration.status !== 'idle'
+  );
+
+  const markReaderActivity = useCallback((showChrome = true) => {
+    const now = Date.now();
+    if (now - lastActivitySignalRef.current < 250) return;
+    lastActivitySignalRef.current = now;
+    setReaderActivityAt(now);
+    if (showChrome) {
+      setIsChromeVisible(true);
+    }
+  }, []);
+
+  const handleReaderSurfaceClick = useCallback(() => {
+    if (pendingHighlightSelection) return;
+    const now = Date.now();
+    lastActivitySignalRef.current = now;
+    setReaderActivityAt(now);
+    setIsChromeVisible((visible) => !visible);
+  }, [pendingHighlightSelection]);
+
+  useEffect(() => {
+    if (chromeAutoHideTimerRef.current) {
+      clearTimeout(chromeAutoHideTimerRef.current);
+      chromeAutoHideTimerRef.current = null;
+    }
+
+    if (!isChromeVisible || isChromeAutoHideBlocked) {
+      return;
+    }
+
+    chromeAutoHideTimerRef.current = setTimeout(() => {
+      setIsChromeVisible(false);
+      chromeAutoHideTimerRef.current = null;
+    }, 5000);
+
+    return () => {
+      if (chromeAutoHideTimerRef.current) {
+        clearTimeout(chromeAutoHideTimerRef.current);
+        chromeAutoHideTimerRef.current = null;
+      }
+    };
+  }, [isChromeAutoHideBlocked, isChromeVisible, readerActivityAt]);
 
   useEffect(() => {
     latestEpubAnchorRef.current = null;
@@ -501,6 +592,8 @@ const ReaderScreen: React.FC = () => {
     setOfflineRecord(bookId ? getOfflineRecord(bookId) : null);
     setPendingHighlightSelection(null);
     setNarrationSnapshot(null);
+    setCurrentEpubLocation(null);
+    setEpubPageNavigation(null);
     setHasObservedRuntimePagination(false);
     latestProgressPayloadRef.current = null;
     lastProgressFingerprintRef.current = '';
@@ -553,9 +646,14 @@ const ReaderScreen: React.FC = () => {
           : null;
 
       if (!cfi || !href || !manifestVersion || manifestVersion <= 0) {
+        setCurrentEpubLocation(null);
         return;
       }
 
+      setCurrentEpubLocation({
+        href,
+        spineIndex: typeof location.index === 'number' ? location.index : null,
+      });
       latestEpubAnchorRef.current = {
         kind: 'epub_point',
         manifestVersion,
@@ -1130,6 +1228,10 @@ const ReaderScreen: React.FC = () => {
   });
   const progressPercent =
     totalPages > 0 ? Math.min(100, Math.max(0, (currentPage / totalPages) * 100)) : 0;
+  const progressContextLabel = resolveCurrentSectionTitle(
+    effectiveFormat === 'epub' ? readerSectionGraph : null,
+    currentEpubLocation
+  );
   const renderOpenFileFallback = (message: string) => (
     <div className="h-full w-full flex flex-col items-center justify-center px-6 text-center gap-4 text-white">
       <p className="text-sm text-white/70 max-w-md">{message}</p>
@@ -1147,7 +1249,10 @@ const ReaderScreen: React.FC = () => {
 
   return renderReaderViewport(
     <div
-      className="reader-container h-full w-full flex flex-col overflow-hidden"
+      className={cn(
+        'reader-container h-full w-full flex flex-col overflow-hidden',
+        runtimeSelection.engine === 'web_epub' && 'pt-24 pb-20'
+      )}
       style={{
         backgroundColor:
           theme === 'light' ? '#ffffff' : theme === 'sepia' ? '#F3E9D2' : '#000000',
@@ -1161,6 +1266,7 @@ const ReaderScreen: React.FC = () => {
         progress={progressPercent}
         currentPage={currentPage}
         totalPages={totalPages}
+        progressContextLabel={progressContextLabel}
         onSettingsClick={() => setIsSettingsVisible(true)}
         onListeningClick={handleListeningClick}
         narrationState={narration.status}
@@ -1171,14 +1277,15 @@ const ReaderScreen: React.FC = () => {
         isOfflineAvailable={hasOfflineCopy}
         isOfflineBusy={isOfflineAssetBusy}
         onOfflineToggle={handleOfflineToggle}
+        onPreviousPage={epubPageNavigation?.goPrevious}
+        onNextPage={epubPageNavigation?.goNext}
       />
 
       <div
         className="flex-grow min-h-0 relative"
-        onClick={() => {
-          if (pendingHighlightSelection) return;
-          setIsChromeVisible((v) => !v);
-        }}
+        onClick={handleReaderSurfaceClick}
+        onKeyDown={() => markReaderActivity()}
+        onPointerMove={() => markReaderActivity(false)}
       >
         {renderError ? (
           renderOpenFileFallback(renderError)
@@ -1193,6 +1300,8 @@ const ReaderScreen: React.FC = () => {
             readingMode={readingMode}
             fontSize={fontSize}
             fontStyle={fontStyle}
+            lineHeight={lineHeight}
+            margin={margin}
             highlights={runtimeHighlights}
             manifest={readerManifest}
             onPageChange={handleReaderPageChange}
@@ -1202,6 +1311,8 @@ const ReaderScreen: React.FC = () => {
             onPdfFirstPageRender={handleFirstPageRender}
             onTextSelection={setPendingHighlightSelection}
             onNarrationSnapshotChange={setNarrationSnapshot}
+            onUserActivity={markReaderActivity}
+            onEpubPageNavigationChange={setEpubPageNavigation}
             renderUnsupported={() =>
               renderOpenFileFallback(
                 lang === 'en'

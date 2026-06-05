@@ -24,6 +24,7 @@ interface ReaderChromeProps {
     progress: number;
     currentPage: number;
     totalPages: number;
+    progressContextLabel?: string | null;
     onSettingsClick: () => void;
     onListeningClick?: () => void;
     narrationState?: 'idle' | 'playing' | 'paused';
@@ -34,6 +35,8 @@ interface ReaderChromeProps {
     isOfflineAvailable?: boolean;
     isOfflineBusy?: boolean;
     onOfflineToggle?: () => void;
+    onPreviousPage?: () => void;
+    onNextPage?: () => void;
 }
 
 const ReaderChrome: React.FC<ReaderChromeProps> = ({
@@ -44,6 +47,7 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
     progress,
     currentPage,
     totalPages,
+    progressContextLabel,
     onSettingsClick,
     onListeningClick,
     narrationState = 'idle',
@@ -54,6 +58,8 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
     isOfflineAvailable = false,
     isOfflineBusy = false,
     onOfflineToggle,
+    onPreviousPage,
+    onNextPage,
 }) => {
     const { lang } = useI18n();
     const { readingMode, setReadingMode, theme } = useReadingPreferences();
@@ -72,56 +78,72 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
         bgStyles, textStyles,
         isVisible ? 'opacity-100 translate-y-0' : 'opacity-0 pointer-events-none'
     );
+    const actionButtonClass = '!p-0 h-11 min-w-0 flex-1 flex-col gap-1 rounded-md hover:bg-black/5 dark:hover:bg-white/10';
+    const actionLabelClass = 'text-[10px] leading-none font-medium opacity-70';
 
     return (
         <>
             {/* Top Bar */}
             <header className={cn(chromeClass, 'top-0 border-b', !isVisible && '-translate-y-full')}>
-                <div className="container mx-auto flex h-16 items-center justify-between px-4">
-                    <Button variant="ghost" onClick={onBack} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"><ChevronLeftIcon className="h-6 w-6" /></Button>
-                    <div className="text-center overflow-hidden flex-grow px-4">
-                        <p className="font-bold truncate text-sm leading-tight">{lang === 'en' ? book.titleEn : book.titleAr}</p>
-                        <p className="text-xs opacity-60 truncate mt-0.5">{lang === 'en' ? book.authorEn : book.authorAr}</p>
+                <div className="container mx-auto flex h-24 flex-col justify-center gap-2 px-4 pb-2 pt-3">
+                    <div className="relative min-w-0 px-10 text-center">
+                        <Button
+                            variant="ghost"
+                            onClick={onBack}
+                            className="absolute left-0 top-1/2 !p-2 -translate-y-1/2 hover:bg-black/5 dark:hover:bg-white/10"
+                            aria-label={lang === 'en' ? 'Back' : 'عودة'}
+                        >
+                            <ChevronLeftIcon className="h-5 w-5" />
+                        </Button>
+                        <p className="truncate text-[13px] leading-tight">
+                            <span className="font-semibold">{lang === 'en' ? book.titleEn : book.titleAr}</span>
+                            <span className="px-1.5 opacity-45">—</span>
+                            <span className="font-normal opacity-75">{lang === 'en' ? book.authorEn : book.authorAr}</span>
+                        </p>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex min-w-0 items-center justify-between gap-1">
                         {onBookDetailsClick && (
                             <Button
                                 variant="ghost"
                                 onClick={onBookDetailsClick}
-                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                className={actionButtonClass}
                                 aria-label={lang === 'en' ? 'Open book details' : 'افتح تفاصيل الكتاب'}
                                 title={lang === 'en' ? 'Book details' : 'تفاصيل الكتاب'}
                             >
                                 <BookIcon className="h-5 w-5" />
+                                <span className={actionLabelClass}>{lang === 'en' ? 'Comment' : 'تعليق'}</span>
                             </Button>
                         )}
                         {onListeningClick && (
-                            <Button variant="ghost" onClick={onListeningClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10" aria-label={listenLabel}>
+                            <Button variant="ghost" onClick={onListeningClick} className={actionButtonClass} aria-label={listenLabel}>
                                 {narrationState === 'playing' ? (
                                     <PauseIcon className="h-5 w-5" />
                                 ) : (
                                     <PlayIcon className="h-5 w-5" />
                                 )}
+                                <span className={actionLabelClass}>{lang === 'en' ? 'Narration' : 'السرد'}</span>
                             </Button>
                         )}
                         {onBookmarkToggle && (
                             <Button
                                 variant="ghost"
                                 onClick={onBookmarkToggle}
-                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                className={actionButtonClass}
                                 aria-label="Bookmark page"
                             >
                                 <BookmarkIcon className={cn('h-5 w-5', isBookmarked && 'fill-current text-yellow-400')} />
+                                <span className={actionLabelClass}>{lang === 'en' ? 'Bookmark' : 'إشارة'}</span>
                             </Button>
                         )}
                         {onHighlightToggle && (
                             <Button
                                 variant="ghost"
                                 onClick={onHighlightToggle}
-                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"
+                                className={actionButtonClass}
                                 aria-label="Highlight page"
                             >
                                 <HighlightIcon className={cn('h-5 w-5', isHighlighted && 'fill-current text-amber-400')} />
+                                <span className={actionLabelClass}>{lang === 'en' ? 'Annotate' : 'تمييز'}</span>
                             </Button>
                         )}
                         {onOfflineToggle && (
@@ -129,22 +151,40 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                                 variant="ghost"
                                 onClick={onOfflineToggle}
                                 disabled={isOfflineBusy}
-                                className="!p-2 hover:bg-black/5 dark:hover:bg-white/10 disabled:opacity-50"
+                                className={cn(actionButtonClass, 'disabled:opacity-50')}
                                 aria-label={isOfflineAvailable ? 'Remove offline copy' : 'Download for offline reading'}
                             >
                                 <DownloadIcon className={cn('h-5 w-5', isOfflineAvailable && 'text-emerald-400')} />
+                                <span className={actionLabelClass}>{lang === 'en' ? 'Download' : 'تنزيل'}</span>
                             </Button>
                         )}
-                        <Button variant="ghost" onClick={onSettingsClick} className="!p-2 hover:bg-black/5 dark:hover:bg-white/10"><SettingsIcon className="h-5 w-5" /></Button>
+                        <Button
+                            variant="ghost"
+                            onClick={onSettingsClick}
+                            className={actionButtonClass}
+                            aria-label={lang === 'en' ? 'Reader settings' : 'إعدادات القارئ'}
+                        >
+                            <SettingsIcon className="h-5 w-5" />
+                            <span className={actionLabelClass}>{lang === 'en' ? 'Settings' : 'إعدادات'}</span>
+                        </Button>
                     </div>
                 </div>
             </header>
 
             {/* Bottom Bar */}
             <footer className={cn(chromeClass, 'bottom-0 border-t pb-[env(safe-area-inset-bottom)]', !isVisible && 'translate-y-full')}>
-                <div className="container mx-auto h-20 px-6 flex flex-col justify-center gap-2">
+                <div className="container mx-auto h-20 px-6 flex flex-col justify-center gap-1.5">
+                    {progressContextLabel && (
+                        <p className="truncate text-[11px] font-medium leading-tight opacity-60">
+                            {progressContextLabel}
+                        </p>
+                    )}
                     <div className="flex justify-between items-center text-xs opacity-70 font-medium">
-                        <span>{readingMode === 'page' ? `${lang === 'en' ? 'Page' : 'صفحة'} ${currentPage} / ${totalPages}` : (lang === 'en' ? 'Scroll' : 'تمرير')}</span>
+                        <span>
+                            {readingMode === 'page'
+                                ? `${lang === 'en' ? 'Page' : 'صفحة'} ${currentPage} / ${totalPages}`
+                                : (lang === 'en' ? 'Scroll' : 'تمرير')}
+                        </span>
                         <span>{Math.round(progress)}%</span>
                     </div>
 
@@ -153,21 +193,52 @@ const ReaderChrome: React.FC<ReaderChromeProps> = ({
                         <div className="h-full bg-accent transition-[width] duration-[180ms] ease-out" style={{ width: `${progress}%` }} />
                     </div>
 
-                    <div className="flex justify-center items-center mt-1 gap-4">
+                    <div
+                        className={cn(
+                            'mt-1 grid gap-2 text-xs font-semibold',
+                            readingMode === 'page' ? 'grid-cols-[2.5rem_1fr_2.5rem]' : 'grid-cols-1'
+                        )}
+                    >
+                        {readingMode === 'page' && (
+                            <button
+                                type="button"
+                                onClick={onPreviousPage}
+                                disabled={!onPreviousPage}
+                                className="flex h-9 items-center justify-center rounded-md border border-black/10 bg-black/5 text-base transition-colors hover:bg-black/10 disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                                aria-label={lang === 'en' ? 'Previous page' : 'الصفحة السابقة'}
+                            >
+                                ‹
+                            </button>
+                        )}
+                        <div className="grid grid-cols-2 overflow-hidden rounded-md border border-black/10 bg-black/5 dark:border-white/10 dark:bg-white/5">
                          <button 
                             onClick={() => setReadingMode('scroll')} 
-                            className={cn('p-2 rounded-lg transition-colors', readingMode === 'scroll' ? 'bg-black/10 dark:bg-white/10 text-accent' : 'opacity-50 hover:opacity-100')}
+                            className={cn('flex items-center justify-center gap-1.5 px-3 py-2 transition-colors', readingMode === 'scroll' ? 'bg-black/10 dark:bg-white/10 text-accent' : 'opacity-60 hover:opacity-100')}
                             aria-label="Scroll Mode"
                          >
                             <ViewListIcon className="h-5 w-5" />
+                            <span>{lang === 'en' ? 'Scroll' : 'تمرير'}</span>
                          </button>
                          <button 
                             onClick={() => setReadingMode('page')} 
-                            className={cn('p-2 rounded-lg transition-colors', readingMode === 'page' ? 'bg-black/10 dark:bg-white/10 text-accent' : 'opacity-50 hover:opacity-100')}
+                            className={cn('flex items-center justify-center gap-1.5 px-3 py-2 transition-colors', readingMode === 'page' ? 'bg-black/10 dark:bg-white/10 text-accent' : 'opacity-60 hover:opacity-100')}
                             aria-label="Page Mode"
                          >
                             <BookOpenIcon className="h-5 w-5" />
+                            <span>{lang === 'en' ? 'Pages' : 'صفحات'}</span>
                          </button>
+                        </div>
+                        {readingMode === 'page' && (
+                            <button
+                                type="button"
+                                onClick={onNextPage}
+                                disabled={!onNextPage}
+                                className="flex h-9 items-center justify-center rounded-md border border-black/10 bg-black/5 text-base transition-colors hover:bg-black/10 disabled:opacity-35 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
+                                aria-label={lang === 'en' ? 'Next page' : 'الصفحة التالية'}
+                            >
+                                ›
+                            </button>
+                        )}
                     </div>
                 </div>
             </footer>

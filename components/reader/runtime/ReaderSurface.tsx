@@ -1,5 +1,10 @@
 import React, { Suspense, useEffect } from 'react';
-import type { FontSize, FontStyle } from '../../../store/reading-prefs.tsx';
+import type {
+  FontSize,
+  FontStyle,
+  ReaderLineHeight,
+  ReaderMargin,
+} from '../../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
   ReaderManifestSnapshot,
@@ -52,6 +57,8 @@ interface ReaderSurfaceProps {
   readingMode: ReaderMode;
   fontSize: FontSize;
   fontStyle: FontStyle;
+  lineHeight: ReaderLineHeight;
+  margin: ReaderMargin;
   highlights?: ReaderHighlightOverlay[];
   manifest?: ReaderManifestSnapshot | null;
   onPageChange: (currentPage: number, totalPages: number) => void;
@@ -61,6 +68,11 @@ interface ReaderSurfaceProps {
   onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
   onPdfDocumentLoadSuccess?: (numPages: number) => void;
   onPdfFirstPageRender?: () => void;
+  onUserActivity?: () => void;
+  onEpubPageNavigationChange?: (navigation: {
+    goPrevious: () => void;
+    goNext: () => void;
+  } | null) => void;
   renderUnsupported: () => React.ReactNode;
 }
 
@@ -74,6 +86,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   readingMode,
   fontSize,
   fontStyle,
+  lineHeight,
+  margin,
   highlights,
   manifest,
   onPageChange,
@@ -83,6 +97,8 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
   onNarrationSnapshotChange,
   onPdfDocumentLoadSuccess,
   onPdfFirstPageRender,
+  onUserActivity,
+  onEpubPageNavigationChange,
   renderUnsupported,
 }) => {
   useEffect(() => {
@@ -130,12 +146,16 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           readingMode={readingMode}
           fontSize={fontSize}
           fontStyle={fontStyle}
+          lineHeight={lineHeight}
+          margin={margin}
           highlights={highlights}
           manifest={manifest}
           onPageChange={onPageChange}
           onLoadError={onEpubLoadError}
           onTextSelection={onTextSelection}
           onNarrationSnapshotChange={onNarrationSnapshotChange}
+          onUserActivity={onUserActivity}
+          onPageNavigationChange={onEpubPageNavigationChange}
         />
       </Suspense>
     );
@@ -150,6 +170,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           theme={theme}
           readingMode={readingMode}
           fontSize={fontSize}
+          margin={margin}
           highlights={highlights}
           onPageChange={onPageChange}
           onLoadError={onPdfLoadError}
@@ -157,6 +178,7 @@ const ReaderSurface: React.FC<ReaderSurfaceProps> = ({
           onNarrationSnapshotChange={onNarrationSnapshotChange}
           onDocumentLoadSuccess={onPdfDocumentLoadSuccess}
           onFirstPageRender={onPdfFirstPageRender}
+          onUserActivity={onUserActivity}
         />
       </Suspense>
     );

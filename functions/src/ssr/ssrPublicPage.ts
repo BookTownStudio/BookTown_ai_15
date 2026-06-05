@@ -25,6 +25,7 @@ type BookEntityView = {
   author: string | null;
   description: string | null;
   publicationYear: string | null;
+  imageUrl: string | null;
 };
 
 type AuthorEntityView = {
@@ -33,6 +34,7 @@ type AuthorEntityView = {
   biography: string | null;
   birthYear: string | null;
   nationality: string | null;
+  imageUrl: string | null;
 };
 
 type PostEntityView = {
@@ -280,7 +282,13 @@ const parsePublicRoute = (rawPath: string): ParsedRoute => {
   const candidateId = parts[1] || "";
   const entityId = safeDecodeUriComponent(candidateId).trim();
 
-  if (section !== "book" && section !== "author" && section !== "post") {
+  if (
+    section !== "book" &&
+    section !== "books" &&
+    section !== "author" &&
+    section !== "authors" &&
+    section !== "post"
+  ) {
     return {
       ok: false,
       reason: "unknown-route",
@@ -307,7 +315,8 @@ const parsePublicRoute = (rawPath: string): ParsedRoute => {
 
   return {
     ok: true,
-    entityType: section,
+    entityType:
+      section === "books" ? "book" : section === "authors" ? "author" : section,
     entityId,
     pathname,
   };
@@ -333,6 +342,14 @@ const buildCanonicalUrl = (req: Request, pathname: string): string => {
     return new URL(pathname, origin).toString();
   } catch {
     return `${origin}${pathname}`;
+  }
+};
+
+const buildAbsolutePublicUrl = (canonicalUrl: string, path: string): string => {
+  try {
+    return new URL(path, canonicalUrl).toString();
+  } catch {
+    return path;
   }
 };
 
@@ -506,6 +523,15 @@ const fetchBookEntity = async (bookId: string): Promise<BookEntityView | null> =
     300
   );
   const description = firstText([source.description, source.descriptionEn, source.descriptionAr], 5000);
+  const cover = readObject(source.cover);
+  const imageUrl = firstAbsoluteUrl([
+    source.coverUrl,
+    source.bookCover,
+    cover.large,
+    cover.medium,
+    cover.url,
+    cover.original,
+  ]);
 
   return {
     id: bookId,
@@ -513,6 +539,7 @@ const fetchBookEntity = async (bookId: string): Promise<BookEntityView | null> =
     author: author || null,
     description: description || null,
     publicationYear: parsePublicationYear(source),
+    imageUrl,
   };
 };
 
@@ -529,6 +556,12 @@ const fetchAuthorEntity = async (authorId: string): Promise<AuthorEntityView | n
     [source.nationality, source.countryEn, source.countryAr, source.country],
     120
   );
+  const imageUrl = firstAbsoluteUrl([
+    source.avatarUrl,
+    source.authorPhoto,
+    source.photoUrl,
+    source.imageUrl,
+  ]);
 
   return {
     id: authorId,
@@ -536,6 +569,7 @@ const fetchAuthorEntity = async (authorId: string): Promise<AuthorEntityView | n
     biography: biography || null,
     birthYear: parseBirthYear(source),
     nationality: nationality || null,
+    imageUrl,
   };
 };
 
@@ -724,13 +758,18 @@ const buildBookModel = (book: BookEntityView, canonicalUrl: string): ShellModel 
 
   const metaDescription = book.description
     ? truncateText(book.description, 160)
-    : undefined;
+    : book.author
+      ? `Discover ${book.title} by ${book.author} on BookTown.`
+      : `Discover ${book.title} on BookTown.`;
+  const socialImage =
+    book.imageUrl || buildAbsolutePublicUrl(canonicalUrl, "/icons/publication-social-fallback.png");
 
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "Book",
     name: book.title,
     url: canonicalUrl,
+    image: socialImage,
   };
 
   if (book.author) {
@@ -750,10 +789,19 @@ const buildBookModel = (book: BookEntityView, canonicalUrl: string): ShellModel 
     canonicalUrl,
     heading: book.title,
     details,
-    ...(metaDescription ? { metaDescription } : {}),
+    metaDescription,
     jsonLd,
     isBookLayout: true,
     ...(book.description ? { bookDescription: book.description } : {}),
+    social: {
+      type: "website",
+      siteName: "BookTown",
+      url: canonicalUrl,
+      title,
+      description: metaDescription,
+      image: socialImage,
+      twitterCard: "summary_large_image",
+    },
   };
 };
 
@@ -776,13 +824,18 @@ const buildAuthorModel = (
 
   const metaDescription = author.biography
     ? truncateText(author.biography, 160)
-    : undefined;
+    : author.nationality
+      ? `Explore ${author.name}, ${author.nationality} author, on BookTown.`
+      : `Explore ${author.name} on BookTown.`;
+  const socialImage =
+    author.imageUrl || buildAbsolutePublicUrl(canonicalUrl, "/icons/publication-social-fallback.png");
 
   const jsonLd: Record<string, unknown> = {
     "@context": "https://schema.org",
     "@type": "Person",
     name: author.name,
     url: canonicalUrl,
+    image: socialImage,
   };
 
   if (author.biography) {
@@ -798,10 +851,19 @@ const buildAuthorModel = (
     canonicalUrl,
     heading: author.name,
     details,
-    ...(metaDescription ? { metaDescription } : {}),
+    metaDescription,
     jsonLd,
     isBookLayout: true,
     ...(author.biography ? { bookDescription: author.biography } : {}),
+    social: {
+      type: "website",
+      siteName: "BookTown",
+      url: canonicalUrl,
+      title,
+      description: metaDescription,
+      image: socialImage,
+      twitterCard: "summary_large_image",
+    },
   };
 };
 

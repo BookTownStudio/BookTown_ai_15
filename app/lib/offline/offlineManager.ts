@@ -7,7 +7,7 @@ import { getFunctions } from "firebase/functions";
  * OfflineEbookRecord
  *
  * Local-only representation of an offline ebook.
- * Stored in IndexedDB / Cache (implementation-agnostic).
+ * Stored in localStorage / Cache.
  */
 export interface OfflineEbookRecord {
   bookId: string;
@@ -25,14 +25,23 @@ export interface OfflineEbookRecord {
  * Centralized to prevent drift
  */
 const OFFLINE_NAMESPACE = "booktown_offline_ebooks";
-const OFFLINE_CACHE_KEY_PREFIX = "offline-book://";
+const OFFLINE_CACHE_PATH_PREFIX = "/__booktown_offline__/ebooks/";
 
 function buildStorageKey(bookId: string): string {
   return `${OFFLINE_NAMESPACE}:${bookId}`;
 }
 
-function buildCacheKey(bookId: string): string {
-  return `${OFFLINE_CACHE_KEY_PREFIX}${bookId}`;
+export function buildCacheKey(bookId: string): string {
+  return new URL(
+    `${OFFLINE_CACHE_PATH_PREFIX}${encodeURIComponent(bookId)}`,
+    window.location.origin
+  ).toString();
+}
+
+function resolveOfflineContentType(format: OfflineEbookRecord["format"]): string {
+  if (format === "pdf") return "application/pdf";
+  if (format === "epub") return "application/epub+zip";
+  return "application/octet-stream";
 }
 
 function normalizeEnvelope<T>(value: unknown): T {
@@ -110,7 +119,8 @@ async function assertOfflineBlobIntegrity(blob: Blob, checksum: string | null): 
  */
 async function downloadAndStore(
   record: OfflineEbookRecord,
-  signedUrl: string
+  signedUrl: string,
+  maxBytes: number | null
 ) {
   const res = await fetch(signedUrl);
 
@@ -119,11 +129,22 @@ async function downloadAndStore(
   }
 
   const blob = await res.blob();
+  if (maxBytes && blob.size > maxBytes) {
+    throw new Error("Offline file exceeds allowed size.");
+  }
+
   const integrityState = await assertOfflineBlobIntegrity(blob, record.checksum || null);
 
   // Cache API (preferred for large binaries)
   const cache = await caches.open(OFFLINE_NAMESPACE);
-  await cache.put(buildCacheKey(record.bookId), new Response(blob));
+  await cache.put(
+    buildCacheKey(record.bookId),
+    new Response(blob, {
+      headers: {
+        "Content-Type": blob.type || resolveOfflineContentType(record.format),
+      },
+    })
+  );
 
   return {
     bytes: blob.size,
@@ -156,12 +177,7 @@ export async function markEbookOffline(
     lastKnownPage: 1,
   };
 
-  const { bytes, integrityState } = await downloadAndStore(record, signedUrl);
-
-  if (maxBytes && bytes > maxBytes) {
-    await clearOfflineEbook(bookId);
-    throw new Error("Offline file exceeds allowed size.");
-  }
+  const { bytes, integrityState } = await downloadAndStore(record, signedUrl, maxBytes);
 
   record.bytes = bytes;
   record.integrityState = integrityState;

@@ -167,6 +167,8 @@ const ReaderBenchmarkHarness: React.FC = () => {
           readingMode={fixture.readingMode}
           fontSize="md"
           fontStyle="default"
+          lineHeight="standard"
+          margin="normal"
           highlights={[]}
           manifest={canonicalManifest}
           onPageChange={handlePageChange}

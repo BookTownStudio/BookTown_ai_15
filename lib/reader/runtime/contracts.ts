@@ -100,6 +100,23 @@ export interface ReaderManifestSnapshot {
   generatedAtMs: number;
 }
 
+export interface ReaderSectionGraphNode {
+  sectionId: string;
+  spineIndex: number;
+  href: string;
+  title: string | null;
+  parentSectionId: string | null;
+  childSectionIds: string[];
+}
+
+export interface ReaderSectionGraphSnapshot {
+  schemaVersion: 'v1';
+  bookId: string;
+  manifestVersion: number;
+  sourceSignatureHash: string;
+  sections: ReaderSectionGraphNode[];
+}
+
 export interface ReaderSessionSnapshot {
   signedUrl: string;
   resumePage: number;

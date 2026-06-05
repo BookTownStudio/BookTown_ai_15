@@ -1,10 +1,13 @@
 import React from 'react';
 import {
     useReadingPreferences,
-    FontSize,
-    Theme,
-    FontStyle,
-} from '../../store/reading-prefs.tsx';
+	    FontSize,
+	    Theme,
+	    FontStyle,
+	    ReaderLineHeight,
+	    ReaderMargin,
+	    ReadingMode,
+	} from '../../store/reading-prefs.tsx';
 import { useI18n } from '../../store/i18n.tsx';
 import { cn } from '../../lib/utils.ts';
 import { SunIcon } from '../icons/SunIcon.tsx';
@@ -16,7 +19,20 @@ interface ReaderSettingsProps {
 
 const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
     const { lang } = useI18n();
-    const { fontSize, setFontSize, theme, setTheme, fontStyle, setFontStyle } = useReadingPreferences();
+	    const {
+	        fontSize,
+	        setFontSize,
+	        theme,
+	        setTheme,
+	        fontStyle,
+	        setFontStyle,
+	        readingMode,
+	        setReadingMode,
+	        lineHeight,
+	        setLineHeight,
+	        margin,
+	        setMargin,
+	    } = useReadingPreferences();
 
     const fontSizes: { id: FontSize, label: string }[] = [
         { id: 'xs', label: 'XS' },
@@ -31,10 +47,24 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
         { id: 'sepia', labelEn: 'Sepia', labelAr: 'بني داكن', bg: 'bg-[#F3E9D2]' },
         { id: 'dark', labelEn: 'Dark', labelAr: 'داكن', icon: MoonIcon, bg: 'bg-[#1E242C]' },
     ];
-    const fontStyles: { id: FontStyle; labelEn: string; labelAr: string }[] = [
-        { id: 'default', labelEn: 'Serif', labelAr: 'تقليدي' },
-        { id: 'dyslexic', labelEn: 'Readable', labelAr: 'مقروء' },
-    ];
+	    const fontStyles: { id: FontStyle; labelEn: string; labelAr: string }[] = [
+	        { id: 'default', labelEn: 'Serif', labelAr: 'تقليدي' },
+	        { id: 'dyslexic', labelEn: 'Readable', labelAr: 'مقروء' },
+	    ];
+	    const readingModes: { id: ReadingMode; labelEn: string; labelAr: string }[] = [
+	        { id: 'scroll', labelEn: 'Scroll', labelAr: 'تمرير' },
+	        { id: 'page', labelEn: 'Pages', labelAr: 'صفحات' },
+	    ];
+	    const lineHeights: { id: ReaderLineHeight; labelEn: string; labelAr: string }[] = [
+	        { id: 'compact', labelEn: 'Compact', labelAr: 'مضغوط' },
+	        { id: 'standard', labelEn: 'Standard', labelAr: 'قياسي' },
+	        { id: 'relaxed', labelEn: 'Relaxed', labelAr: 'مريح' },
+	    ];
+	    const margins: { id: ReaderMargin; labelEn: string; labelAr: string }[] = [
+	        { id: 'narrow', labelEn: 'Narrow', labelAr: 'ضيق' },
+	        { id: 'normal', labelEn: 'Normal', labelAr: 'عادي' },
+	        { id: 'wide', labelEn: 'Wide', labelAr: 'واسع' },
+	    ];
 
     return (
         <>
@@ -42,10 +72,10 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
                 className="fixed inset-0 z-20 bg-black/50 backdrop-blur-sm"
                 onClick={onClose}
             />
-            <div
-                className="fixed bottom-0 left-0 right-0 z-30 bg-reader-chrome-bg p-4 rounded-t-2xl shadow-lg animate-fade-in-up"
-                style={{ animationDuration: '0.3s' }}
-            >
+	            <div
+	                className="fixed bottom-0 left-0 right-0 z-30 max-h-[82dvh] overflow-y-auto bg-reader-chrome-bg p-4 rounded-t-2xl shadow-lg animate-fade-in-up"
+	                style={{ animationDuration: '0.3s' }}
+	            >
                 <div className="container mx-auto max-w-md">
                     {/* Font Size */}
                     <div className="flex items-center justify-between gap-4">
@@ -90,8 +120,8 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
                     </div>
 
                     {/* Font Style */}
-                    <div className="mt-4 flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
-                        {fontStyles.map((style) => (
+	                    <div className="mt-4 flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
+	                        {fontStyles.map((style) => (
                             <button
                                 key={style.id}
                                 onClick={() => setFontStyle(style.id)}
@@ -103,10 +133,71 @@ const ReaderSettings: React.FC<ReaderSettingsProps> = ({ onClose }) => {
                                 )}
                             >
                                 {lang === 'en' ? style.labelEn : style.labelAr}
-                            </button>
-                        ))}
-                    </div>
-                </div>
+	                            </button>
+	                        ))}
+	                    </div>
+
+	                    <div className="mt-4 flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
+	                        {readingModes.map((mode) => (
+	                            <button
+	                                key={mode.id}
+	                                onClick={() => setReadingMode(mode.id)}
+	                                className={cn(
+	                                    'flex-1 py-2 text-xs font-semibold rounded-full transition-colors',
+	                                    readingMode === mode.id
+	                                        ? 'bg-accent text-white'
+	                                        : 'text-white/70 hover:text-white'
+	                                )}
+	                            >
+	                                {lang === 'en' ? mode.labelEn : mode.labelAr}
+	                            </button>
+	                        ))}
+	                    </div>
+
+	                    <div className="mt-4">
+	                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+	                            {lang === 'en' ? 'Line height' : 'تباعد الأسطر'}
+	                        </div>
+	                        <div className="flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
+	                            {lineHeights.map((option) => (
+	                                <button
+	                                    key={option.id}
+	                                    onClick={() => setLineHeight(option.id)}
+	                                    className={cn(
+	                                        'flex-1 py-2 text-xs font-semibold rounded-full transition-colors',
+	                                        lineHeight === option.id
+	                                            ? 'bg-accent text-white'
+	                                            : 'text-white/70 hover:text-white'
+	                                    )}
+	                                >
+	                                    {lang === 'en' ? option.labelEn : option.labelAr}
+	                                </button>
+	                            ))}
+	                        </div>
+	                    </div>
+
+	                    <div className="mt-4">
+	                        <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+	                            {lang === 'en' ? 'Margins' : 'الهوامش'}
+	                        </div>
+	                        <div className="flex items-center gap-2 bg-black/10 dark:bg-white/10 rounded-full p-1">
+	                            {margins.map((option) => (
+	                                <button
+	                                    key={option.id}
+	                                    onClick={() => setMargin(option.id)}
+	                                    className={cn(
+	                                        'flex-1 py-2 text-xs font-semibold rounded-full transition-colors',
+	                                        margin === option.id
+	                                            ? 'bg-accent text-white'
+	                                            : 'text-white/70 hover:text-white'
+	                                    )}
+	                                >
+	                                    {lang === 'en' ? option.labelEn : option.labelAr}
+	                                </button>
+	                            ))}
+	                        </div>
+	                    </div>
+	                </div>
             </div>
         </>
     );

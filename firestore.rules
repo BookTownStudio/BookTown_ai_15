@@ -885,6 +885,20 @@ service cloud.firestore {
     }
 
     /* =========================
+       READER EPUB SECTION GRAPH (SERVER AUTHORITY)
+       ========================= */
+    match /reader_section_graph/{bookId} {
+      allow get: if isSignedIn()
+        && resource.data.bookId == bookId
+        && exists(/databases/$(database)/documents/books/$(bookId))
+        && canReadBookByData(
+          get(/databases/$(database)/documents/books/$(bookId)).data
+        );
+      allow list: if false;
+      allow create, update, delete: if false;
+    }
+
+    /* =========================
        LIBRARIAN SUGGESTION SESSIONS
        ========================= */
     match /librarian_suggestions/{sessionId} {

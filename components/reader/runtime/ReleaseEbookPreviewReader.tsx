@@ -29,7 +29,7 @@ const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
     footerSlot,
 }) => {
     const { lang } = useI18n();
-    const { theme, readingMode, fontSize, fontStyle } = useReadingPreferences();
+    const { theme, readingMode, fontSize, fontStyle, lineHeight, margin } = useReadingPreferences();
     const [isChromeVisible, setIsChromeVisible] = useState(true);
     const [isSettingsVisible, setIsSettingsVisible] = useState(false);
     const [currentPage, setCurrentPage] = useState(1);
@@ -139,6 +139,8 @@ const ReleaseEbookPreviewReader: React.FC<ReleaseEbookPreviewReaderProps> = ({
                         readingMode={readingMode}
                         fontSize={fontSize}
                         fontStyle={fontStyle}
+                        lineHeight={lineHeight}
+                        margin={margin}
                         onPageChange={handlePageChange}
                         onPdfLoadError={handleEpubLoadError}
                         onEpubLoadError={handleEpubLoadError}

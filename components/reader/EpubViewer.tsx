@@ -1,5 +1,10 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { FontSize, FontStyle } from '../../store/reading-prefs.tsx';
+import {
+  FontSize,
+  FontStyle,
+  ReaderLineHeight,
+  ReaderMargin,
+} from '../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
   ReaderManifestSnapshot,
@@ -30,12 +35,19 @@ type EpubViewerProps = {
   readingMode?: ReaderMode;
   fontSize?: FontSize;
   fontStyle?: FontStyle;
+  lineHeight?: ReaderLineHeight;
+  margin?: ReaderMargin;
   highlights?: ReaderHighlightOverlay[];
   manifest?: ReaderManifestSnapshot | null;
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
   onTextSelection?: (selection: ReaderTextSelection | null) => void;
   onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
+  onUserActivity?: () => void;
+  onPageNavigationChange?: (navigation: {
+    goPrevious: () => void;
+    goNext: () => void;
+  } | null) => void;
 };
 
 type EpubThemeStyles = Record<string, Record<string, string>>;
@@ -218,15 +230,32 @@ function getFontFamily(fontStyle: FontStyle): string {
   return "Georgia, 'Times New Roman', serif";
 }
 
+function getLineHeightValue(lineHeight: ReaderLineHeight): string {
+  if (lineHeight === 'compact') return '1.5';
+  if (lineHeight === 'relaxed') return '1.9';
+  return '1.7';
+}
+
+function getEpubMarginValue(margin: ReaderMargin): string {
+  if (margin === 'narrow') return '4%';
+  if (margin === 'wide') return '12%';
+  return '8%';
+}
+
 function getEpubThemeStyles(
   theme: ReaderTheme,
   fontSize: FontSize,
-  fontStyle: FontStyle
+  fontStyle: FontStyle,
+  lineHeight: ReaderLineHeight,
+  margin: ReaderMargin
 ): EpubThemeStyles {
   const typography = {
     'font-size': getFontSizePx(fontSize),
     'font-family': getFontFamily(fontStyle),
-    'line-height': '1.7',
+    'line-height': getLineHeightValue(lineHeight),
+    'padding-left': getEpubMarginValue(margin),
+    'padding-right': getEpubMarginValue(margin),
+    'box-sizing': 'border-box',
   };
 
   if (theme === 'light') {
@@ -390,6 +419,8 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   readingMode = 'scroll',
   fontSize = 'md',
   fontStyle = 'default',
+  lineHeight = 'standard',
+  margin = 'normal',
   highlights = [],
   manifest = null,
   onPageChange,
@@ -397,6 +428,8 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   onLocationChange,
   onTextSelection,
   onNarrationSnapshotChange,
+  onUserActivity,
+  onPageNavigationChange,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const renditionRef = useRef<ReturnType<EpubBook['renderTo']> | null>(null);
@@ -407,6 +440,8 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   const onTextSelectionRef = useRef<EpubViewerProps["onTextSelection"]>(onTextSelection);
   const onNarrationSnapshotChangeRef =
     useRef<EpubViewerProps["onNarrationSnapshotChange"]>(onNarrationSnapshotChange);
+  const onPageNavigationChangeRef =
+    useRef<EpubViewerProps["onPageNavigationChange"]>(onPageNavigationChange);
   const appliedHighlightCfisRef = useRef<string[]>([]);
   const lastWheelNavAtRef = useRef<number>(0);
   const isRenditionReadyRef = useRef<boolean>(false);
@@ -440,6 +475,10 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
   useEffect(() => {
     onNarrationSnapshotChangeRef.current = onNarrationSnapshotChange;
   }, [onNarrationSnapshotChange]);
+
+  useEffect(() => {
+    onPageNavigationChangeRef.current = onPageNavigationChange;
+  }, [onPageNavigationChange]);
 
   const emitPage = useCallback(
     (current: number, total: number) => {
@@ -505,7 +544,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         renditionRef.current = rendition;
 
         await book.ready;
-        rendition.themes?.default(getEpubThemeStyles(theme, fontSize, fontStyle));
+        rendition.themes?.default(getEpubThemeStyles(theme, fontSize, fontStyle, lineHeight, margin));
         rendition.themes?.select('default');
 
         if (cancelled) return;
@@ -800,6 +839,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         narrationFrameRef.current = null;
       }
       onNarrationSnapshotChangeRef.current?.(null);
+      onPageNavigationChangeRef.current?.(null);
     };
   }, [
     emitPage,
@@ -808,6 +848,8 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     initialEpubCfi,
     initialPage,
     manifest,
+    lineHeight,
+    margin,
     readingMode,
     scheduleNarrationSnapshot,
     theme,
@@ -863,7 +905,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     }
 
     scheduleNarrationSnapshot();
-  }, [fontSize, fontStyle, loadError, pageState.current, readingMode, scheduleNarrationSnapshot, theme]);
+  }, [fontSize, fontStyle, lineHeight, loadError, margin, pageState.current, readingMode, scheduleNarrationSnapshot, theme]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -914,6 +956,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       const rendition = renditionRef.current;
       if (!rendition || !isRenditionReadyRef.current) return;
       if (readingMode !== 'page') return;
+      onUserActivity?.();
 
       try {
         const result =
@@ -927,7 +970,7 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         console.warn('[READER][EPUB_NAV_FAILED]', error);
       }
     },
-    [readingMode]
+    [onUserActivity, readingMode]
   );
 
   const goPrev = useCallback(() => {
@@ -938,10 +981,27 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     navigateRendition('next');
   }, [navigateRendition]);
 
+  useEffect(() => {
+    if (readingMode !== 'page') {
+      onPageNavigationChangeRef.current?.(null);
+      return;
+    }
+
+    onPageNavigationChangeRef.current?.({
+      goPrevious: goPrev,
+      goNext,
+    });
+
+    return () => {
+      onPageNavigationChangeRef.current?.(null);
+    };
+  }, [goNext, goPrev, readingMode]);
+
   const handleWheel = useCallback(
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (readingMode !== 'page') return;
       if (!isRenditionReadyRef.current) return;
+      onUserActivity?.();
 
       const magnitude = Math.abs(event.deltaY);
       if (magnitude < 8) return;
@@ -956,17 +1016,41 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
       if (event.deltaY > 0) goNext();
       else goPrev();
     },
-    [goNext, goPrev, readingMode]
+    [goNext, goPrev, onUserActivity, readingMode]
+  );
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (readingMode !== 'page') return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onUserActivity?.();
+        goPrev();
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onUserActivity?.();
+        goNext();
+      }
+    },
+    [goNext, goPrev, onUserActivity, readingMode]
   );
 
   return (
     <div
-      className="h-full w-full min-h-0 flex flex-col"
+      className="h-full w-full min-h-0 flex flex-col outline-none"
       style={{ backgroundColor: getContainerBackground(theme) }}
       onWheel={handleWheel}
+      onKeyDown={handleKeyDown}
       onMouseDown={() => onTextSelectionRef.current?.(null)}
+      tabIndex={0}
     >
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div
+        className={`relative flex-1 min-h-0 ${
+          readingMode === 'page' ? 'overflow-hidden' : 'overflow-auto'
+        }`}
+      >
         {loadError ? (
           <div className="h-full w-full flex items-center justify-center text-sm text-red-300 px-4 text-center">
             {loadError}
@@ -974,38 +1058,10 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
         ) : (
           <div
             ref={containerRef}
-            className="h-full w-full min-h-0 overflow-auto overscroll-contain"
+            className={`h-full w-full min-h-0 overscroll-contain ${
+              readingMode === 'page' ? 'overflow-hidden' : 'overflow-auto'
+            }`}
           />
-        )}
-      </div>
-
-      <div className="flex items-center justify-center gap-4 py-3 text-white/70 text-sm border-t border-white/10 bg-[#111827]">
-        {readingMode === 'page' && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              goPrev();
-            }}
-            className="px-3 py-1 rounded bg-white/10"
-          >
-            ‹
-          </button>
-        )}
-        <span className="min-w-20 text-center tabular-nums">
-          {pageState.current} / {pageState.total}
-        </span>
-        {readingMode === 'page' && (
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              goNext();
-            }}
-            className="px-3 py-1 rounded bg-white/10"
-          >
-            ›
-          </button>
         )}
       </div>
     </div>

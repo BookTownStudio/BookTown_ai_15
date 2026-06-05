@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getFunctions, httpsCallable } from 'firebase/functions';
+import { doc, getDoc } from 'firebase/firestore';
+import { getFirebaseDb } from '../firebase.ts';
 import type {
   ReaderManifestIndexState,
   ReaderManifestSnapshot,
+  ReaderSectionGraphNode,
+  ReaderSectionGraphSnapshot,
   ReaderSessionSnapshot,
 } from '../reader/runtime/contracts.ts';
 import {
@@ -13,12 +17,109 @@ import {
 interface ReaderSessionBootstrapState {
   session: ReaderSessionSnapshot | null;
   manifest: ReaderManifestSnapshot | null;
+  sectionGraph: ReaderSectionGraphSnapshot | null;
   summaries: {
     bookmarkCompatibilitySummary?: Record<string, unknown>;
     highlightCompatibilitySummary?: Record<string, unknown>;
   } | null;
   isLoading: boolean;
   error: string | null;
+}
+
+function resolveReaderIndexDocPath(docPath: string): [string, string] | null {
+  const parts = docPath.split('/').map((part) => part.trim()).filter(Boolean);
+  if (parts.length !== 2) return null;
+  if (parts[0] !== 'reader_section_graph') return null;
+  return [parts[0], parts[1]];
+}
+
+function normalizeSectionGraphNode(value: unknown): ReaderSectionGraphNode | null {
+  const raw = value as Partial<ReaderSectionGraphNode> | null;
+  if (!raw || typeof raw !== 'object') return null;
+  if (typeof raw.sectionId !== 'string' || raw.sectionId.trim().length === 0) return null;
+  if (typeof raw.spineIndex !== 'number' || !Number.isFinite(raw.spineIndex) || raw.spineIndex < 0) {
+    return null;
+  }
+  if (typeof raw.href !== 'string' || raw.href.trim().length === 0) return null;
+  if (raw.title !== null && raw.title !== undefined && typeof raw.title !== 'string') return null;
+  if (
+    raw.parentSectionId !== null &&
+    raw.parentSectionId !== undefined &&
+    typeof raw.parentSectionId !== 'string'
+  ) {
+    return null;
+  }
+  if (!Array.isArray(raw.childSectionIds) || raw.childSectionIds.some((id) => typeof id !== 'string')) {
+    return null;
+  }
+
+  const title = typeof raw.title === 'string' && raw.title.trim().length > 0 ? raw.title.trim() : null;
+  return {
+    sectionId: raw.sectionId.trim(),
+    spineIndex: Math.trunc(raw.spineIndex),
+    href: raw.href.trim(),
+    title,
+    parentSectionId:
+      typeof raw.parentSectionId === 'string' && raw.parentSectionId.trim().length > 0
+        ? raw.parentSectionId.trim()
+        : null,
+    childSectionIds: raw.childSectionIds.map((id) => id.trim()).filter(Boolean),
+  };
+}
+
+function normalizeSectionGraphSnapshot(
+  value: unknown,
+  manifest: ReaderManifestSnapshot
+): ReaderSectionGraphSnapshot | null {
+  const raw = value as Record<string, unknown> | null;
+  if (!raw || typeof raw !== 'object') return null;
+  if (raw.schemaVersion !== 'v1') return null;
+  if (raw.bookId !== manifest.bookId) return null;
+  if (raw.manifestVersion !== manifest.version) return null;
+
+  const expectedSourceHash = manifest.locationMap.identity?.sourceSignatureHash;
+  if (
+    typeof expectedSourceHash !== 'string' ||
+    expectedSourceHash.trim().length === 0 ||
+    raw.sourceSignatureHash !== expectedSourceHash
+  ) {
+    return null;
+  }
+
+  if (!Array.isArray(raw.sections)) return null;
+  const sections = raw.sections
+    .map((section) => normalizeSectionGraphNode(section))
+    .filter((section): section is ReaderSectionGraphNode => Boolean(section));
+  if (sections.length !== raw.sections.length || sections.length === 0) return null;
+
+  return {
+    schemaVersion: 'v1',
+    bookId: manifest.bookId,
+    manifestVersion: manifest.version,
+    sourceSignatureHash: expectedSourceHash,
+    sections,
+  };
+}
+
+async function hydrateReaderSectionGraph(
+  manifest: ReaderManifestSnapshot | null
+): Promise<ReaderSectionGraphSnapshot | null> {
+  if (!manifest || manifest.format !== 'epub') return null;
+  if (manifest.sectionGraph?.status !== 'ready') return null;
+  if (typeof manifest.sectionGraph.docPath !== 'string' || manifest.sectionGraph.docPath.trim().length === 0) {
+    return null;
+  }
+  const resolvedPath = resolveReaderIndexDocPath(manifest.sectionGraph.docPath);
+  if (!resolvedPath) return null;
+
+  try {
+    const snapshot = await getDoc(doc(getFirebaseDb(), resolvedPath[0], resolvedPath[1]));
+    if (!snapshot.exists()) return null;
+    return normalizeSectionGraphSnapshot(snapshot.data(), manifest);
+  } catch (error) {
+    console.warn('[READER][SECTION_GRAPH_HYDRATION_SKIPPED]', error);
+    return null;
+  }
 }
 
 function normalizeEnvelope<T>(value: unknown): T {
@@ -129,6 +230,7 @@ function normalizeReaderManifest(value: unknown): ReaderManifestSnapshot | null 
 export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstrapState {
   const [session, setSession] = useState<ReaderSessionSnapshot | null>(null);
   const [manifest, setManifest] = useState<ReaderManifestSnapshot | null>(null);
+  const [sectionGraph, setSectionGraph] = useState<ReaderSectionGraphSnapshot | null>(null);
   const [summaries, setSummaries] = useState<ReaderSessionBootstrapState['summaries']>(null);
   const [isLoading, setIsLoading] = useState<boolean>(Boolean(bookId));
   const [error, setError] = useState<string | null>(null);
@@ -137,6 +239,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
     if (!bookId) {
       setSession(null);
       setManifest(null);
+      setSectionGraph(null);
       setSummaries(null);
       setError(null);
       setIsLoading(false);
@@ -238,9 +341,14 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
 
         setSession(nextSession);
         setManifest(nextManifest);
+        setSectionGraph(null);
         setSummaries({
           bookmarkCompatibilitySummary: bootstrapPayload.bootstrap?.bookmarkCompatibilitySummary,
           highlightCompatibilitySummary: bootstrapPayload.bootstrap?.highlightCompatibilitySummary,
+        });
+
+        void hydrateReaderSectionGraph(nextManifest).then((nextSectionGraph) => {
+          if (active) setSectionGraph(nextSectionGraph);
         });
       })
       .catch((err: any) => {
@@ -266,6 +374,7 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
         setError(String(err?.message || err));
         setSession(null);
         setManifest(null);
+        setSectionGraph(null);
         setSummaries(null);
       })
       .finally(() => {
@@ -281,10 +390,11 @@ export function useReaderSessionBootstrap(bookId?: string): ReaderSessionBootstr
     () => ({
       session,
       manifest,
+      sectionGraph,
       summaries,
       isLoading,
       error,
     }),
-    [session, manifest, summaries, isLoading, error]
+    [session, manifest, sectionGraph, summaries, isLoading, error]
   );
 }

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/TextLayer.css';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
-import { FontSize } from '../../store/reading-prefs.tsx';
+import { FontSize, ReaderMargin } from '../../store/reading-prefs.tsx';
 import type {
   ReaderHighlightOverlay,
   ReaderNarrationSnapshot,
@@ -36,6 +36,7 @@ interface PdfViewerProps {
   theme?: 'light' | 'dark' | 'sepia';
   readingMode?: 'scroll' | 'page';
   fontSize?: FontSize;
+  margin?: ReaderMargin;
   highlights?: ReaderHighlightOverlay[];
   onPageChange?: (currentPage: number, totalPages: number) => void;
   onLoadError?: (message: string) => void;
@@ -43,6 +44,7 @@ interface PdfViewerProps {
   onNarrationSnapshotChange?: (snapshot: ReaderNarrationSnapshot | null) => void;
   onDocumentLoadSuccess?: (numPages: number) => void;
   onFirstPageRender?: () => void;
+  onUserActivity?: () => void;
 }
 
 function zoomScaleFromFontSize(fontSize: FontSize): number {
@@ -60,6 +62,12 @@ function zoomScaleFromFontSize(fontSize: FontSize): number {
     default:
       return 1;
   }
+}
+
+function paddingClassFromMargin(margin: ReaderMargin): string {
+  if (margin === 'narrow') return 'p-2';
+  if (margin === 'wide') return 'p-8';
+  return 'p-4';
 }
 
 function clampPage(page: number, total: number): number {
@@ -343,6 +351,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   theme = 'dark',
   readingMode = 'scroll',
   fontSize = 'md',
+  margin = 'normal',
   highlights = [],
   onPageChange,
   onLoadError,
@@ -350,6 +359,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   onNarrationSnapshotChange,
   onDocumentLoadSuccess,
   onFirstPageRender,
+  onUserActivity,
 }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement | null>(null);
@@ -576,6 +586,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     (event: React.WheelEvent<HTMLDivElement>) => {
       if (readingMode !== 'page') return;
       if (useIframeFallback) return;
+      onUserActivity?.();
 
       const magnitude = Math.abs(event.deltaY);
       if (magnitude < 8) return;
@@ -590,7 +601,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       if (event.deltaY > 0) goNext();
       else goPrev();
     },
-    [goNext, goPrev, readingMode, useIframeFallback]
+    [goNext, goPrev, onUserActivity, readingMode, useIframeFallback]
   );
 
   const syncPageFromScroll = useCallback(() => {
@@ -598,6 +609,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     if (numPages <= 0) return;
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
+    onUserActivity?.();
     const now = performance.now();
     const sample = scrollSampleRef.current;
     if (sample.startedAt === 0) {
@@ -638,7 +650,25 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
       onPageChange?.(current, numPages);
     }
     scheduleNarrationSnapshot();
-  }, [adaptiveWindowRadius, numPages, onPageChange, readingMode, rebuildPageOffsets, scheduleNarrationSnapshot]);
+  }, [adaptiveWindowRadius, numPages, onPageChange, onUserActivity, readingMode, rebuildPageOffsets, scheduleNarrationSnapshot]);
+
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLDivElement>) => {
+      if (readingMode !== 'page') return;
+      if (event.key === 'ArrowLeft') {
+        event.preventDefault();
+        onUserActivity?.();
+        goPrev();
+        return;
+      }
+      if (event.key === 'ArrowRight') {
+        event.preventDefault();
+        onUserActivity?.();
+        goNext();
+      }
+    },
+    [goNext, goPrev, onUserActivity, readingMode]
+  );
 
   useEffect(() => {
     if (readingMode !== 'scroll') return;
@@ -852,20 +882,23 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   return (
     <div
       ref={containerRef}
-      className="h-full w-full min-h-0 flex flex-col"
+      className="h-full w-full min-h-0 flex flex-col outline-none"
       style={{ backgroundColor: viewerBackground }}
       onWheel={handleWheelInPageMode}
+      onKeyDown={handleKeyDown}
       onMouseDown={() => onTextSelectionRef.current?.(null)}
       onMouseUp={() => {
+        onUserActivity?.();
         window.setTimeout(() => {
           captureTextSelection();
         }, 0);
       }}
+      tabIndex={0}
     >
       <div
         ref={scrollViewportRef}
         onScroll={syncPageFromScroll}
-        className="flex-1 min-h-0 overflow-auto p-4 flex items-start justify-center"
+        className={`relative flex-1 min-h-0 overflow-auto ${paddingClassFromMargin(margin)} flex items-start justify-center`}
       >
         {useIframeFallback ? (
           <iframe
@@ -934,6 +967,32 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             )}
           </Document>
         )}
+        {!useIframeFallback && !loadError && readingMode === 'page' && (
+          <>
+            <button
+              type="button"
+              aria-label="Previous PDF page"
+              disabled={pageNumber <= 1}
+              className="absolute inset-y-0 left-0 z-10 w-[18%] max-w-24 cursor-w-resize bg-transparent p-0 opacity-0 disabled:cursor-default"
+              onClick={(event) => {
+                event.stopPropagation();
+                onUserActivity?.();
+                goPrev();
+              }}
+            />
+            <button
+              type="button"
+              aria-label="Next PDF page"
+              disabled={pageNumber >= numPages}
+              className="absolute inset-y-0 right-0 z-10 w-[18%] max-w-24 cursor-e-resize bg-transparent p-0 opacity-0 disabled:cursor-default"
+              onClick={(event) => {
+                event.stopPropagation();
+                onUserActivity?.();
+                goNext();
+              }}
+            />
+          </>
+        )}
       </div>
 
       <div className="flex items-center justify-center gap-4 py-3 text-white/70 text-sm border-t border-white/10 bg-[#111827]">
@@ -941,6 +1000,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           <button
             onClick={(event) => {
               event.stopPropagation();
+              onUserActivity?.();
               goPrev();
             }}
             type="button"
@@ -959,6 +1019,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           <button
             onClick={(event) => {
               event.stopPropagation();
+              onUserActivity?.();
               goNext();
             }}
             type="button"

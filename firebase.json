@@ -135,7 +135,15 @@
         }
       },
       {
+        "source": "/books/**",
+        "function": "ssrPublicPage"
+      },
+      {
         "source": "/book/**",
+        "function": "ssrPublicPage"
+      },
+      {
+        "source": "/authors/**",
         "function": "ssrPublicPage"
       },
       {
