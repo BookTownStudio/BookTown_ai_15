@@ -600,7 +600,7 @@ export type PostAttachment =
   | { type: 'media'; url: string }
   | { type: 'author'; authorId: string; authorName: string; authorPhoto: string; authorCountry?: string; signatureQuote?: string; }
   | { type: 'shelf'; shelfId: string, ownerId: string, shelfName: string, bookCount: number, covers: string[] }
-  | { type: 'venue'; venueId: string }
+  | { type: 'venue'; venueId: string; venueName?: string; venueLocation?: string; venueType?: string; imageUrl?: string; coverUrl?: string }
   | { type: 'post'; postId: string }
   | UserDiscoveryAttachment;
 
@@ -926,12 +926,15 @@ export interface DirectMessage {
     senderId: string;
     text: string;
     attachment?: {
-        type: 'book' | 'publication' | 'quote';
+        type: 'book' | 'author' | 'shelf' | 'quote' | 'media' | 'venue' | 'publication';
         entityId: string; // canonical entity id
         title?: string;
         author?: string;
         coverUrl?: string;
         canonicalSlug?: string;
+        ownerId?: string;
+        bookCount?: number;
+        covers?: string[];
         quoteOwnerId?: string; // optional metadata only for legacy compatibility
         quoteText?: string;
     };
@@ -948,6 +951,14 @@ export interface Conversation {
     lastMessage: string;
     timestamp: string; // ISO string
     unreadCount: number;
+    status?: 'active' | 'request_pending' | 'request_declined';
+    requestedByUid?: string | null;
+    conversationContext?: {
+        type: 'book' | 'author' | 'shelf' | 'quote' | 'venue' | 'media';
+        entityId: string;
+        title?: string;
+        snapshot?: Record<string, unknown>;
+    } | null;
 }
 
 export interface SpaceInbox {

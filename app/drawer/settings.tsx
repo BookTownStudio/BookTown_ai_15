@@ -139,6 +139,10 @@ const SettingsScreen: React.FC = () => {
         }
     };
 
+    const updateDmPrivacyMode = (dmPrivacyMode: 'nobody' | 'mutual_follows' | 'everyone') => {
+        updatePrefs({ dmPrivacyMode });
+    };
+
     return (
         <div className="h-screen flex flex-col">
             <ScreenHeader titleEn="Settings" titleAr="الإعدادات" onBack={handleBack} />
@@ -217,6 +221,25 @@ const SettingsScreen: React.FC = () => {
                                 )}
                             </div>
                         )}
+                    </SettingsSection>
+
+                    <SettingsSection title={lang === 'en' ? 'Privacy' : 'الخصوصية'}>
+                        <SettingsItem icon={SecurityIcon} label={lang === 'en' ? 'Direct Messages' : 'الرسائل المباشرة'}>
+                            <div className="w-64 space-y-2">
+                                <BilingualText role="Caption" className="block text-right !text-[11px] text-white/60">
+                                    {lang === 'en' ? 'Who can send you direct messages?' : 'من يمكنه إرسال رسائل مباشرة إليك؟'}
+                                </BilingualText>
+                                <SegmentedControl<'nobody' | 'mutual_follows' | 'everyone'>
+                                    options={[
+                                        { value: 'nobody', label: lang === 'en' ? 'Nobody' : 'لا أحد' },
+                                        { value: 'mutual_follows', label: lang === 'en' ? 'Mutual Follows' : 'متابعة متبادلة' },
+                                        { value: 'everyone', label: lang === 'en' ? 'Everyone' : 'الجميع' },
+                                    ]}
+                                    value={preferences?.dmPrivacyMode || 'mutual_follows'}
+                                    onChange={updateDmPrivacyMode}
+                                />
+                            </div>
+                        </SettingsItem>
                     </SettingsSection>
 
                     <SettingsSection title={lang === 'en' ? 'Appearance' : 'المظهر'}>

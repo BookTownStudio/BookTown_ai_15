@@ -349,12 +349,14 @@ const ShelfReferenceCard: React.FC<{ name: string; bookCount?: number; covers?: 
     />
 );
 
-const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: string; locationLabel?: string }> = ({ name, type, dateLabel, locationLabel }) => (
+const VenueReferenceCard: React.FC<{ name?: string; type?: string; dateLabel?: string; locationLabel?: string; imageUrl?: string }> = ({ name, type, dateLabel, locationLabel, imageUrl }) => (
     <AttachmentGrammarCard
         label="Venue"
         title={dateLabel || name || 'Venue'}
         subtitle={locationLabel || type || undefined}
-        preview={<div className="flex h-full w-full items-center justify-center"><GlobeIcon className="h-5 w-5 text-white/70" /></div>}
+        preview={imageUrl
+            ? <img src={imageUrl} className="h-full w-full object-cover" alt="" loading="lazy" />
+            : <div className="flex h-full w-full items-center justify-center"><GlobeIcon className="h-5 w-5 text-white/70" /></div>}
     />
 );
 
@@ -852,6 +854,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     <VenueReferenceCard
                         name={readNonEmptyString(legacy.venueName) || readNonEmptyString(legacy.title) || 'Venue'}
                         type={readNonEmptyString(legacy.venueType)}
+                        imageUrl={readNonEmptyString(legacy.imageUrl) || readNonEmptyString(legacy.coverUrl)}
                         dateLabel={
                             readNonEmptyString(legacy.eventDate) ||
                             readNonEmptyString(legacy.venueDate) ||

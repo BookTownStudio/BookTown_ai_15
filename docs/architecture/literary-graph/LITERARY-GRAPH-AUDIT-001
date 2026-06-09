@@ -1,0 +1,220 @@
+# LITERARY-GRAPH-AUDIT-001
+
+Purpose
+
+This audit establishes the factual baseline of the BookTown Literary Graph.
+
+BookTown already contains graph-related infrastructure within both the application codebase and the Canonical Factory. These systems were developed independently and may have evolved differently over time.
+
+The purpose of this audit is to identify, document, and compare the graph structures that currently exist in each system before any new Literary Graph architecture decisions are made.
+
+This audit is intentionally evidence-based and discovery-driven.
+
+No new graph architecture, ontology, entities, relationships, or storage models should be introduced until the current state has been verified.
+
+The audit seeks to answer four questions:
+
+1. What literary graph exists in the BookTown codebase today?
+2. What literary graph exists in the Canonical Factory today?
+3. Are these graphs aligned?
+4. What changes are required to establish a single canonical Literary Graph for BookTown?
+
+This audit serves as the foundation for all future Literary Graph architecture decisions, including:
+
+- Search
+- Connections
+- Related Works
+- Quotes
+- Shelves
+- Recommendations
+- MatchMaker
+- Future AI systems
+
+The desired outcome is a single coherent Literary Graph architecture shared across the BookTown ecosystem.
+
+Status:
+OPEN
+
+Date:
+2026-06-07
+
+---
+## Audit Scope
+
+This audit is divided into two evidence sources:
+
+### Source A — BookTown Codebase
+
+Audit:
+CODEBASE-GRAPH-AUDIT-001
+
+Purpose:
+Document the literary graph currently implemented inside the BookTown application.
+
+Areas:
+
+- Entities
+- Relationships
+- Ontology
+- Storage
+- Producers
+- Consumers
+
+Status:
+COMPLETED
+
+---
+
+### Source B — Canonical Factory
+
+Audit:
+FACTORY-AUDIT-001
+
+Purpose:
+Document the literary graph currently implemented inside the Canonical Factory.
+
+Areas:
+
+- Entities
+- Relationships
+- Ontology
+- Artifact Schema
+- Storage
+- Outputs
+
+Status:
+PENDING
+
+---
+
+### Alignment Phase
+
+After both audits are completed, this document will establish:
+
+- Alignment Matrix
+- Conflicts
+- Gaps
+- Recommended Canonical Literary Graph
+
+No graph architecture decisions should be made before the alignment phase is complete.
+
+---
+
+### D-G-001
+Status: VERIFIED
+
+Finding:
+BookTown already has a dedicated persisted literary graph edge collection: `literary_relationships`.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-002
+Status: VERIFIED
+
+Finding:
+The primary verified graph consumer is `getBookSemanticGraph`, which powers Book Details Connections, ontology chips, and related works behavior.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-003
+Status: VERIFIED
+
+Finding:
+BookTown currently combines explicit persisted graph edges with derived ontology-based relationships.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-004
+Status: VERIFIED
+
+Finding:
+Current graph endpoint types include book, author, movement, tradition, philosophy, and historical period.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-005
+Status: VERIFIED
+
+Finding:
+Quotes exist as canonical records and projections, but quote relationships are not currently represented as `literary_relationships` edges.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-006
+Status: VERIFIED
+
+Finding:
+Shelves connect to books through `shelf_books`, but this is currently a shelf membership graph rather than the canonical literary graph.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-007
+Status: VERIFIED
+
+Finding:
+Search consumes ontology metadata but does not currently traverse `literary_relationships`.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-008
+Status: VERIFIED
+
+Finding:
+MatchMaker does not currently consume the literary graph collection.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-009
+Status: VERIFIED
+
+Finding:
+Character is not currently implemented as a dedicated graph entity.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-010
+Status: VERIFIED
+
+Finding:
+BookTown currently supports both current entity-based relationship documents and legacy `sourceBookId` / `targetBookId` relationship shapes.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+
+### D-G-011
+Status: VERIFIED
+
+Finding:
+The BookTown application currently contains an operational literary graph implementation, while the Canonical Factory currently functions as a canonical literary intelligence pipeline and not as an active graph generator.
+
+Evidence:
+CODEBASE-GRAPH-AUDIT-001
+FACTORY-AUDIT-001
+
+### D-G-012
+Status: VERIFIED
+
+Finding:
+The Canonical Factory currently produces canonical identity, ontology enrichment, semantic metadata, embeddings, validation artifacts, and governance records, but does not currently materialize literary graph edges.
+
+Evidence:
+FACTORY-AUDIT-001
+
+### D-G-013
+Status: VERIFIED
+
+Finding:
+Relationship schemas, graph schemas, author schemas, quote schemas, and civilization graph schemas exist within the Canonical Factory, indicating graph architecture was designed but is not currently operationalized.
+
+Evidence:
+FACTORY-AUDIT-001
+

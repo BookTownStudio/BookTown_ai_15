@@ -19,18 +19,13 @@ import { ChevronLeftIcon } from '../../components/icons/ChevronLeftIcon.tsx';
 import { SendIcon } from '../../components/icons/SendIcon.tsx';
 import { PaperclipIcon } from '../../components/icons/PaperclipIcon.tsx';
 import { AttachmentListV1 } from '../../components/content/AttachmentRendererV1.tsx';
-import Modal from '../../components/ui/Modal.tsx';
-import SelectBookModal from '../../components/modals/SelectBookModal.tsx';
-import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
-import { QuoteCardDataAdapter } from '../../components/content/QuoteCardDataAdapter.ts';
-import SelectPublicationModal from '../../components/modals/SelectPublicationModal.tsx';
 import { BookIcon } from '../../components/icons/BookIcon.tsx';
 import { QuoteIcon } from '../../components/icons/QuoteIcon.tsx';
 import { ChatIcon } from '../../components/icons/ChatIcon.tsx';
-import type { Quote } from '../../types/entities.ts';
 import GlassCard from '../../components/ui/GlassCard.tsx';
+import EntityPicker, { EntityPickerEntityType } from '../../components/content/EntityPicker.tsx';
 
-type ComposerAttachment = NonNullable<DirectMessage['attachment']>;
+type ComposerAttachment = PostAttachment;
 type OptimisticDeliveryState = 'sending' | 'sent';
 type OptimisticDirectMessage = DirectMessage & {
     deliveryState: OptimisticDeliveryState;
@@ -61,6 +56,53 @@ const toRenderableDmAttachment = (
             ...(attachment.canonicalSlug ? { canonicalSlug: attachment.canonicalSlug } : {}),
         };
     }
+    if (attachment.type === 'author') {
+        return {
+            type: 'author',
+            authorId: attachment.entityId,
+            authorName: attachment.title || 'Author',
+            authorPhoto: attachment.coverUrl || '',
+            ...(attachment.author ? { authorCountry: attachment.author } : {}),
+        };
+    }
+    if (attachment.type === 'shelf') {
+        return {
+            type: 'shelf',
+            shelfId: attachment.entityId,
+            ownerId: attachment.ownerId || '',
+            shelfName: attachment.title || 'Shelf',
+            bookCount: attachment.bookCount || 0,
+            covers: attachment.covers || [],
+        };
+    }
+    if (attachment.type === 'venue') {
+        return {
+            type: 'venue',
+            venueId: attachment.entityId,
+            venueName: attachment.title || 'Venue',
+            venueLocation: attachment.author || '',
+            imageUrl: attachment.coverUrl || '',
+        };
+    }
+    return null;
+};
+
+const toRenderableComposerAttachment = (attachment: ComposerAttachment): PostAttachment | null =>
+    'attachmentId' in attachment ? attachment : attachment;
+
+const toDirectMessageAttachment = (
+    attachment: ComposerAttachment
+): { type: 'book' | 'author' | 'shelf' | 'quote' | 'media' | 'venue' | 'publication'; entityId: string } | null => {
+    if ('attachmentId' in attachment) {
+        return { type: 'media', entityId: attachment.attachmentId };
+    }
+    if (attachment.type === 'book') return { type: 'book', entityId: attachment.bookId };
+    if (attachment.type === 'author') return { type: 'author', entityId: attachment.authorId };
+    if (attachment.type === 'shelf') return { type: 'shelf', entityId: attachment.shelfId };
+    if (attachment.type === 'quote') return { type: 'quote', entityId: attachment.quoteId };
+    if (attachment.type === 'venue') return { type: 'venue', entityId: attachment.venueId };
+    if (attachment.type === 'publication') return { type: 'publication', entityId: attachment.publicationId };
+    if (attachment.type === 'media') return { type: 'media', entityId: attachment.url };
     return null;
 };
 
@@ -113,7 +155,7 @@ const ChatBubble: React.FC<{
             quoteId,
             from: currentView,
         };
-        if (!isCanonicalQuoteId(quoteId) && message.attachment.quoteOwnerId) {
+        if (message.attachment.quoteOwnerId) {
             params.ownerId = message.attachment.quoteOwnerId;
         }
 
@@ -172,9 +214,7 @@ const MessengerChatScreen: React.FC = () => {
     const [input, setInput] = useState('');
     const [attachment, setAttachment] = useState<ComposerAttachment>();
     const [isAttachmentPickerOpen, setAttachmentPickerOpen] = useState(false);
-    const [isBookPickerOpen, setBookPickerOpen] = useState(false);
-    const [isPublicationPickerOpen, setPublicationPickerOpen] = useState(false);
-    const [isQuotePickerOpen, setQuotePickerOpen] = useState(false);
+    const [initialPickerType, setInitialPickerType] = useState<EntityPickerEntityType | null>(null);
     
     const conversationId = currentView.type === 'immersive' ? currentView.params?.conversationId : undefined;
     const contactName = currentView.type === 'immersive' ? currentView.params?.contactName : 'Chat';
@@ -224,11 +264,16 @@ const MessengerChatScreen: React.FC = () => {
         if (!canSend) return;
         const idempotencyKey = createMessageIdempotencyKey();
         const optimisticId = `pending_${idempotencyKey}`;
+        const attachmentDto = attachment ? toDirectMessageAttachment(attachment) : null;
+        if (attachment && !attachmentDto) {
+            showToast(lang === 'en' ? 'Invalid attachment.' : 'مرفق غير صالح.');
+            return;
+        }
         const optimisticMessage: OptimisticDirectMessage = {
             id: optimisticId,
             senderId: user?.uid || 'unknown',
             text: normalizedInput,
-            ...(attachment ? { attachment } : {}),
+            ...(attachmentDto ? { attachment: { type: attachmentDto.type, entityId: attachmentDto.entityId } } : {}),
             timestamp: new Date().toISOString(),
             deliveryState: 'sending',
             optimisticKey: optimisticId,
@@ -240,14 +285,7 @@ const MessengerChatScreen: React.FC = () => {
             {
                 text: normalizedInput,
                 idempotencyKey,
-                ...(attachment
-                    ? {
-                        attachment: {
-                            type: attachment.type,
-                            entityId: attachment.entityId,
-                        },
-                    }
-                    : {}),
+                ...(attachmentDto ? { attachment: attachmentDto } : {}),
             },
             {
                 onSuccess: ({ messageId }) => {
@@ -323,7 +361,7 @@ const MessengerChatScreen: React.FC = () => {
         if (publicationId) {
             setAttachment({
                 type: 'publication',
-                entityId: publicationId,
+                publicationId,
                 title:
                     typeof attachedPublication?.title === 'string'
                         ? attachedPublication.title.trim()
@@ -343,7 +381,11 @@ const MessengerChatScreen: React.FC = () => {
         if (bookId) {
             setAttachment({
                 type: 'book',
-                entityId: bookId,
+                bookId,
+                bookTitle: typeof attachedBook?.titleEn === 'string' ? attachedBook.titleEn : 'Book',
+                bookAuthor: typeof attachedBook?.authorEn === 'string' ? attachedBook.authorEn : '',
+                bookCover: typeof attachedBook?.coverUrl === 'string' ? attachedBook.coverUrl : '',
+                bookRating: 0,
             });
         }
     }, [attachedBook, attachedPublication]);
@@ -369,7 +411,7 @@ const MessengerChatScreen: React.FC = () => {
         if (quoteId) {
             setAttachment({
                 type: 'quote',
-                entityId: quoteId,
+                quoteId,
                 ...(quoteOwnerId ? { quoteOwnerId } : {}),
                 quoteText:
                     typeof attachedQuote?.text === 'string'
@@ -395,75 +437,18 @@ const MessengerChatScreen: React.FC = () => {
         });
     }, [conversationId, messages, markReadMutation]);
 
-    const handleAttachmentTypeSelect = (type: 'book' | 'publication' | 'quote') => {
-        setAttachmentPickerOpen(false);
-        if (type === 'book') {
-            setBookPickerOpen(true);
-            return;
-        }
-        if (type === 'publication') {
-            setPublicationPickerOpen(true);
-            return;
-        }
-        setQuotePickerOpen(true);
-    };
-
-    const handleBookSelect = (book: { id: string }) => {
-        setAttachment({
-            type: 'book',
-            entityId: book.id,
-        });
-        setBookPickerOpen(false);
-    };
-
-    const handlePublicationSelect = (publication: {
-        publicationId: string;
-        title: string;
-        coverUrl?: string;
-        canonicalSlug?: string;
-    }) => {
-        setAttachment({
-            type: 'publication',
-            entityId: publication.publicationId,
-            title: publication.title,
-            ...(publication.coverUrl ? { coverUrl: publication.coverUrl } : {}),
-            ...(publication.canonicalSlug ? { canonicalSlug: publication.canonicalSlug } : {}),
-        });
-        setPublicationPickerOpen(false);
-    };
-
-    const handleQuoteSelect = (quote: Quote) => {
-        const card = QuoteCardDataAdapter.fromQuote(quote);
-        const canonicalQuoteId = card.canonicalQuoteId || card.id;
-        if (!canonicalQuoteId) {
-            showToast(
-                lang === 'en'
-                    ? 'This quote is unavailable right now.'
-                    : 'هذا الاقتباس غير متاح حالياً.'
-            );
-            return;
-        }
-        setAttachment({
-            type: 'quote',
-            entityId: canonicalQuoteId,
-            ...(card.ownerId ? { quoteOwnerId: card.ownerId } : {}),
-            quoteText: (lang === 'en' ? card.textEn : card.textAr) || card.textEn,
-        });
-        setQuotePickerOpen(false);
-    };
-
     return (
         <div className="h-[100dvh] w-full flex flex-col overflow-hidden bg-gray-50 dark:bg-slate-900">
             <header className="fixed top-0 left-0 right-0 z-20 bg-gray-50/80 dark:bg-slate-900/80 backdrop-blur-lg border-b border-black/10 dark:border-white/10">
-                <div className={`app-rail app-rail--default flex h-20 items-center justify-between px-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
+                <div className={`app-rail app-rail--default flex h-16 items-center justify-between px-0 ${isRTL ? 'flex-row-reverse' : ''}`}>
                     <Button variant="ghost" onClick={handleBack}><ChevronLeftIcon className="h-6 w-6" /></Button>
                     <BilingualText role="H1" className="!text-xl">{contactName}</BilingualText>
                     <div className="w-10" />
                 </div>
             </header>
 
-            <main className="flex-grow pt-20 pb-[calc(7rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden overscroll-y-contain">
-                <div className="app-rail app-rail--default py-4 space-y-4">
+            <main className="flex-grow pt-16 pb-[calc(5.75rem+env(safe-area-inset-bottom))] overflow-y-auto overflow-x-hidden overscroll-y-contain">
+                <div className="app-rail app-rail--default py-3 space-y-2.5">
                     {isLoading && <div className="flex justify-center items-center h-full"><LoadingSpinner /></div>}
                     {isError && (
                         <ErrorState
@@ -472,13 +457,25 @@ const MessengerChatScreen: React.FC = () => {
                         />
                     )}
                     {!isLoading && !isError && combinedMessages.length === 0 && (
-                        <EmptyState
-                            icon={ChatIcon}
-                            titleEn="No messages yet"
-                            titleAr="لا توجد رسائل بعد"
-                            messageEn="Start the conversation with a note or a book attachment."
-                            messageAr="ابدأ المحادثة برسالة أو مرفق كتاب."
-                        />
+                        <div className="mx-auto flex min-h-[48vh] max-w-sm flex-col items-center justify-center text-center">
+                            <EmptyState
+                                icon={ChatIcon}
+                                titleEn="Start a literary exchange"
+                                titleAr="ابدأ تبادلاً أدبياً"
+                                messageEn="Share a book, quote, shelf, author, venue, or note from your reading world."
+                                messageAr="شارك كتاباً أو اقتباساً أو رفاً أو مؤلفاً أو مكاناً من عالمك القرائي."
+                            />
+                            <div className="mt-4 flex flex-wrap justify-center gap-2">
+                                <Button variant="secondary" onClick={() => { setInitialPickerType('book'); setAttachmentPickerOpen(true); }}>
+                                    <BookIcon className="h-4 w-4" />
+                                    {lang === 'en' ? 'Share a Book' : 'شارك كتاباً'}
+                                </Button>
+                                <Button variant="secondary" onClick={() => { setInitialPickerType('quote'); setAttachmentPickerOpen(true); }}>
+                                    <QuoteIcon className="h-4 w-4" />
+                                    {lang === 'en' ? 'Share a Quote' : 'شارك اقتباساً'}
+                                </Button>
+                            </div>
+                        </div>
                     )}
                     {combinedMessages.map(msg => (
                         <ChatBubble key={msg.id} message={msg} isMe={msg.senderId === user?.uid} />
@@ -495,7 +492,7 @@ const MessengerChatScreen: React.FC = () => {
                     {attachment ? (
                         <div className="px-2 pb-2">
                             <AttachmentListV1
-                                attachments={[toRenderableDmAttachment(attachment)].filter(Boolean) as PostAttachment[]}
+                                attachments={[toRenderableComposerAttachment(attachment)].filter(Boolean) as PostAttachment[]}
                                 surface="write"
                             />
                             <div className="mt-2 flex justify-end">
@@ -514,7 +511,7 @@ const MessengerChatScreen: React.FC = () => {
                             variant="icon"
                             className="flex-shrink-0 !text-slate-500"
                             aria-label={lang === 'en' ? 'Attach item' : 'إرفاق عنصر'}
-                            onClick={() => setAttachmentPickerOpen(true)}
+                            onClick={() => { setInitialPickerType(null); setAttachmentPickerOpen(true); }}
                         >
                             <PaperclipIcon className="h-6 w-6" />
                         </Button>
@@ -526,7 +523,7 @@ const MessengerChatScreen: React.FC = () => {
                             onChange={(e) => setInput(e.target.value)}
                             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
                             disabled={isSending}
-                            className="flex-1 bg-slate-200 dark:bg-slate-800 rounded-full py-3 px-4 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
+                            className="flex-1 bg-slate-200 dark:bg-slate-800 rounded-full py-2.5 px-4 text-slate-900 dark:text-white/90 placeholder:text-slate-500 dark:placeholder:text-white/40 focus:outline-none focus:ring-2 focus:ring-accent"
                         />
                         <Button
                             variant="icon"
@@ -540,52 +537,13 @@ const MessengerChatScreen: React.FC = () => {
                     </div>
                 </div>
             </footer>
-            <Modal isOpen={isAttachmentPickerOpen} onClose={() => setAttachmentPickerOpen(false)}>
-                <div className="space-y-3">
-                    <BilingualText role="H1" className="!text-xl text-center mb-2">
-                        {lang === 'en' ? 'Attach to message' : 'إرفاق في الرسالة'}
-                    </BilingualText>
-                    <button
-                        type="button"
-                        onClick={() => handleAttachmentTypeSelect('book')}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-left transition hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-                    >
-                        <BookIcon className="h-5 w-5 text-accent" />
-                        <span>{lang === 'en' ? 'Book' : 'كتاب'}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleAttachmentTypeSelect('publication')}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-left transition hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-                    >
-                        <BookIcon className="h-5 w-5 text-accent" />
-                        <span>{lang === 'en' ? 'Publication' : 'منشور'}</span>
-                    </button>
-                    <button
-                        type="button"
-                        onClick={() => handleAttachmentTypeSelect('quote')}
-                        className="flex w-full items-center gap-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3 text-left transition hover:bg-black/5 dark:border-white/10 dark:bg-white/5 dark:hover:bg-white/10"
-                    >
-                        <QuoteIcon className="h-5 w-5 text-accent" />
-                        <span>{lang === 'en' ? 'Quote' : 'اقتباس'}</span>
-                    </button>
-                </div>
-            </Modal>
-            <SelectBookModal
-                isOpen={isBookPickerOpen}
-                onClose={() => setBookPickerOpen(false)}
-                onBookSelect={handleBookSelect}
-                selectionMode="selectCanonical"
-            />
-            <SelectPublicationModal
-                isOpen={isPublicationPickerOpen}
-                onClose={() => setPublicationPickerOpen(false)}
-                onSelect={handlePublicationSelect}
-            />
-            <AttachQuoteModal
-                isOpen={isQuotePickerOpen}
-                onClose={() => setQuotePickerOpen(false)}
-                onSelect={handleQuoteSelect}
+            <EntityPicker
+                isOpen={isAttachmentPickerOpen}
+                onClose={() => setAttachmentPickerOpen(false)}
+                onSelect={setAttachment}
+                initialType={initialPickerType}
+                enabledTypes={['book', 'author', 'shelf', 'quote', 'venue']}
+                includeEvents={false}
             />
         </div>
     );

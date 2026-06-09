@@ -25,12 +25,13 @@ type NotificationPreferences = {
     uid?: string;
     channels: NotificationPreferenceChannels;
     categories: NotificationPreferenceCategories;
+    dmPrivacyMode?: 'nobody' | 'mutual_follows' | 'everyone';
     createdAt?: unknown;
     updatedAt?: unknown;
 };
 
 type NotificationPreferenceUpdate = Partial<
-    Pick<NotificationPreferences, 'channels' | 'categories'>
+    Pick<NotificationPreferences, 'channels' | 'categories' | 'dmPrivacyMode'>
 >;
 
 /**
@@ -53,6 +54,7 @@ const CANONICAL_DEFAULTS: Pick<NotificationPreferences, 'channels' | 'categories
         messages: true
     }
 };
+const DEFAULT_DM_PRIVACY_MODE: NonNullable<NotificationPreferences['dmPrivacyMode']> = 'mutual_follows';
 
 /**
  * useNotificationPreferences
@@ -80,6 +82,7 @@ export const useNotificationPreferences = () => {
             
             return {
                 ...CANONICAL_DEFAULTS,
+                dmPrivacyMode: DEFAULT_DM_PRIVACY_MODE,
                 uid,
                 createdAt: new Date().toISOString(),
                 updatedAt: new Date().toISOString()
@@ -95,6 +98,7 @@ export const useNotificationPreferences = () => {
             
             const existing: NotificationPreferences = query.data || {
                 ...CANONICAL_DEFAULTS,
+                dmPrivacyMode: DEFAULT_DM_PRIVACY_MODE,
                 uid,
             };
             const newData = {

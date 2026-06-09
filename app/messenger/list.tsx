@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import { useNavigation } from '../../store/navigation.tsx';
-import { useConversations } from '../../lib/hooks/useMessenger.ts';
+import { useAcceptMessageRequest, useConversations, useDeclineMessageRequest } from '../../lib/hooks/useMessenger.ts';
 import ScreenHeader from '../../components/navigation/ScreenHeader.tsx';
 import InputField from '../../components/ui/InputField.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
@@ -14,9 +14,14 @@ import { EmailIcon } from '../../components/icons/EmailIcon.tsx';
 
 const MESSENGER_INBOX_RAIL_CLASS = 'mx-auto w-full max-w-[760px] px-4 md:px-0';
 
-const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conversation }) => {
+const ConversationListItem: React.FC<{
+    conversation: Conversation;
+    folder: 'inbox' | 'requests';
+}> = ({ conversation, folder }) => {
     const { navigate, currentView } = useNavigation();
     const { lang } = useI18n();
+    const acceptRequest = useAcceptMessageRequest();
+    const declineRequest = useDeclineMessageRequest();
     const prefillText =
         currentView.type === 'immersive' && typeof currentView.params?.prefillText === 'string'
             ? currentView.params.prefillText.trim()
@@ -41,6 +46,7 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
             : undefined;
 
     const handlePress = () => {
+        if (folder === 'requests') return;
         navigate({
             type: 'immersive',
             id: 'messengerChat',
@@ -72,9 +78,19 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
         return 'now';
     }
 
+    const handleRowKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            handlePress();
+        }
+    };
+
     return (
-        <button
+        <div
+            role={folder === 'requests' ? undefined : 'button'}
+            tabIndex={folder === 'requests' ? undefined : 0}
             onClick={handlePress}
+            onKeyDown={handleRowKeyDown}
             className="w-full text-left px-4 py-4 transition-colors hover:bg-slate-800/60 md:px-5"
         >
             <div className="flex items-center gap-4">
@@ -102,9 +118,35 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
                         </div>
                     )}
                 </div>
+                {folder === 'requests' && (
+                    <div className="mt-3 flex gap-2">
+                        <button
+                            type="button"
+                            disabled={acceptRequest.isPending}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                acceptRequest.mutate(conversation.id);
+                            }}
+                            className="rounded-md bg-accent px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                        >
+                            {lang === 'en' ? 'Accept' : 'قبول'}
+                        </button>
+                        <button
+                            type="button"
+                            disabled={declineRequest.isPending}
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                declineRequest.mutate(conversation.id);
+                            }}
+                            className="rounded-md border border-white/10 px-3 py-1.5 text-xs font-bold text-slate-500 dark:text-white/70 disabled:opacity-60"
+                        >
+                            {lang === 'en' ? 'Decline' : 'رفض'}
+                        </button>
+                    </div>
+                )}
             </div>
             </div>
-        </button>
+        </div>
     );
 }
 
@@ -112,7 +154,8 @@ const ConversationListItem: React.FC<{ conversation: Conversation }> = ({ conver
 const MessengerListScreen: React.FC = () => {
     const { lang } = useI18n();
     const { navigate, currentView } = useNavigation();
-    const { data: conversations, isLoading, isError } = useConversations();
+    const [folder, setFolder] = useState<'inbox' | 'requests'>('inbox');
+    const { data: conversations, isLoading, isError } = useConversations(folder);
     const [searchQuery, setSearchQuery] = useState('');
 
     const handleBack = () => navigate(currentView.params?.from || { type: 'tab', id: 'home' });
@@ -127,6 +170,25 @@ const MessengerListScreen: React.FC = () => {
             <ScreenHeader titleEn="BookMessenger" titleAr="بوك ماسنجر" onBack={handleBack} />
             <main className="flex-grow overflow-y-auto overflow-x-hidden overscroll-y-contain pt-20 pb-[max(1rem,env(safe-area-inset-bottom))]">
                 <div className={cn(MESSENGER_INBOX_RAIL_CLASS, 'space-y-4 pb-8')}>
+                    <div className="grid grid-cols-2 rounded-lg bg-slate-800/70 p-1">
+                        {(['inbox', 'requests'] as const).map((tab) => (
+                            <button
+                                key={tab}
+                                type="button"
+                                onClick={() => setFolder(tab)}
+                                className={cn(
+                                    'rounded-md px-3 py-2 text-sm font-bold transition-colors',
+                                    folder === tab
+                                        ? 'bg-accent text-white'
+                                        : 'text-white/65 hover:bg-white/10'
+                                )}
+                            >
+                                {tab === 'inbox'
+                                    ? (lang === 'en' ? 'Inbox' : 'الوارد')
+                                    : (lang === 'en' ? 'Requests' : 'الطلبات')}
+                            </button>
+                        ))}
+                    </div>
                      <InputField
                         id="messenger-search"
                         label=""
@@ -146,7 +208,7 @@ const MessengerListScreen: React.FC = () => {
                     {filteredConversations && filteredConversations.length > 0 && (
                         <div className="divide-y divide-black/10 dark:divide-white/10">
                             {filteredConversations.map(convo => (
-                                <ConversationListItem key={convo.id} conversation={convo} />
+                                <ConversationListItem key={convo.id} conversation={convo} folder={folder} />
                             ))}
                         </div>
                     )}
@@ -158,12 +220,16 @@ const MessengerListScreen: React.FC = () => {
                             messageEn={
                                 searchQuery.trim()
                                     ? 'Try another name or message.'
-                                    : 'Your conversations will appear here.'
+                                    : folder === 'requests'
+                                        ? 'Message requests will appear here.'
+                                        : 'Your conversations will appear here.'
                             }
                             messageAr={
                                 searchQuery.trim()
                                     ? 'جرّب اسماً أو رسالة أخرى.'
-                                    : 'ستظهر محادثاتك هنا.'
+                                    : folder === 'requests'
+                                        ? 'ستظهر طلبات المراسلة هنا.'
+                                        : 'ستظهر محادثاتك هنا.'
                             }
                          />
                      )}

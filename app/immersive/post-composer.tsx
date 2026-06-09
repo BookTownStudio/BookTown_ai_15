@@ -9,29 +9,11 @@ import Button from '../../components/ui/Button.tsx';
 import LoadingSpinner from '../../components/ui/LoadingSpinner.tsx';
 import Modal from '../../components/ui/Modal.tsx';
 
-import {
-  BookIcon,
-  QuoteIcon,
-  MediaIcon,
-  ShelvesIcon,
-  AuthorsIcon,
-  MapPinIcon,
-} from '../../components/icons';
-
-import SelectBookModal from '../../components/modals/SelectBookModal.tsx';
-import AttachAuthorModal from '../../components/modals/AttachAuthorModal.tsx';
-import AttachShelfModal from '../../components/modals/AttachShelfModal.tsx';
-import AttachQuoteModal from '../../components/modals/AttachQuoteModal.tsx';
-import { QuoteCardDataAdapter } from '../../components/content/QuoteCardDataAdapter.ts';
-
 import { PostAttachment, PostVisibilityScope } from '../../types/entities.ts';
 import type { View } from '../../types/navigation.ts';
 import {
-  buildAuthorPostAttachment,
   buildBookPostAttachment,
   buildPublicationPostAttachment,
-  buildQuotePostAttachment,
-  buildShelfPostAttachment,
   toPostCreateAttachmentDTO,
 } from '../../types/socialAttachments.ts';
 import { AttachmentListV1 } from '../../components/content/AttachmentRendererV1.tsx';
@@ -40,6 +22,7 @@ import { useCreatePost } from '../../lib/hooks/useCreatePost.ts';
 import { useDraft, useDrafts, useDeleteDraft, useSaveDraft } from '../../lib/hooks/useDrafts.ts';
 import { cn } from '../../lib/utils.ts';
 import ContentRail from '../../components/layout/ContentRail.tsx';
+import EntityPicker from '../../components/content/EntityPicker.tsx';
 
 const TEXT_LIMIT = 500;
 const AUTOSAVE_DEBOUNCE = 800;
@@ -70,9 +53,9 @@ const PostComposerScreen: React.FC = () => {
   const [isAutosaving, setIsAutosaving] = useState(false);
   const [exitAction, setExitAction] = useState<'save' | 'discard' | null>(null);
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [modals, setModals] = useState({ book: false, author: false, shelf: false, quote: false });
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isEntityPickerOpen, setEntityPickerOpen] = useState(false);
   const attachedBookRef = useRef<string>('');
   const attachedPublicationRef = useRef<string>('');
   const prefillTextRef = useRef<string>('');
@@ -82,8 +65,8 @@ const PostComposerScreen: React.FC = () => {
   const handledDraftErrorIdRef = useRef<string | null>(null);
   const previousUidRef = useRef<string | null>(null);
 
-  const { upload, isUploading } = useAttachmentUpload();
   const { mutate: createPost, isPending: isPosting } = useCreatePost();
+  const { upload, isUploading } = useAttachmentUpload();
   const { data: drafts } = useDrafts();
   const { mutateAsync: saveDraftAsync } = useSaveDraft();
   const { mutateAsync: deleteDraftAsync, isPending: isDeletingDraft } = useDeleteDraft();
@@ -514,15 +497,6 @@ const PostComposerScreen: React.FC = () => {
     );
   };
 
-  const attachmentTypes = [
-    { id: 'book', icon: BookIcon, label: 'Book', action: () => setModals((current) => ({ ...current, book: true })) },
-    { id: 'author', icon: AuthorsIcon, label: 'Author', action: () => setModals((current) => ({ ...current, author: true })) },
-    { id: 'shelf', icon: ShelvesIcon, label: 'Shelf', action: () => setModals((current) => ({ ...current, shelf: true })) },
-    { id: 'quote', icon: QuoteIcon, label: 'Quote', action: () => setModals((current) => ({ ...current, quote: true })) },
-    { id: 'venue', icon: MapPinIcon, label: 'Venue', action: () => showToast('Venue coming soon') },
-    { id: 'media', icon: MediaIcon, label: 'Media', action: () => fileInputRef.current?.click() },
-  ];
-
   const isDraftAvailable = !isGuest && (drafts?.length || 0) > 0;
   const hasDraftableContent = text.trim().length > 0 || !!attachment;
   const canSaveDraftOnExit = hasDraftableContent && !!user && !isGuest;
@@ -570,18 +544,15 @@ const PostComposerScreen: React.FC = () => {
           </header>
 
           <div className="border-b border-white/5">
-            <ContentRail variant="default" className="grid grid-cols-3 gap-3 py-4 px-0 sm:grid-cols-6">
-              {attachmentTypes.map((type) => (
-                <button
-                  key={type.id}
-                  onClick={type.action}
-                  className="flex min-h-[72px] flex-col items-center justify-center gap-2 rounded-2xl border border-white/[0.06] bg-white/[0.045] px-2 py-3 text-white/78 transition-colors hover:border-white/[0.11] hover:bg-white/[0.075] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
-                  disabled={isRouteDraftLoading}
-                >
-                  <type.icon className="h-5 w-5" />
-                  <span className="text-[11px] font-medium">{type.label}</span>
-                </button>
-              ))}
+            <ContentRail variant="default" className="py-4 px-0">
+              <button
+                type="button"
+                onClick={() => setEntityPickerOpen(true)}
+                className="flex min-h-[56px] w-full items-center justify-center rounded-2xl border border-white/[0.06] bg-white/[0.045] px-4 py-3 text-sm font-medium text-white/78 transition-colors hover:border-white/[0.11] hover:bg-white/[0.075] hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                disabled={isRouteDraftLoading}
+              >
+                {lang === 'en' ? 'Attach BookTown Entity' : 'إرفاق عنصر من بوكتاون'}
+              </button>
             </ContentRail>
           </div>
 
@@ -621,6 +592,13 @@ const PostComposerScreen: React.FC = () => {
         </div>
       </div>
 
+      <EntityPicker
+        isOpen={isEntityPickerOpen}
+        onClose={() => setEntityPickerOpen(false)}
+        onSelect={setAttachment}
+        onMediaRequested={() => fileInputRef.current?.click()}
+      />
+
       <input
         type="file"
         ref={fileInputRef}
@@ -638,64 +616,9 @@ const PostComposerScreen: React.FC = () => {
           });
           if (attachmentRecord) {
             setAttachment(attachmentRecord);
+            setEntityPickerOpen(false);
           }
-        }}
-      />
-
-      <SelectBookModal
-        isOpen={modals.book}
-        onClose={() => setModals((current) => ({ ...current, book: false }))}
-        onBookSelect={(book) =>
-          setAttachment(buildBookPostAttachment({
-            bookId: book.id,
-            titleEn: book.titleEn,
-            titleAr: book.titleAr,
-            authorEn: book.authorEn,
-            authorAr: book.authorAr,
-            coverUrl: book.coverUrl,
-            rating: book.rating,
-          }))
-        }
-      />
-      <AttachAuthorModal
-        isOpen={modals.author}
-        onClose={() => setModals((current) => ({ ...current, author: false }))}
-        onSelect={(author) =>
-          setAttachment(buildAuthorPostAttachment({
-            authorId: author.id,
-            nameEn: author.nameEn,
-            nameAr: author.nameAr,
-            avatarUrl: author.avatarUrl,
-            countryEn: author.countryEn,
-            countryAr: author.countryAr,
-            signatureQuote: author.signatureQuoteEn || author.signatureQuoteAr,
-          }))
-        }
-      />
-      <AttachShelfModal
-        isOpen={modals.shelf}
-        onClose={() => setModals((current) => ({ ...current, shelf: false }))}
-        onSelect={(shelf) =>
-          setAttachment(buildShelfPostAttachment({
-            shelfId: shelf.id,
-            ownerId: shelf.ownerId,
-            titleEn: shelf.titleEn,
-            titleAr: shelf.titleAr,
-            bookCount: Array.isArray(shelf.bookIds) ? shelf.bookIds.length : 0,
-          }))
-        }
-      />
-      <AttachQuoteModal
-        isOpen={modals.quote}
-        onClose={() => setModals((current) => ({ ...current, quote: false }))}
-        onSelect={(quote) => {
-          const card = QuoteCardDataAdapter.fromQuote(quote);
-          const canonicalQuoteId = card.canonicalQuoteId || card.id;
-          setAttachment(buildQuotePostAttachment({
-            quoteId: canonicalQuoteId,
-            quoteOwnerId: card.ownerId,
-            quoteText: card.textEn || card.textAr,
-          }));
+          event.target.value = '';
         }}
       />
 

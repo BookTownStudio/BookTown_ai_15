@@ -14,12 +14,16 @@ interface AttachVenueModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSelect: (item: Venue | Event) => void;
+    includeEvents?: boolean;
 }
 
-const AttachVenueModal: React.FC<AttachVenueModalProps> = ({ isOpen, onClose, onSelect }) => {
+const AttachVenueModal: React.FC<AttachVenueModalProps> = ({ isOpen, onClose, onSelect, includeEvents = true }) => {
     const { lang } = useI18n();
     const [searchQuery, setSearchQuery] = useState('');
     const { data: items, isLoading } = useVenuesAndEvents(searchQuery);
+    const selectableItems = includeEvents
+        ? items
+        : items?.filter((item): item is Venue => !('dateTime' in item));
     const handleSelectVenue = (item: Venue | Event) => {
         onSelect(item);
         onClose();
@@ -45,8 +49,8 @@ const AttachVenueModal: React.FC<AttachVenueModalProps> = ({ isOpen, onClose, on
                 <div className="mt-4 h-80 overflow-y-auto space-y-2">
                     {isLoading && <div className="flex justify-center pt-8"><LoadingSpinner /></div>}
                     
-                    {!isLoading && items && items.length > 0 ? (
-                        items.map(item => {
+                    {!isLoading && selectableItems && selectableItems.length > 0 ? (
+                        selectableItems.map(item => {
                             const isEvent = 'dateTime' in item;
                             const name = isEvent ? (lang === 'en' ? item.titleEn : item.titleAr) : item.name;
                             const sub = isEvent ? new Date(item.dateTime).toLocaleDateString() : item.address;

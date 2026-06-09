@@ -13,6 +13,27 @@ const MAX_CONVERSATION_LIST_LIMIT = 50;
 const MAX_MESSAGES_LIST_LIMIT = 200;
 const MAX_MESSAGES_PER_MINUTE = 30;
 const RATE_WINDOW_MS = 60_000;
+const DM_CALLABLE_OPTIONS = { cors: true, enforceAppCheck: true };
+const DM_NOTIFICATION_CLEAR_LIMIT = 100;
+const DM_REPORT_REASONS = [
+  "spam",
+  "harassment",
+  "hate_speech",
+  "scam",
+  "copyright",
+  "other",
+] as const;
+
+type DmPrivacyMode = "nobody" | "mutual_follows" | "everyone";
+type ConversationStatus = "active" | "request_pending" | "request_declined";
+type DirectMessageAttachmentType =
+  | "book"
+  | "author"
+  | "shelf"
+  | "quote"
+  | "media"
+  | "venue"
+  | "publication";
 
 type ParticipantProfile = {
   name: string;
@@ -21,12 +42,15 @@ type ParticipantProfile = {
 };
 
 type DirectMessageAttachment = {
-  type: "book" | "publication" | "quote";
+  type: DirectMessageAttachmentType;
   entityId: string;
   title?: string;
   author?: string;
   coverUrl?: string;
   canonicalSlug?: string;
+  ownerId?: string;
+  bookCount?: number;
+  covers?: string[];
   quoteOwnerId?: string;
   quoteText?: string;
 };
@@ -46,6 +70,16 @@ type ConversationDoc = {
   >;
   createdAt: admin.firestore.FieldValue | admin.firestore.Timestamp;
   updatedAt: admin.firestore.FieldValue | admin.firestore.Timestamp;
+  status?: ConversationStatus;
+  requestedByUid?: string | null;
+  acceptedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null;
+  declinedAt?: admin.firestore.FieldValue | admin.firestore.Timestamp | null;
+  conversationContext?: {
+    type: "book" | "author" | "shelf" | "quote" | "venue" | "media";
+    entityId: string;
+    title?: string;
+    snapshot?: Record<string, unknown>;
+  } | null;
   version: number;
 };
 
@@ -101,13 +135,21 @@ function readTrimmedString(value: unknown, maxLength = 2048): string {
 
 function normalizeDirectMessageAttachment(
   value: unknown
-): { type: "book" | "publication" | "quote"; entityId: string } | null {
+): { type: DirectMessageAttachmentType; entityId: string } | null {
   if (!value || typeof value !== "object") {
     return null;
   }
   const raw = value as Record<string, unknown>;
   const type = readTrimmedString(raw.type, 32).toLowerCase();
-  if (type !== "book" && type !== "publication" && type !== "quote") {
+  if (
+    type !== "book" &&
+    type !== "author" &&
+    type !== "shelf" &&
+    type !== "quote" &&
+    type !== "media" &&
+    type !== "venue" &&
+    type !== "publication"
+  ) {
     throw new HttpsError("invalid-argument", "attachment.type is invalid.");
   }
   const entityId = readTrimmedString(raw.entityId, 256);
@@ -126,7 +168,15 @@ function normalizeStoredAttachment(value: unknown): DirectMessageAttachment | un
   }
   const raw = value as Record<string, unknown>;
   const type = readTrimmedString(raw.type, 32).toLowerCase();
-  if (type !== "book" && type !== "publication" && type !== "quote") {
+  if (
+    type !== "book" &&
+    type !== "author" &&
+    type !== "shelf" &&
+    type !== "quote" &&
+    type !== "media" &&
+    type !== "venue" &&
+    type !== "publication"
+  ) {
     return undefined;
   }
   const entityId = readTrimmedString(raw.entityId, 256);
@@ -137,6 +187,17 @@ function normalizeStoredAttachment(value: unknown): DirectMessageAttachment | un
   const author = readTrimmedString(raw.author, 300);
   const coverUrl = readTrimmedString(raw.coverUrl, 2048);
   const canonicalSlug = readTrimmedString(raw.canonicalSlug, 160);
+  const ownerId = readTrimmedString(raw.ownerId, 128);
+  const bookCount =
+    typeof raw.bookCount === "number" && Number.isFinite(raw.bookCount)
+      ? Math.max(0, Math.trunc(raw.bookCount))
+      : undefined;
+  const covers = Array.isArray(raw.covers)
+    ? raw.covers
+        .map((cover) => readTrimmedString(cover, 2048))
+        .filter(Boolean)
+        .slice(0, 4)
+    : [];
   const quoteOwnerId = readTrimmedString(raw.quoteOwnerId, 128);
   const quoteText = readTrimmedString(raw.quoteText, 600);
 
@@ -147,6 +208,9 @@ function normalizeStoredAttachment(value: unknown): DirectMessageAttachment | un
     ...(author ? { author } : {}),
     ...(coverUrl ? { coverUrl } : {}),
     ...(canonicalSlug ? { canonicalSlug } : {}),
+    ...(ownerId ? { ownerId } : {}),
+    ...(bookCount !== undefined ? { bookCount } : {}),
+    ...(covers.length > 0 ? { covers } : {}),
     ...(quoteOwnerId ? { quoteOwnerId } : {}),
     ...(quoteText ? { quoteText } : {}),
   };
@@ -217,9 +281,78 @@ function asParticipantProfile(payload: unknown): ParticipantProfile {
   };
 }
 
+function normalizeConversationFolder(value: unknown): "inbox" | "requests" {
+  if (value === undefined || value === null) return "inbox";
+  if (value === "requests") return "requests";
+  if (value === "inbox") return "inbox";
+  throw new HttpsError("invalid-argument", "folder must be inbox or requests.");
+}
+
+function normalizePrivacyMode(value: unknown): DmPrivacyMode {
+  if (value === "nobody" || value === "mutual_follows" || value === "everyone") {
+    return value;
+  }
+  return "mutual_follows";
+}
+
+function normalizeReportReason(value: unknown): typeof DM_REPORT_REASONS[number] {
+  const normalized = readTrimmedString(value, 32).toLowerCase();
+  if ((DM_REPORT_REASONS as readonly string[]).includes(normalized)) {
+    return normalized as typeof DM_REPORT_REASONS[number];
+  }
+  throw new HttpsError("invalid-argument", "reason is invalid.");
+}
+
+function normalizeOptionalReportDetails(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") {
+    throw new HttpsError("invalid-argument", "details must be a string.");
+  }
+  return value.trim().slice(0, 1000);
+}
+
+function conversationStatus(data: Partial<ConversationDoc>): ConversationStatus {
+  return data.status === "request_pending" || data.status === "request_declined"
+    ? data.status
+    : "active";
+}
+
+async function getDmPrivacyMode(uid: string): Promise<DmPrivacyMode> {
+  const snap = await db.collection("notification_preferences").doc(uid).get();
+  return normalizePrivacyMode(snap.data()?.dmPrivacyMode);
+}
+
+async function getRelationship(uid: string, peerUid: string): Promise<{
+  senderFollowsRecipient: boolean;
+  recipientFollowsSender: boolean;
+}> {
+  const [senderFollowsRecipient, recipientFollowsSender] = await Promise.all([
+    db.collection("users").doc(peerUid).collection("followers").doc(uid).get(),
+    db.collection("users").doc(uid).collection("followers").doc(peerUid).get(),
+  ]);
+  return {
+    senderFollowsRecipient: senderFollowsRecipient.exists,
+    recipientFollowsSender: recipientFollowsSender.exists,
+  };
+}
+
+async function resolveInitialConversationStatus(uid: string, peerUid: string): Promise<ConversationStatus> {
+  const privacyMode = await getDmPrivacyMode(peerUid);
+  if (privacyMode === "nobody") {
+    throw new HttpsError("failed-precondition", "This user is not accepting direct messages.");
+  }
+  if (privacyMode === "everyone") {
+    return "active";
+  }
+  const relationship = await getRelationship(uid, peerUid);
+  return relationship.senderFollowsRecipient && relationship.recipientFollowsSender
+    ? "active"
+    : "request_pending";
+}
+
 async function resolveAttachmentSnapshot(
   transaction: FirebaseFirestore.Transaction,
-  attachment: { type: "book" | "publication" | "quote"; entityId: string },
+  attachment: { type: DirectMessageAttachmentType; entityId: string },
   uid: string
 ): Promise<DirectMessageAttachment> {
   if (attachment.type === "book") {
@@ -274,6 +407,106 @@ async function resolveAttachmentSnapshot(
     };
   }
 
+  if (attachment.type === "author") {
+    const snap = await transaction.get(db.collection("authors").doc(attachment.entityId));
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced author not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const title =
+      readTrimmedString(data.nameEn, 300) ||
+      readTrimmedString(data.nameAr, 300) ||
+      readTrimmedString(data.name, 300);
+    const author =
+      readTrimmedString(data.countryEn, 300) ||
+      readTrimmedString(data.countryAr, 300);
+    const coverUrl = readTrimmedString(data.avatarUrl, 2048);
+
+    return {
+      type: "author",
+      entityId: attachment.entityId,
+      ...(title ? { title } : {}),
+      ...(author ? { author } : {}),
+      ...(coverUrl ? { coverUrl } : {}),
+    };
+  }
+
+  if (attachment.type === "shelf") {
+    const docRef = db.collection("users").doc(uid).collection("shelves").doc(attachment.entityId);
+    const snap = await transaction.get(docRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced shelf not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const ownerId =
+      readTrimmedString(data.ownerId, 128) ||
+      readTrimmedString(data.uid, 128) ||
+      uid;
+    const title =
+      readTrimmedString(data.titleEn, 300) ||
+      readTrimmedString(data.titleAr, 300) ||
+      readTrimmedString(data.name, 300);
+    const bookCount =
+      typeof data.bookCount === "number" && Number.isFinite(data.bookCount)
+        ? Math.max(0, Math.trunc(data.bookCount))
+        : Array.isArray(data.bookIds)
+          ? data.bookIds.length
+          : undefined;
+
+    return {
+      type: "shelf",
+      entityId: attachment.entityId,
+      ...(title ? { title } : {}),
+      ...(ownerId ? { ownerId } : {}),
+      ...(bookCount !== undefined ? { bookCount } : {}),
+    };
+  }
+
+  if (attachment.type === "venue") {
+    const snap = await transaction.get(db.collection("venues").doc(attachment.entityId));
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced venue not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const title =
+      readTrimmedString(data.name, 300) ||
+      readTrimmedString(data.titleEn, 300) ||
+      readTrimmedString(data.titleAr, 300);
+    const author =
+      readTrimmedString(data.address, 300) ||
+      readTrimmedString(data.type, 300);
+    const coverUrl = readTrimmedString(data.imageUrl, 2048);
+
+    return {
+      type: "venue",
+      entityId: attachment.entityId,
+      ...(title ? { title } : {}),
+      ...(author ? { author } : {}),
+      ...(coverUrl ? { coverUrl } : {}),
+    };
+  }
+
+  if (attachment.type === "media") {
+    const snap = await transaction.get(db.collection("attachments").doc(attachment.entityId));
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Referenced media not found.");
+    }
+    const data = (snap.data() ?? {}) as Record<string, unknown>;
+    const ownerUid = readTrimmedString(data.ownerUid, 128) || readTrimmedString(data.uploaderUid, 128);
+    if (ownerUid && ownerUid !== uid) {
+      throw new HttpsError("permission-denied", "Referenced media is not accessible.");
+    }
+    const title = readTrimmedString(data.fileName, 300) || readTrimmedString(data.name, 300) || "Media";
+    const coverUrl = readTrimmedString(data.url, 2048) || readTrimmedString(data.downloadUrl, 2048);
+
+    return {
+      type: "media",
+      entityId: attachment.entityId,
+      title,
+      ...(coverUrl ? { coverUrl } : {}),
+    };
+  }
+
   const quoteSnap = await transaction.get(
     db.collection(SOCIAL_QUOTE_PROJECTION_COLLECTION).doc(attachment.entityId)
   );
@@ -318,7 +551,7 @@ async function assertNoBlockRelationship(uid: string, peerUid: string): Promise<
   }
 }
 
-export const createDirectConversation = onCall({ cors: true }, async (request) => {
+export const createDirectConversation = onCall(DM_CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -332,6 +565,7 @@ export const createDirectConversation = onCall({ cors: true }, async (request) =
 
   await Promise.all([assertUserExists(uid), assertUserExists(peerUid)]);
   await assertNoBlockRelationship(uid, peerUid);
+  const initialStatus = await resolveInitialConversationStatus(uid, peerUid);
 
   const conversationId = conversationIdForUsers(uid, peerUid);
   const conversationRef = db.collection("conversations").doc(conversationId);
@@ -396,6 +630,10 @@ export const createDirectConversation = onCall({ cors: true }, async (request) =
       lastReadAtByUser,
       createdAt: now,
       updatedAt: now,
+      status: initialStatus,
+      requestedByUid: initialStatus === "request_pending" ? uid : null,
+      acceptedAt: initialStatus === "active" ? now : null,
+      declinedAt: null,
       version: 1,
     } satisfies ConversationDoc);
   });
@@ -403,7 +641,7 @@ export const createDirectConversation = onCall({ cors: true }, async (request) =
   return { conversationId };
 });
 
-export const listDirectConversations = onCall({ cors: true }, async (request) => {
+export const listDirectConversations = onCall(DM_CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -414,6 +652,7 @@ export const listDirectConversations = onCall({ cors: true }, async (request) =>
     MAX_CONVERSATION_LIST_LIMIT,
     MAX_CONVERSATION_LIST_LIMIT
   );
+  const folder = normalizeConversationFolder((request.data as { folder?: unknown })?.folder);
 
   const snap = await db
     .collection("conversations")
@@ -430,6 +669,13 @@ export const listDirectConversations = onCall({ cors: true }, async (request) =>
         : [];
       const contactId = participantIds.find((id) => id !== uid);
       if (!contactId) {
+        return null;
+      }
+      const status = conversationStatus(data);
+      const requestedByUid = typeof data.requestedByUid === "string" ? data.requestedByUid : null;
+      if (folder === "requests") {
+        if (status !== "request_pending" || requestedByUid === uid) return null;
+      } else if (status !== "active") {
         return null;
       }
 
@@ -456,6 +702,8 @@ export const listDirectConversations = onCall({ cors: true }, async (request) =>
         lastMessage: typeof data.lastMessageText === "string" ? data.lastMessageText : "",
         timestamp: toIsoString(data.lastMessageAt ?? data.updatedAt ?? data.createdAt),
         unreadCount,
+        status,
+        requestedByUid,
       };
     })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -463,7 +711,7 @@ export const listDirectConversations = onCall({ cors: true }, async (request) =>
   return { conversations };
 });
 
-export const listDirectMessages = onCall({ cors: true }, async (request) => {
+export const listDirectMessages = onCall(DM_CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -542,7 +790,7 @@ export const listDirectMessages = onCall({ cors: true }, async (request) => {
   return { messages };
 });
 
-export const sendDirectMessage = onCall({ cors: true }, async (request) => {
+export const sendDirectMessage = onCall(DM_CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -598,17 +846,27 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
     if (!peerUid) {
       throw new HttpsError("failed-precondition", "Invalid direct conversation.");
     }
+    const status = conversationStatus(conversation);
+    const requestedByUid =
+      typeof conversation.requestedByUid === "string" ? conversation.requestedByUid : null;
+    if (status === "request_declined") {
+      throw new HttpsError("failed-precondition", "Direct message request was declined.");
+    }
+    const shouldAcceptPendingRequest =
+      status === "request_pending" && requestedByUid !== null && requestedByUid !== uid;
 
     const attachmentSnapshot = attachment
       ? await resolveAttachmentSnapshot(transaction, attachment, uid)
       : null;
 
-    const [dedupeSnap, rateSnap, senderBlocksPeerSnap, peerBlocksSenderSnap] =
+    const prefRef = db.collection("notification_preferences").doc(peerUid);
+    const [dedupeSnap, rateSnap, senderBlocksPeerSnap, peerBlocksSenderSnap, prefSnap] =
       await Promise.all([
         transaction.get(dedupeRef),
         transaction.get(rateRef),
         transaction.get(db.collection("users").doc(uid).collection("blocks").doc(peerUid)),
         transaction.get(db.collection("users").doc(peerUid).collection("blocks").doc(uid)),
+        transaction.get(prefRef),
       ]);
 
     if (senderBlocksPeerSnap.exists || peerBlocksSenderSnap.exists) {
@@ -686,13 +944,9 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
     const senderName = senderProfile.name || "Someone";
     const conversationPreviewText =
       text ||
-      (attachmentSnapshot?.type === "publication"
-        ? "Shared a publication"
-        : attachmentSnapshot?.type === "book"
-          ? "Shared a book"
-          : attachmentSnapshot?.type === "quote"
-            ? "Shared a quote"
-          : "");
+      (attachmentSnapshot
+        ? `Shared ${attachmentSnapshot.type === "author" ? "an" : "a"} ${attachmentSnapshot.type}`
+        : "");
 
     transaction.set(messageRef, {
       senderId: uid,
@@ -718,12 +972,16 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
         unreadCounts,
         lastReadAtByUser,
         updatedAt: now,
+        ...(shouldAcceptPendingRequest
+          ? {
+              status: "active",
+              acceptedAt: now,
+              declinedAt: null,
+            }
+          : {}),
       },
       { merge: true }
     );
-
-    const prefRef = db.collection("notification_preferences").doc(peerUid);
-    const prefSnap = await transaction.get(prefRef);
 
     let canSendInAppNotification = true;
     if (prefSnap.exists) {
@@ -822,7 +1080,7 @@ export const sendDirectMessage = onCall({ cors: true }, async (request) => {
   return result;
 });
 
-export const markDirectConversationRead = onCall({ cors: true }, async (request) => {
+export const markDirectConversationRead = onCall(DM_CALLABLE_OPTIONS, async (request) => {
   if (!request.auth) {
     throw new HttpsError("unauthenticated", "Authentication required.");
   }
@@ -873,8 +1131,269 @@ export const markDirectConversationRead = onCall({ cors: true }, async (request)
     );
   });
 
+  const unreadNotificationsSnap = await db
+    .collection("notifications")
+    .where("uid", "==", uid)
+    .where("type", "==", "dm")
+    .where("entityId", "==", conversationId)
+    .where("read", "==", false)
+    .limit(DM_NOTIFICATION_CLEAR_LIMIT)
+    .get();
+
+  if (!unreadNotificationsSnap.empty) {
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    const batch = db.batch();
+    unreadNotificationsSnap.docs.forEach((docSnap) => {
+      batch.update(docSnap.ref, {
+        read: true,
+        readAt: now,
+      });
+    });
+    batch.set(
+      db.collection("users").doc(uid).collection("meta").doc("unread"),
+      {
+        notificationsCount: admin.firestore.FieldValue.increment(-unreadNotificationsSnap.docs.length),
+        lastUpdatedAt: now,
+      },
+      { merge: true }
+    );
+    batch.set(
+      notificationSummaryRef(uid),
+      buildNotificationSummaryPatch({
+        unreadCount: admin.firestore.FieldValue.increment(-unreadNotificationsSnap.docs.length),
+        lastReadAt: now,
+      }),
+      { merge: true }
+    );
+    await batch.commit();
+  }
+
   return {
     conversationId,
     unreadCount: 0,
+    clearedNotificationCount: unreadNotificationsSnap.docs.length,
   };
+});
+
+export const acceptDirectMessageRequest = onCall(DM_CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const conversationId = normalizeUid(
+    (request.data as { conversationId?: unknown })?.conversationId,
+    "conversationId"
+  );
+  const conversationRef = db.collection("conversations").doc(conversationId);
+
+  await db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(conversationRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Conversation not found.");
+    }
+    const data = snap.data() as Partial<ConversationDoc>;
+    const participantSet =
+      data.participantSet && typeof data.participantSet === "object"
+        ? (data.participantSet as Record<string, unknown>)
+        : {};
+    if (participantSet[uid] !== true) {
+      throw new HttpsError("permission-denied", "Not a conversation participant.");
+    }
+    if (conversationStatus(data) !== "request_pending") {
+      throw new HttpsError("failed-precondition", "Conversation is not a pending request.");
+    }
+    if (data.requestedByUid === uid) {
+      throw new HttpsError("failed-precondition", "Requester cannot accept their own request.");
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(
+      conversationRef,
+      {
+        status: "active",
+        acceptedAt: now,
+        declinedAt: null,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+
+  return { conversationId, status: "active" };
+});
+
+export const declineDirectMessageRequest = onCall(DM_CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+
+  const uid = request.auth.uid;
+  const conversationId = normalizeUid(
+    (request.data as { conversationId?: unknown })?.conversationId,
+    "conversationId"
+  );
+  const conversationRef = db.collection("conversations").doc(conversationId);
+
+  await db.runTransaction(async (transaction) => {
+    const snap = await transaction.get(conversationRef);
+    if (!snap.exists) {
+      throw new HttpsError("not-found", "Conversation not found.");
+    }
+    const data = snap.data() as Partial<ConversationDoc>;
+    const participantSet =
+      data.participantSet && typeof data.participantSet === "object"
+        ? (data.participantSet as Record<string, unknown>)
+        : {};
+    if (participantSet[uid] !== true) {
+      throw new HttpsError("permission-denied", "Not a conversation participant.");
+    }
+    if (conversationStatus(data) !== "request_pending") {
+      throw new HttpsError("failed-precondition", "Conversation is not a pending request.");
+    }
+    if (data.requestedByUid === uid) {
+      throw new HttpsError("failed-precondition", "Requester cannot decline their own request.");
+    }
+
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(
+      conversationRef,
+      {
+        status: "request_declined",
+        declinedAt: now,
+        updatedAt: now,
+      },
+      { merge: true }
+    );
+  });
+
+  return { conversationId, status: "request_declined" };
+});
+
+export const reportDirectMessage = onCall(DM_CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const uid = request.auth.uid;
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const conversationId = normalizeUid(data.conversationId, "conversationId");
+  const messageId = normalizeUid(data.messageId, "messageId");
+  const reason = normalizeReportReason(data.reason);
+  const details = normalizeOptionalReportDetails(data.details);
+
+  const conversationRef = db.collection("conversations").doc(conversationId);
+  const messageRef = conversationRef.collection("messages").doc(messageId);
+  const reportRef = db.collection("reports").doc(`dm_${uid}_${conversationId}_${messageId}`);
+
+  await db.runTransaction(async (transaction) => {
+    const [conversationSnap, messageSnap, reportSnap] = await Promise.all([
+      transaction.get(conversationRef),
+      transaction.get(messageRef),
+      transaction.get(reportRef),
+    ]);
+    if (!conversationSnap.exists || !messageSnap.exists) {
+      throw new HttpsError("not-found", "Message not found.");
+    }
+    const conversation = conversationSnap.data() as Partial<ConversationDoc>;
+    const participantSet =
+      conversation.participantSet && typeof conversation.participantSet === "object"
+        ? (conversation.participantSet as Record<string, unknown>)
+        : {};
+    if (participantSet[uid] !== true) {
+      throw new HttpsError("permission-denied", "Not a conversation participant.");
+    }
+    if (reportSnap.exists) return;
+
+    const message = messageSnap.data() as Record<string, unknown>;
+    const senderId = readTrimmedString(message.senderId, 128);
+    const participantIds = Array.isArray(conversation.participantIds)
+      ? conversation.participantIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const recipientId = participantIds.find((id) => id !== senderId) || "";
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(reportRef, {
+      entityType: "direct_message",
+      entityId: messageId,
+      conversationId,
+      messageId,
+      reportedByUid: uid,
+      reason,
+      details,
+      status: "open",
+      evidence: {
+        text: typeof message.text === "string" ? message.text : "",
+        senderId,
+        recipientId,
+        conversationId,
+        messageId,
+        createdAt: message.createdAt ?? null,
+        attachment: normalizeStoredAttachment(message.attachment) ?? null,
+      },
+      createdAt: now,
+      updatedAt: now,
+      version: "1.0",
+    });
+  });
+
+  return { success: true };
+});
+
+export const reportConversation = onCall(DM_CALLABLE_OPTIONS, async (request) => {
+  if (!request.auth) {
+    throw new HttpsError("unauthenticated", "Authentication required.");
+  }
+  const uid = request.auth.uid;
+  const data = (request.data ?? {}) as Record<string, unknown>;
+  const conversationId = normalizeUid(data.conversationId, "conversationId");
+  const reason = normalizeReportReason(data.reason);
+  const details = normalizeOptionalReportDetails(data.details);
+
+  const conversationRef = db.collection("conversations").doc(conversationId);
+  const reportRef = db.collection("reports").doc(`dm_conversation_${uid}_${conversationId}`);
+
+  await db.runTransaction(async (transaction) => {
+    const [conversationSnap, reportSnap] = await Promise.all([
+      transaction.get(conversationRef),
+      transaction.get(reportRef),
+    ]);
+    if (!conversationSnap.exists) {
+      throw new HttpsError("not-found", "Conversation not found.");
+    }
+    const conversation = conversationSnap.data() as Partial<ConversationDoc>;
+    const participantSet =
+      conversation.participantSet && typeof conversation.participantSet === "object"
+        ? (conversation.participantSet as Record<string, unknown>)
+        : {};
+    if (participantSet[uid] !== true) {
+      throw new HttpsError("permission-denied", "Not a conversation participant.");
+    }
+    if (reportSnap.exists) return;
+
+    const participantIds = Array.isArray(conversation.participantIds)
+      ? conversation.participantIds.filter((id): id is string => typeof id === "string")
+      : [];
+    const now = admin.firestore.FieldValue.serverTimestamp();
+    transaction.set(reportRef, {
+      entityType: "direct_conversation",
+      entityId: conversationId,
+      conversationId,
+      reportedByUid: uid,
+      participantIds,
+      reason,
+      details,
+      status: "open",
+      evidence: {
+        conversationId,
+        participantIds,
+        lastMessageText: conversation.lastMessageText ?? "",
+        lastMessageAt: conversation.lastMessageAt ?? null,
+        lastMessageSenderId: conversation.lastMessageSenderId ?? null,
+      },
+      createdAt: now,
+      updatedAt: now,
+      version: "1.0",
+    });
+  });
+
+  return { success: true };
 });

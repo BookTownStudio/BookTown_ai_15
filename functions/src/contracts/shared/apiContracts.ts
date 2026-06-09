@@ -1756,6 +1756,8 @@ const directConversationSchema = z
     lastMessage: z.string().max(2000),
     timestamp: z.string().min(1),
     unreadCount: z.number().int().nonnegative(),
+    status: z.enum(["active", "request_pending", "request_declined"]).optional(),
+    requestedByUid: z.string().min(1).nullable().optional(),
   })
   .strict();
 
@@ -1768,12 +1770,15 @@ const directMessageSchema = z
     text: z.string().max(2000),
     attachment: z
       .object({
-        type: z.enum(["book", "publication", "quote"]),
+        type: z.enum(["book", "author", "shelf", "quote", "media", "venue", "publication"]),
         entityId: z.string().min(1),
         title: z.string().max(300).optional(),
         author: z.string().max(300).optional(),
         coverUrl: z.string().max(2048).optional(),
         canonicalSlug: z.string().min(1).max(160).optional(),
+        ownerId: z.string().min(1).max(128).optional(),
+        bookCount: z.number().int().nonnegative().optional(),
+        covers: z.array(z.string().max(2048)).max(4).optional(),
         quoteOwnerId: z.string().min(1).max(128).optional(),
         quoteText: z.string().max(600).optional(),
       })
@@ -2779,6 +2784,7 @@ export const apiContracts = {
       z
         .object({
           limit: z.number().int().positive().max(50).optional(),
+          folder: z.enum(["inbox", "requests"]).optional(),
         })
         .strict()
         .optional(),
@@ -2818,7 +2824,7 @@ export const apiContracts = {
           text: z.string().max(2000).optional(),
           attachment: z
             .object({
-              type: z.enum(["book", "publication", "quote"]),
+              type: z.enum(["book", "author", "shelf", "quote", "media", "venue", "publication"]),
               entityId: z.string().min(1),
             })
             .strict()
@@ -2850,11 +2856,87 @@ export const apiContracts = {
         .object({
           conversationId: z.string().min(1),
           unreadCount: z.number().int().nonnegative(),
+          clearedNotificationCount: z.number().int().nonnegative().optional(),
         })
         .strict(),
       "httpsCallable",
       {
         callSites: ["lib/hooks/useMessenger.ts", "app/messenger/[id].tsx"],
+      }
+    ),
+
+    acceptDirectMessageRequest: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          conversationId: z.string().min(1),
+          status: z.literal("active"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    declineDirectMessageRequest: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+        })
+        .strict(),
+      z
+        .object({
+          conversationId: z.string().min(1),
+          status: z.literal("request_declined"),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["lib/hooks/useMessenger.ts", "services/firebaseDbService.ts"],
+      }
+    ),
+
+    reportDirectMessage: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+          messageId: z.string().min(1),
+          reason: z.enum(["spam", "harassment", "hate_speech", "scam", "copyright", "other"]),
+          details: z.string().max(1000).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
+      }
+    ),
+
+    reportConversation: defineContract(
+      z
+        .object({
+          conversationId: z.string().min(1),
+          reason: z.enum(["spam", "harassment", "hate_speech", "scam", "copyright", "other"]),
+          details: z.string().max(1000).optional(),
+        })
+        .strict(),
+      z
+        .object({
+          success: z.boolean(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: ["services/firebaseDbService.ts"],
       }
     ),
 

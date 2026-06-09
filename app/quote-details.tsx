@@ -19,8 +19,9 @@ const QuoteDetailsScreen: React.FC = () => {
     const { showToast } = useToast();
 
     const quoteId = currentView.type === 'immersive' ? currentView.params?.quoteId : undefined;
+    const ownerId = currentView.type === 'immersive' ? currentView.params?.ownerId : undefined;
 
-    const { data: quote, isLoading } = useQuoteDetails(quoteId);
+    const { data: quote, isLoading } = useQuoteDetails(quoteId, ownerId);
     const { mutate: saveQuote, isPending: isSaving } = useSaveQuote();
 
     const handleBack = () => {

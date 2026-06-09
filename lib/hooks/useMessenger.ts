@@ -4,12 +4,13 @@ import { dataService } from '../../services/dataService.ts';
 import { useAuth } from '../auth.tsx';
 import { Conversation, DirectMessage } from '../../types/entities.ts';
 
-export const useConversations = () => {
+export const useConversations = (folder: 'inbox' | 'requests' = 'inbox') => {
     const { user } = useAuth();
     const uid = user?.uid;
+    const normalizedFolder = folder === 'requests' ? 'requests' : 'inbox';
     return useQuery<Conversation[]>({
-        queryKey: ['conversations', uid],
-        queryFn: () => dataService.messaging.getConversations(uid!),
+        queryKey: ['conversations', uid, normalizedFolder],
+        queryFn: () => dataService.messaging.getConversations(uid!, normalizedFolder),
         enabled: !!uid,
         staleTime: 5_000,
         refetchInterval: 5_000,
@@ -41,7 +42,7 @@ export const useSendMessage = (conversationId: string | undefined) => {
         }: {
             text: string;
             idempotencyKey: string;
-            attachment?: { type: 'book' | 'publication' | 'quote'; entityId: string };
+            attachment?: { type: 'book' | 'author' | 'shelf' | 'quote' | 'media' | 'venue' | 'publication'; entityId: string };
         }) => {
             if (!uid) throw new Error("Not authenticated");
             if (!conversationId) throw new Error("Missing conversationId");
@@ -88,6 +89,38 @@ export const useMarkConversationRead = () => {
         },
         onSuccess: (_, conversationId) => {
             queryClient.invalidateQueries({ queryKey: ['messages', uid, conversationId] });
+            queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
+        },
+    });
+};
+
+export const useAcceptMessageRequest = () => {
+    const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation({
+        mutationFn: async (conversationId: string) => {
+            if (!uid) throw new Error("Not authenticated");
+            return dataService.messaging.acceptMessageRequest(uid, conversationId);
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
+        },
+    });
+};
+
+export const useDeclineMessageRequest = () => {
+    const queryClient = useQueryClient();
+    const { user } = useAuth();
+    const uid = user?.uid;
+
+    return useMutation({
+        mutationFn: async (conversationId: string) => {
+            if (!uid) throw new Error("Not authenticated");
+            return dataService.messaging.declineMessageRequest(uid, conversationId);
+        },
+        onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ['conversations', uid] });
         },
     });

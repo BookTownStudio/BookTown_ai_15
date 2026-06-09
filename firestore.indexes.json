@@ -557,6 +557,24 @@
       ]
     },
     {
+      "collectionGroup": "longform_publications",
+      "queryScope": "COLLECTION",
+      "fields": [
+        {
+          "fieldPath": "ownerUid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "publicationType",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "lastPublishedAt",
+          "order": "DESCENDING"
+        }
+      ]
+    },
+    {
       "collectionGroup": "reports",
       "queryScope": "COLLECTION",
       "fields": [

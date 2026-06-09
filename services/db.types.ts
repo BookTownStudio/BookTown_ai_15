@@ -689,16 +689,18 @@ export interface VenueDataService {
    ========================= */
 export interface MessagingDataService {
   createConversation(uid: string, peerUid: string): Promise<string>;
-  getConversations(uid: string): Promise<Conversation[]>;
+  getConversations(uid: string, folder?: 'inbox' | 'requests'): Promise<Conversation[]>;
   getChatHistory(conversationId: string): Promise<DirectMessage[]>;
   sendMessage(
     uid: string,
     conversationId: string,
     text: string,
     idempotencyKey: string,
-    attachment?: { type: 'book' | 'publication' | 'quote'; entityId: string }
+    attachment?: { type: 'book' | 'author' | 'shelf' | 'quote' | 'media' | 'venue' | 'publication'; entityId: string }
   ): Promise<{ conversationId: string; messageId: string }>;
   markConversationRead(uid: string, conversationId: string): Promise<void>;
+  acceptMessageRequest(uid: string, conversationId: string): Promise<void>;
+  declineMessageRequest(uid: string, conversationId: string): Promise<void>;
 }
 
 /* =========================

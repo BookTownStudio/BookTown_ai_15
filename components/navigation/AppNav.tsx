@@ -10,6 +10,7 @@ import { EmailIcon } from '../icons/EmailIcon.tsx';
 import { MessageSquareWarningIcon } from '../icons/MessageSquareWarningIcon.tsx';
 import { ChevronLeftIcon } from '../icons/ChevronLeftIcon.tsx';
 import { useNotificationSummary } from '../../lib/hooks/useNotifications.ts';
+import { useConversations } from '../../lib/hooks/useMessenger.ts';
 import { isBetaFeedbackTriggerEnabled } from '../../lib/featureFlags.ts';
 import { useFeedbackLauncher } from '../../lib/feedback/useFeedbackLauncher.ts';
 
@@ -24,10 +25,16 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
   const { isRTL, lang } = useI18n();
   const { openDrawer, navigate, currentView } = useNavigation();
   const { data: notificationSummary } = useNotificationSummary();
+  const { data: dmConversations } = useConversations('inbox');
   const launchFeedback = useFeedbackLauncher();
 
   const unreadCount = notificationSummary?.unreadCount ?? 0;
   const showBadge = unreadCount > 0;
+  const dmUnreadCount = (dmConversations || []).reduce(
+    (total, conversation) => total + Math.max(0, conversation.unreadCount || 0),
+    0
+  );
+  const showDmBadge = dmUnreadCount > 0;
   const showBetaFeedback = isBetaFeedbackTriggerEnabled();
   const showLeftFeedback =
     showBetaFeedback &&
@@ -87,9 +94,16 @@ const AppNav: React.FC<AppNavProps> = ({ titleEn, titleAr, showBackButton = fals
                             </div>
                         )}
                     </div>
-                    <Button variant="icon" aria-label={lang === 'en' ? 'Messages' : 'الرسائل'} onClick={() => navigate({ type: 'immersive', id: 'messengerList', params: { from: currentView } })}>
-                        <EmailIcon className="h-6 w-6" />
-                    </Button>
+                    <div className="relative">
+                        <Button variant="icon" aria-label={lang === 'en' ? 'Messages' : 'الرسائل'} onClick={() => navigate({ type: 'immersive', id: 'messengerList', params: { from: currentView } })}>
+                            <EmailIcon className="h-6 w-6" />
+                        </Button>
+                        {showDmBadge && (
+                            <div className="absolute top-2 right-1 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold text-white shadow-sm pointer-events-none ring-2 ring-white dark:ring-slate-900 z-30">
+                                {dmUnreadCount > 99 ? '99+' : dmUnreadCount}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
         </div>

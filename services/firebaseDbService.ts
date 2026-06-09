@@ -2448,13 +2448,15 @@ class FirebaseMessagingService {
     return data.conversationId;
   }
 
-  async getConversations(uid: string): Promise<Conversation[]> {
+  async getConversations(uid: string, folder: "inbox" | "requests" = "inbox"): Promise<Conversation[]> {
     ensureNonEmptyString(uid, "uid", 128);
+    const normalizedFolder = folder === "requests" ? "requests" : "inbox";
     const data = await callEndpoint<
-      { limit: number },
+      { limit: number; folder: "inbox" | "requests" },
       { conversations: Conversation[] }
     >("listDirectConversations", {
       limit: 50,
+      folder: normalizedFolder,
     });
 
     if (!Array.isArray(data.conversations)) {
@@ -2478,6 +2480,14 @@ class FirebaseMessagingService {
         typeof conversation.unreadCount === "number" && conversation.unreadCount > 0
           ? Math.floor(conversation.unreadCount)
           : 0,
+      ...(conversation.status === "request_pending" ||
+      conversation.status === "request_declined" ||
+      conversation.status === "active"
+        ? { status: conversation.status }
+        : {}),
+      ...(typeof conversation.requestedByUid === "string"
+        ? { requestedByUid: conversation.requestedByUid }
+        : {}),
     }));
   }
 
@@ -2510,8 +2520,12 @@ class FirebaseMessagingService {
       ...(message.attachment &&
       typeof message.attachment === "object" &&
       (message.attachment.type === "book" ||
-        message.attachment.type === "publication" ||
-        message.attachment.type === "quote") &&
+        message.attachment.type === "author" ||
+        message.attachment.type === "shelf" ||
+        message.attachment.type === "quote" ||
+        message.attachment.type === "media" ||
+        message.attachment.type === "venue" ||
+        message.attachment.type === "publication") &&
       typeof message.attachment.entityId === "string" &&
       message.attachment.entityId.trim()
         ? {
@@ -2533,6 +2547,17 @@ class FirebaseMessagingService {
               ...(typeof message.attachment.canonicalSlug === "string" &&
               message.attachment.canonicalSlug.trim()
                 ? { canonicalSlug: message.attachment.canonicalSlug.trim() }
+                : {}),
+              ...(typeof message.attachment.ownerId === "string" &&
+              message.attachment.ownerId.trim()
+                ? { ownerId: message.attachment.ownerId.trim() }
+                : {}),
+              ...(typeof message.attachment.bookCount === "number" &&
+              Number.isFinite(message.attachment.bookCount)
+                ? { bookCount: Math.max(0, Math.trunc(message.attachment.bookCount)) }
+                : {}),
+              ...(Array.isArray(message.attachment.covers)
+                ? { covers: message.attachment.covers.filter((cover): cover is string => typeof cover === "string" && cover.trim().length > 0).slice(0, 4) }
                 : {}),
               ...(typeof message.attachment.quoteOwnerId === "string" &&
               message.attachment.quoteOwnerId.trim()
@@ -2560,7 +2585,7 @@ class FirebaseMessagingService {
     conversationId: string,
     text: string,
     idempotencyKey: string,
-    attachment?: { type: "book" | "publication" | "quote"; entityId: string }
+    attachment?: { type: "book" | "author" | "shelf" | "quote" | "media" | "venue" | "publication"; entityId: string }
   ): Promise<{ conversationId: string; messageId: string }> {
     ensureNonEmptyString(uid, "uid", 128);
     const normalizedConversationId = ensureNonEmptyString(
@@ -2578,6 +2603,10 @@ class FirebaseMessagingService {
     const normalizedAttachment =
       attachment &&
       (attachment.type === "book" ||
+        attachment.type === "author" ||
+        attachment.type === "shelf" ||
+        attachment.type === "media" ||
+        attachment.type === "venue" ||
         attachment.type === "publication" ||
         attachment.type === "quote") &&
       typeof attachment.entityId === "string" &&
@@ -2595,7 +2624,7 @@ class FirebaseMessagingService {
       {
         conversationId: string;
         text?: string;
-        attachment?: { type: "book" | "publication" | "quote"; entityId: string };
+        attachment?: { type: "book" | "author" | "shelf" | "quote" | "media" | "venue" | "publication"; entityId: string };
         idempotencyKey: string;
       },
       { conversationId: string; messageId: string }
@@ -2629,6 +2658,38 @@ class FirebaseMessagingService {
 
     await callEndpoint<{ conversationId: string }, { conversationId: string; unreadCount: number }>(
       "markDirectConversationRead",
+      {
+        conversationId: normalizedConversationId,
+      }
+    );
+  }
+
+  async acceptMessageRequest(uid: string, conversationId: string): Promise<void> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedConversationId = ensureNonEmptyString(
+      conversationId,
+      "conversationId",
+      190
+    );
+
+    await callEndpoint<{ conversationId: string }, { conversationId: string; status: "active" }>(
+      "acceptDirectMessageRequest",
+      {
+        conversationId: normalizedConversationId,
+      }
+    );
+  }
+
+  async declineMessageRequest(uid: string, conversationId: string): Promise<void> {
+    ensureNonEmptyString(uid, "uid", 128);
+    const normalizedConversationId = ensureNonEmptyString(
+      conversationId,
+      "conversationId",
+      190
+    );
+
+    await callEndpoint<{ conversationId: string }, { conversationId: string; status: "request_declined" }>(
+      "declineDirectMessageRequest",
       {
         conversationId: normalizedConversationId,
       }
