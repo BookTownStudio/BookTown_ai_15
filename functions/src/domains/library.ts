@@ -6,6 +6,7 @@ import { backfillAuthorMetadata as backfillAuthorMetadataRaw } from "../library/
 import { backfillSeedAuthorSourceMetadata as backfillSeedAuthorSourceMetadataRaw } from "../library/backfillSeedAuthorSourceMetadata";
 import { uploadUserBook as uploadUserBookRaw } from "../library/uploadUserBook";
 import { finalizeUserUpload as finalizeUserUploadRaw } from "../library/finalizeUserUpload";
+import { deleteUserUploadBook as deleteUserUploadBookRaw } from "../library/deleteUserUploadBook";
 import {
   finalizeGoodreadsImport as finalizeGoodreadsImportRaw,
   processGoodreadsImportSessions,
@@ -16,6 +17,8 @@ import { backfillMissingCovers as backfillMissingCoversRaw } from "../library/ba
 import { backfillUserUploadCoverJobs as backfillUserUploadCoverJobsRaw } from "../library/backfillUserUploadCoverJobs";
 import { submitRefineryArtifacts as submitRefineryArtifactsRaw } from "../library/submitRefineryArtifacts";
 import { processUserUploadCoverJobs } from "../library/processUserUploadCoverJobs";
+import { processUserUploadCanonicalCandidateJobs } from "../library/processUserUploadCanonicalCandidateJobs";
+import { processUserUploadMetadataJobs } from "../library/processUserUploadMetadataJobs";
 import { processCoverJobs } from "../library/processCoverJobs";
 import { duplicateShelf as duplicateShelfRaw } from "../shelves/duplicateShelf";
 import { addBookToShelf as addBookToShelfRaw } from "../shelves/addBookToShelf";
@@ -39,6 +42,7 @@ export const backfillSeedAuthorSourceMetadata = wrapCallableV2("backfillSeedAuth
 export const ingestBook = wrapCallableV2("ingestBook", ingestBookRaw);
 export const uploadUserBook = wrapCallableV2("uploadUserBook", uploadUserBookRaw);
 export const finalizeUserUpload = wrapCallableV2("finalizeUserUpload", finalizeUserUploadRaw);
+export const deleteUserUploadBook = wrapCallableV2("deleteUserUploadBook", deleteUserUploadBookRaw);
 export const startGoodreadsImport = wrapCallableV2("startGoodreadsImport", startGoodreadsImportRaw);
 export const finalizeGoodreadsImport = wrapCallableV2("finalizeGoodreadsImport", finalizeGoodreadsImportRaw);
 export { processGoodreadsImportSessions };
@@ -47,6 +51,8 @@ export const backfillMissingCovers = wrapCallableV2("backfillMissingCovers", bac
 export const backfillUserUploadCoverJobs = wrapCallableV2("backfillUserUploadCoverJobs", backfillUserUploadCoverJobsRaw);
 export const submitRefineryArtifacts = wrapCallableV2("submitRefineryArtifacts", submitRefineryArtifactsRaw);
 export { processUserUploadCoverJobs };
+export { processUserUploadCanonicalCandidateJobs };
+export { processUserUploadMetadataJobs };
 export { processCoverJobs };
 export const duplicateShelf = wrapCallableV2("duplicateShelf", duplicateShelfRaw);
 export const addBookToShelf = wrapCallableV2("addBookToShelf", addBookToShelfRaw);

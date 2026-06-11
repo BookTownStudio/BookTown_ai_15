@@ -186,9 +186,28 @@ export const uploadUserBook = onCall<UploadUserBookRequest>(
             fileType,
             fileSize,
             storagePath,
+            uploadFinalized: false,
             rightsMode: "private",
             visibility: "private",
             publicationState: "uploaded",
+            ...(fileType === "epub"
+              ? {
+                  uploadMetadata: {
+                    status: "pending",
+                    lastProcessedAt: null,
+                    failureReason: null,
+                    source: "epub_opf",
+                  },
+                  canonicalCandidate: {
+                    status: "none",
+                    confidence: 0,
+                    reason: "",
+                    canonicalBookId: null,
+                    canonicalEditionId: null,
+                    matchedAt: null,
+                  },
+                }
+              : {}),
           },
           createEdition: true,
           explicitEditionId: `uploaded:${bookId}`,

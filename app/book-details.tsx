@@ -22,6 +22,7 @@ import Button from '../components/ui/Button.tsx';
 import BilingualText from '../components/ui/BilingualText.tsx';
 import ReviewCard from '../components/content/ReviewCard.tsx';
 import SelectShelfModal from '../components/modals/SelectShelfModal.tsx';
+import ConfirmDeleteModal from '../components/modals/ConfirmDeleteModal.tsx';
 import StarRatingInput from '../components/ui/StarRatingInput.tsx';
 import GlassCard from '../components/ui/GlassCard.tsx';
 import CanonicalCoverArtwork from '../components/content/CanonicalCoverArtwork.tsx';
@@ -52,6 +53,8 @@ import { logBookEngineV2 } from '../lib/logging/bookEngineV2Log.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import type { GraphRelationshipType } from '../types/literaryGraph.ts';
 import { useReaderProgress } from '../lib/hooks/useReaderProgress.ts';
+import { useDeleteUserUploadBook } from '../lib/hooks/useDeleteUserUploadBook.ts';
+import { clearOfflineEbook } from './lib/offline/offlineManager.ts';
 
 const MAX_REVIEW_LENGTH = 750;
 const BOOK_PREPARE_TIMEOUT_MS = 12000;
@@ -130,6 +133,7 @@ const BookDetailsScreen: React.FC = () => {
   const { showToast } = useToast();
   const { user } = useAuth();
   const { mutate: toggleBook } = useToggleBookOnShelf();
+  const deleteUploadMutation = useDeleteUserUploadBook();
 
   const params =
     currentView.type === 'immersive'
@@ -157,6 +161,7 @@ const BookDetailsScreen: React.FC = () => {
   const [acquisitionSheetTrigger, setAcquisitionSheetTrigger] = useState<AcquisitionSheetTrigger>(null);
   const [isShareMenuOpen, setIsShareMenuOpen] = useState(false);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
+  const [isDeleteUploadModalOpen, setIsDeleteUploadModalOpen] = useState(false);
   const shareMenuRef = useRef<HTMLDivElement | null>(null);
   const shareButtonRef = useRef<HTMLButtonElement | null>(null);
   const ingestionStartedRef = useRef<string>('');
@@ -175,8 +180,12 @@ const BookDetailsScreen: React.FC = () => {
   const {
     isSavedOnPhysicalShelf = false,
   } = useBookShelfStatus(bookId);
+  const bookDetails = useMemo(
+    () => (book ? toBookDetailsRuntimeDTO(book) : null),
+    [book]
+  );
   const { data: semanticGraph } = useBookSemanticGraph(bookId, {
-    enabled: Boolean(bookId && book),
+    enabled: Boolean(bookId && bookDetails?.semanticGraphEligible === true),
     limit: 12,
   });
   
@@ -505,11 +514,17 @@ const BookDetailsScreen: React.FC = () => {
     setIsEditingReview(true);
   }, [reviewAction, existingUserReview]);
 
-  const bookDetails = useMemo(
-    () => (book ? toBookDetailsRuntimeDTO(book) : null),
-    [book]
-  );
   const hasReadableAttachment = hasReadableAttachmentAuthority(bookDetails);
+  const bookRecord =
+    book && typeof book === 'object'
+      ? (book as Record<string, unknown>)
+      : null;
+  const canDeleteUploadedBook = Boolean(
+    bookId &&
+      user?.uid &&
+      bookRecord?.source === 'user_upload' &&
+      bookRecord?.ownerUid === user.uid
+  );
   const hasActiveReadingProgress = Boolean(
     readerProgress?.exists &&
       (
@@ -630,6 +645,30 @@ const BookDetailsScreen: React.FC = () => {
         ? 'Book reporting is not available yet.'
         : 'الإبلاغ عن الكتب غير متاح بعد.'
     );
+  };
+
+  const handleOpenDeleteUpload = () => {
+    if (!canDeleteUploadedBook) return;
+    setIsMoreMenuOpen(false);
+    setIsDeleteUploadModalOpen(true);
+  };
+
+  const handleConfirmDeleteUpload = () => {
+    if (!bookId || !canDeleteUploadedBook) return;
+
+    deleteUploadMutation.mutate(bookId, {
+      onSuccess: () => {
+        void clearOfflineEbook(bookId).catch((error) => {
+          console.warn('[BOOK_DETAILS][DELETE_UPLOAD_OFFLINE_CLEANUP_FAILED]', error);
+        });
+        setIsDeleteUploadModalOpen(false);
+        showToast(lang === 'en' ? 'Uploaded book deleted.' : 'تم حذف الكتاب المرفوع.');
+        navigate({ type: 'tab', id: 'read' }, { replace: true });
+      },
+      onError: () => {
+        showToast(lang === 'en' ? 'Failed to delete uploaded book.' : 'فشل حذف الكتاب المرفوع.');
+      },
+    });
   };
 
   const handleShare = () => {
@@ -977,6 +1016,15 @@ const BookDetailsScreen: React.FC = () => {
               </Button>
               {isMoreMenuOpen && (
                 <div className="absolute right-0 mt-2 w-40 overflow-hidden rounded-xl border border-white/10 bg-slate-950/95 shadow-xl backdrop-blur-md">
+                  {canDeleteUploadedBook && (
+                    <button
+                      type="button"
+                      onClick={handleOpenDeleteUpload}
+                      className="w-full px-4 py-3 text-left text-sm font-semibold text-red-300 hover:bg-red-500/10"
+                    >
+                      {lang === 'en' ? 'Delete Upload' : 'حذف الملف المرفوع'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={handleReportBook}
@@ -1241,6 +1289,27 @@ const BookDetailsScreen: React.FC = () => {
         coverMode={displayBook?.coverMode}
         fallbackCover={displayBook?.fallbackCover}
         externalReadableSources={bookDetails?.externalReadableSources}
+      />
+      <ConfirmDeleteModal
+        isOpen={isDeleteUploadModalOpen}
+        onClose={() => setIsDeleteUploadModalOpen(false)}
+        onConfirm={handleConfirmDeleteUpload}
+        isDeleting={deleteUploadMutation.isPending}
+        itemName={
+          displayBook
+            ? lang === 'en'
+              ? displayBook.titleEn
+              : displayBook.titleAr || displayBook.titleEn
+            : ''
+        }
+        itemType={lang === 'en' ? 'uploaded book' : 'الكتاب المرفوع'}
+        titleText={lang === 'en' ? 'Delete uploaded book?' : 'حذف الكتاب المرفوع؟'}
+        bodyText={
+          lang === 'en'
+            ? 'Delete this uploaded book permanently? This will remove the EPUB, reading progress, highlights, bookmarks, covers, and all associated data.'
+            : 'هل تريد حذف هذا الكتاب المرفوع نهائيًا؟ سيؤدي ذلك إلى إزالة ملف EPUB وتقدم القراءة والتمييزات والإشارات المرجعية والأغلفة وكل البيانات المرتبطة.'
+        }
+        confirmLabel={lang === 'en' ? 'Delete Upload' : 'حذف الملف المرفوع'}
       />
     </PageTransition>
   );

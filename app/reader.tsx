@@ -399,6 +399,15 @@ const ReaderScreen: React.FC = () => {
     setIsChromeVisible((visible) => !visible);
   }, [pendingHighlightSelection]);
 
+  const handleChromeRestoreLayerClick = useCallback((event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const now = Date.now();
+    lastActivitySignalRef.current = now;
+    setReaderActivityAt(now);
+    setIsChromeVisible(true);
+  }, []);
+
   useEffect(() => {
     if (chromeAutoHideTimerRef.current) {
       clearTimeout(chromeAutoHideTimerRef.current);
@@ -1250,8 +1259,7 @@ const ReaderScreen: React.FC = () => {
   return renderReaderViewport(
     <div
       className={cn(
-        'reader-container h-full w-full flex flex-col overflow-hidden',
-        runtimeSelection.engine === 'web_epub' && 'pt-24 pb-20'
+        'reader-container h-full w-full flex flex-col overflow-hidden'
       )}
       style={{
         backgroundColor:
@@ -1323,6 +1331,32 @@ const ReaderScreen: React.FC = () => {
           />
         )}
       </div>
+
+      {!isChromeVisible && !isChromeAutoHideBlocked && (
+        readingMode === 'page' ? (
+          <button
+            type="button"
+            aria-label={lang === 'en' ? 'Show reader controls' : 'إظهار عناصر التحكم بالقارئ'}
+            className="fixed inset-0 z-[15] cursor-default bg-transparent p-0"
+            onClick={handleChromeRestoreLayerClick}
+          />
+        ) : (
+          <div className="fixed inset-y-0 left-0 right-0 z-[15] pointer-events-none">
+            <button
+              type="button"
+              aria-label={lang === 'en' ? 'Show reader controls' : 'إظهار عناصر التحكم بالقارئ'}
+              className="pointer-events-auto absolute inset-y-0 left-0 w-8 cursor-default bg-transparent p-0 sm:w-10"
+              onClick={handleChromeRestoreLayerClick}
+            />
+            <button
+              type="button"
+              aria-label={lang === 'en' ? 'Show reader controls' : 'إظهار عناصر التحكم بالقارئ'}
+              className="pointer-events-auto absolute inset-y-0 right-0 w-8 cursor-default bg-transparent p-0 sm:w-10"
+              onClick={handleChromeRestoreLayerClick}
+            />
+          </div>
+        )
+      )}
 
       <NarrationMicroPlayer
         isVisible={narration.status !== 'idle'}

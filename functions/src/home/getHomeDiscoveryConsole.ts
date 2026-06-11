@@ -4,6 +4,10 @@ import { FieldPath, Timestamp } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { isPublicReadableBook } from "../catalog/catalogBookView";
 import { canUserReadBook } from "../rights/bookRights";
+import {
+  isMatchMakerHomeDiscoveryEnabled,
+  runHomeMatchMakerDiscovery,
+} from "./matchmakerHomeIntegration";
 
 const db = admin.firestore();
 
@@ -1680,9 +1684,29 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
         run: () => hydrateEditorialTownSignals(townEditorialSlots, diagnostics),
       }),
     ]);
+    const matchMakerFeatureFlagState = isMatchMakerHomeDiscoveryEnabled();
+    const matchMakerDynamicDiscovery = runHomeMatchMakerDiscovery({
+      uid,
+      candidateItems: dynamicDiscovery,
+      generatedAt: new Date(startedAtMs).toISOString(),
+      featureFlagEnabled: matchMakerFeatureFlagState,
+    });
+    if (matchMakerDynamicDiscovery.usedMatchMaker) {
+      diagnostics.sourceBalance.matchmaker =
+        (diagnostics.sourceBalance.matchmaker ?? 0) +
+        matchMakerDynamicDiscovery.items.length;
+    } else if (
+      matchMakerFeatureFlagState &&
+      matchMakerDynamicDiscovery.fallbackReason !== "feature_flag_off"
+    ) {
+      diagnostics.fallbackActivations += 1;
+      diagnostics.subsystemFailures.matchmaker_home =
+        (diagnostics.subsystemFailures.matchmaker_home ?? 0) + 1;
+    }
+
     const safeContinueReading = sanitizeBookItems(continueReading, CONTINUE_LIMIT);
     const safeReadNow = sanitizeBookItems(readNow, READ_NOW_LIMIT);
-    const safeDynamicDiscovery = sanitizeBookItems(dynamicDiscovery, DYNAMIC_LIMIT);
+    const safeDynamicDiscovery = sanitizeBookItems(matchMakerDynamicDiscovery.items, DYNAMIC_LIMIT);
     const safeFromTheTown = sanitizeTownItems(fromTheTown, TOWN_LIMIT);
 
     const readNowMerged = mergeBookEditorial(
@@ -1844,6 +1868,15 @@ export const getHomeDiscoveryConsole = onCall({ cors: true }, async (request) =>
         partialPayload: diagnostics.partialPayload,
         fallbackActivations: diagnostics.fallbackActivations,
         subsystemFailures: diagnostics.subsystemFailures,
+      },
+      matchmakerHome: {
+        featureFlagState: matchMakerDynamicDiscovery.telemetry.featureFlagState,
+        usedMatchMaker: matchMakerDynamicDiscovery.usedMatchMaker,
+        outputCount: matchMakerDynamicDiscovery.telemetry.outputCount,
+        confidenceBands: matchMakerDynamicDiscovery.telemetry.confidenceBands,
+        evidenceSourceClasses: matchMakerDynamicDiscovery.telemetry.evidenceSourceClasses,
+        latencyBucket: matchMakerDynamicDiscovery.telemetry.latencyBucket,
+        fallbackReason: matchMakerDynamicDiscovery.telemetry.fallbackReason ?? null,
       },
     });
 

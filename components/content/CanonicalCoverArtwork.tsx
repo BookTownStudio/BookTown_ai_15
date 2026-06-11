@@ -1,5 +1,6 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { cn } from '../../lib/utils.ts';
+import { resolveCoverImageUrl } from '../../lib/books/coverUrls.ts';
 import type {
   CanonicalCoverMode,
   CanonicalFallbackCover,
@@ -54,15 +55,47 @@ export const CanonicalCoverArtwork: React.FC<CanonicalCoverArtworkProps> = ({
   alt,
   eyebrow,
 }) => {
+  const [resolvedImageUrl, setResolvedImageUrl] = useState('');
+  const [imageFailed, setImageFailed] = useState(false);
   const resolvedFallback = resolveFallbackCover(title, author, fallbackCover);
   const shouldRenderImage = Boolean(coverUrl && coverUrl.trim() && coverMode !== 'fallback_metadata');
 
-  if (shouldRenderImage) {
+  useEffect(() => {
+    let isCurrent = true;
+
+    setResolvedImageUrl('');
+    setImageFailed(false);
+
+    if (!shouldRenderImage || !coverUrl) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    resolveCoverImageUrl(coverUrl)
+      .then((url) => {
+        if (isCurrent) {
+          setResolvedImageUrl(url);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setResolvedImageUrl('');
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [coverUrl, shouldRenderImage]);
+
+  if (shouldRenderImage && resolvedImageUrl && !imageFailed) {
     return (
       <img
-        src={coverUrl}
+        src={resolvedImageUrl}
         alt={alt || title}
         className={cn('h-full w-full object-cover', imageClassName, className)}
+        onError={() => setImageFailed(true)}
       />
     );
   }

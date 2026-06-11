@@ -4,6 +4,7 @@ import { BookmarkType } from '../../types/entities.ts';
 import { queryKeys } from '../queryKeys.ts';
 import { dataService } from '../../services/dataService.ts';
 import { invalidateBookmarkConvergence } from '../socialCacheReconciliation.ts';
+import { toLiteraryEntityRefFromCompatIdentity } from '../../types/entityPlatformCompatibility.ts';
 
 interface BookmarkToggleVariables {
     entityId: string;
@@ -31,6 +32,7 @@ export const useBookmarkToggle = () => {
             if (type === 'attachment') {
                 throw new Error("Unsupported bookmark type");
             }
+            toLiteraryEntityRefFromCompatIdentity({ type, entityId });
 
             return dataService.social.toggleBookmark(uid, entityId, type, !isBookmarked);
         },

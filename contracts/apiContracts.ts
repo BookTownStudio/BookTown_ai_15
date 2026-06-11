@@ -1044,6 +1044,8 @@ const catalogCanonicalFallbackCoverSchema = z
 const catalogBookSchema = z
   .object({
     id: z.string().min(1),
+    source: z.string().max(64).optional(),
+    ownerUid: z.string().max(128).optional(),
     authorId: z.string(),
     title: z.string().max(300).optional(),
     titleEn: z.string().max(300),
@@ -1063,6 +1065,7 @@ const catalogBookSchema = z
     rating: z.number().nonnegative(),
     ratingsCount: z.number().int().nonnegative(),
     reviewCount: z.number().int().nonnegative().optional(),
+    semanticGraphEligible: z.boolean().optional(),
     isEbookAvailable: z.boolean(),
     publicationDate: z.string().max(64).optional(),
     pageCount: z.number().int().nonnegative().optional(),
@@ -1071,6 +1074,15 @@ const catalogBookSchema = z
     ebookAttachmentId: z.string().max(256).optional(),
     ebookStoragePath: z.string().max(2048).optional(),
     downloadable: z.boolean().optional(),
+    readerAuthority: z
+      .object({
+        hasReadableAttachment: z.boolean(),
+        attachmentId: z.string().max(256).nullable().optional(),
+        source: z.string().max(64).nullable().optional(),
+        updatedAt: z.unknown().optional(),
+      })
+      .strict()
+      .optional(),
     providerExternalIds: z.array(z.string().max(256)).max(32).optional(),
     externalReadableSources: z
       .array(
@@ -4021,6 +4033,31 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["services/bookUploadService.ts"],
+      }
+    ),
+
+    deleteUserUploadBook: defineContract(
+      z
+        .object({
+          bookId: z.string().min(1).max(128),
+        })
+        .strict(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          deleted: z.literal(true),
+          cascade: z
+            .object({
+              firestoreDocuments: z.number().int().nonnegative(),
+              sourceFiles: z.number().int().nonnegative(),
+              coverFiles: z.number().int().nonnegative(),
+            })
+            .strict(),
+        })
+        .strict(),
+      "httpsCallable",
+      {
+        callSites: [],
       }
     ),
 

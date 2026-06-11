@@ -654,28 +654,12 @@ function toLanguageMatchScore(languageTruth: SearchLanguageTruth): number {
   return languageTruth === "match" ? 1 : 0;
 }
 
-function hasCanonicalLegacyStoragePath(
-  bookId: string,
-  data: Record<string, unknown>
-): boolean {
-  const storagePath = asNonEmptyString(data.storagePath);
-  if (!storagePath) return false;
-
-  return (
-    storagePath.startsWith(`books/${bookId}/original/`) ||
-    storagePath.startsWith(`ebooks/${bookId}/`)
-  );
-}
-
 function computeCanonicalEbookClass(
-  bookId: string,
+  _bookId: string,
   data: Record<string, unknown>
 ): SearchEbookClass {
-  const hasVerifiedAttachment =
-    asNonEmptyString(data.ebookAttachmentId).length > 0 ||
-    asNonEmptyString(data.ebookStoragePath).length > 0 ||
-    hasCanonicalLegacyStoragePath(bookId, data);
-  return hasVerifiedAttachment ? "in_app" : "unavailable";
+  const readerAuthority = asRecord(data.readerAuthority);
+  return readerAuthority?.hasReadableAttachment === true ? "in_app" : "unavailable";
 }
 
 function computeExternalEbookClass(hasExternalEbookSignal: boolean): SearchEbookClass {
@@ -2218,10 +2202,10 @@ function mapCanonicalBook(
   const readerAuthoritySource = asNonEmptyString(readerAuthorityRaw?.source);
   const readerAuthorityUpdatedAt = asNonEmptyString(readerAuthorityRaw?.updatedAt);
   const readerAuthority =
-    readerAuthorityRaw?.hasReadableAttachment === true && readerAuthorityAttachmentId
+    readerAuthorityRaw?.hasReadableAttachment === true
       ? {
           hasReadableAttachment: true,
-          attachmentId: readerAuthorityAttachmentId,
+          attachmentId: readerAuthorityAttachmentId || null,
           ...(readerAuthoritySource ? { source: readerAuthoritySource } : {}),
           ...(readerAuthorityUpdatedAt ? { updatedAt: readerAuthorityUpdatedAt } : {}),
         }

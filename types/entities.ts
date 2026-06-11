@@ -261,6 +261,8 @@ export interface BookOntology {
 // Legacy UI-facing book view. Canonical identity remains work/edition based.
 export interface Book {
     id: string;
+    source?: string;
+    ownerUid?: string;
     authorId: string;
     title?: string;
     titleEn: string;
@@ -281,6 +283,7 @@ export interface Book {
     genresAr: string[];
     rating: number;
     ratingsCount: number;
+    semanticGraphEligible?: boolean;
     reviewCount?: number;
     isEbookAvailable: boolean;
     publicationDate?: string;

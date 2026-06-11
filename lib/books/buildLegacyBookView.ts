@@ -146,6 +146,8 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
 
   return {
     id,
+    ...(readString(seed.source) ? { source: readString(seed.source) } : {}),
+    ...(readString(seed.ownerUid) ? { ownerUid: readString(seed.ownerUid) } : {}),
     authorId:
       typeof seed.authorId === "string" && seed.authorId.trim().length > 0
         ? seed.authorId.trim()
@@ -182,6 +184,9 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
       typeof seed.ratingsCount === "number" && Number.isFinite(seed.ratingsCount)
         ? Math.max(0, Math.trunc(seed.ratingsCount))
         : 0,
+    ...(typeof seed.semanticGraphEligible === "boolean"
+      ? { semanticGraphEligible: seed.semanticGraphEligible }
+      : {}),
     isEbookAvailable: seed.isEbookAvailable === true || seed.hasEbook === true,
     ...(titleAlias
       ? { title: titleAlias }

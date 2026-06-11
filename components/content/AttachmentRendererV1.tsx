@@ -13,6 +13,7 @@ import { useNavigation } from '../../store/navigation.tsx';
 import { useAttachmentViewer } from '../../store/attachment-viewer.tsx';
 
 import { AttachmentV1, PostAttachment } from '../../types/entities.ts';
+import { toEntitySummaryFromPostAttachment } from '../../types/entityPlatformCompatibility.ts';
 import type { View } from '../../types/navigation.ts';
 
 import BilingualText from '../ui/BilingualText.tsx';
@@ -647,6 +648,7 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
     }, [isV1, autoLoad]);
 
     const v1Type = typeof v1?.type === 'string' ? v1.type.toUpperCase() : '';
+    const entitySummary = toEntitySummaryFromPostAttachment(attachment);
     useSocialRenderDiagnostics('AttachmentRendererV1', {
         attachmentType: v1Type || (isV1 ? 'UNKNOWN_V1' : 'LEGACY'),
         surface,
@@ -798,9 +800,9 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                         id={legacy.bookId}
                         surface={surface}
                         hydrated={{
-                            titleEn: legacy.bookTitle,
-                            authorEn: legacy.bookAuthor,
-                            coverUrl: legacy.bookCover,
+                            titleEn: entitySummary?.title || legacy.bookTitle,
+                            authorEn: entitySummary?.subtitle || legacy.bookAuthor,
+                            coverUrl: entitySummary?.image?.url || legacy.bookCover,
                             rating: legacy.bookRating,
                         }}
                     />
@@ -824,15 +826,17 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
                     <AuthorReferenceCard
                         name={
                             readNonEmptyString(legacy.authorName) ||
+                            readNonEmptyString(entitySummary?.title) ||
                             readNonEmptyString(legacy.name) ||
                             'Author'
                         }
                         avatarUrl={
                             readNonEmptyString(legacy.authorPhoto) ||
+                            readNonEmptyString(entitySummary?.image?.url) ||
                             readNonEmptyString(legacy.avatarUrl) ||
                             ''
                         }
-                        country={readNonEmptyString(legacy.authorCountry)}
+                        country={readNonEmptyString(legacy.authorCountry) || readNonEmptyString(entitySummary?.subtitle)}
                     />
                 );
                 break;
@@ -871,9 +875,9 @@ const AttachmentRendererV1: React.FC<AttachmentRendererV1Props> = ({ attachment,
             case 'publication':
                 visual = (
                     <PublicationReferenceCard
-                        title={readNonEmptyString(legacy.title) || 'Publication'}
-                        coverUrl={readNonEmptyString(legacy.coverUrl) || undefined}
-                        author={readNonEmptyString(legacy.author) || undefined}
+                        title={readNonEmptyString(entitySummary?.title) || readNonEmptyString(legacy.title) || 'Publication'}
+                        coverUrl={readNonEmptyString(entitySummary?.image?.url) || readNonEmptyString(legacy.coverUrl) || undefined}
+                        author={readNonEmptyString(entitySummary?.subtitle) || readNonEmptyString(legacy.author) || undefined}
                     />
                 );
                 break;

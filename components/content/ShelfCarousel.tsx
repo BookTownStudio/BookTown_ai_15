@@ -83,7 +83,7 @@ const ShelfCarousel: React.FC<ShelfCarouselProps> = ({
   const filteredEntries = useMemo(() => {
     if (!ebookOnly) return effectiveEntries;
     return effectiveEntries.filter(e =>
-      Boolean(e.book?.ebookAttachmentId || e.book?.isEbookAvailable)
+      e.book?.readerAuthority?.hasReadableAttachment === true
     );
   }, [effectiveEntries, ebookOnly]);
 

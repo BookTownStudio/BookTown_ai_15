@@ -250,55 +250,80 @@ function getEpubThemeStyles(
   margin: ReaderMargin
 ): EpubThemeStyles {
   const typography = {
-    'font-size': getFontSizePx(fontSize),
+    'font-size': `${getFontSizePx(fontSize)} !important`,
     'font-family': getFontFamily(fontStyle),
-    'line-height': getLineHeightValue(lineHeight),
+    'line-height': `${getLineHeightValue(lineHeight)} !important`,
+  };
+  const bodyTypography = {
+    ...typography,
     'padding-left': getEpubMarginValue(margin),
     'padding-right': getEpubMarginValue(margin),
     'box-sizing': 'border-box',
+  };
+  const typographySelectors = {
+    p: typography,
+    div: typography,
+    span: typography,
+    li: typography,
+    blockquote: typography,
+    h1: typography,
+    h2: typography,
+    h3: typography,
+    h4: typography,
+    h5: typography,
+    h6: typography,
   };
 
   if (theme === 'light') {
     return {
       html: { background: '#ffffff' },
-      body: { ...typography, background: '#ffffff', color: '#0f172a' },
-      p: { color: '#0f172a' },
-      li: { color: '#0f172a' },
-      h1: { color: '#0f172a' },
-      h2: { color: '#0f172a' },
-      h3: { color: '#0f172a' },
-      h4: { color: '#0f172a' },
-      h5: { color: '#0f172a' },
-      h6: { color: '#0f172a' },
+      body: { ...bodyTypography, background: '#ffffff', color: '#0f172a' },
+      p: { ...typographySelectors.p, color: '#0f172a' },
+      div: typographySelectors.div,
+      span: typographySelectors.span,
+      li: { ...typographySelectors.li, color: '#0f172a' },
+      blockquote: typographySelectors.blockquote,
+      h1: { ...typographySelectors.h1, color: '#0f172a' },
+      h2: { ...typographySelectors.h2, color: '#0f172a' },
+      h3: { ...typographySelectors.h3, color: '#0f172a' },
+      h4: { ...typographySelectors.h4, color: '#0f172a' },
+      h5: { ...typographySelectors.h5, color: '#0f172a' },
+      h6: { ...typographySelectors.h6, color: '#0f172a' },
       a: { color: '#0ea5e9' },
     };
   }
   if (theme === 'sepia') {
     return {
       html: { background: '#F3E9D2' },
-      body: { ...typography, background: '#F3E9D2', color: '#433422' },
-      p: { color: '#433422' },
-      li: { color: '#433422' },
-      h1: { color: '#433422' },
-      h2: { color: '#433422' },
-      h3: { color: '#433422' },
-      h4: { color: '#433422' },
-      h5: { color: '#433422' },
-      h6: { color: '#433422' },
+      body: { ...bodyTypography, background: '#F3E9D2', color: '#433422' },
+      p: { ...typographySelectors.p, color: '#433422' },
+      div: typographySelectors.div,
+      span: typographySelectors.span,
+      li: { ...typographySelectors.li, color: '#433422' },
+      blockquote: typographySelectors.blockquote,
+      h1: { ...typographySelectors.h1, color: '#433422' },
+      h2: { ...typographySelectors.h2, color: '#433422' },
+      h3: { ...typographySelectors.h3, color: '#433422' },
+      h4: { ...typographySelectors.h4, color: '#433422' },
+      h5: { ...typographySelectors.h5, color: '#433422' },
+      h6: { ...typographySelectors.h6, color: '#433422' },
       a: { color: '#2563eb' },
     };
   }
   return {
     html: { background: '#0f172a' },
-    body: { ...typography, background: '#0f172a', color: '#e2e8f0' },
-    p: { color: '#e2e8f0' },
-    li: { color: '#e2e8f0' },
-    h1: { color: '#e2e8f0' },
-    h2: { color: '#e2e8f0' },
-    h3: { color: '#e2e8f0' },
-    h4: { color: '#e2e8f0' },
-    h5: { color: '#e2e8f0' },
-    h6: { color: '#e2e8f0' },
+    body: { ...bodyTypography, background: '#0f172a', color: '#e2e8f0' },
+    p: { ...typographySelectors.p, color: '#e2e8f0' },
+    div: typographySelectors.div,
+    span: typographySelectors.span,
+    li: { ...typographySelectors.li, color: '#e2e8f0' },
+    blockquote: typographySelectors.blockquote,
+    h1: { ...typographySelectors.h1, color: '#e2e8f0' },
+    h2: { ...typographySelectors.h2, color: '#e2e8f0' },
+    h3: { ...typographySelectors.h3, color: '#e2e8f0' },
+    h4: { ...typographySelectors.h4, color: '#e2e8f0' },
+    h5: { ...typographySelectors.h5, color: '#e2e8f0' },
+    h6: { ...typographySelectors.h6, color: '#e2e8f0' },
     a: { color: '#38bdf8' },
   };
 }
@@ -843,18 +868,36 @@ const EpubViewer: React.FC<EpubViewerProps> = ({
     };
   }, [
     emitPage,
-    fontSize,
-    fontStyle,
     initialEpubCfi,
     initialPage,
     manifest,
-    lineHeight,
-    margin,
     readingMode,
     scheduleNarrationSnapshot,
-    theme,
     url,
   ]);
+
+  useEffect(() => {
+    const rendition = renditionRef.current;
+    const container = containerRef.current;
+    if (!rendition || !isRenditionReadyRef.current) return;
+
+    try {
+      rendition.themes?.default(getEpubThemeStyles(theme, fontSize, fontStyle, lineHeight, margin));
+      rendition.themes?.select('default');
+
+      const width = container ? Math.floor(container.clientWidth) : 0;
+      const height = container ? Math.floor(container.clientHeight) : 0;
+      if (width > 0 && height > 0) {
+        rendition.resize?.(width, height);
+      }
+
+      if (hasInitialRenderSettledRef.current && areLocationsReadyRef.current) {
+        scheduleNarrationSnapshot();
+      }
+    } catch (error) {
+      console.warn('[READER][EPUB_THEME_APPLY_FAILED]', error);
+    }
+  }, [fontSize, fontStyle, lineHeight, margin, scheduleNarrationSnapshot, theme]);
 
   useEffect(() => {
     const rendition = renditionRef.current;

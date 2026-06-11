@@ -7,6 +7,7 @@ import Button from '../ui/Button.tsx';
 import { PlusIcon } from '../icons/PlusIcon.tsx';
 import { CheckCircleIcon } from '../icons/CheckCircleIcon.tsx';
 import LoadingSpinner from '../ui/LoadingSpinner.tsx';
+import { resolveCoverImageUrl } from '../../lib/books/coverUrls.ts';
 import { SearchResultDTO } from '../../types/bookSearch.ts';
 
 type SemanticChip = {
@@ -61,6 +62,8 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
   className = ''
 }) => {
   const [didAdd, setDidAdd] = useState(false);
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState('');
+  const [coverImageError, setCoverImageError] = useState(false);
   const addFeedbackTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
@@ -70,6 +73,35 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
       }
     };
   }, []);
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    setResolvedCoverUrl('');
+    setCoverImageError(false);
+
+    if (!result.coverUrl) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    resolveCoverImageUrl(result.coverUrl)
+      .then((url) => {
+        if (isCurrent) {
+          setResolvedCoverUrl(url);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setResolvedCoverUrl('');
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [result.coverUrl]);
 
   const title =
     lang === 'en'
@@ -229,12 +261,13 @@ const SearchResultCard: React.FC<SearchResultCardProps> = ({
     >
         {/* Cover */}
         <div className="w-14 h-20 flex-shrink-0 bg-slate-700 rounded-md overflow-hidden">
-          {result.coverUrl ? (
+          {resolvedCoverUrl && !coverImageError ? (
             <img
-              src={result.coverUrl}
+              src={resolvedCoverUrl}
               alt={title}
               className="w-full h-full object-cover"
               loading="lazy"
+              onError={() => setCoverImageError(true)}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-white/40 text-xs text-center p-1">

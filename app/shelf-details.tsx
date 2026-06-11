@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigation } from '../store/navigation.tsx';
 import { useI18n } from '../store/i18n.tsx';
 import { useAuth } from '../lib/auth.tsx';
@@ -13,6 +13,7 @@ import { useShelfDetails } from '../lib/hooks/useShelfDetails.ts';
 import { useShelfEntries } from '../lib/hooks/useUserShelves.ts';
 import { useDuplicateShelf } from '../lib/hooks/useDuplicateShelf.ts';
 import { useUserProfile } from '../lib/hooks/useUserProfile.ts';
+import { resolveCoverImageUrl } from '../lib/books/coverUrls.ts';
 
 type ShelfDescriptionRuntimeFields = {
   description?: unknown;
@@ -26,6 +27,32 @@ const readShelfDescriptionField = (
 ): string => {
   const value = shelf[field];
   return typeof value === 'string' ? value : '';
+};
+
+const ShelfEntryCover: React.FC<{ coverUrl: string; title: string }> = ({ coverUrl, title }) => {
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState('');
+
+  useEffect(() => {
+    let isActive = true;
+
+    resolveCoverImageUrl(coverUrl)
+      .then((url) => {
+        if (isActive) setResolvedCoverUrl(url);
+      })
+      .catch(() => {
+        if (isActive) setResolvedCoverUrl('');
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [coverUrl]);
+
+  return resolvedCoverUrl ? (
+    <img src={resolvedCoverUrl} alt={title} className="h-14 w-10 rounded object-cover bg-white/10" />
+  ) : (
+    <div className="h-14 w-10 rounded bg-white/10" />
+  );
 };
 
 const ShelfDetailsScreen: React.FC = () => {
@@ -318,11 +345,7 @@ const ShelfDetailsScreen: React.FC = () => {
                         onClick={() => handleBookClick(entry.bookId)}
                         className="w-full text-left rounded-xl border border-white/10 bg-white/[0.03] hover:bg-white/[0.06] transition-colors p-3 flex items-center gap-3"
                       >
-                        {coverUrl ? (
-                          <img src={coverUrl} alt={title} className="h-14 w-10 rounded object-cover bg-white/10" />
-                        ) : (
-                          <div className="h-14 w-10 rounded bg-white/10" />
-                        )}
+                        <ShelfEntryCover coverUrl={coverUrl} title={title} />
                         <div className="min-w-0">
                           <BilingualText className="font-semibold truncate">{title}</BilingualText>
                           <BilingualText role="Caption" className="!text-[11px] text-white/60 truncate">

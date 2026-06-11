@@ -57,4 +57,33 @@ describe("searchIndexing", () => {
     const patch = buildBookSearchPatch(legacyRow);
     expect(bookSearchPatchNeedsUpdate(legacyRow, patch)).toBe(true);
   });
+
+  it("derives ebook search flags from readerAuthority instead of storagePath", () => {
+    const patch = buildBookSearchPatch({
+      title: "Uploaded EPUB",
+      authors: ["Reader Owner"],
+      source: "user_upload",
+      storagePath: "books/book-user/original/upload.epub",
+      readerAuthority: {
+        hasReadableAttachment: true,
+        attachmentId: null,
+        source: "user_upload",
+      },
+    });
+
+    expect(patch.downloadable).toBe(true);
+    expect(patch.hasEbook).toBe(true);
+    expect(patch.isEbookAvailable).toBe(true);
+
+    const deniedPatch = buildBookSearchPatch({
+      title: "Unmaterialized Upload",
+      authors: ["Reader Owner"],
+      source: "user_upload",
+      storagePath: "books/book-user/original/upload.epub",
+    });
+
+    expect(deniedPatch.downloadable).toBe(false);
+    expect(deniedPatch.hasEbook).toBe(false);
+    expect(deniedPatch.isEbookAvailable).toBe(false);
+  });
 });

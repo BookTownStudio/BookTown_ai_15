@@ -4,6 +4,7 @@ import { useAuth } from '../auth.tsx';
 import { socialActionRepository } from '../../services/socialActionRepository.ts';
 import { queryKeys } from '../queryKeys.ts';
 import { BookmarkType } from '../../types/entities.ts';
+import { toLiteraryEntityRefFromCompatIdentity } from '../../types/entityPlatformCompatibility.ts';
 
 /**
  * useBookmarkStatus
@@ -19,6 +20,7 @@ export const useBookmarkStatus = (entityId: string | undefined, type: BookmarkTy
         queryKey: queryKeys.user.bookmarkStatus(uid, type, entityId || 'none') as unknown as any[],
         queryFn: async () => {
             if (!uid || !entityId) return false;
+            toLiteraryEntityRefFromCompatIdentity({ type, entityId });
             return await socialActionRepository.hasBookmarked(entityId, uid, type);
         },
         enabled: !!uid && !!entityId,

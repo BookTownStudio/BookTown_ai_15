@@ -228,6 +228,31 @@ function buildReaderAuthorityProjection(params: {
   };
 }
 
+function isOwnerScopedUserUploadStoragePath(bookId: string, storagePath: string): boolean {
+  return storagePath.startsWith(`books/${bookId}/original/`);
+}
+
+function buildUserUploadReaderAuthorityProjection(params: {
+  bookId: string;
+  ownerUid: string;
+  storagePath: string;
+  uploadFinalized: boolean;
+  updatedAt: FirebaseFirestore.FieldValue;
+}): Record<string, unknown> | null {
+  const ownerUid = asNonEmptyString(params.ownerUid);
+  const storagePath = asNonEmptyString(params.storagePath);
+  if (params.uploadFinalized !== true) return null;
+  if (!ownerUid || !storagePath) return null;
+  if (!isOwnerScopedUserUploadStoragePath(params.bookId, storagePath)) return null;
+
+  return {
+    hasReadableAttachment: true,
+    attachmentId: null,
+    source: "user_upload",
+    updatedAt: params.updatedAt,
+  };
+}
+
 function normalizeSourceIdentityValue(source: string, providerExternalId: string): string {
   if (source === "googleBooks") {
     return providerExternalId.replace(/^gb_/i, "").trim();
@@ -3051,14 +3076,25 @@ export async function materializeBookAuthorityInTransaction(
       existingPointerProjection.epubStoragePath
   );
   const hasAcquiredReadableSource = externalReadableSources.length > 0;
+  const existingReaderAuthority = asRecord(existingBook?.readerAuthority);
+  const userUploadFinalized =
+    protectedBookBase.uploadFinalized === true ||
+    existingReaderAuthority?.hasReadableAttachment === true;
   const hasUserUploadStorage =
     params.source === "user_upload" &&
-    Boolean(asNonEmptyString(protectedBookBase.storagePath));
+    Boolean(
+      buildUserUploadReaderAuthorityProjection({
+        bookId,
+        ownerUid: asNonEmptyString(protectedBookBase.ownerUid),
+        storagePath: asNonEmptyString(protectedBookBase.storagePath),
+        uploadFinalized: userUploadFinalized,
+        updatedAt: now,
+      })
+    );
   const shouldHaveEbook =
     hasAttachmentPointer ||
     hasAcquiredReadableSource ||
     hasUserUploadStorage;
-  const existingReaderAuthority = asRecord(existingBook?.readerAuthority);
   const readerAuthorityAttachmentId =
     existingPointerProjection.ebookAttachmentId ||
     asNonEmptyString(existingReaderAuthority?.attachmentId);
@@ -3068,7 +3104,15 @@ export async function materializeBookAuthorityInTransaction(
         source: asNonEmptyString(existingReaderAuthority?.source) || "ebook_attachment",
         updatedAt: now,
       })
-    : null;
+    : hasUserUploadStorage
+      ? buildUserUploadReaderAuthorityProjection({
+          bookId,
+          ownerUid: asNonEmptyString(protectedBookBase.ownerUid),
+          storagePath: asNonEmptyString(protectedBookBase.storagePath),
+          uploadFinalized: userUploadFinalized,
+          updatedAt: now,
+        })
+      : null;
 
   const finalBookPayload: Record<string, unknown> = {
     ...protectedBookBase,

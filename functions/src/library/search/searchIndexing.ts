@@ -82,12 +82,8 @@ function resolveSearchTokens(data: Record<string, unknown>): string[] {
 }
 
 function resolveDownloadable(data: Record<string, unknown>): boolean {
-  return Boolean(
-    data.downloadable ||
-      asNonEmptyString(data.ebookAttachmentId) ||
-      asNonEmptyString(data.ebookStoragePath) ||
-      asNonEmptyString(data.storagePath)
-  );
+  const readerAuthority = asRecord(data.readerAuthority);
+  return readerAuthority?.hasReadableAttachment === true;
 }
 
 function stringArrayEquals(a: string[], b: string[]): boolean {

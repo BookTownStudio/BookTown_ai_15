@@ -1,6 +1,6 @@
 // components/content/BookCard.tsx
 
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import { useI18n } from '../../store/i18n.tsx';
 import BilingualText from '../ui/BilingualText.tsx';
 import ProgressBar from '../ui/ProgressBar.tsx';
@@ -16,6 +16,7 @@ import { usePrefetch } from '../../lib/hooks/usePrefetch.ts';
 import { useRemoveBookFromShelf } from '../../lib/hooks/useToggleBookOnShelf.ts';
 import MoveBookModal from '../modals/MoveBookModal.tsx';
 import CanonicalCoverArtwork from './CanonicalCoverArtwork.tsx';
+import { resolveCoverImageUrl } from '../../lib/books/coverUrls.ts';
 import type { BookCardData } from './BookCardDataAdapter.ts';
 
 interface BookCardProps {
@@ -49,6 +50,7 @@ const BookCard: React.FC<BookCardProps> = ({
   const { mutate: removeBook } = useRemoveBookFromShelf();
 
   const [imageError, setImageError] = useState(false);
+  const [resolvedCoverUrl, setResolvedCoverUrl] = useState('');
   const [menuOpen, setMenuOpen] = useState(false);
   const [showMoveModal, setShowMoveModal] = useState(false);
 
@@ -87,14 +89,46 @@ const BookCard: React.FC<BookCardProps> = ({
   );
 
   const hasInAppEbook =
-    Boolean(book && 'ebookAttachmentId' in book && book.ebookAttachmentId) ||
-    Boolean(book && 'isEbookAvailable' in book && book.isEbookAvailable === true);
+    Boolean(
+      book &&
+        'readerAuthority' in book &&
+        book.readerAuthority?.hasReadableAttachment === true
+    );
   const hasExternalBuy = Boolean(
     book && 'isEbookAvailable' in book && book.isEbookAvailable === true
   );
   const showAvailabilityBadge = variant !== 'homeRail';
   const homeRailReason =
     variant === 'homeRail' && book && 'reason' in book ? book.reason : undefined;
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    setImageError(false);
+    setResolvedCoverUrl('');
+
+    if (!book?.coverUrl) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    resolveCoverImageUrl(book.coverUrl)
+      .then((url) => {
+        if (isCurrent) {
+          setResolvedCoverUrl(url);
+        }
+      })
+      .catch(() => {
+        if (isCurrent) {
+          setResolvedCoverUrl('');
+        }
+      });
+
+    return () => {
+      isCurrent = false;
+    };
+  }, [book?.coverUrl]);
 
   // ----------------------------------
   // Callbacks
@@ -158,7 +192,7 @@ const BookCard: React.FC<BookCardProps> = ({
 
     return (
       <div className="relative w-full h-full overflow-hidden rounded-card shadow-md bg-slate-800">
-        {imageError || !book.coverUrl ? (
+        {imageError || !resolvedCoverUrl ? (
           <CanonicalCoverArtwork
             title={title}
             author={author}
@@ -169,7 +203,7 @@ const BookCard: React.FC<BookCardProps> = ({
           />
         ) : (
           <img
-            src={book.coverUrl}
+            src={resolvedCoverUrl}
             alt={title}
             className="w-full h-full object-cover"
             onError={handleImageError}
@@ -248,6 +282,7 @@ const BookCard: React.FC<BookCardProps> = ({
   }, [
     book,
     imageError,
+    resolvedCoverUrl,
     title,
     author,
     handleImageError,

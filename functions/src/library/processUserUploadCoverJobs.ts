@@ -272,6 +272,129 @@ function rankEpubImageEntry(entry: ZipEntry): number {
   return score;
 }
 
+function decodeXmlEntities(value: string): string {
+  return value
+    .replace(/&amp;/gu, "&")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&quot;/gu, "\"")
+    .replace(/&apos;/gu, "'");
+}
+
+function readXmlAttribute(tag: string, attributeName: string): string | null {
+  const pattern = new RegExp(`\\b${attributeName}\\s*=\\s*["']([^"']+)["']`, "iu");
+  const value = pattern.exec(tag)?.[1];
+  return value ? decodeXmlEntities(value).trim() || null : null;
+}
+
+function normalizeZipPath(path: string): string {
+  const parts: string[] = [];
+  for (const part of path.replace(/\\/gu, "/").split("/")) {
+    if (!part || part === ".") continue;
+    if (part === "..") {
+      parts.pop();
+      continue;
+    }
+    parts.push(part);
+  }
+  return parts.join("/");
+}
+
+function resolveRelativeZipPath(basePath: string, href: string): string {
+  const normalizedHref = normalizeZipPath(decodeXmlEntities(href).split("#")[0] || "");
+  if (!normalizedHref) return "";
+  if (!basePath.includes("/")) return normalizedHref;
+  return normalizeZipPath(`${basePath.slice(0, basePath.lastIndexOf("/") + 1)}${normalizedHref}`);
+}
+
+function findZipEntryByName(entries: ZipEntry[], path: string): ZipEntry | null {
+  const normalized = normalizeZipPath(path).toLowerCase();
+  return entries.find((entry) => normalizeZipPath(entry.name).toLowerCase() === normalized) ?? null;
+}
+
+function readZipTextEntry(source: Buffer, entries: ZipEntry[], path: string): string | null {
+  const entry = findZipEntryByName(entries, path);
+  if (!entry) return null;
+  return readZipEntryData(source, entry).toString("utf8");
+}
+
+function parseManifestItems(opf: string): Array<{
+  id: string;
+  href: string;
+  mediaType: string;
+  properties: string[];
+}> {
+  const manifest = opf.match(/<manifest\b[^>]*>([\s\S]*?)<\/manifest>/iu)?.[1] ?? "";
+  const items: Array<{
+    id: string;
+    href: string;
+    mediaType: string;
+    properties: string[];
+  }> = [];
+
+  for (const match of manifest.matchAll(/<item\b[^>]*\/?>/giu)) {
+    const tag = match[0] ?? "";
+    const id = readXmlAttribute(tag, "id");
+    const href = readXmlAttribute(tag, "href");
+    if (!id || !href) continue;
+
+    const mediaType = (readXmlAttribute(tag, "media-type") || "").toLowerCase();
+    const properties = (readXmlAttribute(tag, "properties") || "")
+      .toLowerCase()
+      .split(/\s+/u)
+      .filter((value) => value.length > 0);
+
+    items.push({ id, href, mediaType, properties });
+  }
+
+  return items;
+}
+
+function resolveOpfCoverCandidates(source: Buffer, entries: ZipEntry[]): ZipEntry[] {
+  const containerXml = readZipTextEntry(source, entries, "META-INF/container.xml");
+  const rootfileTag = containerXml?.match(/<rootfile\b[^>]*>/iu)?.[0] ?? "";
+  const packagePath = readXmlAttribute(rootfileTag, "full-path");
+  if (!packagePath) return [];
+
+  const normalizedPackagePath = normalizeZipPath(packagePath);
+  const opf = readZipTextEntry(source, entries, normalizedPackagePath);
+  if (!opf) return [];
+
+  const manifestItems = parseManifestItems(opf);
+  const byId = new Map(manifestItems.map((item) => [item.id, item]));
+  const candidateHrefs: string[] = [];
+
+  const epub2CoverId = opf.match(/<meta\b[^>]*\bname\s*=\s*["']cover["'][^>]*>/iu)?.[0];
+  const coverId = epub2CoverId ? readXmlAttribute(epub2CoverId, "content") : null;
+  if (coverId) {
+    const item = byId.get(coverId);
+    if (item?.href) candidateHrefs.push(item.href);
+  }
+
+  for (const item of manifestItems) {
+    if (item.properties.includes("cover-image")) {
+      candidateHrefs.push(item.href);
+    }
+  }
+
+  for (const item of manifestItems) {
+    if (item.mediaType.startsWith("image/") && /cover/i.test(item.id)) {
+      candidateHrefs.push(item.href);
+    }
+  }
+
+  const seen = new Set<string>();
+  return candidateHrefs
+    .map((href) => resolveRelativeZipPath(normalizedPackagePath, href))
+    .filter((path) => {
+      if (!path || seen.has(path.toLowerCase())) return false;
+      seen.add(path.toLowerCase());
+      return true;
+    })
+    .map((path) => findZipEntryByName(entries, path))
+    .filter((entry): entry is ZipEntry => entry !== null);
+}
+
 async function extractPdfCover(source: Buffer): Promise<Buffer> {
   try {
     const page = await sharp(source, {
@@ -297,11 +420,19 @@ async function extractPdfCover(source: Buffer): Promise<Buffer> {
 
 async function extractEpubCover(source: Buffer): Promise<Buffer> {
   const entries = parseZipEntries(source);
-  const candidates = entries
+  const opfCandidates = resolveOpfCoverCandidates(source, entries);
+  const heuristicCandidates = entries
     .map((entry) => ({ entry, rank: rankEpubImageEntry(entry) }))
     .filter((item) => Number.isFinite(item.rank))
     .sort((a, b) => b.rank - a.rank)
     .map((item) => item.entry);
+  const seen = new Set<string>();
+  const candidates = [...opfCandidates, ...heuristicCandidates].filter((entry) => {
+    const key = normalizeZipPath(entry.name).toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
   if (candidates.length === 0) {
     fail("EPUB_COVER_NOT_FOUND", "No image candidates found in EPUB archive.", false);

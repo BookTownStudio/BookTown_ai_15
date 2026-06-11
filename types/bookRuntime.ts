@@ -14,6 +14,7 @@ export interface BookPublicViewDTO {
   descriptionAr: string;
   rating: number;
   ratingsCount: number;
+  semanticGraphEligible?: boolean;
   isEbookAvailable: boolean;
 }
 
@@ -49,6 +50,9 @@ export function toBookPublicViewDTO(book: Book): BookPublicViewDTO {
     descriptionAr: book.descriptionAr,
     rating: book.rating,
     ratingsCount: book.ratingsCount,
+    ...(typeof book.semanticGraphEligible === "boolean"
+      ? { semanticGraphEligible: book.semanticGraphEligible }
+      : {}),
     isEbookAvailable: book.isEbookAvailable,
   };
 }

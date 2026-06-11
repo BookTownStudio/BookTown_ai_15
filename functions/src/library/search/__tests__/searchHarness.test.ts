@@ -1163,18 +1163,20 @@ describe("Search Harness — Canonical Local Engine", () => {
     });
   });
 
-  it('returns the canonical Pride row for ebookOnly when legacy in-app storage exists', async () => {
+  it('returns the canonical Pride row for ebookOnly when readerAuthority allows in-app reading without an attachment id', async () => {
     const pride = LOCAL_EDITIONS.find((entry) => entry.id === 'e16') as
-      | (Record<string, unknown> & { storagePath?: string; isEbookAvailable?: boolean })
+      | (Record<string, unknown> & { readerAuthority?: unknown })
       | undefined;
     expect(pride).toBeDefined();
 
-    const previousStoragePath = pride?.storagePath;
-    const previousIsEbookAvailable = pride?.isEbookAvailable;
+    const previousReaderAuthority = pride?.readerAuthority;
 
     if (pride) {
-      pride.storagePath = 'books/e16/original/pride-and-prejudice.epub';
-      pride.isEbookAvailable = true;
+      pride.readerAuthority = {
+        hasReadableAttachment: true,
+        attachmentId: null,
+        source: "user_upload",
+      };
     }
 
     try {
@@ -1189,18 +1191,17 @@ describe("Search Harness — Canonical Local Engine", () => {
       expect(response.results[0]?.downloadable).toBe(true);
       expect(response.results[0]?.hasEbook).toBe(true);
       expect(response.results[0]?.isEbookAvailable).toBe(true);
+      expect(response.results[0]?.readerAuthority).toEqual({
+        hasReadableAttachment: true,
+        attachmentId: null,
+        source: "user_upload",
+      });
     } finally {
       if (pride) {
-        if (typeof previousStoragePath === 'string') {
-          pride.storagePath = previousStoragePath;
+        if (previousReaderAuthority !== undefined) {
+          pride.readerAuthority = previousReaderAuthority;
         } else {
-          delete pride.storagePath;
-        }
-
-        if (typeof previousIsEbookAvailable === 'boolean') {
-          pride.isEbookAvailable = previousIsEbookAvailable;
-        } else {
-          delete pride.isEbookAvailable;
+          delete pride.readerAuthority;
         }
       }
     }

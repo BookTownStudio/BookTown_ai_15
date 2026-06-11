@@ -97,6 +97,35 @@ function readExternalReadableSources(source: Record<string, unknown>) {
   return normalized.length > 0 ? normalized : undefined;
 }
 
+function readReaderAuthority(source: Record<string, unknown>) {
+  const raw =
+    source.readerAuthority &&
+    typeof source.readerAuthority === "object" &&
+    !Array.isArray(source.readerAuthority)
+      ? (source.readerAuthority as Record<string, unknown>)
+      : null;
+
+  if (!raw || raw.hasReadableAttachment !== true) return undefined;
+
+  const attachmentId = asNonEmptyString(raw.attachmentId, 256);
+  const authoritySource = asNonEmptyString(raw.source, 64);
+
+  return {
+    hasReadableAttachment: true,
+    attachmentId: attachmentId || null,
+    ...(authoritySource ? { source: authoritySource } : {}),
+    ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt } : {}),
+  };
+}
+
+function sanitizeRawBookForCatalog(source: Record<string, unknown>): Record<string, unknown> {
+  const sanitized = { ...source };
+  delete sanitized.storagePath;
+  delete sanitized.ebookStoragePath;
+  delete sanitized.epubStoragePath;
+  return sanitized;
+}
+
 function resolveInternalCoverPath(book: Record<string, unknown>): string {
   const cover =
     book.cover && typeof book.cover === "object" && !Array.isArray(book.cover)
@@ -163,6 +192,7 @@ export async function buildCatalogBookView(
   bookId: string,
   source: Record<string, unknown>
 ) {
+  const semanticGraphEligible = isPublicReadableBook(source);
   const coverUrl = await resolveRenderableCoverUrl(bookId, source);
   const titleEn =
     asNonEmptyString(source.titleEn, 300) ||
@@ -181,6 +211,7 @@ export async function buildCatalogBookView(
       : undefined;
   const providerExternalIds = asStringArray(source.providerExternalIds, 256, 32);
   const externalReadableSources = readExternalReadableSources(source);
+  const readerAuthority = readReaderAuthority(source);
   const acquiredFromProvider =
     source.acquiredFromProvider === "openLibrary" ||
     source.acquiredFromProvider === "gutenberg" ||
@@ -191,6 +222,12 @@ export async function buildCatalogBookView(
 
   return {
     id: bookId,
+    ...(asNonEmptyString(source.source, 64)
+      ? { source: asNonEmptyString(source.source, 64) }
+      : {}),
+    ...(asNonEmptyString(source.ownerUid, 128)
+      ? { ownerUid: asNonEmptyString(source.ownerUid, 128) }
+      : {}),
     authorId: asNonEmptyString(source.authorId, 256),
     ...(asNonEmptyString(source.title, 300)
       ? { title: asNonEmptyString(source.title, 300) }
@@ -219,6 +256,8 @@ export async function buildCatalogBookView(
     genresAr: asStringArray(source.genresAr, 120, 30),
     rating: asNonNegativeNumber(source.rating),
     ratingsCount: asNonNegativeInt(source.ratingsCount),
+    semanticGraphEligible,
+    ...(readerAuthority ? { readerAuthority } : {}),
     ...(typeof source.reviewCount !== "undefined"
       ? { reviewCount: asNonNegativeInt(source.reviewCount) }
       : {}),
@@ -237,7 +276,7 @@ export async function buildCatalogBookView(
     ...(typeof toCreatedAtMillis(source.createdAt) === "number"
       ? { createdAt: toCreatedAtMillis(source.createdAt) }
       : {}),
-    rawBook: source,
+    rawBook: sanitizeRawBookForCatalog(source),
     ...(asNonEmptyString(source.ebookAttachmentId, 256)
       ? { ebookAttachmentId: asNonEmptyString(source.ebookAttachmentId, 256) }
       : {}),

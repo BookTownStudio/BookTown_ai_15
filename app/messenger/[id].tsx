@@ -24,6 +24,7 @@ import { QuoteIcon } from '../../components/icons/QuoteIcon.tsx';
 import { ChatIcon } from '../../components/icons/ChatIcon.tsx';
 import GlassCard from '../../components/ui/GlassCard.tsx';
 import EntityPicker, { EntityPickerEntityType } from '../../components/content/EntityPicker.tsx';
+import { toEntitySummaryFromDirectMessageAttachment } from '../../types/entityPlatformCompatibility.ts';
 
 type ComposerAttachment = PostAttachment;
 type OptimisticDeliveryState = 'sending' | 'sent';
@@ -36,13 +37,14 @@ const toRenderableDmAttachment = (
     attachment: DirectMessage['attachment']
 ): PostAttachment | null => {
     if (!attachment) return null;
+    const entitySummary = toEntitySummaryFromDirectMessageAttachment(attachment);
     if (attachment.type === 'book') {
         return {
             type: 'book',
             bookId: attachment.entityId,
-            bookTitle: attachment.title || 'Book',
-            bookAuthor: attachment.author || '',
-            bookCover: attachment.coverUrl || '',
+            bookTitle: entitySummary?.title || attachment.title || 'Book',
+            bookAuthor: entitySummary?.subtitle || attachment.author || '',
+            bookCover: entitySummary?.image?.url || attachment.coverUrl || '',
             bookRating: 0,
         };
     }
@@ -50,9 +52,9 @@ const toRenderableDmAttachment = (
         return {
             type: 'publication',
             publicationId: attachment.entityId,
-            title: attachment.title || 'Publication',
-            ...(attachment.author ? { author: attachment.author } : {}),
-            ...(attachment.coverUrl ? { coverUrl: attachment.coverUrl } : {}),
+            title: entitySummary?.title || attachment.title || 'Publication',
+            ...(entitySummary?.subtitle || attachment.author ? { author: entitySummary?.subtitle || attachment.author } : {}),
+            ...(entitySummary?.image?.url || attachment.coverUrl ? { coverUrl: entitySummary?.image?.url || attachment.coverUrl } : {}),
             ...(attachment.canonicalSlug ? { canonicalSlug: attachment.canonicalSlug } : {}),
         };
     }
@@ -60,9 +62,9 @@ const toRenderableDmAttachment = (
         return {
             type: 'author',
             authorId: attachment.entityId,
-            authorName: attachment.title || 'Author',
-            authorPhoto: attachment.coverUrl || '',
-            ...(attachment.author ? { authorCountry: attachment.author } : {}),
+            authorName: entitySummary?.title || attachment.title || 'Author',
+            authorPhoto: entitySummary?.image?.url || attachment.coverUrl || '',
+            ...(entitySummary?.subtitle || attachment.author ? { authorCountry: entitySummary?.subtitle || attachment.author } : {}),
         };
     }
     if (attachment.type === 'shelf') {

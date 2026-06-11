@@ -18,6 +18,17 @@ function asNonEmptyString(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
+function buildUserUploadReaderAuthority(
+  updatedAt: FirebaseFirestore.FieldValue
+): Record<string, unknown> {
+  return {
+    hasReadableAttachment: true,
+    attachmentId: null,
+    source: "user_upload",
+    updatedAt,
+  };
+}
+
 export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
   { cors: true },
   async (request) => {
@@ -30,6 +41,7 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
 
     const bookRef = db.collection("books").doc(bookId);
     const jobRef = db.collection("cover_jobs").doc(bookId);
+    const metadataJobRef = db.collection("upload_metadata_jobs").doc(bookId);
     const bookSnap = await bookRef.get();
 
     if (!bookSnap.exists) {
@@ -94,14 +106,50 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
     batch.set(
       bookRef,
       {
+        uploadFinalized: true,
+        uploadFinalizedAt: now,
+        readerAuthority: buildUserUploadReaderAuthority(now),
+        hasEbook: true,
+        downloadable: true,
+        isEbookAvailable: true,
         coverState: "PENDING",
         coverFailureCode: null,
         coverFailureMessage: null,
         coverUpdatedAt: now,
+        ...(fileType === "epub"
+          ? {
+              uploadMetadata: {
+                status: "pending",
+                lastProcessedAt: null,
+                failureReason: null,
+                source: "epub_opf",
+              },
+            }
+          : {}),
         updatedAt: now,
       },
       { merge: true }
     );
+
+    if (fileType === "epub") {
+      batch.set(
+        metadataJobRef,
+        {
+          id: bookId,
+          bookId,
+          ownerUid: uid,
+          source: "user_upload",
+          metadataSource: "epub_opf",
+          fileType,
+          storagePath,
+          status: "PENDING",
+          failureReason: null,
+          updatedAt: now,
+          createdAt: now,
+        },
+        { merge: true }
+      );
+    }
 
     await batch.commit();
 

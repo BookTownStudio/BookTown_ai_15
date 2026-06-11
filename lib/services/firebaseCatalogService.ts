@@ -489,9 +489,13 @@ export const firebaseCatalogService = {
       }
 
       const mapped = mapBook(book, bookId);
+      const projected =
+        typeof mapped.semanticGraphEligible === "boolean"
+          ? mapped
+          : await getAccessibleBook(bookId);
       const resolvedCoverUrl = await resolveCoverUrlForInitialRender(book);
       return {
-        ...mapped,
+        ...projected,
         coverUrl: resolvedCoverUrl,
       };
     } catch (err: any) {

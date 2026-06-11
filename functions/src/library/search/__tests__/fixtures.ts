@@ -23,6 +23,11 @@ type LocalEditionFixture = {
   language: string;
   hasEbook: boolean;
   downloadable: boolean;
+  readerAuthority?: {
+    hasReadableAttachment: boolean;
+    attachmentId: string | null;
+    source?: string;
+  };
   isbn13?: string;
   isbn10?: string;
   normalizedTitle: string;
@@ -69,6 +74,15 @@ const base = (
     language: "en",
     hasEbook: downloadable,
     downloadable,
+    ...(downloadable
+      ? {
+          readerAuthority: {
+            hasReadableAttachment: true,
+            attachmentId: `${id}_attachment`,
+            source: "ebook_attachment",
+          },
+        }
+      : {}),
     normalizedTitle: titleNorm,
     authorNamesNormalized: [authorNorm],
     searchableTitleAuthor: `${titleNorm} ${authorNorm}`.trim(),
