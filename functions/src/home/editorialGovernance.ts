@@ -143,21 +143,22 @@ async function validateTarget(params: {
   if (targetType === "book") {
     const readable = isPublicReadableBook(data);
     const attachment = await resolveBookToEbookAttachment(targetId).catch(() => null);
-    const hasEbookAttachment = Boolean(attachment?.storagePath);
+    const hasReadableManifestation = Boolean(attachment?.storagePath);
     const blocking = [
       ...(!readable ? ["Book is not public and readable."] : []),
-      ...(row === "readNow" && !hasEbookAttachment ? ["Ready to Read requires an in-app ebook attachment."] : []),
+      ...(row === "readNow" && !hasReadableManifestation ? ["Ready to Read requires an in-app Manifestation."] : []),
     ];
     const book = await buildCatalogBookView(targetId, data);
     return {
       blocking,
-      warnings: row === "dynamicDiscovery" && !hasEbookAttachment ? ["Book has no in-app ebook attachment."] : [],
+      warnings: row === "dynamicDiscovery" && !hasReadableManifestation ? ["Book has no in-app Manifestation."] : [],
       status: {
         exists: true,
         eligible: blocking.length === 0,
         visibility: asString(data.visibility, 32) || "public",
         readable,
-        hasEbookAttachment,
+        hasReadableManifestation,
+        hasEbookAttachment: hasReadableManifestation,
         moderationSafe: true,
       },
       preview: {

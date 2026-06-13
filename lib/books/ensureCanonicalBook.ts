@@ -4,6 +4,7 @@ import { getFirebaseFunctions } from '../firebase.ts';
 export type EnsureCanonicalBookResult = {
   canonicalBookId: string;
   bookId: string;
+  primaryEditionId?: string;
   editionId?: string;
   status?: string;
 };

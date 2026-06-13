@@ -34,6 +34,7 @@ type IngestionRequest = {
 type SeedFallbackMaterializationResult = {
   canonicalBookId: string;
   bookId: string;
+  primaryEditionId: string | null;
   editionId: string | null;
   status: string;
 };
@@ -273,6 +274,7 @@ export async function materializeSeedOnlyCanonicalFallback(params: {
   return {
     canonicalBookId: transactionResult.canonicalBookId,
     bookId: transactionResult.bookId,
+    primaryEditionId: transactionResult.primaryEditionId,
     editionId: transactionResult.editionId,
     status: transactionResult.status,
   };
@@ -646,6 +648,7 @@ export async function ingestBookServerSide(params: {
 }): Promise<{
   canonicalBookId: string;
   bookId: string;
+  primaryEditionId: string | null;
   editionId: string | null;
   status: string;
 }> {
@@ -748,6 +751,7 @@ export async function ingestBookServerSide(params: {
   return {
     canonicalBookId: transactionResult.canonicalBookId,
     bookId: transactionResult.bookId,
+    primaryEditionId: transactionResult.primaryEditionId,
     editionId: transactionResult.editionId,
     status: transactionResult.status,
   };
@@ -811,6 +815,17 @@ export const ingestBook = onCall<IngestionRequest>({ cors: true }, async (reques
   return {
     canonicalBookId: incomingBookId,
     bookId: incomingBookId,
+    primaryEditionId:
+      asNonEmptyString(existingBook.primaryEditionId) ||
+      asNonEmptyString(
+        existingBook.canonicalRelations &&
+          typeof existingBook.canonicalRelations === "object" &&
+          !Array.isArray(existingBook.canonicalRelations)
+          ? (existingBook.canonicalRelations as Record<string, unknown>).primaryEditionId
+          : undefined
+      ) ||
+      asNonEmptyString(existingBook.editionId) ||
+      undefined,
     editionId: asNonEmptyString(existingBook.editionId) || undefined,
     status: "ALREADY_CANONICAL",
   };

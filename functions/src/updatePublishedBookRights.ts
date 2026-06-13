@@ -42,6 +42,11 @@ function asNonEmptyString(value: unknown, max = 512): string {
   return value.trim().slice(0, max);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function normalizeBookId(value: unknown): string {
   const bookId = asNonEmptyString(value, 256);
   if (!bookId) {
@@ -97,8 +102,15 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
         );
       }
 
-      const editionId = asNonEmptyString(book.editionId, 256);
-      const attachmentId = asNonEmptyString(book.ebookAttachmentId, 256);
+      const editionId = asNonEmptyString(book.primaryEditionId, 256);
+      if (!editionId) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Published Work has no primary Edition authority."
+        );
+      }
+      const manifestationAvailability = asRecord(book.manifestationAvailability);
+      const attachmentId = asNonEmptyString(manifestationAvailability?.attachmentId, 256);
       const now = FieldValue.serverTimestamp();
       const bookVisibility = publicationVisibilityForRightsMode(
         rightsMode,
@@ -121,14 +133,12 @@ export const updatePublishedBookRights = onCall({ cors: true }, async (request) 
         { merge: true }
       );
 
-      if (editionId) {
-        assertAllowedRightsPatch(rightsPatch, "updatePublishedBookRights.edition");
-        tx.set(
-          db.collection("editions").doc(editionId),
-          rightsPatch,
-          { merge: true }
-        );
-      }
+      assertAllowedRightsPatch(rightsPatch, "updatePublishedBookRights.edition");
+      tx.set(
+        db.collection("editions").doc(editionId),
+        rightsPatch,
+        { merge: true }
+      );
 
       if (attachmentId) {
         tx.set(

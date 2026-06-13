@@ -16,6 +16,7 @@ import {
 } from "./operations/operationalMetrics";
 import type {
   ExternalReadableSourceDTO,
+  SearchManifestationAvailabilityProjectionDTO,
   SearchReaderAuthorityProjectionDTO,
   SearchReadingProgressProjectionDTO,
   SearchResultDTO,
@@ -325,12 +326,13 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
   const authorEn = String(raw?.authorEn || authors[0] || "Unknown");
   const normalizedAuthors = authors.length > 0 ? authors : [authorEn];
   const externalId = String(raw?.externalId || "").trim();
-  // Search DTO availability fields are response projections. Persistence
-  // ownership remains with materializeBookAuthority, createEbookAttachment, and
-  // acquireExternalEbookForRead according to field-level authority.
-  const hasEbook = Boolean(raw?.hasEbook);
-  const downloadable = Boolean(raw?.downloadable);
-  const ebookAvailable = Boolean(raw?.isEbookAvailable ?? hasEbook);
+  const manifestationAvailability = toSearchManifestationAvailabilityProjection(raw?.manifestationAvailability);
+  const hasManifestationAvailability =
+    manifestationAvailability?.hasReadableManifestation === true &&
+    manifestationAvailability.canReadInApp === true;
+  const hasEbook = hasManifestationAvailability;
+  const downloadable = hasManifestationAvailability;
+  const ebookAvailable = hasManifestationAvailability;
   const resultType =
     String(raw?.resultType || "").trim() === "external"
       ? "external"
@@ -346,11 +348,11 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
       : "single";
   const ebookClassRaw = String(raw?.ebookClass || "").trim();
   const ebookClass =
-    ebookClassRaw === "in_app" ||
-    ebookClassRaw === "external_link" ||
-    ebookClassRaw === "unavailable"
-      ? ebookClassRaw
-      : "unavailable";
+    hasManifestationAvailability
+      ? "in_app"
+      : ebookClassRaw === "external_link" || ebookClassRaw === "unavailable"
+        ? ebookClassRaw
+        : "unavailable";
   const available = Boolean(raw?.available ?? (ebookClass === "in_app" || ebookClass === "external_link"));
   const acquired = Boolean(raw?.acquired ?? ebookClass === "in_app");
   const sourceClassRaw = String(raw?.sourceClass || "").trim();
@@ -402,7 +404,9 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
             Boolean(entry)
         )
     : [];
-  const readerAuthority = toSearchReaderAuthorityProjection(raw?.readerAuthority);
+  const readerAuthority = toSearchReaderAuthorityProjection(
+    manifestationAvailability || raw?.readerAuthority
+  );
   const readingProgressProjection = toSearchReadingProgressProjection(raw?.readingProgressProjection);
 
   return {
@@ -436,6 +440,7 @@ function toSearchResultDTO(raw: any): SearchResultDTO | null {
     hasEbook,
     downloadable,
     isEbookAvailable: ebookAvailable,
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? rankRaw : 999,
     ...(canonicalTradition ? { canonicalTradition } : {}),
@@ -493,13 +498,55 @@ function toSearchReaderAuthorityProjection(raw: unknown): SearchReaderAuthorityP
       ? (raw as Record<string, unknown>)
       : {};
   const attachmentId = String(record.attachmentId || "").trim();
+  const manifestationId = String(record.manifestationId || "").trim();
   const source = String(record.source || "").trim();
   const updatedAt = String(record.updatedAt || "").trim();
   return {
-    hasReadableAttachment: record.hasReadableAttachment === true,
+    hasReadableAttachment:
+      record.hasReadableAttachment === true ||
+      record.hasReadableManifestation === true,
     attachmentId: attachmentId || null,
+    ...(manifestationId ? { manifestationId } : {}),
     ...(source ? { source } : {}),
     ...(updatedAt ? { updatedAt } : {}),
+  };
+}
+
+function toSearchManifestationAvailabilityProjection(
+  raw: unknown
+): SearchManifestationAvailabilityProjectionDTO | undefined {
+  const record =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  if (!record) return undefined;
+  const manifestationId = String(record.manifestationId || "").trim();
+  const editionId = String(record.editionId || "").trim();
+  const formatRaw = String(record.format || "").trim();
+  const source = String(record.source || "").trim();
+  const accessModeRaw = String(record.accessMode || "").trim();
+  if (!manifestationId || !editionId || !source) return undefined;
+  const format = formatRaw === "epub" || formatRaw === "pdf" ? formatRaw : "unknown";
+  const accessMode = accessModeRaw === "external_link" ? "external_link" : "in_app";
+  const attachmentId = String(record.attachmentId || "").trim();
+  const visibilityRaw = String(record.visibility || "").trim();
+  const visibility =
+    visibilityRaw === "public" || visibilityRaw === "restricted" || visibilityRaw === "private"
+      ? visibilityRaw
+      : undefined;
+  return {
+    hasReadableManifestation: record.hasReadableManifestation === true,
+    canReadInApp: record.canReadInApp === true,
+    canDownload: record.canDownload === true,
+    acquisitionEligible: record.acquisitionEligible === true,
+    manifestationId,
+    editionId,
+    format,
+    source,
+    accessMode,
+    ...(attachmentId ? { attachmentId } : {}),
+    ...(visibility ? { visibility } : {}),
+    ...(record.updatedAt !== undefined ? { updatedAt: record.updatedAt } : {}),
   };
 }
 

@@ -56,6 +56,7 @@ Shared contract files and backend wrappers own request/response shapes, error en
 
 Primary authority documents:
 
+- [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md)
 - [PHASE_1_CONTRACTS.md](../architecture/PHASE_1_CONTRACTS.md)
 - [WAVE_4_COMPLETION.md](../audits/evidence/completions/engineering/WAVE_4_COMPLETION.md)
 - [T7_infrastructure_callable_edge_contract_stabilization_execution.md](../audits/evidence/audit/T7_infrastructure_callable_edge_contract_stabilization_execution.md)
@@ -146,7 +147,7 @@ Contracts and API indirectly support all projection-producing domains. Direct pr
 
 Product maturity: Operational infrastructure.
 
-Architecture maturity: Implemented.
+Architecture maturity: Implemented, with contracts/API register now routed.
 
 Documentation maturity: Partial to Good after this Master document.
 
@@ -154,7 +155,6 @@ Readiness: Closed Beta Ready.
 
 ## Known Gaps
 
-- Dedicated API/contract architecture authority is still needed.
 - Contract versioning policy should be made explicit.
 - Client/backend parity evidence should be easier to navigate.
 - Some domain contracts remain implemented authority without dedicated docs.
@@ -166,13 +166,14 @@ Readiness: Closed Beta Ready.
 - [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md)
 - [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md)
 - [PHASE_1_CONTRACTS.md](../architecture/PHASE_1_CONTRACTS.md)
+- [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md)
 - [CODEX_RULES.md](../engineering/CODEX_RULES.md)
 
 ## System Ownership Matrix
 
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
-| Shared contracts | API Platform | `contracts/*` | This Master doc and Phase 1 contracts. |
+| Shared contracts | API Platform | `contracts/*` | This Master doc, contracts/API register, and Phase 1 contracts. |
 | Callable wrappers | API Platform | `functions/src/contracts/*` | Wave 4/T7 evidence and runtime. |
 | Error envelopes | API Platform | Error mapper and shared error codes | Contract runtime and engineering docs. |
 | Entity contracts | Entity Platform | Entity contract files | Entity Platform Master. |
@@ -191,7 +192,7 @@ Readiness: Closed Beta Ready.
 
 | Question | Route |
 |---|---|
-| Shared DTO shape | `contracts/*` and this document. |
+| Shared DTO shape | [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md), `contracts/*`, and this document. |
 | Backend business behavior | Owning domain Master document. |
 | Callable wrapping | `functions/src/contracts/*` and T7 audit evidence. |
 | Entity contract behavior | [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md). |
@@ -199,4 +200,4 @@ Readiness: Closed Beta Ready.
 
 ## Future Evolution
 
-Future contract/API changes should be documented in dedicated contract/versioning authority and then reflected here as routing updates. This Master document must not introduce new contract behavior directly.
+Future contract/API changes should be documented in the contracts/API register or dedicated versioning authority and then reflected here as routing updates. This Master document must not introduce new contract behavior directly.

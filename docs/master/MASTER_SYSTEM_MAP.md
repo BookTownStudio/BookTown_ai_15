@@ -22,13 +22,13 @@ This is a navigation and authority-routing document. It does not create new arch
 | System | Classification | Current Maturity | Readiness | Priority | Primary Authority Document | Future Master Document |
 |---|---|---|---|---|---|---|
 | Books | Product System; Canonical Entity | First-Class | Closed Beta Ready | P0 | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
-| Catalog | Product Platform; Canonical Catalog | Operational | Closed Beta Ready | P0 | [data-pipeline.md](../data-pipeline.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
+| Catalog | Product Platform; Canonical Catalog | Operational | Closed Beta Ready | P0 | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md), [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
 | Authors | Product System; Canonical Entity | Operational | Closed Beta Ready | P1 | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [AUTHOR_RECOMMENDATION_AUTHORITY.md](../architecture/authors/AUTHOR_RECOMMENDATION_AUTHORITY.md) | `MASTER_AUTHOR_SYSTEM.md` |
 | Quotes | Product System; Canonical Entity | Functional | Closed Beta Ready | P1 | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), [QuoteProjectionRecoveryRunbook.md](../operations/projections/QuoteProjectionRecoveryRunbook.md) | `MASTER_QUOTES_REVIEWS.md` |
 | Reader | Product System | First-Class | Public Beta Ready | P0 | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md) | `MASTER_READER.md` |
 | Search | Product System; Intelligence System | First-Class | Public Beta Ready | P0 | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) | `MASTER_SEARCH.md` |
-| Discovery | Product System; Intelligence System | Functional | Closed Beta Ready | P0 | [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md), [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md) | `MASTER_DISCOVERY_HOME.md` |
-| Shelves | Product System | Operational | Closed Beta Ready | P0 | [ShelfDisplayProjectionRecoveryRunbook.md](../operations/projections/ShelfDisplayProjectionRecoveryRunbook.md), runtime `shelf_books` authority | `MASTER_SHELVES.md` |
+| Discovery | Product System; Intelligence System | Functional | Closed Beta Ready | P0 | [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md), [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md), [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md) | `MASTER_DISCOVERY_HOME.md` |
+| Shelves | Product System | Operational | Closed Beta Ready | P0 | [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md), [ShelfDisplayProjectionRecoveryRunbook.md](../operations/projections/ShelfDisplayProjectionRecoveryRunbook.md), runtime `shelf_books` authority | `MASTER_SHELVES.md` |
 | Social | Product System | Functional | Internal Ready | P1 | [T3_social_attachment_post_authority_stabilization_execution.md](../audits/evidence/audit/T3_social_attachment_post_authority_stabilization_execution.md), social runtime callables | `MASTER_SOCIAL_MESSAGING.md` |
 | Messaging | Product System | Functional | Closed Beta Ready | P2 | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) | `MASTER_SOCIAL_MESSAGING.md` |
 | Writing | Product System | Operational | Closed Beta Ready | P1 | [T6_write_publishing_authority_stabilization_execution.md](../audits/evidence/audit/T6_write_publishing_authority_stabilization_execution.md), write runtime callables | `MASTER_WRITE_PUBLISHING.md` |
@@ -43,11 +43,11 @@ This is a navigation and authority-routing document. It does not create new arch
 | Admin | Operational System; Control Plane | Operational | Internal Ready | P0 | [FIRESTORE_SAFETY.md](../engineering/FIRESTORE_SAFETY.md), admin/control runtime | `MASTER_ADMIN_OPERATIONS.md` |
 | Projection System | Infrastructure System; Operational System | First-Class | Production Ready | P0 | [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), [ProjectionRegistry.md](../architecture/ProjectionRegistry.md) | `MASTER_PROJECTION_RECOVERY.md` |
 | Media | Infrastructure System; Product Support | Operational | Closed Beta Ready | P0 | [DM_MEDIA_ATTACHMENTS.md](../architecture/messaging/DM_MEDIA_ATTACHMENTS.md), attachment runtime, storage rules | `MASTER_MEDIA_STORAGE.md` |
-| SSR | Infrastructure System | Emerging | Internal Ready | P2 | SSR runtime functions and hosting config | `MASTER_PUBLIC_WEB.md` |
+| SSR | Infrastructure System | Emerging | Internal Ready | P2 | [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md), SSR runtime functions and hosting config | `MASTER_PUBLIC_WEB.md` |
 | Design System | Platform System; Frontend Platform | Functional | Internal Ready | P1 | [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md) | `MASTER_DESIGN_SYSTEM.md` |
-| Contracts | Infrastructure System; API Layer | Operational | Closed Beta Ready | P0 | `contracts/*`, callable wrapper runtime, [WAVE_4_COMPLETION.md](../audits/evidence/completions/engineering/WAVE_4_COMPLETION.md) | `MASTER_CONTRACTS_API.md` |
+| Contracts | Infrastructure System; API Layer | Operational | Closed Beta Ready | P0 | [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md), `contracts/*`, callable wrapper runtime, [WAVE_4_COMPLETION.md](../audits/evidence/completions/engineering/WAVE_4_COMPLETION.md) | `MASTER_CONTRACTS_API.md` |
 | Observability | Operational System | Operational | Internal Ready | P0 | [FIRESTORE_MONITORING.md](../engineering/FIRESTORE_MONITORING.md), operations runtime, projection runbooks | `MASTER_OBSERVABILITY.md` |
-| Feedback / Reporting | Operational System; Product Support | Operational | Closed Beta Ready | P1 | feedback runtime, social reporting runtime, feedback tests | `MASTER_ADMIN_OPERATIONS.md` |
+| Feedback / Reporting | Operational System; Product Support | Operational | Closed Beta Ready | P1 | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), feedback runtime, social reporting runtime, feedback tests | `MASTER_FEEDBACK_REPORTING.md` |
 | Spaces / Venues | Product System; Community Surface | Emerging | Internal Ready | P2 | spaces runtime, [VenueStatsDeprecationRunbook.md](../operations/projections/VenueStatsDeprecationRunbook.md) | `MASTER_SPACES_VENUES.md` |
 
 ## Product Systems
@@ -99,7 +99,7 @@ This is a navigation and authority-routing document. It does not create new arch
 | Admin / Control Plane | Authority administration, deletion, metrics, dashboards, editorial controls | `functions/src/domains/admin.ts`, `functions/src/control/*` |
 | Projection / Recovery | Bounded rebuilds, verification, health, failure ledgers, runbooks | `functions/src/operations/*`, [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md) |
 | Observability / Analytics | Metrics, events, exports, runtime health, anomaly reporting | `functions/src/analytics/*`, `functions/src/operations/*` |
-| Feedback / Reporting | Feedback reports, social reports, moderation handoff | `functions/src/domains/feedback.ts`, social reporting/moderation runtime |
+| Feedback / Reporting | Feedback reports, social reports, moderation handoff | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), `functions/src/domains/feedback.ts`, social reporting/moderation runtime |
 
 ## Infrastructure Systems
 
@@ -123,6 +123,7 @@ This is a navigation and authority-routing document. It does not create new arch
 | Operations Platform | Projections, recovery, observability, runbooks | Phase 8A docs, projection registry, operations runbooks |
 | Control Plane | Admin, deletion, safety, governance enforcement | Firestore safety docs and admin/control runtime |
 | Social Platform | Social posts, interactions, reporting handoff, community surfaces | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md), social runtime |
+| Feedback Operations | Feedback submissions, reports, feedback attachments, moderation handoff | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), feedback runtime |
 | Messaging Platform | Direct messages, message requests, DM privacy and attachments | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md), messaging docs |
 | Writing Platform | Writing projects, manuscripts, creator workflows | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md), write runtime |
 | Media Platform | Attachments, uploads, covers, derivatives, signed access | [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md), media runtime |
@@ -167,6 +168,7 @@ The following first-class system Master documents currently exist:
 - `MASTER_PROJECTION_RECOVERY.md`
 - `MASTER_ADMIN_OPERATIONS.md`
 - `MASTER_SOCIAL_MESSAGING.md`
+- `MASTER_FEEDBACK_REPORTING.md`
 - `MASTER_WRITE_PUBLISHING.md`
 - `MASTER_MEDIA_STORAGE.md`
 - `MASTER_OBSERVABILITY.md`

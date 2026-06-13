@@ -20,8 +20,8 @@ import {
   isCanonicalBookReaderEbookStoragePath,
   isLegacyEbookAttachmentStoragePath,
 } from '../attachments/storageSignedUrl';
-import { resolveBookToEbookAttachment } from '../attachments/resolveBookToEbookAttachment';
 import { canUserReadBook } from "../rights/bookRights";
+import { resolveReadableManifestationForWork } from "../manifestations/manifestationAuthority";
 
 const db = admin.firestore();
 const EBOOK_URL_TTL_MS = 10 * 60 * 1000;
@@ -56,10 +56,7 @@ export const requestEbookReadAccess = onCall(
     /* ----------------------------------
        2. Resolve Catalog → Edition → Attachment
     ---------------------------------- */
-    const [bookSnap, attachment] = await Promise.all([
-      db.collection("books").doc(bookId).get(),
-      resolveBookToEbookAttachment(bookId),
-    ]);
+    const bookSnap = await db.collection("books").doc(bookId).get();
 
     if (!bookSnap.exists) {
       throw new HttpsError(
@@ -69,8 +66,9 @@ export const requestEbookReadAccess = onCall(
     }
 
     const book = (bookSnap.data() ?? {}) as Record<string, unknown>;
+    const manifestation = await resolveReadableManifestationForWork({ bookId, book });
 
-    if (!attachment) {
+    if (!manifestation.storagePath) {
       logger.warn("[READER][READ_ACCESS_ATTACHMENT_NOT_FOUND]", {
         uid,
         bookId,
@@ -87,12 +85,17 @@ export const requestEbookReadAccess = onCall(
        - Uploaded books are public by default
        - Paid / restricted paths come later
     ---------------------------------- */
-    if (!canUserReadBook(book, uid) || attachment.visibility === 'restricted' || attachment.visibility === 'private') {
+    if (
+      !canUserReadBook(book, uid) ||
+      manifestation.visibility === 'restricted' ||
+      manifestation.visibility === 'private'
+    ) {
       logger.warn("[READER][READ_ACCESS_DENIED]", {
         uid,
         bookId,
-        attachmentId: attachment.id,
-        visibility: attachment.visibility,
+        manifestationId: manifestation.manifestationId,
+        attachmentId: manifestation.attachmentId,
+        visibility: manifestation.visibility,
         rightsMode: book.rightsMode ?? null,
       });
       throw new HttpsError(
@@ -104,27 +107,29 @@ export const requestEbookReadAccess = onCall(
     /* ----------------------------------
        4. Storage Path Resolution
     ---------------------------------- */
-    if (!attachment.storagePath) {
+    if (!manifestation.storagePath) {
       logger.error("[READER][READ_ACCESS_MISSING_STORAGE_PATH]", {
         uid,
         bookId,
-        attachmentId: attachment.id,
+        manifestationId: manifestation.manifestationId,
+        attachmentId: manifestation.attachmentId,
       });
       throw new HttpsError(
-        'internal',
-        'Attachment is missing storagePath.'
+      'internal',
+        'Manifestation is missing storagePath.'
       );
     }
 
     if (
-      !isCanonicalBookReaderEbookStoragePath(bookId, attachment.storagePath) &&
-      !isLegacyEbookAttachmentStoragePath(attachment.storagePath)
+      !isCanonicalBookReaderEbookStoragePath(bookId, manifestation.storagePath) &&
+      !isLegacyEbookAttachmentStoragePath(manifestation.storagePath)
     ) {
       logger.error("[READER][READ_ACCESS_INVALID_STORAGE_PATH]", {
         uid,
         bookId,
-        attachmentId: attachment.id,
-        storagePath: attachment.storagePath,
+        manifestationId: manifestation.manifestationId,
+        attachmentId: manifestation.attachmentId,
+        storagePath: manifestation.storagePath,
       });
       throw new HttpsError(
         'failed-precondition',
@@ -138,14 +143,15 @@ export const requestEbookReadAccess = onCall(
     const expiresAt = Date.now() + EBOOK_URL_TTL_MS;
     const signedUrl = await getSignedUrl({
       bucket: admin.storage().bucket().name,
-      path: attachment.storagePath,
+      path: manifestation.storagePath,
       intent: 'ebook',
     });
 
     logger.info("[READER][READ_ACCESS_GRANTED]", {
       uid,
       bookId,
-      attachmentId: attachment.id,
+      manifestationId: manifestation.manifestationId,
+      attachmentId: manifestation.attachmentId,
       expiresAt,
     });
 
@@ -156,7 +162,8 @@ export const requestEbookReadAccess = onCall(
       .add({
         uid,
         bookId,
-        attachmentId: attachment.id,
+        manifestationId: manifestation.manifestationId,
+        attachmentId: manifestation.attachmentId,
         timestamp: admin.firestore.FieldValue.serverTimestamp(),
         action: 'READ_GRANTED',
       })
@@ -164,7 +171,8 @@ export const requestEbookReadAccess = onCall(
         logger.warn("[READER][READ_ACCESS_AUDIT_WRITE_FAILED]", {
           uid,
           bookId,
-          attachmentId: attachment.id,
+          manifestationId: manifestation.manifestationId,
+          attachmentId: manifestation.attachmentId,
         });
       });
 
@@ -174,6 +182,8 @@ export const requestEbookReadAccess = onCall(
     return {
       signedUrl,
       expiresAt,
+      manifestationId: manifestation.manifestationId,
+      editionId: manifestation.editionId,
     };
   }
 );

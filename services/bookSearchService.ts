@@ -156,7 +156,14 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     record.readerAuthority && typeof record.readerAuthority === 'object' && !Array.isArray(record.readerAuthority)
       ? (record.readerAuthority as Record<string, unknown>)
       : {};
+  const manifestationAvailability =
+    record.manifestationAvailability &&
+    typeof record.manifestationAvailability === 'object' &&
+    !Array.isArray(record.manifestationAvailability)
+      ? (record.manifestationAvailability as any)
+      : undefined;
   const readerAuthorityAttachmentId = asString(readerAuthorityRecord.attachmentId);
+  const readerAuthorityManifestationId = asString(readerAuthorityRecord.manifestationId);
   const readerAuthoritySource = asString(readerAuthorityRecord.source);
   const readerAuthorityUpdatedAt = asString(readerAuthorityRecord.updatedAt);
   const progressRecord =
@@ -209,6 +216,7 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     hasEbook: Boolean(record.hasEbook),
     downloadable: Boolean(record.downloadable),
     isEbookAvailable: Boolean(record.isEbookAvailable),
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
     confidence: Number.isFinite(confidenceRaw) ? confidenceRaw : 0,
     rank: Number.isFinite(rankRaw) ? Math.max(0, Math.trunc(rankRaw)) : 999,
     ...(asString(record.isbn13) ? { isbn13: asString(record.isbn13) } : {}),
@@ -220,6 +228,7 @@ function normalizeResult(raw: unknown): SearchResultDTO | null {
     readerAuthority: {
       hasReadableAttachment: readerAuthorityRecord.hasReadableAttachment === true,
       attachmentId: readerAuthorityAttachmentId || null,
+      manifestationId: readerAuthorityManifestationId || null,
       ...(readerAuthoritySource ? { source: readerAuthoritySource } : {}),
       ...(readerAuthorityUpdatedAt ? { updatedAt: readerAuthorityUpdatedAt } : {}),
     },

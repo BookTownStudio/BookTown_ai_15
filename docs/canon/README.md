@@ -8,7 +8,7 @@ last_audited: 2026-06-13
 source_of_truth: false
 supersedes: []
 superseded_by: null
-ai_read: false
+ai_read: true
 ---
 
 # BookTown Canon Layer

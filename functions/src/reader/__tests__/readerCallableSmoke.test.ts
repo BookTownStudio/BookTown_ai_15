@@ -41,6 +41,60 @@ class FakeCollectionRef {
     const nextId = id ?? `${this.name}_auto_${this.store.nextId(this.name)}`;
     return new FakeDocRef(this.store, this.name, nextId);
   }
+
+  where(field: unknown, op: "==" | ">=" | "<", value: unknown): FakeQuery {
+    return new FakeQuery(this.store, this.name).where(field, op, value);
+  }
+}
+
+class FakeQuery {
+  private max = Number.POSITIVE_INFINITY;
+  private conditions: Array<{
+    field: unknown;
+    op: "==" | ">=" | "<";
+    value: unknown;
+  }> = [];
+
+  constructor(
+    private readonly store: FakeFirestore,
+    private readonly collectionName: string
+  ) {}
+
+  where(field: unknown, op: "==" | ">=" | "<", value: unknown): FakeQuery {
+    this.conditions.push({ field, op, value });
+    return this;
+  }
+
+  limit(max: number): FakeQuery {
+    this.max = max;
+    return this;
+  }
+
+  async get(): Promise<{ docs: Array<{ id: string; data: () => JsonMap }> }> {
+    const matches = this.store
+      .list(this.collectionName)
+      .filter((entry) => this.conditions.every((condition) => matchesCondition(entry, condition)))
+      .slice(0, this.max)
+      .map((entry) => ({
+        id: entry.id,
+        data: () => deepClone(entry.data),
+      }));
+    return { docs: matches };
+  }
+}
+
+function matchesCondition(
+  entry: { id: string; data: JsonMap },
+  condition: { field: unknown; op: "==" | ">=" | "<"; value: unknown }
+): boolean {
+  const actual =
+    typeof condition.field === "string"
+      ? entry.data[condition.field]
+      : entry.id;
+  if (condition.op === "==") return actual === condition.value;
+  if (typeof actual !== "string" || typeof condition.value !== "string") return false;
+  if (condition.op === ">=") return actual >= condition.value;
+  return actual < condition.value;
 }
 
 class FakeFirestore {
@@ -70,6 +124,15 @@ class FakeFirestore {
     const bucket = this.data.get(collection);
     if (!bucket) return null;
     return bucket.has(id) ? deepClone(bucket.get(id) as JsonMap) : null;
+  }
+
+  list(collection: string): Array<{ id: string; data: JsonMap }> {
+    const bucket = this.data.get(collection);
+    if (!bucket) return [];
+    return Array.from(bucket.entries()).map(([id, data]) => ({
+      id,
+      data: deepClone(data),
+    }));
   }
 
   write(collection: string, id: string, value: JsonMap, merge: boolean): void {
@@ -159,7 +222,66 @@ describe("Reader callable smoke", () => {
   beforeEach(() => {
     fakeDb.reset();
     resolveAttachmentMock.mockClear();
-    fakeDb.write("books", "book_smoke", { title: "Smoke Book" }, false);
+    fakeDb.write(
+      "books",
+      "book_smoke",
+      {
+        title: "Smoke Book",
+        primaryEditionId: "edition_smoke",
+        rightsMode: "public_free",
+        visibility: "public",
+      },
+      false
+    );
+    fakeDb.write(
+      "editions",
+      "edition_smoke",
+      {
+        bookId: "book_smoke",
+        workId: "book_smoke",
+        ebookAttachmentId: "att_book_smoke",
+      },
+      false
+    );
+    fakeDb.write(
+      "attachments",
+      "att_book_smoke",
+      {
+        bookId: "book_smoke",
+        editionId: "edition_smoke",
+        parentType: "editions",
+        parentId: "edition_smoke",
+        storagePath: "ebooks/book_smoke/canonical.epub",
+        visibility: "public",
+        mimeType: "application/epub+zip",
+        format: "epub",
+      },
+      false
+    );
+    fakeDb.write(
+      "manifestations",
+      "attachment:att_book_smoke",
+      {
+        id: "attachment:att_book_smoke",
+        manifestationId: "attachment:att_book_smoke",
+        bookId: "book_smoke",
+        workId: "book_smoke",
+        editionId: "edition_smoke",
+        status: "active",
+        source: "ebook_attachment",
+        accessMode: "in_app",
+        format: "epub",
+        mimeType: "application/epub+zip",
+        attachmentId: "att_book_smoke",
+        storagePath: "ebooks/book_smoke/canonical.epub",
+        visibility: "public",
+        readability: {
+          canReadInApp: true,
+          canDownload: true,
+        },
+      },
+      false
+    );
   });
 
   it("opens session, records progress, fetches progress, and resumes deterministically", async () => {
@@ -180,6 +302,8 @@ describe("Reader callable smoke", () => {
 
     const manifestAfterFirstOpen = fakeDb.read("reader_manifests", "book_smoke");
     expect(manifestAfterFirstOpen?.bookId).toBe("book_smoke");
+    expect(manifestAfterFirstOpen?.editionId).toBe("edition_smoke");
+    expect(manifestAfterFirstOpen?.manifestationId).toBe("attachment:att_book_smoke");
     expect(manifestAfterFirstOpen?.format).toBe("epub");
     expect(manifestAfterFirstOpen?.version).toBe(1);
 

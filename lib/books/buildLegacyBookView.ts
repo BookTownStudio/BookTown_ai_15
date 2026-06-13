@@ -125,6 +125,15 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     (seed as { coverMode?: unknown }).coverMode === "fallback_metadata"
       ? ((seed as { coverMode: Book["coverMode"] }).coverMode)
       : undefined;
+  const manifestationAvailability =
+    seed.manifestationAvailability &&
+    typeof seed.manifestationAvailability === "object" &&
+    !Array.isArray(seed.manifestationAvailability)
+      ? (seed.manifestationAvailability as Book["manifestationAvailability"])
+      : undefined;
+  const hasManifestationAvailability =
+    manifestationAvailability?.hasReadableManifestation === true &&
+    manifestationAvailability?.canReadInApp === true;
 
   const titleEn =
     readString(seed.titleEn)
@@ -187,7 +196,7 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     ...(typeof seed.semanticGraphEligible === "boolean"
       ? { semanticGraphEligible: seed.semanticGraphEligible }
       : {}),
-    isEbookAvailable: seed.isEbookAvailable === true || seed.hasEbook === true,
+    isEbookAvailable: hasManifestationAvailability,
     ...(titleAlias
       ? { title: titleAlias }
       : {}),
@@ -213,7 +222,8 @@ export function buildLegacyBookView(seed: LegacyBookSeed): Book {
     ...(typeof seed.ebookStoragePath === "string" && seed.ebookStoragePath.trim().length > 0
       ? { ebookStoragePath: seed.ebookStoragePath.trim() }
       : {}),
-    ...(seed.downloadable === true ? { downloadable: true } : {}),
+    ...(hasManifestationAvailability ? { downloadable: true } : {}),
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
     ...(readReaderAuthority((seed as { readerAuthority?: unknown }).readerAuthority)
       ? {
           readerAuthority: readReaderAuthority(

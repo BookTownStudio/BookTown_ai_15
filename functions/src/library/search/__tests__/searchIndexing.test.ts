@@ -58,16 +58,20 @@ describe("searchIndexing", () => {
     expect(bookSearchPatchNeedsUpdate(legacyRow, patch)).toBe(true);
   });
 
-  it("derives ebook search flags from readerAuthority instead of storagePath", () => {
+  it("derives ebook search flags from Manifestation availability instead of storagePath", () => {
     const patch = buildBookSearchPatch({
       title: "Uploaded EPUB",
       authors: ["Reader Owner"],
       source: "user_upload",
       storagePath: "books/book-user/original/upload.epub",
-      readerAuthority: {
-        hasReadableAttachment: true,
-        attachmentId: null,
-        source: "user_upload",
+      manifestationAvailability: {
+        hasReadableManifestation: true,
+        canReadInApp: true,
+        manifestationId: "legacy:uploaded:book-user:abc123",
+        editionId: "uploaded:book-user",
+        format: "epub",
+        source: "legacy_upload",
+        accessMode: "in_app",
       },
     });
 

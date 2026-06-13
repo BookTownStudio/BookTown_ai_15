@@ -25,8 +25,24 @@ export interface ExternalReadableSourceDTO {
 export interface SearchReaderAuthorityProjectionDTO {
   hasReadableAttachment: boolean;
   attachmentId?: string | null;
+  manifestationId?: string | null;
   source?: string | null;
   updatedAt?: string | null;
+}
+
+export interface SearchManifestationAvailabilityProjectionDTO {
+  hasReadableManifestation: boolean;
+  canReadInApp: boolean;
+  canDownload?: boolean;
+  acquisitionEligible?: boolean;
+  manifestationId: string;
+  editionId: string;
+  format: "epub" | "pdf" | "unknown";
+  source: string;
+  accessMode: "in_app" | "external_link";
+  attachmentId?: string;
+  visibility?: "public" | "restricted" | "private";
+  updatedAt?: unknown;
 }
 
 export interface SearchReadingProgressProjectionDTO {
@@ -71,6 +87,8 @@ export interface SearchResultDTO {
   downloadable: boolean;
   /** Derived compatibility projection for in-app readability. */
   isEbookAvailable: boolean;
+  /** Manifestation-owned availability projection. */
+  manifestationAvailability?: SearchManifestationAvailabilityProjectionDTO;
   confidence: number;
   rank: number;
   canonicalTradition?: string;

@@ -97,6 +97,43 @@ export interface Ebook {
     updatedAt: string;
 }
 
+export type ManifestationFormat = 'epub' | 'pdf' | 'unknown';
+export type ManifestationAccessMode = 'in_app' | 'external_link';
+export type ManifestationSource =
+    | 'ebook_attachment'
+    | 'acquisition'
+    | 'external_readable_source'
+    | 'legacy_upload';
+export type ManifestationStatus = 'active' | 'inactive';
+
+export interface Manifestation {
+    manifestationId: string;
+    id: string;
+    workId: string;
+    bookId: string;
+    editionId: string;
+    status: ManifestationStatus;
+    source: ManifestationSource;
+    accessMode: ManifestationAccessMode;
+    format: ManifestationFormat;
+    mimeType?: string;
+    attachmentId?: string;
+    storagePath?: string;
+    visibility?: 'public' | 'restricted' | 'private';
+    provider?: string;
+    providerExternalId?: string;
+    externalUrl?: string;
+    checksum?: string;
+    readability: {
+        canReadInApp: boolean;
+        canRender: boolean;
+        canDownload: boolean;
+        acquisitionEligible: boolean;
+    };
+    createdAt?: string | number;
+    updatedAt: string | number;
+}
+
 export interface ExternalSource {
     sourceId: string;
     source: 'google_books' | 'open_library' | 'other';
@@ -290,13 +327,30 @@ export interface Book {
     pageCount?: number;
     createdAt?: number;
     rawBook?: any; // preserved provider response
+    primaryEditionId?: string; // Canonical Work -> primary Edition authority pointer
+    editionId?: string; // Legacy compatibility projection; prefer primaryEditionId.
     ebookAttachmentId?: string; // Reference to secure binary attachment
     ebookStoragePath?: string;
     downloadable?: boolean;
     readerAuthority?: {
         hasReadableAttachment?: boolean;
         attachmentId?: string | null;
+        manifestationId?: string | null;
         source?: string;
+        updatedAt?: unknown;
+    };
+    manifestationAvailability?: {
+        hasReadableManifestation: boolean;
+        canReadInApp: boolean;
+        canDownload?: boolean;
+        acquisitionEligible?: boolean;
+        manifestationId: string;
+        editionId: string;
+        format: 'epub' | 'pdf' | 'unknown';
+        source: string;
+        accessMode: 'in_app' | 'external_link';
+        attachmentId?: string;
+        visibility?: 'public' | 'restricted' | 'private';
         updatedAt?: unknown;
     };
     providerExternalIds?: string[];

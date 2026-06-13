@@ -658,8 +658,10 @@ function computeCanonicalEbookClass(
   _bookId: string,
   data: Record<string, unknown>
 ): SearchEbookClass {
-  const readerAuthority = asRecord(data.readerAuthority);
-  return readerAuthority?.hasReadableAttachment === true ? "in_app" : "unavailable";
+  const availability = asRecord(data.manifestationAvailability);
+  return availability?.hasReadableManifestation === true && availability?.canReadInApp === true
+    ? "in_app"
+    : "unavailable";
 }
 
 function computeExternalEbookClass(hasExternalEbookSignal: boolean): SearchEbookClass {
@@ -2197,15 +2199,16 @@ function mapCanonicalBook(
   const seriesName = asNonEmptyString(data.seriesName);
   const seriesPosition = asNumber(data.seriesPosition);
   const publishedYear = asNumber(data.publishedYear);
-  const readerAuthorityRaw = asRecord(data.readerAuthority);
-  const readerAuthorityAttachmentId = asNonEmptyString(readerAuthorityRaw?.attachmentId);
-  const readerAuthoritySource = asNonEmptyString(readerAuthorityRaw?.source);
-  const readerAuthorityUpdatedAt = asNonEmptyString(readerAuthorityRaw?.updatedAt);
+  const manifestationAvailability = asRecord(data.manifestationAvailability);
+  const readerAuthorityAttachmentId = asNonEmptyString(manifestationAvailability?.attachmentId);
+  const readerAuthoritySource = asNonEmptyString(manifestationAvailability?.source);
+  const readerAuthorityUpdatedAt = asNonEmptyString(manifestationAvailability?.updatedAt);
   const readerAuthority =
-    readerAuthorityRaw?.hasReadableAttachment === true
+    manifestationAvailability?.hasReadableManifestation === true
       ? {
           hasReadableAttachment: true,
           attachmentId: readerAuthorityAttachmentId || null,
+          manifestationId: asNonEmptyString(manifestationAvailability.manifestationId) || null,
           ...(readerAuthoritySource ? { source: readerAuthoritySource } : {}),
           ...(readerAuthorityUpdatedAt ? { updatedAt: readerAuthorityUpdatedAt } : {}),
         }
@@ -2242,6 +2245,7 @@ function mapCanonicalBook(
     hasEbook: ownedReadSignals.hasEbook,
     downloadable: ownedReadSignals.downloadable,
     isEbookAvailable: ownedReadSignals.isEbookAvailable,
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
     readerAuthority,
     confidence: rank.confidence,
     rank: rank.rankTier,

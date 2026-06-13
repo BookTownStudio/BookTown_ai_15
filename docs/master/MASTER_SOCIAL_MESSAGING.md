@@ -86,7 +86,7 @@ Operational evidence:
 | Social posts | Social Platform | Social domain and social modules | Social runtime and T3 audit evidence until dedicated architecture exists. |
 | Comments and reactions | Social Platform | Social interaction modules | Social runtime and projection runbooks. |
 | Direct messages | Messaging Platform | Messaging domain and direct message runtime | Messaging architecture and V1 lock docs. |
-| Social reporting | Feedback Operations | Feedback and social reporting runtime | Feedback runtime and admin/moderation evidence. |
+| Social reporting | Feedback Operations | Feedback and social reporting runtime | Feedback/Reporting Master and admin/moderation evidence. |
 | Moderation handoff | Social Platform; Control Plane | Social moderation and admin/control runtime | Runtime authority until dedicated moderation authority exists. |
 
 ## Dependency Matrix
@@ -109,7 +109,7 @@ Operational evidence:
 | DM attachments | [DM_ATTACHMENTS.md](../architecture/messaging/DM_ATTACHMENTS.md), [DM_MEDIA_ATTACHMENTS.md](../architecture/messaging/DM_MEDIA_ATTACHMENTS.md), [DM_SHELF_ATTACHMENTS.md](../architecture/messaging/DM_SHELF_ATTACHMENTS.md). |
 | Social post authority | Social runtime and T3 audit evidence until a dedicated social architecture doc exists. |
 | Social recovery | Relevant social, follow, post, and notification runbooks. |
-| Moderation or reporting | Feedback/social runtime and Admin / Control Plane authority. |
+| Moderation or reporting | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), feedback/social runtime, and Admin / Control Plane authority. |
 
 ## System Architecture
 
@@ -218,6 +218,7 @@ Readiness: Social is Internal Ready; Messaging is Closed Beta Ready for constrai
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
 - [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md)
 - [MASTER_ADMIN_OPERATIONS.md](MASTER_ADMIN_OPERATIONS.md)
+- [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md)
 - [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md)
 - [DM_ARCHITECTURE.md](../architecture/messaging/DM_ARCHITECTURE.md)
 - [ProjectionRegistry.md](../architecture/ProjectionRegistry.md)

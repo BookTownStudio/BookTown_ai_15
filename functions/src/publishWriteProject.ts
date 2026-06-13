@@ -2,6 +2,7 @@ import { onCall, HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "./firebaseAdmin";
 import { materializeBookAuthorityInTransaction } from "./library/materializeBookAuthority";
+import { setExternalFileManifestationInTransaction } from "./manifestations/manifestationAuthority";
 import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/normalization";
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 
@@ -23,6 +24,7 @@ type PublishResult = {
   publishedEditionId: string;
   bookId: string;
   editionId: string;
+  manifestationIds?: string[];
 };
 
 const MAX_CANONICAL_COVER_BYTES = 10 * 1024 * 1024;
@@ -335,6 +337,9 @@ function mapPublishedDocToResult(doc: Record<string, unknown>): PublishResult | 
     publishedEditionId: doc.publishedEditionId,
     bookId: doc.bookId,
     editionId: doc.editionId,
+    manifestationIds: Array.isArray(doc.manifestationIds)
+      ? doc.manifestationIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+      : undefined,
   };
 }
 
@@ -384,6 +389,7 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       : "";
   const normalizedCoverUrl = normalizeCoverUrl(metadata.coverUrl);
   const canonicalBookId = `write_${uid}_${canonicalProjectId}`;
+  const canonicalEditionId = `edition_${canonicalBookId}`;
   const canonicalCoverPath = await ensureCanonicalCoverAsset({
     bookId: canonicalBookId,
     sourceUrl: normalizedCoverUrl,
@@ -472,7 +478,8 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         authorityStatus: "provisional",
         preferredBookId: canonicalBookId,
         allowIdentityReuse: false,
-        createEdition: false,
+        createEdition: true,
+        explicitEditionId: canonicalEditionId,
         ingestionKey: `write_publish:${uid}:${canonicalProjectId}`,
         extraIdentityKeys: [`source:write_publish:${uid}:${canonicalProjectId}`],
         coverCandidates: canonicalCoverPath ? [canonicalCoverPath] : [],
@@ -499,20 +506,48 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           publishedEditionId: publishedEditionRef.id,
           visibility: "public",
           publicationState: "published",
-          hasEbook: true,
-          downloadable: true,
-          isEbookAvailable: true,
           coverUrl: canonicalCoverPath,
         },
       });
 
+      const epubManifestationId = setExternalFileManifestationInTransaction(tx, {
+        bookId: canonicalBookId,
+        editionId: canonicalEditionId,
+        sourceId: `write_publish:${uid}:${canonicalProjectId}:epub`,
+        externalUrl: normalizedEpubUrl,
+        format: "epub",
+        now,
+      });
+      const pdfManifestationId = setExternalFileManifestationInTransaction(tx, {
+        bookId: canonicalBookId,
+        editionId: canonicalEditionId,
+        sourceId: `write_publish:${uid}:${canonicalProjectId}:pdf`,
+        externalUrl: normalizedPdfUrl,
+        format: "pdf",
+        now,
+      });
+      const manifestationIds = [epubManifestationId, pdfManifestationId];
+
       tx.set(
         db.collection("books").doc(canonicalBookId),
         {
+          primaryEditionId: canonicalEditionId,
+          editionId: canonicalEditionId,
+          canonicalRelations: {
+            primaryEditionId: canonicalEditionId,
+          },
           synopsis: canonicalDescription,
           publishedAt: nowIso,
           publishedWorkId,
           publishedEditionId: publishedEditionRef.id,
+          publishingEvidence: {
+            publishedWorkId,
+            publishedEditionId: publishedEditionRef.id,
+            projectId: canonicalProjectId,
+            operationId: canonicalOperationId,
+            manifestationIds,
+            updatedAt: now,
+          },
           coverState: canonicalCoverState,
           cover: {
             state: canonicalCoverState,
@@ -539,6 +574,10 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           ownerId: uid,
           projectId: canonicalProjectId,
           source: "write-publish",
+          authorityRole: "workflow_evidence",
+          canonicalBookId,
+          canonicalWorkId: canonicalBookId,
+          primaryEditionId: canonicalEditionId,
           visibility: "private",
           title: normalizedTitle,
           titleEn,
@@ -563,7 +602,11 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
       tx.set(publishedEditionRef, {
         editionId: publishedEditionRef.id,
         publishedEditionId: publishedEditionRef.id,
-        bookId: publishedWorkId,
+        authorityRole: "workflow_evidence",
+        evidenceKind: "edition_proposal",
+        canonicalEditionId,
+        bookId: canonicalBookId,
+        workId: canonicalBookId,
         publishedWorkId,
         projectId: canonicalProjectId,
         title: normalizedTitle,
@@ -584,6 +627,17 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         ebookAvailable: true,
         downloadable: true,
         source: "write-publish",
+        proposalTarget: {
+          workId: canonicalBookId,
+          editionId: canonicalEditionId,
+        },
+        manifestationProposal: {
+          manifestationIds,
+          files: {
+            epubUrl: normalizedEpubUrl,
+            pdfUrl: normalizedPdfUrl,
+          },
+        },
         rawSourceRefs: [`users/${uid}/projects/${canonicalProjectId}`],
         searchTitleNormalized: normalizeSearchText(normalizedTitle),
         searchAuthorNormalized: normalizeSearchText(authorName),
@@ -614,8 +668,9 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         versionNumber: nextRevision,
         publishedWorkId,
         publishedEditionId: publishedEditionRef.id,
-        bookId: publishedWorkId,
-        editionId: publishedEditionRef.id,
+        bookId: canonicalBookId,
+        editionId: canonicalEditionId,
+        manifestationIds,
       };
 
       tx.set(publishedRef, {
@@ -632,6 +687,9 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
           publishedEditionId: publishedEditionRef.id,
           publishedWorkId,
           publishedAt: now,
+          canonicalBookId,
+          primaryEditionId: canonicalEditionId,
+          manifestationIds,
           updatedAt: now,
           revision: nextRevision,
         },
@@ -644,8 +702,10 @@ export const publishWriteProject = onCall({ cors: true }, async (request) => {
         publishedBookId: publishedRef.id,
         publishedEditionId: publishedEditionRef.id,
         publishedWorkId,
-        editionId: publishedEditionRef.id,
-        bookId: publishedWorkId,
+        canonicalEditionId,
+        editionId: canonicalEditionId,
+        bookId: canonicalBookId,
+        manifestationIds,
         result: publishedDoc,
         createdAt: now,
         updatedAt: now,

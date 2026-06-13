@@ -50,6 +50,9 @@ Its authority is presentational and interactional. It must not own business logi
 | `SPACING_SYSTEM.md` | Spacing scale, rails, containers, responsive density |
 | `MOTION_SYSTEM.md` | Motion hierarchy, durations, reduced-motion requirements |
 | `COMPONENT_PRIMITIVES.md` | Primitive layer and component governance |
+| `ACCESSIBILITY_SYSTEM.md` | Accessibility governance, keyboard behavior, focus, contrast, reduced motion, and release gates |
+| `RTL_LTR_SYSTEM.md` | Arabic/English and RTL/LTR interaction governance |
+| `COMPONENT_INVENTORY.md` | Component ownership, status, adoption, accessibility, RTL, dark mode, and deprecation tracking |
 | `READER_EXPERIENCE_SYSTEM.md` | Reader environment and relationship to app tokens |
 | `WRITER_EXPERIENCE_SYSTEM.md` | Writer environment and creative focus principles |
 | `DESIGN_GOVERNANCE.md` | Ownership, review, versioning, and design debt process |
@@ -59,7 +62,7 @@ Its authority is presentational and interactional. It must not own business logi
 
 The current product has usable foundations: Tailwind, shared UI components, bilingual text handling, dark mode, reader preferences, motion helpers, custom icons, and app layout rails. It is not yet a complete design system because token authority, component reuse, theme governance, accessibility contracts, and RTL behavior are fragmented.
 
-The system currently contains multiple visual authorities:
+The system currently contains multiple implementation sources that must be routed through this register and the canonical design-system documents:
 
 - Tailwind extension values.
 - `components/ui/tokens.ts`.
@@ -67,6 +70,7 @@ The system currently contains multiple visual authorities:
 - Screen-level Tailwind classes.
 - Reader-specific theme and typography maps.
 - Longform and editor-specific hard-coded styling.
+- Legacy root design summaries such as `docs/DESIGN_SYSTEM.md`.
 
 ## Design System Invariants
 

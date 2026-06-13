@@ -42,6 +42,11 @@ function asNonEmptyString(value: unknown, max = 512): string {
   return value.trim().slice(0, max);
 }
 
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
 function normalizeBookId(value: unknown): string {
   const bookId = asNonEmptyString(value, 256);
   if (!bookId) {
@@ -83,8 +88,15 @@ export const updatePublishedBookVisibility = onCall({ cors: true }, async (reque
         );
       }
 
-      const editionId = asNonEmptyString(book.editionId, 256);
-      const attachmentId = asNonEmptyString(book.ebookAttachmentId, 256);
+      const editionId = asNonEmptyString(book.primaryEditionId, 256);
+      if (!editionId) {
+        throw new HttpsError(
+          "failed-precondition",
+          "Published Work has no primary Edition authority."
+        );
+      }
+      const manifestationAvailability = asRecord(book.manifestationAvailability);
+      const attachmentId = asNonEmptyString(manifestationAvailability?.attachmentId, 256);
       const rightsMode = normalizeBookRightsMode(book.rightsMode);
       const effectiveVisibility = publicationVisibilityForRightsMode(rightsMode, visibility);
       const attachmentVisibility = attachmentVisibilityForPublication(
@@ -108,17 +120,15 @@ export const updatePublishedBookVisibility = onCall({ cors: true }, async (reque
         { merge: true }
       );
 
-      if (editionId) {
-        assertAllowedVisibilityPatch(
-          visibilityPatch,
-          "updatePublishedBookVisibility.edition"
-        );
-        tx.set(
-          db.collection("editions").doc(editionId),
-          visibilityPatch,
-          { merge: true }
-        );
-      }
+      assertAllowedVisibilityPatch(
+        visibilityPatch,
+        "updatePublishedBookVisibility.edition"
+      );
+      tx.set(
+        db.collection("editions").doc(editionId),
+        visibilityPatch,
+        { merge: true }
+      );
 
       if (attachmentId) {
         tx.set(

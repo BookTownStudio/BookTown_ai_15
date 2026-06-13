@@ -398,22 +398,27 @@ function sanitizeTownItems(items: HomeTownItem[], limit: number): HomeTownItem[]
 }
 
 function hasReadableAttachmentProjection(data: Record<string, unknown>): boolean {
-  const readerAuthority =
-    data.readerAuthority && typeof data.readerAuthority === "object" && !Array.isArray(data.readerAuthority)
-      ? data.readerAuthority as Record<string, unknown>
+  const availability =
+    data.manifestationAvailability &&
+    typeof data.manifestationAvailability === "object" &&
+    !Array.isArray(data.manifestationAvailability)
+      ? data.manifestationAvailability as Record<string, unknown>
       : null;
   return (
-    readerAuthority?.hasReadableAttachment === true &&
-    asString(readerAuthority.attachmentId, 160).length > 0
+    availability?.hasReadableManifestation === true &&
+    availability?.canReadInApp === true &&
+    asString(availability.manifestationId, 160).length > 0
   );
 }
 
 function resolveReadableAttachmentId(data: Record<string, unknown>): string {
-  const readerAuthority =
-    data.readerAuthority && typeof data.readerAuthority === "object" && !Array.isArray(data.readerAuthority)
-      ? data.readerAuthority as Record<string, unknown>
+  const availability =
+    data.manifestationAvailability &&
+    typeof data.manifestationAvailability === "object" &&
+    !Array.isArray(data.manifestationAvailability)
+      ? data.manifestationAvailability as Record<string, unknown>
       : null;
-  return asString(data.ebookAttachmentId, 160) || asString(readerAuthority?.attachmentId, 160);
+  return asString(availability?.attachmentId, 160);
 }
 
 async function canReaderOpenProjectedAttachment(
@@ -421,45 +426,24 @@ async function canReaderOpenProjectedAttachment(
   data: Record<string, unknown>,
   diagnostics: HomeDiagnostics
 ): Promise<boolean> {
-  const attachmentId = resolveReadableAttachmentId(data);
-  if (!attachmentId) {
+  const availability =
+    data.manifestationAvailability &&
+    typeof data.manifestationAvailability === "object" &&
+    !Array.isArray(data.manifestationAvailability)
+      ? data.manifestationAvailability as Record<string, unknown>
+      : null;
+  const manifestationId = asString(availability?.manifestationId, 160);
+  if (
+    !manifestationId ||
+    availability?.hasReadableManifestation !== true ||
+    availability?.canReadInApp !== true ||
+    asString(availability.visibility, 32) !== "public"
+  ) {
     diagnostics.unreadableAttachmentSuppressions += 1;
     return false;
   }
-
-  try {
-    const snap = await db.collection("attachments").doc(attachmentId).get();
-    diagnostics.firestoreDocumentsRead += snap.exists ? 1 : 0;
-    if (!snap.exists) {
-      diagnostics.unreadableAttachmentSuppressions += 1;
-      logger.warn("[HOME][READ_NOW_ATTACHMENT_MISSING]", { bookId, attachmentId });
-      return false;
-    }
-
-    const attachment = (snap.data() ?? {}) as Record<string, unknown>;
-    const visibility = asString(attachment.visibility, 32).toLowerCase();
-    const storagePath = asString(attachment.storagePath, 2048);
-    if (!storagePath || visibility === "private" || visibility === "restricted") {
-      diagnostics.unreadableAttachmentSuppressions += 1;
-      logger.warn("[HOME][READ_NOW_ATTACHMENT_NOT_READER_AUTHORIZED]", {
-        bookId,
-        attachmentId,
-        visibility: visibility || null,
-        hasStoragePath: storagePath.length > 0,
-      });
-      return false;
-    }
-
-    return true;
-  } catch (error) {
-    diagnostics.unreadableAttachmentSuppressions += 1;
-    logger.warn("[HOME][READ_NOW_ATTACHMENT_AUTH_CHECK_FAILED]", {
-      bookId,
-      attachmentId,
-      error: String(error),
-    });
-    return false;
-  }
+  void bookId;
+  return true;
 }
 
 async function readEvergreenBookFallback(
@@ -470,7 +454,6 @@ async function readEvergreenBookFallback(
   try {
     const snap = await db
       .collection("books")
-      .where("readerAuthority.hasReadableAttachment", "==", true)
       .orderBy("rating", "desc")
       .limit(Math.max(4, Math.min(24, limit * 3)))
       .get();
@@ -904,7 +887,6 @@ async function readContinueReading(uid: string, diagnostics: HomeDiagnostics): P
 async function readReadNow(uid: string, diagnostics: HomeDiagnostics): Promise<HomeBookItem[]> {
   const snap = await db
     .collection("books")
-    .where("readerAuthority.hasReadableAttachment", "==", true)
     .orderBy("rating", "desc")
     .limit(READ_NOW_FETCH_LIMIT)
     .get();

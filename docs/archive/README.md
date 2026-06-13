@@ -34,6 +34,7 @@ Use this layer only when the task explicitly requires historical context, migrat
 | `superseded/ontology/` | Legacy ontology documents superseded by current ontology authority. |
 | `duplicates/` | Duplicate authority documents retained for traceability after consolidation. |
 | `placeholders/` | Empty or placeholder architecture files retained as historical records. |
+| `proposals/` | Historical proposals retained for traceability, non-authoritative by default. |
 
 ## Migrated Records
 
@@ -44,8 +45,8 @@ Use this layer only when the task explicitly requires historical context, migrat
 | Superseded ontology records | 2 | Superseded historical reference. |
 | Duplicate authority records | 1 | Archived duplicate, routed to active authority. |
 | Placeholder records | 4 | Archived non-authoritative placeholders. |
+| Proposal records | 1 | Archived non-authoritative proposal. |
 
 ## AI Consumption Rule
 
 AI systems must ignore this layer by default. AI systems may read archived documents only when the user asks for historical context, migration history, supersession lineage, or audit reconstruction.
-

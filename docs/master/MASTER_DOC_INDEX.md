@@ -86,6 +86,7 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | How do projections recover? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [ProjectionRegistry.md](../architecture/ProjectionRegistry.md), [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), relevant runbook. |
 | How does MatchMaker fit? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md). |
 | How do Social or Messaging work? | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) | Messaging docs, social runtime evidence, social projection runbooks. |
+| How do Feedback or Reporting work? | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md) | Admin Operations, Social/Messaging, Media Storage, and Observability. |
 | How do Writing or Publishing work? | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md) | Write/publishing runtime evidence, Reader and Media master documents. |
 | How do Admin or operational control surfaces work? | [MASTER_ADMIN_OPERATIONS.md](MASTER_ADMIN_OPERATIONS.md) | Firestore safety docs, Projection/Recovery, Observability. |
 | How do Media, Attachments, Uploads, or Storage work? | [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md) | Attachment docs, upload lock, media projection runbooks. |
@@ -96,7 +97,7 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | How do Quotes or Reviews work? | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) | Ontology, Catalog, quote/review runbooks. |
 | How do Authors work? | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) | Catalog, Entity Platform, author recommendation docs. |
 | How do Contracts or APIs work? | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) | Shared contracts, callable wrappers, owning domain Master docs. |
-| How does the Design System work? | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) | Design-system register and design governance docs. |
+| How does the Design System work? | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) | Design-system register and routed design-system authority docs. |
 | How do SSR or Public Web work? | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) | SSR runtime, owning product Master docs, Design System. |
 | How do Spaces or Venues work? | [MASTER_SPACES_VENUES.md](MASTER_SPACES_VENUES.md) | Admin Operations, Social/Messaging, Public Web, Entity Platform if literary-place authority is involved. |
 | What is product-facing vs infrastructure? | [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md) | [MASTER_PRODUCT_MAP.md](MASTER_PRODUCT_MAP.md). |
@@ -113,14 +114,14 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 
 | Domain | Route First | Authority / Evidence |
 |---|---|---|
-| Books | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md) |
-| Catalog | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [data-pipeline.md](../data-pipeline.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) |
+| Books | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md) |
+| Catalog | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md), [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) |
 | Authors | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), author architecture docs |
-| Quotes | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), quote runbooks |
+| Quotes | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) | [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), quote runbooks |
 | Reader | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md) |
 | Search | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) |
-| Discovery | [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) | [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md), [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md) |
-| Shelves | [MASTER_SHELVES.md](MASTER_SHELVES.md) | Shelf runtime authority and projection runbooks |
+| Discovery | [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) | [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md), [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md), [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md) |
+| Shelves | [MASTER_SHELVES.md](MASTER_SHELVES.md) | [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md), shelf runtime authority and projection runbooks |
 | Social | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) | Social runtime, social execution audits, post engagement runbook |
 | Messaging | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) |
 | Writing / Publishing | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md) | Write/publishing runtime and execution audit |
@@ -130,12 +131,13 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Affinity Layer | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | Author recommendation and MatchMaker docs |
 | AI Librarian | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | AI runtime, beta audit, governance references |
 | Admin | [MASTER_ADMIN_OPERATIONS.md](MASTER_ADMIN_OPERATIONS.md) | Firestore safety docs, admin/control runtime |
+| Feedback / Reporting | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md) | Admin Operations, Social/Messaging, Media Storage, feedback runtime |
 | Projection System | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), [ProjectionRegistry.md](../architecture/ProjectionRegistry.md), runbooks |
 | Media | [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md) | Attachment runtime, storage rules, media docs |
-| SSR | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) | SSR runtime and hosting config |
+| SSR | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) | [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md), SSR runtime and hosting config |
 | Spaces / Venues | [MASTER_SPACES_VENUES.md](MASTER_SPACES_VENUES.md) | Spaces runtime, venue surfaces, venue stats deprecation runbook |
-| Design System | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) | [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md) |
-| Contracts | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) | `contracts/*`, callable wrappers, contract parity docs |
+| Design System | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) | [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md), [DESIGN_GOVERNANCE.md](../architecture/design-system/DESIGN_GOVERNANCE.md) |
+| Contracts | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) | [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md), `contracts/*`, callable wrappers, contract parity docs |
 | Observability | [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md) | Operations runtime, monitoring docs, metrics runbooks |
 
 ## Architecture Routing
@@ -143,8 +145,9 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Architecture Area | Read |
 |---|---|
 | Canonical ontology | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md) |
-| Work/catalog authority | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [data-pipeline.md](../data-pipeline.md) |
+| Work/catalog authority | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md) |
 | Entity Platform | [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) |
+| Materializing entities | [MATERIALIZING_ENTITIES.md](../architecture/entity-platform/MATERIALIZING_ENTITIES.md) |
 | Search | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) |
 | Reader | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md), [READER_MOBILE_SLOS.md](../architecture/READER_MOBILE_SLOS.md), [READER_STRESS_CORPUS.md](../architecture/READER_STRESS_CORPUS.md) |
 | Projection System | [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), [ProjectionRegistry.md](../architecture/ProjectionRegistry.md), [ProjectionRecoveryFramework.md](../architecture/ProjectionRecoveryFramework.md) |
@@ -152,20 +155,21 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Literary Graph | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
 | Messaging | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) |
 | Social and Messaging | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) |
+| Feedback and Reporting | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md) |
 | Writing and Publishing | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md) |
 | Admin and Operations | [MASTER_ADMIN_OPERATIONS.md](MASTER_ADMIN_OPERATIONS.md) |
 | Media and Storage | [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md) |
 | Observability | [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md) |
 | AI and Intelligence | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) |
-| Discovery and Home | [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) |
-| Shelves | [MASTER_SHELVES.md](MASTER_SHELVES.md) |
-| Quotes and Reviews | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) |
+| Discovery and Home | [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md), [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) |
+| Shelves | [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md), [MASTER_SHELVES.md](MASTER_SHELVES.md) |
+| Quotes and Reviews | [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md), [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) |
 | Author System | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) |
-| Contracts and API | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) |
+| Contracts and API | [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md), [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) |
 | Design System | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) |
-| Public Web | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) |
+| Public Web | [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md), [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) |
 | Spaces and Venues | [MASTER_SPACES_VENUES.md](MASTER_SPACES_VENUES.md) |
-| Design System Register | [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md) |
+| Design System Register | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md), then [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md) |
 
 ## Operations Routing
 
@@ -178,10 +182,12 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Reader performance/device evidence | [READER_STRESS_CORPUS.md](../architecture/READER_STRESS_CORPUS.md), `reports/reader-device-lab/latest.md` |
 | Admin/control operations | Admin/control runtime, Firestore safety docs, projection runbooks |
 | Social or messaging operations | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md), relevant social/messaging runbooks |
+| Feedback or reporting operations | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), Admin Operations, and relevant feedback/reporting runtime evidence |
 | Media or storage operations | [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md), attachment and cover runbooks |
 | Observability operations | [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md), metrics/events/health runbooks |
 | Intelligence operations | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md), intelligence aggregate and signal queue runbooks |
 | Shelf operations | [MASTER_SHELVES.md](MASTER_SHELVES.md), shelf and user library runbooks |
+| Review operations and load gate | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md), [REVIEW_STACK_SLO.md](../operations/REVIEW_STACK_SLO.md) |
 | Public web operations | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md), observability and hosting/runtime evidence |
 | Spaces or venue operations | [MASTER_SPACES_VENUES.md](MASTER_SPACES_VENUES.md), venue stats and admin/control routing |
 
@@ -202,13 +208,16 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Firestore scan safety | [FIRESTORE_SAFETY.md](../engineering/FIRESTORE_SAFETY.md), [FIRESTORE_SCRIPT_QUARANTINE.md](../engineering/FIRESTORE_SCRIPT_QUARANTINE.md) |
 | Projection governance | [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), [ProjectionRegistry.md](../architecture/ProjectionRegistry.md) |
 | Design governance | [DESIGN_GOVERNANCE.md](../architecture/design-system/DESIGN_GOVERNANCE.md), [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md) |
+| Design accessibility | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md), then [ACCESSIBILITY_SYSTEM.md](../architecture/design-system/ACCESSIBILITY_SYSTEM.md) |
+| RTL/LTR design behavior | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md), then [RTL_LTR_SYSTEM.md](../architecture/design-system/RTL_LTR_SYSTEM.md) |
+| Component inventory | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md), then [COMPONENT_INVENTORY.md](../architecture/design-system/COMPONENT_INVENTORY.md) |
 
 ## Audit Routing
 
 | Audit Need | Read |
 |---|---|
 | Current closed beta posture | [closed_beta_readiness_audit.md](../audits/evidence/audit/closed_beta_readiness_audit.md), [PHASE_8_BETA_READINESS.md](../audits/evidence/reports/PHASE_8_BETA_READINESS.md) |
-| Search issues/evidence | [search_audit.md](../audits/evidence/audit/search_audit.md), [search-quality-report.md](../search-quality-report.md) |
+| Search issues/evidence | [search_audit.md](../audits/evidence/audit/search_audit.md), [SEARCH_QUALITY_REPORT.md](../audits/evidence/reports/SEARCH_QUALITY_REPORT.md) |
 | Canonical authority evidence | [canonical_authority_audit.md](../audits/evidence/audit/canonical_authority_audit.md) |
 | Type/contract drift evidence | [type_integrity_architecture_audit.md](../audits/evidence/audit/type_integrity_architecture_audit.md), T1-T7 execution audits |
 | Security evidence | [security_audit.md](../audits/evidence/audit/security_audit.md) |

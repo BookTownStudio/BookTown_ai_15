@@ -2,8 +2,8 @@
 id: BT-DOCS-REVIEW-STACK-SLO
 title: "Review Stack SLO and Load Gate (Tier-1)"
 status: active
-authority_level: none
-owner: documentation-governance
+authority_level: operations
+owner: quote-platform
 last_audited: 2026-06-13
 source_of_truth: true
 supersedes: []

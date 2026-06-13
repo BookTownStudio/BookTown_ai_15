@@ -59,7 +59,7 @@ Primary authority documents:
 
 - [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md)
 - [BOOK_SEARCH_QUALITY_STANDARD.md](../architecture/BOOK_SEARCH_QUALITY_STANDARD.md)
-- [search-quality-report.md](../search-quality-report.md)
+- [SEARCH_QUALITY_REPORT.md](../audits/evidence/reports/SEARCH_QUALITY_REPORT.md)
 
 Audit evidence:
 
@@ -72,6 +72,36 @@ Operational evidence:
 - [SearchBookmarksRecoveryRunbook.md](../operations/projections/SearchBookmarksRecoveryRunbook.md)
 - [SearchNotificationsRecoveryRunbook.md](../operations/projections/SearchNotificationsRecoveryRunbook.md)
 - [BookSearchFieldsRecoveryRunbook.md](../operations/projections/BookSearchFieldsRecoveryRunbook.md)
+
+## System Ownership Matrix
+
+| System | Owner | Runtime Authority | Documentation Authority |
+|---|---|---|---|
+| Search backend | Search Platform | Search engine, normalization, contracts, and search callables | Search Master and search architecture register. |
+| Search projections | Search Platform; Operations Platform | Search fields and projection recovery runtime | Search runbooks and Projection/Recovery Master. |
+| Search UX | Search Platform; Product surfaces | Search components, hooks, and navigation surfaces | Search Master and Product Map. |
+| Catalog result truth | Catalog Platform | Catalog/book authority and provider materialization | Catalog Master and Work authority docs. |
+| Search quality | Search Platform | Search tests, quality report, and production evidence | Search quality standard and audit evidence. |
+
+## Dependency Matrix
+
+| Dependency | Direction | Reason |
+|---|---|---|
+| Catalog / Library | Upstream | Search consumes canonical Work, Edition, author, and provider evidence. |
+| Contracts / API | Upstream | Search request/response shapes must remain typed and stable. |
+| Projection / Recovery | Downstream | Search fields and feeds are derived projection surfaces. |
+| Discovery / Home | Downstream | Discovery consumes search and recommendation-ready retrieval behavior. |
+| Public Web | Downstream | Public search/entity exposure depends on search-safe canonical routing. |
+
+## Authority Routing
+
+| Question | Route |
+|---|---|
+| Search behavior and ADRs | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md). |
+| Search quality expectations | [BOOK_SEARCH_QUALITY_STANDARD.md](../architecture/BOOK_SEARCH_QUALITY_STANDARD.md). |
+| Search projections and recovery | [MASTER_PROJECTION_RECOVERY.md](MASTER_PROJECTION_RECOVERY.md) and search runbooks. |
+| Catalog identity in search | [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md). |
+| Search API contracts | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md). |
 
 ## System Architecture
 
@@ -174,7 +204,7 @@ Readiness: Public Beta Ready for search-specific surfaces, subject to whole-prod
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
 - [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md)
 - [BOOK_SEARCH_QUALITY_STANDARD.md](../architecture/BOOK_SEARCH_QUALITY_STANDARD.md)
-- [search-quality-report.md](../search-quality-report.md)
+- [SEARCH_QUALITY_REPORT.md](../audits/evidence/reports/SEARCH_QUALITY_REPORT.md)
 - [ProjectionRegistry.md](../architecture/ProjectionRegistry.md)
 
 ## Future Evolution

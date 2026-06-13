@@ -99,13 +99,13 @@ function readExternalReadableSources(source: Record<string, unknown>) {
 
 function readReaderAuthority(source: Record<string, unknown>) {
   const raw =
-    source.readerAuthority &&
-    typeof source.readerAuthority === "object" &&
-    !Array.isArray(source.readerAuthority)
-      ? (source.readerAuthority as Record<string, unknown>)
+    source.manifestationAvailability &&
+    typeof source.manifestationAvailability === "object" &&
+    !Array.isArray(source.manifestationAvailability)
+      ? (source.manifestationAvailability as Record<string, unknown>)
       : null;
 
-  if (!raw || raw.hasReadableAttachment !== true) return undefined;
+  if (!raw || raw.hasReadableManifestation !== true || raw.canReadInApp !== true) return undefined;
 
   const attachmentId = asNonEmptyString(raw.attachmentId, 256);
   const authoritySource = asNonEmptyString(raw.source, 64);
@@ -113,6 +113,7 @@ function readReaderAuthority(source: Record<string, unknown>) {
   return {
     hasReadableAttachment: true,
     attachmentId: attachmentId || null,
+    manifestationId: asNonEmptyString(raw.manifestationId, 256) || null,
     ...(authoritySource ? { source: authoritySource } : {}),
     ...(raw.updatedAt !== undefined ? { updatedAt: raw.updatedAt } : {}),
   };
@@ -212,6 +213,13 @@ export async function buildCatalogBookView(
   const providerExternalIds = asStringArray(source.providerExternalIds, 256, 32);
   const externalReadableSources = readExternalReadableSources(source);
   const readerAuthority = readReaderAuthority(source);
+  const hasReadableManifestation = Boolean(readerAuthority);
+  const manifestationAvailability =
+    source.manifestationAvailability &&
+    typeof source.manifestationAvailability === "object" &&
+    !Array.isArray(source.manifestationAvailability)
+      ? (source.manifestationAvailability as Record<string, unknown>)
+      : null;
   const acquiredFromProvider =
     source.acquiredFromProvider === "openLibrary" ||
     source.acquiredFromProvider === "gutenberg" ||
@@ -261,10 +269,8 @@ export async function buildCatalogBookView(
     ...(typeof source.reviewCount !== "undefined"
       ? { reviewCount: asNonNegativeInt(source.reviewCount) }
       : {}),
-    isEbookAvailable:
-      source.isEbookAvailable === true ||
-      source.hasEbook === true ||
-      asNonEmptyString(source.ebookAttachmentId, 256).length > 0,
+    isEbookAvailable: hasReadableManifestation,
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
     ...(asNonEmptyString(source.publicationDate, 64)
       ? { publicationDate: asNonEmptyString(source.publicationDate, 64) }
       : {}),
@@ -277,13 +283,19 @@ export async function buildCatalogBookView(
       ? { createdAt: toCreatedAtMillis(source.createdAt) }
       : {}),
     rawBook: sanitizeRawBookForCatalog(source),
+    ...(asNonEmptyString(source.primaryEditionId, 256)
+      ? { primaryEditionId: asNonEmptyString(source.primaryEditionId, 256) }
+      : {}),
+    ...(asNonEmptyString(source.editionId, 256)
+      ? { editionId: asNonEmptyString(source.editionId, 256) }
+      : {}),
     ...(asNonEmptyString(source.ebookAttachmentId, 256)
       ? { ebookAttachmentId: asNonEmptyString(source.ebookAttachmentId, 256) }
       : {}),
     ...(asNonEmptyString(source.ebookStoragePath, 2048)
       ? { ebookStoragePath: asNonEmptyString(source.ebookStoragePath, 2048) }
       : {}),
-    ...(source.downloadable === true ? { downloadable: true } : {}),
+    ...(hasReadableManifestation ? { downloadable: true } : {}),
     ...(providerExternalIds.length > 0 ? { providerExternalIds } : {}),
     ...(externalReadableSources ? { externalReadableSources } : {}),
     ...(acquiredFromProvider ? { acquiredFromProvider } : {}),

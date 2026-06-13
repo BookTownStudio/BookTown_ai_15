@@ -66,6 +66,36 @@ Related graph and intelligence documents:
 - [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md)
 - [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md)
 
+## System Ownership Matrix
+
+| System | Owner | Runtime Authority | Documentation Authority |
+|---|---|---|---|
+| Entity contracts | Entity Platform | Shared entity contracts and compatibility types | Entity Platform Master and entity contract docs. |
+| Entity registry | Entity Platform | Contracted entity vocabulary and current maturity state | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| Literary Graph participation | Literary Graph | Graph contracts and relationship runtime | Literary Graph register and Entity Platform docs. |
+| Identity Graph participation | Intelligence Platform | User interaction contracts and intelligence snapshots | AI Intelligence Master and Identity Graph docs. |
+| MatchMaker entity consumption | MatchMaker | MatchMaker contracts and adapters | AI Intelligence Master and MatchMaker register. |
+
+## Dependency Matrix
+
+| Dependency | Direction | Reason |
+|---|---|---|
+| Catalog / Library | Upstream | Work, Edition, Author, and Quote authority originates in catalog-facing domains. |
+| Contracts / API | Upstream | Entity references and summaries are shared typed boundaries. |
+| Literary Graph | Downstream | Graph systems consume entity refs and authority states. |
+| AI / Intelligence | Downstream | MatchMaker, recommendations, and affinity consume entity references. |
+| Social / Messaging | Downstream | Attachments and entity references appear in user communication surfaces. |
+
+## Authority Routing
+
+| Question | Route |
+|---|---|
+| Entity vocabulary and maturity | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| Entity contracts and reference rules | [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md). |
+| Work/Edition/manifestation semantics | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md). |
+| Literary Graph entity use | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md). |
+| MatchMaker entity use | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) and [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md). |
+
 ## System Architecture
 
 The Literary Entity Platform is BookTown's common identity and reference layer for literary objects. It defines what can be referenced across product systems and how authority state must travel with those references.

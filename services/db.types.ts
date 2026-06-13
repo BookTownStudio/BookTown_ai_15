@@ -367,6 +367,7 @@ export interface ProjectDataService {
     bookId: string;
     editionId: string;
     attachmentId: string;
+    manifestationId: string;
     currentReleaseId: string;
     publicationVersion: number;
   }>;

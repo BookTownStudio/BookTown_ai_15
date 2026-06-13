@@ -32,7 +32,7 @@ Audit evidence may confirm why an authority changed, what was validated, or what
 | `audit/` | Historical audits and execution audits migrated from the legacy root `audit/` folder. |
 | `completions/` | Engineering, entity-platform, author-system, and wave completion records. |
 | `literary-graph/` | Literary Graph implementation and factory audit evidence. |
-| `reports/` | Prior report-style audits and readiness assessments. |
+| `reports/` | Prior report-style audits, readiness assessments, and migrated evidence reports. |
 | `root/` | Legacy root audit and validation reports. |
 
 ## Migrated Evidence
@@ -42,10 +42,9 @@ Audit evidence may confirm why an authority changed, what was validated, or what
 | Legacy audit folder records | 24 | Locked audit evidence. |
 | Completion records | 12 | Locked audit evidence. |
 | Literary Graph audit records | 2 | Locked audit evidence. |
-| Historical report records | 4 | Locked audit evidence. |
+| Historical report records | 5 | Locked audit evidence. |
 | Root audit and validation records | 3 | Locked audit evidence. |
 
 ## AI Consumption Rule
 
 AI systems must not read this layer by default for product or architecture answers. AI systems may read audit evidence after active authority has been identified, or when the user explicitly requests historical findings, validation status, risk evidence, or migration provenance.
-

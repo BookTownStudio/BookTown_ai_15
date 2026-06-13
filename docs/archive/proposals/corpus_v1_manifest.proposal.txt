@@ -1,8 +1,8 @@
 ---
 id: BT-DOCS-CORPUS-V1-MANIFEST-PROPOSAL
-title: "Corpus V1 Manifest.proposal"
-status: draft
-authority_level: none
+title: "Corpus V1 Manifest Proposal"
+status: archived
+authority_level: archive
 owner: documentation-governance
 last_audited: 2026-06-13
 source_of_truth: false

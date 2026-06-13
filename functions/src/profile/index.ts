@@ -132,7 +132,7 @@ type ProfileBook = {
   genresAr: string[];
   publicationDate: string | null;
   pageCount: number | null;
-  ebookAttachmentId?: string;
+  manifestationId?: string;
 };
 
 type ProfilePublication = {
@@ -245,6 +245,19 @@ function sanitizeStringArray(
 function toRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== "object") return {};
   return value as Record<string, unknown>;
+}
+
+function readManifestationAvailability(source: Record<string, unknown>): Record<string, unknown> {
+  return toRecord(source.manifestationAvailability);
+}
+
+function hasReadableManifestation(source: Record<string, unknown>): boolean {
+  const availability = readManifestationAvailability(source);
+  return (
+    availability.hasReadableManifestation === true &&
+    availability.canReadInApp === true &&
+    sanitizeString(availability.manifestationId, 256).length > 0
+  );
 }
 
 function toNullableIso(value: unknown): string | null {
@@ -744,7 +757,7 @@ function normalizeProfileBook(docId: string, source: Record<string, unknown>): P
         ? Math.max(0, source.rating)
         : 0,
     ratingsCount: toNonNegativeInt(source.ratingsCount),
-    isEbookAvailable: source.isEbookAvailable === true || source.hasEbook === true,
+    isEbookAvailable: hasReadableManifestation(source),
     genresEn: sanitizeStringArray(source.genresEn ?? source.categories, 120, 30),
     genresAr: sanitizeStringArray(source.genresAr, 120, 30),
     publicationDate: sanitizeString(source.publicationDate, 64) || null,
@@ -752,9 +765,8 @@ function normalizeProfileBook(docId: string, source: Record<string, unknown>): P
       const value = toNonNegativeInt(source.pageCount);
       return value > 0 ? value : null;
     })(),
-    ...(typeof source.ebookAttachmentId === "string" &&
-    source.ebookAttachmentId.trim().length > 0
-      ? { ebookAttachmentId: source.ebookAttachmentId.trim().slice(0, 256) }
+    ...(sanitizeString(readManifestationAvailability(source).manifestationId, 256)
+      ? { manifestationId: sanitizeString(readManifestationAvailability(source).manifestationId, 256) }
       : {}),
   };
 }
@@ -834,7 +846,7 @@ function normalizeProfileEbookPublication(
       sanitizeString(source.bookType, 64) === "authored_native" ||
       sanitizeString(source.currentReleaseId, 256).length > 0
     );
-  const ebookAttachmentId = sanitizeString(source.ebookAttachmentId, 256);
+  const manifestationId = sanitizeString(readManifestationAvailability(source).manifestationId, 256);
   const title =
     sanitizeString(source.title, 300) ||
     sanitizeString(source.titleEn ?? source.titleAr, 300);
@@ -846,7 +858,7 @@ function normalizeProfileEbookPublication(
     normalizeProfilePublicationDate(source.updatedAt) ??
     publishedAt;
 
-  if (!isPublishedAuthoredEbook || !ebookAttachmentId || !title || !publishedAt || !updatedAt) {
+  if (!isPublishedAuthoredEbook || !manifestationId || !title || !publishedAt || !updatedAt) {
     return null;
   }
 

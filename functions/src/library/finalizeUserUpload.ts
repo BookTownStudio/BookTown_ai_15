@@ -4,6 +4,10 @@ import { admin } from "../firebaseAdmin";
 import * as logger from "firebase-functions/logger";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
+import {
+  resolvePrimaryEditionIdFromWork,
+  upsertLegacyUploadManifestation,
+} from "../manifestations/manifestationAuthority";
 
 const db = admin.firestore();
 const bucket = admin.storage().bucket();
@@ -19,11 +23,17 @@ function asNonEmptyString(value: unknown): string | null {
 }
 
 function buildUserUploadReaderAuthority(
-  updatedAt: FirebaseFirestore.FieldValue
+  updatedAt: FirebaseFirestore.FieldValue,
+  params: {
+    editionId: string;
+    manifestationId: string;
+  }
 ): Record<string, unknown> {
   return {
     hasReadableAttachment: true,
     attachmentId: null,
+    editionId: params.editionId,
+    manifestationId: params.manifestationId,
     source: "user_upload",
     updatedAt,
   };
@@ -80,6 +90,21 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
       throw new HttpsError("failed-precondition", "Uploaded file is empty.");
     }
 
+    const editionId = resolvePrimaryEditionIdFromWork(book);
+    if (!editionId) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Uploaded Work has no primary Edition authority."
+      );
+    }
+    const manifestationId = await upsertLegacyUploadManifestation({
+      bookId,
+      editionId,
+      storagePath,
+      format: fileType,
+      visibility: "private",
+    });
+
     const now = FieldValue.serverTimestamp();
     const batch = db.batch();
 
@@ -108,7 +133,10 @@ export const finalizeUserUpload = onCall<FinalizeUserUploadRequest>(
       {
         uploadFinalized: true,
         uploadFinalizedAt: now,
-        readerAuthority: buildUserUploadReaderAuthority(now),
+        readerAuthority: buildUserUploadReaderAuthority(now, {
+          editionId,
+          manifestationId,
+        }),
         hasEbook: true,
         downloadable: true,
         isEbookAvailable: true,

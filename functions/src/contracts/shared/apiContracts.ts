@@ -475,6 +475,23 @@ const readerNarrationSessionStateSchema = z
   })
   .strict();
 
+const manifestationAvailabilityProjectionSchema = z
+  .object({
+    hasReadableManifestation: z.boolean(),
+    canReadInApp: z.boolean(),
+    canDownload: z.boolean().optional(),
+    acquisitionEligible: z.boolean().optional(),
+    manifestationId: z.string().min(1),
+    editionId: z.string().min(1),
+    format: z.enum(["epub", "pdf", "unknown"]),
+    source: z.string().min(1).max(64),
+    accessMode: z.enum(["in_app", "external_link"]),
+    attachmentId: z.string().max(256).optional(),
+    visibility: z.enum(["public", "restricted", "private"]).optional(),
+    updatedAt: z.unknown().optional(),
+  })
+  .strict();
+
 const searchBookSchema = z
   .object({
     id: z.string().min(1),
@@ -509,6 +526,7 @@ const searchBookSchema = z
     hasEbook: z.boolean(),
     downloadable: z.boolean(),
     isEbookAvailable: z.boolean(),
+    manifestationAvailability: manifestationAvailabilityProjectionSchema.optional(),
     confidence: z.number().min(0).max(1),
     rank: z.number().int().nonnegative(),
     canonicalTradition: z.string().max(120).optional(),
@@ -531,6 +549,7 @@ const searchBookSchema = z
       .object({
         hasReadableAttachment: z.boolean(),
         attachmentId: z.string().nullable().optional(),
+        manifestationId: z.string().nullable().optional(),
         source: z.string().nullable().optional(),
         updatedAt: z.string().nullable().optional(),
       })
@@ -670,6 +689,7 @@ const adminCanonicalBookSchema = z
     coverAuthority: z.number().int().nonnegative().optional(),
     descriptionSource: z.string().min(1).optional(),
     descriptionAuthority: z.number().int().nonnegative().optional(),
+    primaryEditionId: z.string().min(1).optional(),
     editionId: z.string().min(1).optional(),
   })
   .strict();
@@ -1067,10 +1087,13 @@ const catalogBookSchema = z
     reviewCount: z.number().int().nonnegative().optional(),
     semanticGraphEligible: z.boolean().optional(),
     isEbookAvailable: z.boolean(),
+    manifestationAvailability: manifestationAvailabilityProjectionSchema.optional(),
     publicationDate: z.string().max(64).optional(),
     pageCount: z.number().int().nonnegative().optional(),
     createdAt: z.number().int().nonnegative().optional(),
     rawBook: z.record(z.string(), z.unknown()).optional(),
+    primaryEditionId: z.string().max(256).optional(),
+    editionId: z.string().max(256).optional(),
     ebookAttachmentId: z.string().max(256).optional(),
     ebookStoragePath: z.string().max(2048).optional(),
     downloadable: z.boolean().optional(),
@@ -1078,6 +1101,7 @@ const catalogBookSchema = z
       .object({
         hasReadableAttachment: z.boolean(),
         attachmentId: z.string().max(256).nullable().optional(),
+        manifestationId: z.string().max(256).nullable().optional(),
         source: z.string().max(64).nullable().optional(),
         updatedAt: z.unknown().optional(),
       })
@@ -3978,6 +4002,7 @@ export const apiContracts = {
         .object({
           canonicalBookId: z.string().min(1),
           bookId: z.string().min(1),
+          primaryEditionId: z.string().min(1).optional(),
           editionId: z.string().min(1).optional(),
           status: z.string().min(1).optional(),
         })
@@ -4234,6 +4259,8 @@ export const apiContracts = {
         .object({
           signedUrl: z.string().url(),
           expiresAt: z.number().int().positive().optional(),
+          manifestationId: z.string().min(1).optional(),
+          editionId: z.string().min(1).optional(),
         })
         .strict(),
       "httpsCallable",
@@ -4262,6 +4289,7 @@ export const apiContracts = {
         .object({
           bookId: z.string().min(1),
           editionId: z.string().min(1).optional(),
+          manifestationId: z.string().min(1).optional(),
           status: z.enum(["already_available", "acquired"]),
           provider: z.enum(["booktown", "openLibrary", "gutenberg", "hindawi", "gallica"]),
           format: z.enum(["epub", "pdf", "unknown"]),
@@ -5528,6 +5556,7 @@ export const apiContracts = {
           versionNumber: z.number().int().positive().optional(),
           bookId: z.string().min(1),
           editionId: z.string().min(1),
+          manifestationIds: z.array(z.string().min(1)).optional(),
         })
         .strict(),
       "httpsCallable",
@@ -5589,6 +5618,7 @@ export const apiContracts = {
           bookId: z.string().min(1),
           editionId: z.string().min(1),
           attachmentId: z.string().min(1),
+          manifestationId: z.string().min(1),
           currentReleaseId: z.string().min(1),
           publicationVersion: z.number().int().positive(),
         })
@@ -6132,8 +6162,22 @@ export const apiContracts = {
     ),
 
     createEbookAttachment: defineContract(
-      z.unknown(),
-      z.unknown(),
+      z
+        .object({
+          bookId: z.string().min(1),
+          editionId: z.string().min(1),
+          storagePath: z.string().min(1),
+          mimeType: z.literal("application/pdf"),
+          surface: z.literal("ingestion"),
+        })
+        .strict(),
+      z
+        .object({
+          ok: z.boolean(),
+          attachmentId: z.string().min(1),
+          manifestationId: z.string().min(1),
+        })
+        .strict(),
       "httpsCallable",
       {
         callSites: [],

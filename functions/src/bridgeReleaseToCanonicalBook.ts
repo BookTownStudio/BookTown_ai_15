@@ -10,6 +10,7 @@ import { buildSearchFieldsFromTextParts, normalizeSearchText } from "./search/no
 import { assertActiveAuthenticatedUser } from "./shared/auth";
 import { materializeBookAuthorityInTransaction } from "./library/materializeBookAuthority";
 import { materializeAuthoredCanonicalAuthor } from "./library/authors/materializeAuthoredCanonicalAuthor";
+import { setAttachmentManifestationInTransaction } from "./manifestations/manifestationAuthority";
 import {
   attachmentVisibilityForPublication,
   normalizeBookRightsMode,
@@ -327,7 +328,8 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         authorityStatus: "provisional",
         preferredBookId: bookId,
         allowIdentityReuse: false,
-        createEdition: false,
+        createEdition: true,
+        explicitEditionId: editionId,
         ingestionKey: `write_release:${release.ownerUid}:${release.projectId}`,
         extraIdentityKeys: [`source:write_release:${release.ownerUid}:${release.projectId}`],
         coverCandidates: coverUrl ? [coverUrl] : [],
@@ -353,37 +355,9 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           rightsMode,
           visibility: effectiveVisibility,
           publicationState: "published",
-          hasEbook: true,
-          downloadable: true,
-          isEbookAvailable: true,
           coverUrl,
         },
       });
-
-      const newEditionIdentitySeed = editionSnap.exists
-        ? {}
-        : {
-            id: editionId,
-            editionId,
-            bookId,
-            authorId: canonicalAuthor.authorId,
-            source: "write_release",
-            externalId: release.projectId,
-            title,
-            titleEn,
-            titleAr,
-            authors: [authorName],
-            authorEn: authorName,
-            authorAr: authorName,
-            language,
-            description: synopsis,
-            descriptionEn: synopsis,
-            descriptionAr: synopsis,
-            searchTitleNormalized: normalizedTitle,
-            searchAuthorNormalized: normalizedAuthor,
-            searchTokens: searchFields.tokens,
-            createdAt: now,
-          };
 
       tx.set(
         attachmentRef,
@@ -398,17 +372,40 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         },
         { merge: true }
       );
+      const manifestationId = setAttachmentManifestationInTransaction(tx, {
+        bookId,
+        editionId,
+        attachmentId: release.attachmentId,
+        storagePath: release.epubStoragePath,
+        mimeType: "application/epub+zip",
+        format: "epub",
+        visibility: attachmentVisibility,
+        source: "ebook_attachment",
+        now,
+      });
 
       tx.set(
         editionRef,
         {
-          ...newEditionIdentitySeed,
+          publishingProposal: {
+            currentReleaseId: releaseId,
+            projectId: release.projectId,
+            authorId: canonicalAuthor.authorId,
+            title,
+            titleEn,
+            titleAr,
+            authors: [authorName],
+            language,
+            description: synopsis,
+            searchTitleNormalized: normalizedTitle,
+            searchAuthorNormalized: normalizedAuthor,
+            searchTokens: searchFields.tokens,
+            manifestationId,
+            attachmentId: release.attachmentId,
+            epubStoragePath: release.epubStoragePath,
+            updatedAt: now,
+          },
           currentReleaseId: releaseId,
-          hasEbook: true,
-          downloadable: true,
-          isEbookAvailable: true,
-          ebookAttachmentId: release.attachmentId,
-          epubStoragePath: release.epubStoragePath,
           publicationVersion,
           datePublished,
           dateModified: now,
@@ -432,7 +429,11 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
       tx.set(
         bookRef,
         {
+          primaryEditionId: editionId,
           editionId,
+          canonicalRelations: {
+            primaryEditionId: editionId,
+          },
           projectId: release.projectId,
           ownerId: release.ownerUid,
           ownerUid: release.ownerUid,
@@ -440,8 +441,14 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
           ownerDisplayName: authorName,
           bookType: "authored_native",
           synopsis,
-          ebookAttachmentId: release.attachmentId,
-          epubStoragePath: release.epubStoragePath,
+          publishingEvidence: {
+            currentReleaseId: releaseId,
+            projectId: release.projectId,
+            editionId,
+            manifestationId,
+            attachmentId: release.attachmentId,
+            updatedAt: now,
+          },
           currentReleaseId: releaseId,
           publicationVersion,
           datePublished,
@@ -489,6 +496,7 @@ export const bridgeReleaseToCanonicalBook = onCall({ cors: true }, async (reques
         bookId,
         editionId,
         attachmentId: release.attachmentId,
+        manifestationId,
         currentReleaseId: releaseId,
         publicationVersion,
       };

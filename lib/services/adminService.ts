@@ -167,6 +167,7 @@ export type AdminCanonicalBookRecord = {
   coverAuthority?: number;
   descriptionSource?: string;
   descriptionAuthority?: number;
+  primaryEditionId?: string;
   editionId?: string;
 };
 
@@ -955,6 +956,8 @@ function mapAdminCanonicalBookItem(item: unknown, index: number): AdminCanonical
       typeof data.descriptionAuthority === 'number' && Number.isFinite(data.descriptionAuthority)
         ? data.descriptionAuthority
         : undefined,
+    primaryEditionId:
+      readNullableString(data.primaryEditionId, 'primaryEditionId', context) ?? undefined,
     editionId: readNullableString(data.editionId, 'editionId', context) ?? undefined,
   };
 }

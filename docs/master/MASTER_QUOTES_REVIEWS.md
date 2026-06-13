@@ -63,6 +63,7 @@ Backend runtime owns quote persistence, import processing, review writes, projec
 
 Primary authority documents:
 
+- [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
 - [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md)
 - [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md)
@@ -74,6 +75,7 @@ Operational evidence:
 - [QuoteProjectionRecoveryRunbook.md](../operations/projections/QuoteProjectionRecoveryRunbook.md)
 - [ReviewProjectionRecoveryRunbook.md](../operations/projections/ReviewProjectionRecoveryRunbook.md)
 - [LegacyUserReviewsProjectionDeprecationRunbook.md](../operations/projections/LegacyUserReviewsProjectionDeprecationRunbook.md)
+- [REVIEW_STACK_SLO.md](../operations/REVIEW_STACK_SLO.md)
 
 ## System Architecture
 
@@ -157,7 +159,7 @@ Quotes and Reviews depend on:
 
 Product maturity: Functional.
 
-Architecture maturity: Implemented, with authority distributed across ontology, runtime, and runbooks.
+Architecture maturity: Implemented, with lower-level quote/review authority now routed.
 
 Documentation maturity: Partial to Good after this Master document.
 
@@ -165,7 +167,6 @@ Readiness: Closed Beta Ready for constrained quote/review workflows.
 
 ## Known Gaps
 
-- Dedicated quote lifecycle and attribution authority document is still needed.
 - Review moderation policy requires clearer documentation.
 - Legacy review migration should be explicitly superseded after completion.
 - Quote discovery boundaries need stronger routing through Search/Discovery.
@@ -177,13 +178,14 @@ Readiness: Closed Beta Ready for constrained quote/review workflows.
 - [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md)
 - [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
+- [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md)
 - [BookReviewAuthorityMigration.md](../architecture/BookReviewAuthorityMigration.md)
 
 ## System Ownership Matrix
 
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
-| Quotes | Quote Platform | Quote domain and quote modules | Ontology, Catalog, this Master doc. |
+| Quotes | Quote Platform | Quote domain and quote modules | Quote/review authority, ontology, Catalog, this Master doc. |
 | Reviews | Review Platform | Review runtime and projections | Review migration and runbooks. |
 | Attribution | Catalog Platform; Quote Platform | Quote/catalog runtime | Ontology and Work authority. |
 | Moderation | Social/Feedback/Admin | Reporting and moderation runtime | Social/Admin masters. |
@@ -203,11 +205,12 @@ Readiness: Closed Beta Ready for constrained quote/review workflows.
 | Question | Route |
 |---|---|
 | Quote ontology | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md). |
-| Quote runtime behavior | Quote runtime and quote runbook. |
+| Quote runtime behavior | [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md), quote runtime, and quote runbook. |
 | Review migration | [BookReviewAuthorityMigration.md](../architecture/BookReviewAuthorityMigration.md). |
+| Review SLO and load gate | [REVIEW_STACK_SLO.md](../operations/REVIEW_STACK_SLO.md). |
 | Moderation/reporting | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md), [MASTER_ADMIN_OPERATIONS.md](MASTER_ADMIN_OPERATIONS.md). |
 | Quote/review recovery | Quote/review runbooks and [MASTER_PROJECTION_RECOVERY.md](MASTER_PROJECTION_RECOVERY.md). |
 
 ## Future Evolution
 
-Future quote and review changes should be documented in dedicated quote, review, attribution, or moderation authority documents and then reflected here as routing updates. This Master document must not introduce new quote or review behavior directly.
+Future quote and review changes should be documented in quote/review architecture authority or dedicated attribution/moderation authority documents and then reflected here as routing updates. This Master document must not introduce new quote or review behavior directly.

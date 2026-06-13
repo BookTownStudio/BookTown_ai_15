@@ -115,6 +115,7 @@ type AdminCanonicalBookShape = {
   coverAuthority?: number;
   descriptionSource?: string;
   descriptionAuthority?: number;
+  primaryEditionId?: string;
   editionId?: string;
 };
 
@@ -509,6 +510,8 @@ const ADMIN_DUPLICATE_GROUP_SURVIVOR_PATCH_FIELDS = new Set([
   "identityKeys",
   "externalReadableSources",
   "canonicalKey",
+  "primaryEditionId",
+  // Compatibility projections only. WEM authority is primaryEditionId plus manifestationAvailability.
   "editionId",
   "canonicalRelations",
   "ebookAttachmentId",
@@ -1491,6 +1494,7 @@ async function mergeCanonicalDuplicateGroup(params: {
     const survivorEditionId =
       asNonEmptyString(freshSurvivor.data.editionId) || movedEditionIds[0] || "";
     const survivorPrimaryEditionId =
+      asNonEmptyString(freshSurvivor.data.primaryEditionId) ||
       asNonEmptyString(asRecord(freshSurvivor.data.canonicalRelations)?.primaryEditionId) ||
       survivorEditionId;
     const survivorHasReadyCover =
@@ -1529,6 +1533,7 @@ async function mergeCanonicalDuplicateGroup(params: {
       identityKeys: survivorIdentityKeys,
       externalReadableSources: survivorExternalReadableSources,
       canonicalKey: survivorCanonicalKey,
+      ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
       editionId: survivorEditionId || asNonEmptyString(freshSurvivor.data.editionId) || undefined,
       canonicalRelations: {
         ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
@@ -1599,6 +1604,7 @@ async function mergeCanonicalDuplicateGroup(params: {
       identityKeys: survivorIdentityKeys,
       externalReadableSources: survivorExternalReadableSources,
       canonicalKey: survivorCanonicalKey,
+      ...(survivorPrimaryEditionId ? { primaryEditionId: survivorPrimaryEditionId } : {}),
       ...(survivorEditionId ? { editionId: survivorEditionId } : {}),
       canonicalRelations: {
         ...(asRecord(freshSurvivor.data.canonicalRelations) || {}),
@@ -4329,6 +4335,10 @@ function mapAdminCanonicalBook(raw: DocumentData, bookId: string): AdminCanonica
     editionId:
       typeof raw.editionId === "string" && raw.editionId.trim()
         ? raw.editionId.trim()
+        : undefined,
+    primaryEditionId:
+      typeof raw.primaryEditionId === "string" && raw.primaryEditionId.trim()
+        ? raw.primaryEditionId.trim()
         : undefined,
   };
 }

@@ -58,6 +58,7 @@ Backend runtime owns home console data, editorial selection, continuity selectio
 
 Primary authority documents:
 
+- [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md)
 - [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md)
 - [DISCOVERY_CONSUMER_GOVERNANCE.md](../architecture/discovery/DISCOVERY_CONSUMER_GOVERNANCE.md)
 - [DISCOVERY_RECOMMENDATION_BOUNDARIES.md](../architecture/discovery/DISCOVERY_RECOMMENDATION_BOUNDARIES.md)
@@ -165,7 +166,7 @@ Readiness: Closed Beta Ready.
 - Home/discovery product boundaries need continued consolidation as modules expand.
 - Editorial governance should be strengthened before broad public operation.
 - Recommendation consumer behavior remains dependent on AI / Intelligence maturity.
-- Discovery/Home lacks a single lower-level architecture register.
+- Discovery/Home now has a lower-level register; editorial policy still needs strengthening before broad public operation.
 
 ## Related Documents
 
@@ -174,6 +175,7 @@ Readiness: Closed Beta Ready.
 - [MASTER_SEARCH.md](MASTER_SEARCH.md)
 - [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md)
 - [DISCOVERY_MODULE_AUTHORITY.md](../architecture/discovery/DISCOVERY_MODULE_AUTHORITY.md)
+- [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md)
 - [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md)
 
 ## System Ownership Matrix
@@ -199,7 +201,7 @@ Readiness: Closed Beta Ready.
 
 | Question | Route |
 |---|---|
-| Home/discovery module authority | Discovery architecture docs, then this document. |
+| Home/discovery module authority | [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md), discovery architecture docs, then this document. |
 | Editorial console behavior | [HOME_DISCOVERY_CONSOLE_PRESERVATION.md](../architecture/HOME_DISCOVERY_CONSOLE_PRESERVATION.md). |
 | Recommendation consumer boundaries | [DISCOVERY_RECOMMENDATION_BOUNDARIES.md](../architecture/discovery/DISCOVERY_RECOMMENDATION_BOUNDARIES.md), then [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md). |
 | Search-driven discovery | [MASTER_SEARCH.md](MASTER_SEARCH.md). |

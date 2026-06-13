@@ -145,6 +145,7 @@ const hasMinimumCanonicalIdentityMock = vi.fn(() => true);
 const ingestBookServerSideMock = vi.fn(async () => ({
   canonicalBookId: "book_1",
   bookId: "book_1",
+  primaryEditionId: "googleBooks:ext_1",
   editionId: "googleBooks:ext_1",
   status: "MERGED",
 }));
@@ -274,6 +275,7 @@ describe("acquireExternalEbookForRead", () => {
     ingestBookServerSideMock.mockResolvedValue({
       canonicalBookId: "book_1",
       bookId: "book_1",
+      primaryEditionId: "googleBooks:ext_1",
       editionId: "googleBooks:ext_1",
       status: "MERGED",
     });
@@ -290,6 +292,7 @@ describe("acquireExternalEbookForRead", () => {
         language: "en",
         rightsMode: "public_free",
         visibility: "public",
+        primaryEditionId: "googleBooks:ext_1",
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
@@ -301,6 +304,17 @@ describe("acquireExternalEbookForRead", () => {
             trust: "trusted",
           },
         ],
+      },
+      false
+    );
+    setDoc(
+      "editions/googleBooks:ext_1",
+      {
+        id: "googleBooks:ext_1",
+        editionId: "googleBooks:ext_1",
+        bookId: "book_1",
+        workId: "book_1",
+        providerExternalIds: ["googleBooks:ext_1"],
       },
       false
     );
@@ -378,6 +392,9 @@ describe("acquireExternalEbookForRead", () => {
     const attachments = Array.from(store.entries()).filter(([path]) =>
       path.startsWith("attachments/")
     );
+    const manifestations = Array.from(store.entries()).filter(([path]) =>
+      path.startsWith("manifestations/")
+    );
 
     expect(book?.ebookAttachmentId).toBeTruthy();
     expect(book?.downloadable).toBe(true);
@@ -393,6 +410,34 @@ describe("acquireExternalEbookForRead", () => {
     expect(edition?.ebookAttachmentId).toBe(book?.ebookAttachmentId);
     expect(edition?.downloadable).toBe(true);
     expect(attachments).toHaveLength(1);
+    expect(manifestations).toHaveLength(1);
+    expect(result.manifestationId).toBeTruthy();
+    expect(book?.readerAuthority).toMatchObject({
+      hasReadableAttachment: true,
+      manifestationId: result.manifestationId,
+      source: "acquisition",
+    });
+    expect(book?.manifestationAvailability).toMatchObject({
+      hasReadableManifestation: true,
+      canReadInApp: true,
+      manifestationId: result.manifestationId,
+      editionId: "googleBooks:ext_1",
+      source: "acquisition",
+      accessMode: "in_app",
+    });
+    expect(manifestations[0]?.[1]).toMatchObject({
+      bookId: "book_1",
+      editionId: "googleBooks:ext_1",
+      manifestationId: result.manifestationId,
+      source: "acquisition",
+      accessMode: "in_app",
+      readability: {
+        canReadInApp: true,
+        canRender: true,
+        canDownload: true,
+        acquisitionEligible: false,
+      },
+    });
     expect(uploadedFiles.size).toBe(1);
     expect(getDoc("ebook_acquisitions/book_1__gutenberg")).toMatchObject({
       state: "acquired",
@@ -518,6 +563,7 @@ describe("acquireExternalEbookForRead", () => {
         language: "en",
         rightsMode: "public_free",
         visibility: "public",
+        primaryEditionId: "googleBooks:ext_1",
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
@@ -536,12 +582,23 @@ describe("acquireExternalEbookForRead", () => {
         language: "en",
         rightsMode: "public_free",
         visibility: "public",
+        primaryEditionId: "edition_book_2",
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
         readability: {
           status: "trusted_external",
         },
+      },
+      false
+    );
+    setDoc(
+      "editions/edition_book_2",
+      {
+        id: "edition_book_2",
+        editionId: "edition_book_2",
+        bookId: "book_2",
+        workId: "book_2",
       },
       false
     );
@@ -650,6 +707,7 @@ describe("acquireExternalEbookForRead", () => {
         language: "en",
         rightsMode: "public_free",
         visibility: "public",
+        primaryEditionId: "googleBooks:ext_1",
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,
@@ -685,6 +743,7 @@ describe("acquireExternalEbookForRead", () => {
         language: "en",
         rightsMode: "public_free",
         visibility: "public",
+        primaryEditionId: "googleBooks:ext_1",
         downloadable: false,
         hasEbook: false,
         isEbookAvailable: false,

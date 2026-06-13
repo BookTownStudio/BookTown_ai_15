@@ -65,7 +65,8 @@ Primary authority documents:
 
 - [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
-- [data-pipeline.md](../data-pipeline.md)
+- [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md)
+- [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md)
 - [PHASE_1_CONTRACTS.md](../architecture/PHASE_1_CONTRACTS.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
 
@@ -75,14 +76,45 @@ Audit evidence:
 - [canonical_tradition_mapping_audit.md](../audits/evidence/audit/canonical_tradition_mapping_audit.md)
 - [type_integrity_architecture_audit.md](../audits/evidence/audit/type_integrity_architecture_audit.md)
 
+## System Ownership Matrix
+
+| System | Owner | Runtime Authority | Documentation Authority |
+|---|---|---|---|
+| Work authority | Catalog Platform | Book materialization and catalog runtime | Work authority law and canonical ontology. |
+| Edition authority | Catalog Platform; Reader Platform | Edition records, readability evidence, acquisition inputs | Work/Edition/Manifestation authority, Catalog Master, Reader Master. |
+| Author authority | Author Platform; Catalog Platform | Author ingestion, identity materialization, provider mappings | Author System Master and entity docs. |
+| Provider ingestion | Catalog Platform | Provider role registry and ingestion services | Work authority law, data pipeline, provider role docs. |
+| Library consumption | Library UX; Reader Platform | Shelf, library, and reader consumers | Shelf Master and Reader Master. |
+
+## Dependency Matrix
+
+| Dependency | Direction | Reason |
+|---|---|---|
+| Providers | Upstream | External records provide evidence but not automatic canonical authority. |
+| Entity Platform | Upstream and downstream | Catalog entities become typed references consumed across systems. |
+| Search | Downstream | Search consumes catalog authority and search-optimized projections. |
+| Reader / Acquisition | Downstream | Reader and acquisition depend on catalog Work/Edition authority. |
+| Media / Storage | Upstream and downstream | Covers, uploaded works, and readable assets depend on media authority. |
+
+## Authority Routing
+
+| Question | Route |
+|---|---|
+| Work identity and source precedence | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md). |
+| Ontology, Work, Edition, and manifestation semantics | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), then [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md). |
+| Catalog ingestion and provider evidence | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md) and runtime authority. |
+| Author identity | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md). |
+| Reader/acquisition dependencies | [MASTER_READER.md](MASTER_READER.md) and [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md). |
+
 ## System Architecture
 
 Catalog and Library provide BookTown's canonical literary foundation. Catalog owns canonical work, edition, author, provider evidence, ingestion, and materialization workflows. Library-facing features consume catalog authority but must not redefine it.
 
 The architecture separates:
 
-- Work as canonical intellectual entity.
-- Edition as concrete material manifestation.
+- Work as intellectual truth.
+- Edition as publishing/material truth.
+- Manifestation as readability, acquisition, rendering, and access truth.
 - Author as canonical creator identity.
 - Quote as canonical literary atom.
 - Manifestations such as shelf items, reviews, bookmarks, posts, and DM attachments.
@@ -170,7 +202,7 @@ Readiness: Closed Beta Ready for constrained catalog/library flows.
 
 ## Known Gaps
 
-- Catalog authority is distributed across ontology, work law, audits, and runtime evidence.
+- Catalog authority now routes Work, Edition, and Manifestation through a dedicated architecture authority, but provider and field-level authority remain distributed.
 - Dedicated provider authority and canonical book field matrix should be consolidated in future docs.
 - Some audit findings identify historical authority risks and type drift.
 - Shelves and user library authority are adjacent but require separate master routing.
@@ -180,8 +212,9 @@ Readiness: Closed Beta Ready for constrained catalog/library flows.
 - [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md)
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
+- [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md)
 - [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md)
-- [data-pipeline.md](../data-pipeline.md)
+- [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
 - [ProjectionRegistry.md](../architecture/ProjectionRegistry.md)
 

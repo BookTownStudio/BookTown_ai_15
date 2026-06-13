@@ -1,17 +1,19 @@
 ---
 id: BT-DOCS-DESIGN-SYSTEM
 title: "📘 BookTown Design System"
-status: active
+status: superseded
 authority_level: architecture
 owner: design-system
 last_audited: 2026-06-13
-source_of_truth: true
+source_of_truth: false
 supersedes: []
-superseded_by: null
-ai_read: true
+superseded_by: docs/architecture/design-system/DESIGN_SYSTEM_REGISTER.md
+ai_read: false
 ---
 
 # 📘 BookTown Design System
+
+> Superseded authority notice: this root design summary is retained as historical design context only. Current Design System authority starts at `docs/master/MASTER_DESIGN_SYSTEM.md` and routes through `docs/architecture/design-system/DESIGN_SYSTEM_REGISTER.md`.
 
 ## UI Canon --- v1.0
 

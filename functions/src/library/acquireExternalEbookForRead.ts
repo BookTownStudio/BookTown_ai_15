@@ -8,6 +8,11 @@ import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookA
 import { getOrBuildReaderManifest } from "../reader/readerManifestService";
 import { canUserReadBook, normalizeBookRightsMode } from "../rights/bookRights";
 import {
+  setAttachmentManifestationInTransaction,
+  upsertExternalReadableManifestation,
+  resolvePrimaryEditionIdFromWork,
+} from "../manifestations/manifestationAuthority";
+import {
   hasMinimumCanonicalIdentity,
   ingestBookServerSide,
   type SupportedSource,
@@ -68,6 +73,7 @@ type AcquireRequest = {
 type AcquireResponse = {
   bookId: string;
   editionId?: string;
+  manifestationId?: string;
   status: "already_available" | "acquired";
   provider: "booktown" | AcquisitionProvider;
   format: AcquisitionFormat | "unknown";
@@ -302,12 +308,12 @@ function mergeExternalReadableSources(
 
 async function persistExternalReadableSource(params: {
   bookId: string;
-  editionId: string | null;
+  editionId: string;
   source: ExternalReadableSourceRecord;
 }): Promise<void> {
   const { bookId, editionId, source } = params;
   const bookRef = db.collection("books").doc(bookId);
-  const editionRef = editionId ? db.collection("editions").doc(editionId) : null;
+  const editionRef = db.collection("editions").doc(editionId);
 
   await db.runTransaction(async (tx) => {
     // Firestore requires every transaction read to complete before the first write.
@@ -315,7 +321,7 @@ async function persistExternalReadableSource(params: {
     // into conditionals below any tx.set/update/delete.
     const [bookSnap, editionSnap] = await Promise.all([
       tx.get(bookRef),
-      editionRef ? tx.get(editionRef) : Promise.resolve(null),
+      tx.get(editionRef),
     ]);
     if (!bookSnap.exists) {
       throw new HttpsError("not-found", "Book not found.");
@@ -327,9 +333,13 @@ async function persistExternalReadableSource(params: {
       readExternalReadableSources(existingBook),
       source
     );
-    const nextEditionSources = editionRef
-      ? mergeExternalReadableSources(readExternalReadableSources(existingEdition), source)
-      : null;
+    if (!editionSnap?.exists) {
+      throw new HttpsError("failed-precondition", "Primary Edition not found.");
+    }
+    const nextEditionSources = mergeExternalReadableSources(
+      readExternalReadableSources(existingEdition),
+      source
+    );
 
     const bookPatch: Record<string, unknown> = {
       externalReadableSources: nextBookSources,
@@ -352,7 +362,6 @@ async function persistExternalReadableSource(params: {
       { merge: true }
     );
 
-    if (!editionRef) return;
     const editionPatch: Record<string, unknown> = {
       externalReadableSources: nextEditionSources,
       providerExternalIds: FieldValue.arrayUnion(
@@ -372,6 +381,13 @@ async function persistExternalReadableSource(params: {
       editionPatch,
       { merge: true }
     );
+  });
+
+  await upsertExternalReadableManifestation({
+    bookId,
+    editionId,
+    provider: source.provider,
+    providerExternalId: source.providerExternalId,
   });
 }
 
@@ -778,38 +794,14 @@ async function ensureExistingReadableAsset(params: {
     return {
       bookId,
       editionId: editionId || undefined,
+      manifestationId: attachment.manifestationId,
       status: "already_available",
       provider: "booktown",
       format: inferFormatFromPath(attachment.storagePath),
     };
   }
 
-  const legacyStoragePath = asNonEmptyString(book.storagePath);
-  if (!legacyStoragePath) {
-    return null;
-  }
-
-  if (!isCanonicalStoragePath(bookId, legacyStoragePath)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Book storage path is outside canonical reader scope."
-    );
-  }
-
-  if (!canUserReadBook(book, uid)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Book already has a non-public ebook asset."
-    );
-  }
-
-  return {
-    bookId,
-    editionId: editionId || undefined,
-    status: "already_available",
-    provider: "booktown",
-    format: inferFormatFromPath(legacyStoragePath),
-  };
+  return null;
 }
 
 async function storeDownloadedAsset(params: {
@@ -855,7 +847,7 @@ async function cleanupStoredAsset(storagePath: string): Promise<void> {
 async function finalizeAcquisition(params: {
   uid: string;
   bookId: string;
-  editionId: string | null;
+  editionId: string;
   provider: AcquisitionProvider;
   providerExternalId: string;
   asset: DownloadedAsset;
@@ -871,7 +863,7 @@ async function finalizeAcquisition(params: {
     storagePath,
   } = params;
   const attachmentRef = db.collection("attachments").doc();
-  const resolvedEditionId = editionId || `acquired:${bookId}`;
+  const resolvedEditionId = editionId;
   const bookRef = db.collection("books").doc(bookId);
   const editionRef = db.collection("editions").doc(resolvedEditionId);
   const persistedSource: ExternalReadableSourceRecord = {
@@ -891,7 +883,13 @@ async function finalizeAcquisition(params: {
 
     const book = (bookSnap.data() || {}) as Record<string, unknown>;
     const existingEdition = (editionSnap.data() || {}) as Record<string, unknown>;
-    const existingAttachmentId = asNonEmptyString(book.ebookAttachmentId);
+    if (!editionSnap.exists) {
+      throw new HttpsError("failed-precondition", "Primary Edition not found.");
+    }
+    const existingAvailability = asRecord(book.manifestationAvailability);
+    const alreadyReadable =
+      existingAvailability?.hasReadableManifestation === true &&
+      existingAvailability?.canReadInApp === true;
     const existingBookReadableSources = mergeExternalReadableSources(
       readExternalReadableSources(book),
       persistedSource
@@ -901,7 +899,7 @@ async function finalizeAcquisition(params: {
       persistedSource
     );
 
-    if (existingAttachmentId) {
+    if (alreadyReadable) {
       return {
         bookId,
         editionId: resolvedEditionId,
@@ -936,6 +934,18 @@ async function finalizeAcquisition(params: {
       },
       { merge: true }
     );
+    const manifestationId = setAttachmentManifestationInTransaction(tx, {
+      bookId,
+      editionId: resolvedEditionId,
+      attachmentId: attachmentRef.id,
+      storagePath,
+      mimeType: asset.mimeType,
+      format: asset.format,
+      visibility: "public",
+      source: "acquisition",
+      checksum: asset.checksum,
+      now,
+    });
 
     const editionPatch: Record<string, unknown> = {
       ebookAttachmentId: attachmentRef.id,
@@ -970,6 +980,7 @@ async function finalizeAcquisition(params: {
       readerAuthority: {
         hasReadableAttachment: true,
         attachmentId: attachmentRef.id,
+        manifestationId,
         source: "acquisition",
         updatedAt: now,
       },
@@ -992,6 +1003,7 @@ async function finalizeAcquisition(params: {
     return {
       bookId,
       editionId: resolvedEditionId,
+      manifestationId,
       status: "acquired" as const,
       provider,
       format: asset.format,
@@ -1018,7 +1030,7 @@ async function finalizeAcquisition(params: {
 async function resolveCanonicalBookAndEdition(params: {
   uid: string;
   data: AcquireRequest;
-}): Promise<{ bookId: string; editionId: string | null; sourceHint: SourceHint | null }> {
+}): Promise<{ bookId: string; editionId: string; sourceHint: SourceHint | null }> {
   const { uid, data } = params;
   const sourceHint = resolveSourceHint(data);
   const bookId = asNonEmptyString(data.bookId);
@@ -1034,15 +1046,24 @@ async function resolveCanonicalBookAndEdition(params: {
     );
     if (authoritativeBookId !== bookId) {
       const authoritativeSnap = await db.collection("books").doc(authoritativeBookId).get();
+      const authoritativeBook = (authoritativeSnap.data() || {}) as Record<string, unknown>;
+      const authoritativeEditionId = resolvePrimaryEditionIdFromWork(authoritativeBook);
+      if (!authoritativeEditionId) {
+        throw new HttpsError("failed-precondition", "Work has no primary Edition authority.");
+      }
       return {
         bookId: authoritativeBookId,
-        editionId: asNonEmptyString(authoritativeSnap.data()?.editionId) || null,
+        editionId: authoritativeEditionId,
         sourceHint,
       };
     }
+    const editionId = resolvePrimaryEditionIdFromWork((bookSnap.data() || {}) as Record<string, unknown>);
+    if (!editionId) {
+      throw new HttpsError("failed-precondition", "Work has no primary Edition authority.");
+    }
     return {
       bookId,
-      editionId: asNonEmptyString(bookSnap.data()?.editionId) || null,
+      editionId,
       sourceHint,
     };
   }
@@ -1073,7 +1094,12 @@ async function resolveCanonicalBookAndEdition(params: {
 
   return {
     bookId: ingestion.bookId,
-    editionId: ingestion.editionId || null,
+    editionId:
+      ingestion.primaryEditionId ||
+      ingestion.editionId ||
+      (() => {
+        throw new HttpsError("failed-precondition", "Canonical ingest produced no primary Edition.");
+      })(),
     sourceHint,
   };
 }

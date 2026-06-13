@@ -157,6 +157,7 @@ export type MaterializeBookAuthorityParams = {
 export type MaterializeBookAuthorityResult = {
   canonicalBookId: string;
   bookId: string;
+  primaryEditionId: string | null;
   editionId: string | null;
   status: "CREATED" | "MERGED" | "ALREADY_COMPLETE";
   authorityStatus: BookAuthorityState;
@@ -172,6 +173,68 @@ function asRecord(value: unknown): Record<string, unknown> | null {
 
 function asNonEmptyString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function resolvePrimaryEditionProjection(
+  existingBook: Record<string, unknown> | null | undefined,
+  incomingEditionId: string | null
+): string | null {
+  const existingCanonicalRelations = asRecord(existingBook?.canonicalRelations);
+  return (
+    asNonEmptyString(existingBook?.primaryEditionId) ||
+    asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
+    asNonEmptyString(existingBook?.editionId) ||
+    incomingEditionId ||
+    null
+  );
+}
+
+function workRequiresPrimaryEdition(params: {
+  existingBook: Record<string, unknown> | null | undefined;
+  rawBook: Record<string, unknown>;
+}): boolean {
+  const { existingBook, rawBook } = params;
+  const visibility =
+    asNonEmptyString(rawBook.visibility) || asNonEmptyString(existingBook?.visibility);
+  const publicationState =
+    asNonEmptyString(rawBook.publicationState) ||
+    asNonEmptyString(existingBook?.publicationState);
+
+  const isPublic =
+    visibility === "public" ||
+    publicationState === "published" ||
+    rawBook.isPublic === true ||
+    existingBook?.isPublic === true ||
+    Boolean(asNonEmptyString(rawBook.publishedAt) || asNonEmptyString(existingBook?.publishedAt));
+
+  const isReadable =
+    rawBook.hasEbook === true ||
+    existingBook?.hasEbook === true ||
+    rawBook.downloadable === true ||
+    existingBook?.downloadable === true ||
+    rawBook.isEbookAvailable === true ||
+    existingBook?.isEbookAvailable === true ||
+    Boolean(
+      asNonEmptyString(rawBook.storagePath) ||
+        asNonEmptyString(existingBook?.storagePath) ||
+        asNonEmptyString(rawBook.ebookAttachmentId) ||
+        asNonEmptyString(existingBook?.ebookAttachmentId) ||
+        asNonEmptyString(rawBook.ebookStoragePath) ||
+        asNonEmptyString(existingBook?.ebookStoragePath) ||
+        asNonEmptyString(rawBook.epubStoragePath) ||
+        asNonEmptyString(existingBook?.epubStoragePath)
+    );
+
+  const isAcquirable =
+    (Array.isArray(rawBook.externalReadableSources) && rawBook.externalReadableSources.length > 0) ||
+    (Array.isArray(existingBook?.externalReadableSources) &&
+      existingBook.externalReadableSources.length > 0) ||
+    Boolean(
+      asNonEmptyString(rawBook.acquiredFromProvider) ||
+        asNonEmptyString(existingBook?.acquiredFromProvider)
+    );
+
+  return isPublic || isReadable || isAcquirable;
 }
 
 function asStringArray(value: unknown): string[] {
@@ -1989,6 +2052,10 @@ function resolveEditionId(params: {
     return `goodreads:${params.bookId}`;
   }
 
+  if (params.source === "write_release" || params.source === "write_publish") {
+    return `edition_${params.bookId}`;
+  }
+
   if (params.source === "booktown_canonical" || params.source === "canonical_seed") {
     return `canonical:${params.bookId}`;
   }
@@ -2090,10 +2157,10 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
   const now = FieldValue.serverTimestamp();
   const bookRef = db.collection("books").doc(existingTarget.bookId);
   const existingBook = existingTarget.data;
-  const existingCanonicalRelations = asRecord(existingBook.canonicalRelations);
   const editionId =
+    asNonEmptyString(existingBook.primaryEditionId) ||
+    asNonEmptyString(asRecord(existingBook.canonicalRelations)?.primaryEditionId) ||
     asNonEmptyString(existingBook.editionId) ||
-    asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
     null;
   const editionRef = editionId ? db.collection("editions").doc(editionId) : null;
   const editionSnap = editionRef ? await params.tx.get(editionRef) : null;
@@ -2372,6 +2439,7 @@ async function materializeRestrictedAuthorityEnrichmentInTransaction(
   return {
     canonicalBookId: existingTarget.bookId,
     bookId: existingTarget.bookId,
+    primaryEditionId: editionId,
     editionId,
     status: "ALREADY_COMPLETE",
     authorityStatus: "canonical",
@@ -2430,6 +2498,7 @@ async function validateBooktownRefineryTransport(
   return {
     canonicalBookId: bookSnap.id,
     bookId: bookSnap.id,
+    primaryEditionId: resolvePrimaryEditionProjection(existingBook, null),
     editionId: asNonEmptyString(existingBook.editionId) || null,
     status: "ALREADY_COMPLETE",
     authorityStatus: "canonical",
@@ -2576,7 +2645,8 @@ export async function materializeBookAuthorityInTransaction(
     params.source === "openLibrary" ||
     params.source === "goodreads_import" ||
     params.source === "user_upload" ||
-    Boolean(asNonEmptyString(rawBook.storagePath));
+    Boolean(asNonEmptyString(rawBook.storagePath)) ||
+    workRequiresPrimaryEdition({ existingBook, rawBook });
   const editionId = resolveEditionId({
     explicitEditionId: params.explicitEditionId,
     source: params.source,
@@ -2865,11 +2935,7 @@ export async function materializeBookAuthorityInTransaction(
     existing: asRecord(existingBook?.originalLanguageAuthority),
   });
   const existingCanonicalRelations = asRecord(existingBook?.canonicalRelations);
-  const primaryEditionId =
-    asNonEmptyString(existingCanonicalRelations?.primaryEditionId) ||
-    asNonEmptyString(existingBook?.editionId) ||
-    editionId ||
-    null;
+  const primaryEditionId = resolvePrimaryEditionProjection(existingBook, editionId);
   const directPublisher = resolvePublisher(rawBook);
   const ontology = enforceOntologyInvariant({
     ontology: resolveMaterializedOntology({
@@ -2945,6 +3011,7 @@ export async function materializeBookAuthorityInTransaction(
     canonicalFieldTrust,
     abstractDescription: description,
     titleAliases,
+    ...(primaryEditionId ? { primaryEditionId } : {}),
     canonicalRelations: {
       ...(primaryEditionId ? { primaryEditionId } : {}),
     },
@@ -3063,56 +3130,24 @@ export async function materializeBookAuthorityInTransaction(
   };
 
   const protectedBookBase = applyCanonicalProtection(existingBook, bookBase);
+  const manifestationAvailability = asRecord(existingBook?.manifestationAvailability);
   const searchPatch = buildBookSearchPatch({
     ...protectedBookBase,
     ...existingPointerProjection,
+    ...(manifestationAvailability ? { manifestationAvailability } : {}),
   });
-  // materializeBookAuthority owns the canonical hasEbook classification.
-  // Caller-supplied hasEbook / downloadable / isEbookAvailable are ignored here;
-  // compatibility projections are derived only from server-owned read evidence.
-  const hasAttachmentPointer = Boolean(
-    existingPointerProjection.ebookAttachmentId ||
-      existingPointerProjection.ebookStoragePath ||
-      existingPointerProjection.epubStoragePath
-  );
-  const hasAcquiredReadableSource = externalReadableSources.length > 0;
-  const existingReaderAuthority = asRecord(existingBook?.readerAuthority);
-  const userUploadFinalized =
-    protectedBookBase.uploadFinalized === true ||
-    existingReaderAuthority?.hasReadableAttachment === true;
-  const hasUserUploadStorage =
-    params.source === "user_upload" &&
-    Boolean(
-      buildUserUploadReaderAuthorityProjection({
-        bookId,
-        ownerUid: asNonEmptyString(protectedBookBase.ownerUid),
-        storagePath: asNonEmptyString(protectedBookBase.storagePath),
-        uploadFinalized: userUploadFinalized,
+  // Readability belongs to Manifestation authority. Legacy attachment/storage
+  // fields remain compatibility projections and must not create readability.
+  const shouldHaveEbook = manifestationAvailability?.hasReadableManifestation === true;
+  const readerAuthority = shouldHaveEbook
+    ? {
+        hasReadableAttachment: true,
+        attachmentId: asNonEmptyString(manifestationAvailability?.attachmentId) || null,
+        manifestationId: asNonEmptyString(manifestationAvailability?.manifestationId),
+        source: asNonEmptyString(manifestationAvailability?.source) || "manifestation",
         updatedAt: now,
-      })
-    );
-  const shouldHaveEbook =
-    hasAttachmentPointer ||
-    hasAcquiredReadableSource ||
-    hasUserUploadStorage;
-  const readerAuthorityAttachmentId =
-    existingPointerProjection.ebookAttachmentId ||
-    asNonEmptyString(existingReaderAuthority?.attachmentId);
-  const readerAuthority = hasAttachmentPointer
-    ? buildReaderAuthorityProjection({
-        attachmentId: readerAuthorityAttachmentId,
-        source: asNonEmptyString(existingReaderAuthority?.source) || "ebook_attachment",
-        updatedAt: now,
-      })
-    : hasUserUploadStorage
-      ? buildUserUploadReaderAuthorityProjection({
-          bookId,
-          ownerUid: asNonEmptyString(protectedBookBase.ownerUid),
-          storagePath: asNonEmptyString(protectedBookBase.storagePath),
-          uploadFinalized: userUploadFinalized,
-          updatedAt: now,
-        })
-      : null;
+      }
+    : null;
 
   const finalBookPayload: Record<string, unknown> = {
     ...protectedBookBase,
@@ -3120,6 +3155,9 @@ export async function materializeBookAuthorityInTransaction(
     hasEbook: shouldHaveEbook,
     downloadable: shouldHaveEbook,
     isEbookAvailable: shouldHaveEbook,
+    ...(manifestationAvailability
+      ? { manifestationAvailability }
+      : {}),
     ...(readerAuthority ? { readerAuthority } : {}),
   };
 
@@ -3327,6 +3365,7 @@ export async function materializeBookAuthorityInTransaction(
   return {
     canonicalBookId: bookId,
     bookId,
+    primaryEditionId,
     editionId,
     status: resolvedBookId || bookSnap.exists ? "MERGED" : "CREATED",
     authorityStatus: authorityFields.authorityStatus,

@@ -2,6 +2,7 @@ export type ProjectionClassification =
   | "fanout_projection"
   | "aggregate_projection"
   | "search_projection"
+  | "authority_projection"
   | "media_derivative_projection"
   | "operational_projection"
   | "compatibility_projection";

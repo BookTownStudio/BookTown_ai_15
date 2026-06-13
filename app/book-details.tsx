@@ -64,7 +64,10 @@ type AcquisitionSheetTrigger = 'editions' | 'get' | null;
 
 function hasReadableAttachmentAuthority(value: BookDetailsRuntimeDTO | null | undefined): boolean {
   if (!value) return false;
-  return value.readerAuthority?.hasReadableAttachment === true;
+  return (
+    value.manifestationAvailability?.hasReadableManifestation === true &&
+    value.manifestationAvailability?.canReadInApp === true
+  );
 }
 
 function parseRecommendationContext(
@@ -321,7 +324,7 @@ const BookDetailsScreen: React.FC = () => {
           phase: 'ingest_resolved',
           status: result?.status || 'UNKNOWN',
           canonicalBookId,
-          canonicalEditionId: result?.editionId || null,
+          canonicalEditionId: result?.primaryEditionId || result?.editionId || null,
         });
       })
       .catch((error) => {

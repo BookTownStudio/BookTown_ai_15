@@ -1,6 +1,7 @@
 // functions/src/attachments/resolveBookToEbookAttachment.ts
 
 import { admin } from '../firebaseAdmin';
+import { resolveReadableManifestationForWork } from "../manifestations/manifestationAuthority";
 
 export interface EbookAttachment {
   id: string;
@@ -25,39 +26,26 @@ export async function resolveBookToEbookAttachment(
   if (!bookSnap.exists) return null;
 
   const bookData = (bookSnap.data() || {}) as Record<string, unknown>;
-  let attachmentId =
-    typeof bookData.ebookAttachmentId === "string" ? bookData.ebookAttachmentId.trim() : "";
-
-  if (!attachmentId && typeof bookData.editionId === "string" && bookData.editionId.trim()) {
-    const editionSnap = await db.doc(`editions/${bookData.editionId.trim()}`).get();
-    const editionData = (editionSnap.data() || {}) as Record<string, unknown>;
-    attachmentId =
-      typeof editionData.ebookAttachmentId === "string"
-        ? editionData.ebookAttachmentId.trim()
-        : "";
+  try {
+    const manifestation = await resolveReadableManifestationForWork({
+      bookId,
+      book: bookData,
+    });
+    return {
+      id: manifestation.attachmentId || manifestation.manifestationId,
+      visibility: manifestation.visibility,
+      storagePath: manifestation.storagePath,
+      manifestationId: manifestation.manifestationId,
+      editionId: manifestation.editionId,
+      format: manifestation.format,
+      source: manifestation.source,
+    };
+  } catch (error) {
+    if (error && typeof error === "object" && "code" in error) {
+      const code = (error as { code?: unknown }).code;
+      if (code === "not-found") return null;
+    }
+    throw error;
   }
-
-  if (!attachmentId) return null;
-
-  const attachmentRef = db.doc(`attachments/${attachmentId}`);
-  const attachmentSnap = await attachmentRef.get();
-
-  if (!attachmentSnap.exists) return null;
-
-  const data = attachmentSnap.data() as any;
-
-  // 🔒 Hard guarantees (fail fast, never guess)
-  if (!data.storagePath || !data.visibility) {
-    throw new Error(
-      `[resolveBookToEbookAttachment] Invalid attachment ${attachmentId}`
-    );
-  }
-
-  return {
-    id: attachmentRef.id,
-    visibility: data.visibility,
-    storagePath: data.storagePath,
-    bucket: data.bucket,
-    ...data,
-  };
+  return null;
 }

@@ -1,9 +1,9 @@
 import { HttpsError } from "firebase-functions/v2/https";
 import * as logger from "firebase-functions/logger";
 import { admin } from "../firebaseAdmin";
-import { resolveBookToEbookAttachment } from "../attachments/resolveBookToEbookAttachment";
 import { FieldValue } from "firebase-admin/firestore";
 import { canUserReadBook } from "../rights/bookRights";
+import { resolveReadableManifestationForWork } from "../manifestations/manifestationAuthority";
 import {
   CANONICAL_EPUB_LOCATION_GENERATION_CHARS,
   CANONICAL_EPUB_PIPELINE_VERSION,
@@ -15,7 +15,7 @@ const db = admin.firestore();
 const storage = admin.storage();
 
 export type ReaderManifestFormat = "pdf" | "epub" | "unknown";
-type ReaderManifestSourceType = "attachment" | "legacy_upload";
+type ReaderManifestSourceType = "manifestation" | "legacy_upload";
 
 const READER_MANIFEST_PIPELINE_VERSION = "reader_manifest_v2";
 const EPUB_LOCATION_GENERATION_CHARS = CANONICAL_EPUB_LOCATION_GENERATION_CHARS;
@@ -49,6 +49,8 @@ interface ReaderManifestIndexState {
 
 export interface ReaderManifestInternal {
   bookId: string;
+  editionId: string;
+  manifestationId: string;
   version: number;
   pipelineVersion: string;
   sourceType: ReaderManifestSourceType;
@@ -77,6 +79,8 @@ export interface ReaderManifestInternal {
 
 export interface ReaderManifestPublic {
   bookId: string;
+  editionId: string;
+  manifestationId: string;
   version: number;
   pipelineVersion: string;
   format: ReaderManifestFormat;
@@ -112,10 +116,6 @@ function resolveLegacyOwnerUid(book: Record<string, unknown>): string | null {
     asNonEmptyString(book.createdBy) ??
     asNonEmptyString(book.uploadedByUid)
   );
-}
-
-function isCanonicalStoragePath(bookId: string, path: string): boolean {
-  return path.startsWith(`books/${bookId}/original/`) || path.startsWith(`ebooks/${bookId}/`);
 }
 
 function inferFormatFromPath(storagePath: string): ReaderManifestFormat {
@@ -170,6 +170,8 @@ function docPathToRef(docPath: string) {
 
 async function persistCanonicalEpubIndexes(params: {
   bookId: string;
+  editionId: string;
+  manifestationId: string;
   version: number;
   sourceSignatureHash: string;
   manifest: Pick<
@@ -188,6 +190,8 @@ async function persistCanonicalEpubIndexes(params: {
 }): Promise<void> {
   const base = {
     bookId: params.bookId,
+    editionId: params.editionId,
+    manifestationId: params.manifestationId,
     manifestVersion: params.version,
     pipelineVersion: CANONICAL_EPUB_PIPELINE_VERSION,
     sourceSignatureHash: params.sourceSignatureHash,
@@ -237,6 +241,8 @@ async function persistCanonicalEpubIndexes(params: {
 function toPublicManifest(manifest: ReaderManifestInternal): ReaderManifestPublic {
   return {
     bookId: manifest.bookId,
+    editionId: manifest.editionId,
+    manifestationId: manifest.manifestationId,
     version: manifest.version,
     pipelineVersion: manifest.pipelineVersion,
     format: manifest.format,
@@ -389,6 +395,8 @@ function sanitizeExistingManifest(
 
   return {
     bookId,
+    editionId: asNonEmptyString(input.editionId) || "",
+    manifestationId: asNonEmptyString(input.manifestationId) || "",
     version: Math.trunc(versionRaw),
     pipelineVersion,
     sourceType,
@@ -422,55 +430,38 @@ async function resolveReadableSource(params: {
   book: Record<string, unknown>;
 }): Promise<{
   sourceType: ReaderManifestSourceType;
+  editionId: string;
+  manifestationId: string;
   storagePath: string;
   attachmentId: string | null;
 }> {
   const { uid, bookId, book } = params;
 
-  const attachment = await resolveBookToEbookAttachment(bookId);
-  if (attachment?.storagePath) {
+  const manifestation = await resolveReadableManifestationForWork({ bookId, book });
+  if (manifestation.storagePath) {
+    const legacyOwnerUid = resolveLegacyOwnerUid(book);
+    const isAllowedLegacyUploadOwner =
+      manifestation.source === "legacy_upload" && legacyOwnerUid === uid;
+    if (!canUserReadBook(book, uid) && !isAllowedLegacyUploadOwner) {
+      throw new HttpsError("permission-denied", "You do not have access to this ebook.");
+    }
     if (
-      !canUserReadBook(book, uid) ||
-      attachment.visibility === "private" ||
-      attachment.visibility === "restricted"
+      manifestation.visibility !== "public" &&
+      !isAllowedLegacyUploadOwner
     ) {
       throw new HttpsError("permission-denied", "You do not have access to this ebook.");
     }
 
     return {
-      sourceType: "attachment",
-      storagePath: attachment.storagePath,
-      attachmentId: attachment.id,
+      sourceType: manifestation.source === "legacy_upload" ? "legacy_upload" : "manifestation",
+      editionId: manifestation.editionId,
+      manifestationId: manifestation.manifestationId,
+      storagePath: manifestation.storagePath,
+      attachmentId: manifestation.attachmentId,
     };
   }
 
-  const legacyStoragePath = asNonEmptyString(book.storagePath);
-  const legacyOwnerUid = resolveLegacyOwnerUid(book);
-  const source = asNonEmptyString(book.source);
-  const likelyUserUpload =
-    source === "user_upload" ||
-    (legacyStoragePath ? legacyStoragePath.startsWith(`books/${bookId}/original/`) : false);
-
-  if (!legacyStoragePath) {
-    throw new HttpsError("not-found", "No readable ebook file found for this book.");
-  }
-
-  if (!isCanonicalStoragePath(bookId, legacyStoragePath)) {
-    throw new HttpsError(
-      "failed-precondition",
-      "Book storage path is outside canonical reader scope."
-    );
-  }
-
-  if (!(legacyOwnerUid === uid || (legacyOwnerUid === null && likelyUserUpload))) {
-    throw new HttpsError("permission-denied", "You do not have access to this ebook.");
-  }
-
-  return {
-    sourceType: "legacy_upload",
-    storagePath: legacyStoragePath,
-    attachmentId: null,
-  };
+  throw new HttpsError("not-found", "No readable Manifestation found for this Work.");
 }
 
 async function inferManifestFormat(storagePath: string): Promise<ReaderManifestFormat> {
@@ -514,7 +505,7 @@ export async function getOrBuildReaderManifest(params: {
   }
 
   const format = await inferManifestFormat(source.storagePath);
-  const sourceSignature = `${source.sourceType}:${source.storagePath}:${source.attachmentId || "none"}:${format}`;
+  const sourceSignature = `${source.sourceType}:${source.manifestationId}:${source.storagePath}:${source.attachmentId || "none"}:${format}`;
 
   const manifestSnap = await manifestRef.get();
   const existing = sanitizeExistingManifest(
@@ -542,6 +533,8 @@ export async function getOrBuildReaderManifest(params: {
 
   const nextManifest: ReaderManifestInternal = {
     bookId,
+    editionId: source.editionId,
+    manifestationId: source.manifestationId,
     version,
     pipelineVersion: READER_MANIFEST_PIPELINE_VERSION,
     sourceType: source.sourceType,
@@ -672,6 +665,8 @@ export async function getOrBuildReaderManifest(params: {
 
         await persistCanonicalEpubIndexes({
           bookId,
+          editionId: source.editionId,
+          manifestationId: source.manifestationId,
           version,
           sourceSignatureHash,
           manifest: nextManifest,

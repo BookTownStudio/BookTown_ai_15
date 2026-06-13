@@ -76,6 +76,36 @@ Audit evidence:
 
 - [T4_reader_offline_authority_stabilization_execution.md](../audits/evidence/audit/T4_reader_offline_authority_stabilization_execution.md)
 
+## System Ownership Matrix
+
+| System | Owner | Runtime Authority | Documentation Authority |
+|---|---|---|---|
+| Reader runtime | Reader Platform | Reader domain, reader services, reader UI runtime | Reader authority docs and this Master document. |
+| Reader manifests | Reader Platform | Backend manifest generation and manifest storage | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md). |
+| Reading progress and sessions | Reader Platform | Backend reader callables and sync services | Reader authority docs and projection runbooks. |
+| Offline reader transport | Reader Platform | Client offline queue plus backend sync arbitration | Reader authority docs; client state is transport only. |
+| Publication reader | Reader Platform; Writing Platform | Publication reader runtime and publishing bridge | Reader Master and [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md). |
+
+## Dependency Matrix
+
+| Dependency | Direction | Reason |
+|---|---|---|
+| Catalog / Library | Upstream | Reader access starts from canonical Work, Edition, and readable source authority. |
+| Media / Storage | Upstream | Reader assets, PDFs, EPUBs, and manifests depend on storage and attachment authority. |
+| Projection / Recovery | Downstream | Reader projections must be recoverable and verifiable. |
+| Observability | Downstream | Reader health, diagnostics, and performance gates feed operational visibility. |
+| Writing / Publishing | Upstream and downstream | Published BookTown works may be consumed through reader surfaces. |
+
+## Authority Routing
+
+| Question | Route |
+|---|---|
+| Reader manifest authority | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md). |
+| Reader operational recovery | Reader runbooks under `docs/operations/projections/`. |
+| Reader performance and mobile constraints | [READER_MOBILE_SLOS.md](../architecture/READER_MOBILE_SLOS.md) and [READER_STRESS_CORPUS.md](../architecture/READER_STRESS_CORPUS.md). |
+| Rights, acquisition, or readable source boundaries | [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md), [MASTER_MEDIA_STORAGE.md](MASTER_MEDIA_STORAGE.md), and Reader authority docs. |
+| Publication reader questions | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md) and this document. |
+
 ## System Architecture
 
 Reader is a backend-authoritative reading system with a client rendering runtime.

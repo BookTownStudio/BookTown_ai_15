@@ -252,6 +252,7 @@ vi.mock("uuid", () => ({
 }));
 
 vi.mock("firebase-admin/firestore", () => ({
+  getFirestore: () => firestoreMock,
   FieldValue: {
     serverTimestamp: () => ({ __op: "serverTimestamp" }),
     arrayUnion: (...values: unknown[]) => ({ __op: "arrayUnion", values }),
@@ -371,7 +372,7 @@ describe("adminCreateCanonicalBook", () => {
     unifiedSearchMock.mockReset();
   });
 
-  it("creates a canonical book with canonical author linkage and no edition when isbn is absent", async () => {
+  it("creates a canonical book with canonical author linkage and primary edition authority", async () => {
     const callable = await getAdminCreateCanonicalBookCallable();
     const result = await callable.run({
       auth: { uid: "superadmin-1" },
@@ -388,6 +389,7 @@ describe("adminCreateCanonicalBook", () => {
         bookId: string;
         authorityStatus: string;
         canonicalLocked: boolean;
+        primaryEditionId?: string;
         editionId?: string;
         authorId?: string;
         authorCanonicalKey?: string;
@@ -400,13 +402,16 @@ describe("adminCreateCanonicalBook", () => {
     expect(["CREATED", "MERGED"]).toContain(response.status);
     expect(response.book.authorityStatus).toBe("canonical");
     expect(response.book.canonicalLocked).toBe(true);
-    expect(response.book.editionId).toBeUndefined();
+    expect(response.book.primaryEditionId).toBe(`canonical:${response.book.bookId}`);
+    expect(response.book.editionId).toBe(`canonical:${response.book.bookId}`);
     expect(book?.authorityStatus).toBe("canonical");
     expect(book?.canonicalLocked).toBe(true);
+    expect(book?.primaryEditionId).toBe(`canonical:${response.book.bookId}`);
     expect(book?.workType).toBe("canonical");
     expect(book?.sourcePriority).toBe("canonical");
     expect(typeof book?.authorId).toBe("string");
     expect(typeof book?.authorCanonicalKey).toBe("string");
+    expect(getDoc(`editions/${response.book.primaryEditionId}`)?.workId).toBe(response.book.bookId);
   });
 
   it("strips simple HTML tags from direct canonical description fields before materialization", async () => {
@@ -478,7 +483,7 @@ describe("adminCreateCanonicalBook", () => {
     expect(coverJob?.candidateUrls).toEqual(["https://example.com/trial-cover.jpg"]);
   });
 
-  it("creates an edition only when isbn is supplied", async () => {
+  it("creates canonical edition authority for public canonical books", async () => {
     const callable = await getAdminCreateCanonicalBookCallable();
     const result = await callable.run({
       auth: { uid: "superadmin-1" },
@@ -490,11 +495,13 @@ describe("adminCreateCanonicalBook", () => {
     });
 
     const response = result as {
-      book: { bookId: string; editionId?: string };
+      book: { bookId: string; primaryEditionId?: string; editionId?: string };
     };
 
+    expect(response.book.primaryEditionId).toBe(`canonical:${response.book.bookId}`);
     expect(response.book.editionId).toBe(`canonical:${response.book.bookId}`);
-    expect(getDoc(`editions/${response.book.editionId}`)?.bookId).toBe(response.book.bookId);
+    expect(getDoc(`editions/${response.book.primaryEditionId}`)?.bookId).toBe(response.book.bookId);
+    expect(getDoc(`editions/${response.book.primaryEditionId}`)?.workId).toBe(response.book.bookId);
   });
 
   it("builds a canonical batch through unified search and ingest while continuing after failures", async () => {

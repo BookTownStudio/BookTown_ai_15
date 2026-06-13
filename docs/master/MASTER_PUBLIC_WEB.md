@@ -55,6 +55,7 @@ Backend SSR/runtime owns public page generation, sitemap generation, public meta
 
 Primary authority currently comes from runtime and routed product authority:
 
+- [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md)
 - [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md)
 - [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md)
 - [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md)
@@ -148,7 +149,7 @@ Public Web may depend on:
 
 Product maturity: Emerging.
 
-Architecture maturity: Implemented, with documentation authority sparse.
+Architecture maturity: Implemented, with public web register now routed.
 
 Documentation maturity: Partial to Good after this Master document.
 
@@ -156,7 +157,6 @@ Readiness: Internal Ready.
 
 ## Known Gaps
 
-- Dedicated public web/SSR architecture authority is still needed.
 - Public exposure rules for books, authors, quotes, and publications need explicit consolidation.
 - SEO and sitemap governance should be documented before major public launch.
 - Hosting/cache behavior is implementation-led and should be routed into authority docs.
@@ -169,12 +169,13 @@ Readiness: Internal Ready.
 - [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md)
 - [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md)
 - [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md)
+- [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md)
 
 ## System Ownership Matrix
 
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
-| SSR | Public Web | SSR domain and SSR modules | This Master doc and runtime authority. |
+| SSR | Public Web | SSR domain and SSR modules | This Master doc, public web register, and runtime authority. |
 | Sitemap | Public Web | Sitemap modules | This Master doc and runtime authority. |
 | Public publication pages | Public Web; Publishing Platform | SSR and publication runtime | Publishing and Public Web masters. |
 | Public entity exposure | Public Web; owning domains | SSR plus product domains | Owning product Master documents. |
@@ -193,7 +194,7 @@ Readiness: Internal Ready.
 
 | Question | Route |
 |---|---|
-| Public page generation | SSR runtime and this Master document. |
+| Public page generation | [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md), SSR runtime, and this Master document. |
 | Book public truth | [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md). |
 | Author public truth | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md). |
 | Quote public truth | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md). |
@@ -202,4 +203,4 @@ Readiness: Internal Ready.
 
 ## Future Evolution
 
-Future public web changes should be documented in dedicated SSR/public web authority and reflected here as routing updates. This Master document must not introduce new public exposure or SEO behavior directly.
+Future public web changes should be documented in the public web register or a dedicated public web authority and reflected here as routing updates. This Master document must not introduce new public exposure or SEO behavior directly.

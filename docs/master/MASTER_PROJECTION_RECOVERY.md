@@ -70,6 +70,36 @@ Runbooks:
 - `docs/operations/projections/*RecoveryRunbook.md`
 - `docs/operations/projections/*DeprecationRunbook.md`
 
+## System Ownership Matrix
+
+| System | Owner | Runtime Authority | Documentation Authority |
+|---|---|---|---|
+| Projection registry | Operations Platform | Runtime projection registry | [ProjectionRegistry.md](../architecture/ProjectionRegistry.md). |
+| Recovery control plane | Operations Platform | Recovery control plane, checkpointing, failure ledger | Projection/Recovery Master and recovery framework docs. |
+| Certification gate | Operations Platform | Runtime certification checks and reports | [ProjectionCertificationGate.md](../operations/ProjectionCertificationGate.md). |
+| Projection runbooks | Operations Platform; domain owners | Runbook-specific recovery procedures | Operations runbooks under `docs/operations/projections/`. |
+| Domain projection sources | Owning domain platforms | Domain runtime and authority documents | Domain Master docs and projection registry. |
+
+## Dependency Matrix
+
+| Dependency | Direction | Reason |
+|---|---|---|
+| Domain authorities | Upstream | Projections derive from authoritative domain data. |
+| Firestore indexes and safety | Upstream | Recovery must remain bounded, indexed, and safe. |
+| Observability | Downstream | Projection health and failures feed operational visibility. |
+| Admin / Control Plane | Downstream | Recovery is invoked and reviewed through privileged surfaces. |
+| Product surfaces | Downstream | Search, reader, social, library, and public surfaces consume derived projections. |
+
+## Authority Routing
+
+| Question | Route |
+|---|---|
+| Projection status and ownership | [ProjectionRegistry.md](../architecture/ProjectionRegistry.md). |
+| Recovery execution rules | [ProjectionRecoveryFramework.md](../architecture/ProjectionRecoveryFramework.md) and relevant runbook. |
+| Certification requirements | [ProjectionCertificationGate.md](../operations/ProjectionCertificationGate.md). |
+| Domain-specific projection authority | Owning domain Master document and registry entry. |
+| Operational health and reports | [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md). |
+
 ## System Architecture
 
 Projection and Recovery is BookTown's certified operational resilience layer for derived read models, fanout documents, search fields, aggregate counters, media derivatives, operational projections, and compatibility projections.

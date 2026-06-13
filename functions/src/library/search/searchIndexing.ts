@@ -82,8 +82,8 @@ function resolveSearchTokens(data: Record<string, unknown>): string[] {
 }
 
 function resolveDownloadable(data: Record<string, unknown>): boolean {
-  const readerAuthority = asRecord(data.readerAuthority);
-  return readerAuthority?.hasReadableAttachment === true;
+  const availability = asRecord(data.manifestationAvailability);
+  return availability?.hasReadableManifestation === true && availability?.canReadInApp === true;
 }
 
 function stringArrayEquals(a: string[], b: string[]): boolean {

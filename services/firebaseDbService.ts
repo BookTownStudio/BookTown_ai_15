@@ -578,7 +578,12 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
         ? Math.max(0, source.rating)
         : 0,
     ratingsCount: toNonNegativeInt(source.ratingsCount),
-    isEbookAvailable: source.isEbookAvailable === true,
+    isEbookAvailable:
+      source.manifestationAvailability &&
+      typeof source.manifestationAvailability === "object" &&
+      !Array.isArray(source.manifestationAvailability) &&
+      (source.manifestationAvailability as Record<string, unknown>).hasReadableManifestation === true &&
+      (source.manifestationAvailability as Record<string, unknown>).canReadInApp === true,
     genresEn: Array.isArray(source.genresEn)
       ? source.genresEn.filter((item): item is string => typeof item === "string")
       : [],
@@ -595,6 +600,11 @@ const toProfileBook = (source: Record<string, unknown>): Book => {
     typeof source.readerAuthority === "object" &&
     !Array.isArray(source.readerAuthority)
       ? { readerAuthority: source.readerAuthority as Book["readerAuthority"] }
+      : {}),
+    ...(source.manifestationAvailability &&
+    typeof source.manifestationAvailability === "object" &&
+    !Array.isArray(source.manifestationAvailability)
+      ? { manifestationAvailability: source.manifestationAvailability as Book["manifestationAvailability"] }
       : {}),
   });
 };
@@ -1841,7 +1851,12 @@ class FirebaseShelfService {
           typeof entry.ratingsCount === "number" && Number.isFinite(entry.ratingsCount)
             ? Math.max(0, Math.trunc(entry.ratingsCount))
             : 0,
-        isEbookAvailable: entry.isEbookAvailable === true || entry.hasEbook === true,
+        isEbookAvailable:
+          entry.manifestationAvailability &&
+          typeof entry.manifestationAvailability === "object" &&
+          !Array.isArray(entry.manifestationAvailability) &&
+          (entry.manifestationAvailability as Record<string, unknown>).hasReadableManifestation === true &&
+          (entry.manifestationAvailability as Record<string, unknown>).canReadInApp === true,
       });
     };
 

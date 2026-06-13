@@ -71,6 +71,7 @@ Related Master documents:
 
 - [MASTER_PROJECTION_RECOVERY.md](MASTER_PROJECTION_RECOVERY.md)
 - [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md)
+- [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md)
 - [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md)
 
 ## System Ownership Matrix
@@ -80,7 +81,7 @@ Related Master documents:
 | Admin surfaces | Control Plane | Admin app and admin service runtime | Firestore safety and control runtime. |
 | Control plane | Control Plane | Control modules and privileged callables | Firestore safety and operational docs. |
 | Recovery administration | Operations Platform | Admin recovery modules and recovery control plane | Projection/Recovery Master and runbooks. |
-| Moderation review | Control Plane; Social Platform | Social, feedback, and admin runtime | Runtime authority until moderation docs are consolidated. |
+| Moderation review | Control Plane; Social Platform; Feedback Operations | Social, feedback, and admin runtime | Feedback/Reporting, Social/Messaging, and Admin Operations routing until moderation policy is consolidated. |
 | Governance surfaces | Documentation Governance; Control Plane | Admin/governance UI where present | Governance docs and Master routing. |
 
 ## Dependency Matrix
@@ -102,7 +103,7 @@ Related Master documents:
 | Privileged operation authority | Admin/control runtime and Firestore safety docs. |
 | Projection recovery invocation | [MASTER_PROJECTION_RECOVERY.md](MASTER_PROJECTION_RECOVERY.md). |
 | Operational visibility | [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md). |
-| Moderation/reporting | Social, feedback, and admin runtime until dedicated moderation authority exists. |
+| Moderation/reporting | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md), [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md), and admin runtime until dedicated moderation policy authority exists. |
 | Deletion/cascade cleanup | Admin/control runtime and relevant projection runbooks. |
 
 ## System Architecture
@@ -210,6 +211,7 @@ Readiness: Internal Ready.
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
 - [MASTER_PROJECTION_RECOVERY.md](MASTER_PROJECTION_RECOVERY.md)
 - [MASTER_OBSERVABILITY.md](MASTER_OBSERVABILITY.md)
+- [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md)
 - [FIRESTORE_SAFETY.md](../engineering/FIRESTORE_SAFETY.md)
 - [ProjectionRegistry.md](../architecture/ProjectionRegistry.md)
 

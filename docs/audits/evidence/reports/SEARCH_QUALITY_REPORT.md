@@ -1,14 +1,14 @@
 ---
 id: BT-DOCS-SEARCH-QUALITY-REPORT
 title: "Search Quality & Ranking Evaluation Report"
-status: active
+status: evidence
 authority_level: none
 owner: documentation-governance
 last_audited: 2026-06-13
-source_of_truth: true
+source_of_truth: false
 supersedes: []
 superseded_by: null
-ai_read: true
+ai_read: false
 ---
 
 # Search Quality & Ranking Evaluation Report

@@ -23,6 +23,7 @@ export interface BookDetailsRuntimeDTO extends BookPublicViewDTO {
   ebookStoragePath?: string;
   downloadable?: boolean;
   readerAuthority?: Book["readerAuthority"];
+  manifestationAvailability?: Book["manifestationAvailability"];
   providerExternalIds?: string[];
   externalReadableSources?: ExternalReadableSourceDTO[];
 }
@@ -54,6 +55,7 @@ export function toBookPublicViewDTO(book: Book): BookPublicViewDTO {
       ? { semanticGraphEligible: book.semanticGraphEligible }
       : {}),
     isEbookAvailable: book.isEbookAvailable,
+    ...(book.manifestationAvailability ? { manifestationAvailability: book.manifestationAvailability } : {}),
   };
 }
 
@@ -64,6 +66,7 @@ export function toBookDetailsRuntimeDTO(book: Book): BookDetailsRuntimeDTO {
     ...(book.ebookStoragePath ? { ebookStoragePath: book.ebookStoragePath } : {}),
     ...(book.downloadable === true ? { downloadable: true } : {}),
     ...(book.readerAuthority ? { readerAuthority: book.readerAuthority } : {}),
+    ...(book.manifestationAvailability ? { manifestationAvailability: book.manifestationAvailability } : {}),
     ...(book.providerExternalIds ? { providerExternalIds: book.providerExternalIds } : {}),
     ...(book.externalReadableSources ? { externalReadableSources: book.externalReadableSources } : {}),
   };
@@ -85,8 +88,9 @@ export function buildPendingSearchBookView(
     descriptionAr: result.descriptionAr || "",
     rating: 0,
     ratingsCount: 0,
-    isEbookAvailable: result.ebookClass === "in_app",
+    isEbookAvailable: result.manifestationAvailability?.canReadInApp === true,
     downloadable: result.downloadable === true,
+    ...(result.manifestationAvailability ? { manifestationAvailability: result.manifestationAvailability } : {}),
     ...(result.externalReadableSources ? { externalReadableSources: result.externalReadableSources } : {}),
   };
 }

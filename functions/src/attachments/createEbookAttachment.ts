@@ -7,6 +7,7 @@ import {
   assertRoleFromClaims,
 } from "../shared/auth";
 import { isCanonicalBookReaderEbookStoragePath } from "./storageSignedUrl";
+import { upsertAttachmentManifestation } from "../manifestations/manifestationAuthority";
 
 const db = admin.firestore();
 const storage = admin.storage();
@@ -129,6 +130,24 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
   // --------------------------------------------------
   // 🔁 PREVENT DUPLICATE EBOOK ATTACHMENTS
   // --------------------------------------------------
+  const editionSnap = await db.collection("editions").doc(editionId).get();
+  if (!editionSnap.exists) {
+    throw new HttpsError("failed-precondition", "Edition not found.");
+  }
+  const edition = (editionSnap.data() || {}) as Record<string, unknown>;
+  const editionBookId =
+    typeof edition.bookId === "string" && edition.bookId.trim()
+      ? edition.bookId.trim()
+      : typeof edition.workId === "string" && edition.workId.trim()
+        ? edition.workId.trim()
+        : "";
+  if (editionBookId && editionBookId !== bookId) {
+    throw new HttpsError(
+      "failed-precondition",
+      "Edition does not belong to the requested Work."
+    );
+  }
+
   const existing = await db
     .collection("attachments")
     .where("parentId", "==", editionId)
@@ -158,6 +177,7 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
 
     parentType: "editions",
     parentId: editionId,
+    editionId,
     bookId,
 
     uploader: {
@@ -170,6 +190,17 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
 
     createdAt: now,
     updatedAt: now,
+  });
+
+  const manifestationId = await upsertAttachmentManifestation({
+    bookId,
+    editionId,
+    attachmentId: attachmentRef.id,
+    storagePath,
+    mimeType,
+    format: "pdf",
+    visibility: "public",
+    source: "ebook_attachment",
   });
 
   // --------------------------------------------------
@@ -194,6 +225,7 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
     readerAuthority: {
       hasReadableAttachment: true,
       attachmentId: attachmentRef.id,
+      manifestationId,
       source: "ebook_attachment",
       updatedAt: now,
     },
@@ -215,5 +247,6 @@ export const createEbookAttachment = onCall({ cors: true }, async (request) => {
   return {
     ok: true,
     attachmentId: attachmentRef.id,
+    manifestationId,
   };
 });

@@ -82,6 +82,7 @@ For AI systems:
 | [MASTER_ENTITY_PLATFORM.md](master/MASTER_ENTITY_PLATFORM.md) | Entity Platform authority summary for literary entities, graph systems, identity, and entity contracts. |
 | [MASTER_PROJECTION_RECOVERY.md](master/MASTER_PROJECTION_RECOVERY.md) | Projection and recovery authority summary for registry, certification, runbooks, and recovery controls. |
 | [MASTER_SOCIAL_MESSAGING.md](master/MASTER_SOCIAL_MESSAGING.md) | Social, community, messaging, DM, moderation, and interaction authority summary. |
+| [MASTER_FEEDBACK_REPORTING.md](master/MASTER_FEEDBACK_REPORTING.md) | Feedback, reporting, moderation handoff, feedback attachments, and admin triage authority summary. |
 | [MASTER_WRITE_PUBLISHING.md](master/MASTER_WRITE_PUBLISHING.md) | Writing, publishing, projects, manuscripts, publications, and creator workflow authority summary. |
 | [MASTER_ADMIN_OPERATIONS.md](master/MASTER_ADMIN_OPERATIONS.md) | Admin, control plane, moderation, recovery, operational tooling, and governance surface authority summary. |
 | [MASTER_MEDIA_STORAGE.md](master/MASTER_MEDIA_STORAGE.md) | Attachments, uploads, covers, reader assets, media pipeline, and storage authority summary. |
@@ -95,6 +96,19 @@ For AI systems:
 | [MASTER_DESIGN_SYSTEM.md](master/MASTER_DESIGN_SYSTEM.md) | Design system, tokens, UI governance, and component authority summary. |
 | [MASTER_PUBLIC_WEB.md](master/MASTER_PUBLIC_WEB.md) | SSR, public pages, SEO, sitemap, and public entity exposure authority summary. |
 | [MASTER_SPACES_VENUES.md](master/MASTER_SPACES_VENUES.md) | Spaces, venues, public/community place surfaces, stewardship controls, and venue authority summary. |
+
+## Architecture Registers And Authorities
+
+| Area | Entry Point |
+|---|---|
+| Catalog Work/Edition/Manifestation | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md) |
+| Catalog data pipeline | [DATA_PIPELINE.md](architecture/catalog/DATA_PIPELINE.md) |
+| Discovery/Home | [DISCOVERY_HOME_REGISTER.md](architecture/discovery/DISCOVERY_HOME_REGISTER.md) |
+| Shelves | [SHELVES_ARCHITECTURE.md](architecture/shelves/SHELVES_ARCHITECTURE.md) |
+| Public Web | [PUBLIC_WEB_REGISTER.md](architecture/public-web/PUBLIC_WEB_REGISTER.md) |
+| Contracts/API | [CONTRACTS_API_REGISTER.md](architecture/contracts/CONTRACTS_API_REGISTER.md) |
+| Quotes/Reviews | [QUOTES_REVIEWS_AUTHORITY.md](architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md) |
+| Materializing entities | [MATERIALIZING_ENTITIES.md](architecture/entity-platform/MATERIALIZING_ENTITIES.md) |
 
 ## Vision Documents
 

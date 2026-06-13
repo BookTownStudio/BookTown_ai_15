@@ -55,6 +55,7 @@ Backend shelf runtime owns shelf creation, mutation, membership, move, duplicate
 
 Primary authority currently comes from runtime and operations routing:
 
+- [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md)
 - [ShelfDisplayProjectionRecoveryRunbook.md](../operations/projections/ShelfDisplayProjectionRecoveryRunbook.md)
 - [UserLibraryRecoveryRunbook.md](../operations/projections/UserLibraryRecoveryRunbook.md)
 - [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md)
@@ -143,7 +144,7 @@ Shelves depend on:
 
 Product maturity: Operational.
 
-Architecture maturity: Implemented, with dedicated architecture authority still missing.
+Architecture maturity: Implemented, with dedicated architecture authority now routed.
 
 Documentation maturity: Partial to Good after this Master document.
 
@@ -151,7 +152,6 @@ Readiness: Closed Beta Ready.
 
 ## Known Gaps
 
-- Dedicated shelf architecture authority is still needed.
 - Shared/public shelf boundaries require clearer routing.
 - Shelf lifecycle rules should be consolidated outside runbooks.
 - Shelf relationships to user library, profile, and discovery need stronger documentation.
@@ -162,6 +162,7 @@ Readiness: Closed Beta Ready.
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
 - [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md)
 - [MASTER_READER.md](MASTER_READER.md)
+- [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md)
 - [ShelfDisplayProjectionRecoveryRunbook.md](../operations/projections/ShelfDisplayProjectionRecoveryRunbook.md)
 - [UserLibraryRecoveryRunbook.md](../operations/projections/UserLibraryRecoveryRunbook.md)
 
@@ -169,7 +170,7 @@ Readiness: Closed Beta Ready.
 
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
-| Shelves | Library UX | Shelf backend runtime | This Master doc and shelf runbooks. |
+| Shelves | Library UX | Shelf backend runtime | This Master doc, shelf architecture authority, and shelf runbooks. |
 | Shelf membership | Library UX | `shelf_books` and shelf operations | Runtime authority and projection runbooks. |
 | User library | Library UX; Reader Platform | User library projections and reader/catalog inputs | User library runbook and Reader/Catalog masters. |
 | System shelves | Library UX | System shelf runtime | Runtime authority until dedicated architecture exists. |
@@ -187,7 +188,7 @@ Readiness: Closed Beta Ready.
 
 | Question | Route |
 |---|---|
-| Shelf membership authority | This document and shelf runtime. |
+| Shelf membership authority | [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md), this document, and shelf runtime. |
 | Shelf display recovery | [ShelfDisplayProjectionRecoveryRunbook.md](../operations/projections/ShelfDisplayProjectionRecoveryRunbook.md). |
 | User library recovery | [UserLibraryRecoveryRunbook.md](../operations/projections/UserLibraryRecoveryRunbook.md). |
 | Book truth on shelves | [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md). |
@@ -195,4 +196,4 @@ Readiness: Closed Beta Ready.
 
 ## Future Evolution
 
-Future shelf changes should be documented in dedicated shelf architecture authority and reflected here as routing updates. This Master document must not introduce new shelf behavior directly.
+Future shelf changes should be documented in shelf architecture authority and reflected here as routing updates. This Master document must not introduce new shelf behavior directly.

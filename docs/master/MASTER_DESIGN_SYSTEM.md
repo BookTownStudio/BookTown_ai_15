@@ -45,8 +45,6 @@ Runtime authority currently lives in:
 - `components/layout/*`
 - `components/icons/*`
 - `components/content/*`
-- `docs/architecture/design-system/*`
-- `docs/DESIGN_SYSTEM.md`
 
 Component implementation owns rendered UI behavior. Design-system documentation owns visual language, token intent, governance, and component usage authority.
 
@@ -64,6 +62,9 @@ Primary authority documents:
 - [MOTION_SYSTEM.md](../architecture/design-system/MOTION_SYSTEM.md)
 - [ICONOGRAPHY_SYSTEM.md](../architecture/design-system/ICONOGRAPHY_SYSTEM.md)
 - [BRAND_SYSTEM.md](../architecture/design-system/BRAND_SYSTEM.md)
+- [ACCESSIBILITY_SYSTEM.md](../architecture/design-system/ACCESSIBILITY_SYSTEM.md)
+- [RTL_LTR_SYSTEM.md](../architecture/design-system/RTL_LTR_SYSTEM.md)
+- [COMPONENT_INVENTORY.md](../architecture/design-system/COMPONENT_INVENTORY.md)
 - [READER_EXPERIENCE_SYSTEM.md](../architecture/design-system/READER_EXPERIENCE_SYSTEM.md)
 - [WRITER_EXPERIENCE_SYSTEM.md](../architecture/design-system/WRITER_EXPERIENCE_SYSTEM.md)
 
@@ -94,6 +95,9 @@ The architecture separates:
 | Typography/color/spacing/motion | Define core visual systems. |
 | Iconography | Defines icon usage and visual semantics. |
 | Brand system | Defines brand expression. |
+| Accessibility system | Governs keyboard, focus, screen-reader, contrast, reduced-motion, and release-gate expectations. |
+| RTL/LTR system | Governs Arabic/English and direction-aware interaction behavior. |
+| Component inventory | Tracks component ownership, status, adoption, accessibility, RTL, dark mode, and deprecation status. |
 | Reader experience system | Governs reader-specific UX. |
 | Writer experience system | Governs writer-specific UX. |
 
@@ -106,7 +110,9 @@ The architecture separates:
 | Product behavior | Product and domain Master docs, not design system. |
 | Reader experience principles | Reader and design-system docs. |
 | Writer experience principles | Writer and design-system docs. |
-| Accessibility expectations | Design governance and component implementation. |
+| Accessibility expectations | [ACCESSIBILITY_SYSTEM.md](../architecture/design-system/ACCESSIBILITY_SYSTEM.md), design governance, and component implementation. |
+| RTL/LTR expectations | [RTL_LTR_SYSTEM.md](../architecture/design-system/RTL_LTR_SYSTEM.md), typography, iconography, and component primitives. |
+| Component inventory status | [COMPONENT_INVENTORY.md](../architecture/design-system/COMPONENT_INVENTORY.md). |
 
 ## User-Facing Surfaces
 
@@ -141,6 +147,7 @@ Design System has no direct projection ownership. It consumes display-ready data
 - Token and component changes should route through design governance.
 - Design docs are authority for UI language only within their scope.
 - Root or legacy design summaries should route through the design-system register.
+- `docs/DESIGN_SYSTEM.md` is superseded historical context and must not override the register or routed design-system authority documents.
 
 ## Current Maturity
 
@@ -157,7 +164,7 @@ Readiness: Internal Ready.
 - Implementation migration remains partial across surfaces.
 - Design governance should be connected to automated UI review over time.
 - Public Web and Admin surfaces may need more explicit design-system adoption rules.
-- Root `docs/DESIGN_SYSTEM.md` should be rationalized against the design-system register.
+- Component inventory validation should be expanded as implementation migration proceeds.
 
 ## Related Documents
 
@@ -166,6 +173,9 @@ Readiness: Internal Ready.
 - [EXPERIENCE_VISION.md](../vision/EXPERIENCE_VISION.md)
 - [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md)
 - [DESIGN_GOVERNANCE.md](../architecture/design-system/DESIGN_GOVERNANCE.md)
+- [ACCESSIBILITY_SYSTEM.md](../architecture/design-system/ACCESSIBILITY_SYSTEM.md)
+- [RTL_LTR_SYSTEM.md](../architecture/design-system/RTL_LTR_SYSTEM.md)
+- [COMPONENT_INVENTORY.md](../architecture/design-system/COMPONENT_INVENTORY.md)
 
 ## System Ownership Matrix
 
@@ -174,6 +184,9 @@ Readiness: Internal Ready.
 | UI primitives | Design System | `components/ui/*` | Component primitive docs and design register. |
 | Tokens | Design System | UI token implementation | Token docs. |
 | Visual systems | Design System | UI/component implementation | Typography, color, spacing, motion, icon docs. |
+| Accessibility | Design System; QA/Release | Component implementation and review gates | Accessibility system and design governance. |
+| RTL/LTR behavior | Design System; Product Owners | Component/layout implementation | RTL/LTR system, typography, iconography, and primitive docs. |
+| Component inventory | Design System | Component implementation evidence | Component inventory. |
 | Domain experience systems | Design System; Product Owners | Product components | Reader/writer experience docs. |
 
 ## Dependency Matrix
@@ -183,6 +196,7 @@ Readiness: Internal Ready.
 | Product surfaces | Downstream | All product surfaces consume design primitives. |
 | Experience Vision | Upstream | Vision defines desired feel. |
 | Accessibility | Cross-cutting | Design system must preserve accessibility expectations. |
+| RTL/LTR | Cross-cutting | Bilingual product behavior must be governed across primitives and surfaces. |
 | Contracts/API | Upstream | Components consume typed data. |
 
 ## Authority Routing
@@ -191,7 +205,10 @@ Readiness: Internal Ready.
 |---|---|
 | Design governance | [DESIGN_GOVERNANCE.md](../architecture/design-system/DESIGN_GOVERNANCE.md). |
 | Component primitives | [COMPONENT_PRIMITIVES.md](../architecture/design-system/COMPONENT_PRIMITIVES.md). |
+| Component inventory and adoption status | [COMPONENT_INVENTORY.md](../architecture/design-system/COMPONENT_INVENTORY.md). |
 | Tokens | [DESIGN_TOKENS.md](../architecture/design-system/DESIGN_TOKENS.md). |
+| Accessibility | [ACCESSIBILITY_SYSTEM.md](../architecture/design-system/ACCESSIBILITY_SYSTEM.md). |
+| RTL/LTR and bilingual interaction behavior | [RTL_LTR_SYSTEM.md](../architecture/design-system/RTL_LTR_SYSTEM.md). |
 | Reader/writer UX | Reader/Writer experience docs plus relevant product Master. |
 | Product behavior | Relevant product/domain Master, not Design System. |
 
