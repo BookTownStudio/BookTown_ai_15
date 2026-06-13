@@ -21,6 +21,7 @@ import { ensureCanonicalBook } from '../../lib/books/ensureCanonicalBook.ts';
 import MiniBookCard from '../../components/books/MiniBookCard.tsx';
 import { cn } from '../../lib/utils.ts';
 import { findProductionAgent, productionAgents } from '../../lib/agents/agentRegistry.tsx';
+import RecommendedAuthorsModule from '../../components/discovery/RecommendedAuthorsModule.tsx';
 
 // --- Icons ---
 // If PinIcon doesn't exist, create a simple inline one or import if available.
@@ -699,6 +700,8 @@ const DiscoverScreen: React.FC = () => {
                             {lang === 'en' ? 'Chat with Bookwise AI Agents' : 'تحدث مع وكلاء الذكاء الاصطناعي'}
                         </BilingualText>
                     </div>
+
+                    <RecommendedAuthorsModule />
 
                     <div className="grid grid-cols-2 gap-4">
                         {productionAgents.map(agent => (

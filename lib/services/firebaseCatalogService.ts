@@ -690,8 +690,30 @@ export const firebaseCatalogService = {
     return snap.docs.map((d) => mapBook(d.data(), d.id));
   },
 
-  async getBooksByAuthor(authorId: string): Promise<Book[]> {
-    if (!authorId) return [];
+  async getBooksByAuthorWithAuthority(authorId: string): Promise<{
+    books: Book[];
+    canonicalWorks: Book[];
+    repairWorks: Book[];
+    bibliographyAuthority:
+      | "canonical_author_id"
+      | "legacy_display_name_repair"
+      | "mixed"
+      | "none";
+    totalCanonicalCount: number;
+    totalRepairCount: number;
+    hasMore: boolean;
+  }> {
+    if (!authorId) {
+      return {
+        books: [],
+        canonicalWorks: [],
+        repairWorks: [],
+        bibliographyAuthority: "none",
+        totalCanonicalCount: 0,
+        totalRepairCount: 0,
+        hasMore: false,
+      };
+    }
 
     const db = getDbOrThrow();
     const byAuthorId = query(
@@ -699,9 +721,11 @@ export const firebaseCatalogService = {
       where("authorId", "==", authorId),
       limit(AUTHOR_BOOKS_LIMIT)
     );
-    let snap = await getDocs(byAuthorId);
+    const canonicalSnap = await getDocs(byAuthorId);
+    const canonicalWorks = canonicalSnap.docs.map((d) => mapBook(d.data(), d.id));
+    let repairWorks: Book[] = [];
 
-    if (snap.empty) {
+    if (canonicalSnap.empty) {
       const authorSnap = await getDoc(doc(db, "authors", authorId));
       const fallbackNameEn = authorSnap.exists()
         ? String(authorSnap.data()?.nameEn || "").trim()
@@ -713,17 +737,50 @@ export const firebaseCatalogService = {
           where("authorEn", "==", fallbackNameEn),
           limit(AUTHOR_BOOKS_LIMIT)
         );
-        snap = await getDocs(byAuthorName);
+        const repairSnap = await getDocs(byAuthorName);
+        repairWorks = repairSnap.docs.map((d) => mapBook(d.data(), d.id));
       }
     }
 
-    const books = snap.docs.map((d) => mapBook(d.data(), d.id));
-    books.sort((a, b) => {
-      if (b.rating !== a.rating) return b.rating - a.rating;
-      return a.titleEn.localeCompare(b.titleEn);
-    });
+    const sortBooks = (books: Book[]) =>
+      books.sort((a, b) => {
+        const publication = (a.publicationDate || "9999-99-99").localeCompare(
+          b.publicationDate || "9999-99-99"
+        );
+        if (publication !== 0) return publication;
+        const title = (a.titleEn || a.title || "").localeCompare(b.titleEn || b.title || "");
+        if (title !== 0) return title;
+        return a.id.localeCompare(b.id);
+      });
+    const sortedCanonicalWorks = sortBooks(canonicalWorks);
+    const canonicalIds = new Set(sortedCanonicalWorks.map((book) => book.id));
+    const sortedRepairWorks = sortBooks(
+      repairWorks.filter((book) => !canonicalIds.has(book.id))
+    );
+    const bibliographyAuthority =
+      sortedCanonicalWorks.length > 0 && sortedRepairWorks.length > 0
+        ? "mixed"
+        : sortedCanonicalWorks.length > 0
+          ? "canonical_author_id"
+          : sortedRepairWorks.length > 0
+            ? "legacy_display_name_repair"
+            : "none";
+    const books = [...sortedCanonicalWorks, ...sortedRepairWorks];
 
-    return books;
+    return {
+      books,
+      canonicalWorks: sortedCanonicalWorks,
+      repairWorks: sortedRepairWorks,
+      bibliographyAuthority,
+      totalCanonicalCount: sortedCanonicalWorks.length,
+      totalRepairCount: sortedRepairWorks.length,
+      hasMore: books.length >= AUTHOR_BOOKS_LIMIT,
+    };
+  },
+
+  async getBooksByAuthor(authorId: string): Promise<Book[]> {
+    const result = await this.getBooksByAuthorWithAuthority(authorId);
+    return result.books;
   },
 
   async getBookStats(bookId: string): Promise<BookStats> {

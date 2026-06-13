@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  toAuthorFollowInteraction,
   toBookmarkInteraction,
   toQuoteInteraction,
   toReadingInteraction,
@@ -181,6 +182,75 @@ describe("userEntityInteractionAdapter", () => {
         entityId: "book_1",
       },
     });
+  });
+
+  it("derives author follows as private durable Author identity interactions", () => {
+    const interaction = toAuthorFollowInteraction({
+      ...base,
+      authorId: "author_1",
+    });
+
+    expect(interaction).toMatchObject({
+      interactionId: "author_follow:user_1:author_1:following",
+      uid: "user_1",
+      interactionType: "following",
+      sourceSurface: "author_details",
+      privacyTier: "private",
+      lifecycleState: "recorded",
+      weightClass: "durable",
+      entityRef: {
+        entityType: "author",
+        entityId: "author_1",
+        authorityState: "canonical",
+        authoritySource: "author_authority",
+      },
+      provenance: {
+        sourceClass: "system",
+        sourceSystem: "author_follow",
+        sourceId: "author_1",
+      },
+    });
+  });
+
+  it("derives author unfollows as withdrawn Author identity interactions", () => {
+    const interaction = toAuthorFollowInteraction({
+      ...base,
+      authorId: "author_1",
+      lifecycleState: "withdrawn",
+    });
+
+    expect(interaction).toMatchObject({
+      interactionId: "author_follow:user_1:author_1:following:withdrawn",
+      interactionType: "following",
+      lifecycleState: "withdrawn",
+      privacyTier: "private",
+      weightClass: "durable",
+      entityRef: {
+        entityType: "author",
+        entityId: "author_1",
+      },
+    });
+  });
+
+  it("creates deterministic author follow interactions without affinity or recommendation fields", () => {
+    const first = toAuthorFollowInteraction({
+      ...base,
+      authorId: "author_1",
+      idempotencyKey: "follow:author_1",
+    });
+    const second = toAuthorFollowInteraction({
+      ...base,
+      authorId: "author_1",
+      idempotencyKey: "follow:author_1",
+    });
+    const serialized = JSON.stringify(first);
+
+    expect(second).toEqual(first);
+    expect(first.interactionId).toBe("author_follow:user_1:author_1:following");
+    expect(serialized).not.toContain("affinityClass");
+    expect(serialized).not.toContain("strengthBand");
+    expect(serialized).not.toContain("recommendation");
+    expect(serialized).not.toContain("matchmaker");
   });
 
   it("preserves privacy defaults and does not mutate source DTOs", () => {

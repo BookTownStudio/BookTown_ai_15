@@ -517,7 +517,7 @@ const BookDetailsScreen: React.FC = () => {
   const hasReadableAttachment = hasReadableAttachmentAuthority(bookDetails);
   const bookRecord =
     book && typeof book === 'object'
-      ? (book as Record<string, unknown>)
+      ? (book as unknown as Record<string, unknown>)
       : null;
   const canDeleteUploadedBook = Boolean(
     bookId &&

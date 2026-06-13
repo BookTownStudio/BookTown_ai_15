@@ -1,10 +1,12 @@
 import {
+  createAuthorEntityRef,
   createQuoteEntityRef,
   createWorkEntityRef,
   ENTITY_PLATFORM_CONTRACT_VERSION,
   type EntityPlatformPrivacyTier,
   type EntityPlatformWeightClass,
   type LiteraryEntityRef,
+  type UserEntityInteractionLifecycleState,
   type UserEntityInteraction,
   type UserEntityInteractionSourceSurface,
   type UserEntityInteractionType,
@@ -64,6 +66,14 @@ export interface SocialAttachmentInteractionInput extends BaseInteractionInput {
   readonly visibility?: VisibilityInput;
 }
 
+export interface AuthorFollowInteractionInput extends BaseInteractionInput {
+  readonly authorId: string;
+  readonly lifecycleState?: Extract<
+    UserEntityInteractionLifecycleState,
+    "recorded" | "withdrawn"
+  >;
+}
+
 function visibilityToPrivacyTier(visibility: VisibilityInput): EntityPlatformPrivacyTier {
   if (visibility === "public") return "public";
   if (visibility === "followers") return "followers";
@@ -80,10 +90,13 @@ function createInteraction(params: {
   readonly occurredAt: string;
   readonly privacyTier: EntityPlatformPrivacyTier;
   readonly weightClass: EntityPlatformWeightClass;
+  readonly lifecycleState?: UserEntityInteractionLifecycleState;
   readonly idempotencyKey?: string;
   readonly evidence?: readonly string[];
 }): UserEntityInteraction {
-  const interactionId = `${params.sourceSystem}:${params.uid}:${params.sourceId}:${params.interactionType}`;
+  const lifecycleState = params.lifecycleState ?? "recorded";
+  const lifecycleKey = lifecycleState === "recorded" ? "" : `:${lifecycleState}`;
+  const interactionId = `${params.sourceSystem}:${params.uid}:${params.sourceId}:${params.interactionType}${lifecycleKey}`;
 
   return {
     interactionId,
@@ -98,7 +111,7 @@ function createInteraction(params: {
       ...(params.evidence ? { evidence: params.evidence } : {}),
     },
     privacyTier: params.privacyTier,
-    lifecycleState: "recorded",
+    lifecycleState,
     weightClass: params.weightClass,
     occurredAt: params.occurredAt,
     contractVersion: ENTITY_PLATFORM_CONTRACT_VERSION,
@@ -230,6 +243,24 @@ export function toSocialAttachmentInteraction(
     occurredAt: input.occurredAt,
     privacyTier: visibilityToPrivacyTier(input.visibility),
     weightClass: "expressive",
+    idempotencyKey: input.idempotencyKey,
+  });
+}
+
+export function toAuthorFollowInteraction(
+  input: AuthorFollowInteractionInput
+): UserEntityInteraction {
+  return createInteraction({
+    uid: input.uid,
+    entityRef: createAuthorEntityRef(input.authorId),
+    interactionType: "following",
+    sourceSurface: "author_details",
+    sourceSystem: "author_follow",
+    sourceId: input.authorId,
+    occurredAt: input.occurredAt,
+    privacyTier: "private",
+    weightClass: "durable",
+    lifecycleState: input.lifecycleState ?? "recorded",
     idempotencyKey: input.idempotencyKey,
   });
 }
