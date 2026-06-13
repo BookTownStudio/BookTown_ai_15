@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-ENTITY-PLATFORM-ENTITY-GRAPH
+title: "Entity Graph"
+status: active
+authority_level: architecture
+owner: entity-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Entity Graph
 
 Status: Architecture Definition  

@@ -1,3 +1,16 @@
+---
+id: BT-README
+title: "BookTown Runtime"
+status: active
+authority_level: none
+owner: project-governance
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 <div align="center">
 <img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
 </div>

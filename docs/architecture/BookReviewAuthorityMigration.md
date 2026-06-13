@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-BOOKREVIEWAUTHORITYMIGRATION
+title: "Book Review Authority Migration"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Book Review Authority Migration
 
 ## Status

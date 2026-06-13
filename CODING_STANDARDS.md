@@ -1,20 +1,14 @@
 ---
-
-# 1.5 TIER-1 PRODUCTION-GRADE ENGINEERING STANDARD
-
-BookTown is not a prototype.
-
-Every feature must satisfy the following five engineering pillars:
-
-- Security
-- Stability
-- Performance
-- Scalability
-- Operational Predictability
-
-These are not optional quality layers.
-They are architectural requirements.
-
+id: BT-CODING-STANDARDS
+title: "2. SECURITY (ENTERPRISE-LEVEL)"
+status: active
+authority_level: governance
+owner: engineering-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
 ---
 
 # 2. SECURITY (ENTERPRISE-LEVEL)

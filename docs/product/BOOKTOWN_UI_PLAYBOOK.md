@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-PRODUCT-BOOKTOWN-UI-PLAYBOOK
+title: "BookTown UI Playbook"
+status: active
+authority_level: product
+owner: product-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown UI Playbook
 *A practical reference for interaction, layout, and UI ergonomics*
 

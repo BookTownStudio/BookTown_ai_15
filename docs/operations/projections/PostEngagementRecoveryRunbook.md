@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-OPERATIONS-PROJECTIONS-POSTENGAGEMENTRECOVERYRUNBOOK
+title: "Projection Recovery Runbook: Post Engagement Stats"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Projection Recovery Runbook: Post Engagement Stats
 
 ## Projection Name

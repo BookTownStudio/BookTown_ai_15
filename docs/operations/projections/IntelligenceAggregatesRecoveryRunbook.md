@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-OPERATIONS-PROJECTIONS-INTELLIGENCEAGGREGATESRECOVERYRUNBOOK
+title: "Intelligence Aggregates Recovery Runbook"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Intelligence Aggregates Recovery Runbook
 
 ## Authority

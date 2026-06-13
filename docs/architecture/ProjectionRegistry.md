@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-PROJECTIONREGISTRY
+title: "BookTown Projection Registry and Certification Matrix"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Projection Registry and Certification Matrix
 
 Status: Phase 8A audit and design artifact

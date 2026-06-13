@@ -1,3 +1,17 @@
+---
+id: BT-DOCS-BOOKTOWN-CANONICAL-ONTOLOGY-V2
+title: "BookTown Canonical Ontology V2"
+status: active
+authority_level: architecture
+owner: documentation-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+canon_candidate: true
+---
+
 # BookTown Canonical Ontology V2
 Status: LOCKED
 Authority Level: Tier-1 Canonical Architecture

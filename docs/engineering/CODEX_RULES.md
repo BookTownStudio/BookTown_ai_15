@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ENGINEERING-CODEX-RULES
+title: "Codex Engineering Rules"
+status: active
+authority_level: governance
+owner: engineering-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Codex Engineering Rules
 
 These rules are mandatory for future Codex sessions in this repository.

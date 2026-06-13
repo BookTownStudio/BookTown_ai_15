@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MESSAGING-MESSENGER-V1-LOCK
+title: "BookTown Messenger V1"
+status: active
+authority_level: architecture
+owner: messaging-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Messenger V1
 
 Status: LOCKED

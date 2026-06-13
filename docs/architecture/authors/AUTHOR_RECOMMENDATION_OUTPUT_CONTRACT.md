@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-AUTHORS-AUTHOR-RECOMMENDATION-OUTPUT-CONTRACT
+title: "Author Recommendation Output Contract"
+status: active
+authority_level: architecture
+owner: author-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Author Recommendation Output Contract
 
 Status: ARCHITECTURE_AUTHORITY

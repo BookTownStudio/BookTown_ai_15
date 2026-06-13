@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MESSAGING-DM-ARCHITECTURE
+title: "Direct Message Architecture"
+status: active
+authority_level: architecture
+owner: messaging-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Direct Message Architecture
 
 ## Core Flow

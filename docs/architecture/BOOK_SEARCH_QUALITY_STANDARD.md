@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-BOOK-SEARCH-QUALITY-STANDARD
+title: "BookTown — Book Search Quality Standard"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown — Book Search Quality Standard
 Version: 1.0  
 Status: LOCKED  

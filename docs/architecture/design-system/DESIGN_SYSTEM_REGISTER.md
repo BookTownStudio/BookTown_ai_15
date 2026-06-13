@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DESIGN-SYSTEM-DESIGN-SYSTEM-REGISTER
+title: "BookTown Design System Platform Register"
+status: active
+authority_level: architecture
+owner: design-system
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Design System Platform Register
 
 Status: Foundation architecture.

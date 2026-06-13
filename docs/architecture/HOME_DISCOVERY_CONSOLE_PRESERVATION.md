@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-HOME-DISCOVERY-CONSOLE-PRESERVATION
+title: "Home Discovery Console Preservation Doctrine"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Home Discovery Console Preservation Doctrine
 
 ## Purpose

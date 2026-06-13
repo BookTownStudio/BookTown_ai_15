@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DISCOVERY-DISCOVERY-RECOMMENDATION-BOUNDARIES
+title: "Discovery Recommendation Boundaries"
+status: active
+authority_level: architecture
+owner: discovery-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Discovery Recommendation Boundaries
 
 Status: ARCHITECTURE_AUTHORITY

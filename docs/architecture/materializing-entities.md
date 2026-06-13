@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATERIALIZING-ENTITIES
+title: "MaterializingEntity Pattern"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # MaterializingEntity Pattern
 
 ## Status

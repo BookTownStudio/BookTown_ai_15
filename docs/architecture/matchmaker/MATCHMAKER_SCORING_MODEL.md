@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATCHMAKER-MATCHMAKER-SCORING-MODEL
+title: "MatchMaker Scoring Model"
+status: active
+authority_level: architecture
+owner: matchmaker
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # MatchMaker Scoring Model
 
 Status: ARCHITECTURE_AUTHORITY

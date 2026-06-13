@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-ENTITY-PLATFORM-LITERARY-IDENTITY-GRAPH
+title: "Literary Identity Graph"
+status: active
+authority_level: architecture
+owner: entity-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Literary Identity Graph
 
 Status: Architecture Definition  

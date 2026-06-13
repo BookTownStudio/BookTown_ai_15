@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-READER-MOBILE-SLOS
+title: "Reader Mobile-First SLOs (Execution Baseline)"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Reader Mobile-First SLOs (Execution Baseline)
 
 ## Decision (Locked)

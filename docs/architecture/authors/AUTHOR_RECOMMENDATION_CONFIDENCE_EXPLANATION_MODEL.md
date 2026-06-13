@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-AUTHORS-AUTHOR-RECOMMENDATION-CONFIDENCE-EXPLANATION-MODEL
+title: "Author Recommendation Confidence And Explanation Model"
+status: active
+authority_level: architecture
+owner: author-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Author Recommendation Confidence And Explanation Model
 
 Status: ARCHITECTURE_AUTHORITY

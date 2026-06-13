@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DESIGN-SYSTEM-DESIGN-SYSTEM-ROADMAP
+title: "BookTown Design System Roadmap"
+status: draft
+authority_level: architecture
+owner: design-system
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # BookTown Design System Roadmap
 
 Status: Foundation architecture.

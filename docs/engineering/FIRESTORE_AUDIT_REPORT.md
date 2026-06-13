@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ENGINEERING-FIRESTORE-AUDIT-REPORT
+title: "Firestore Audit Report"
+status: active
+authority_level: governance
+owner: engineering-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Firestore Audit Report
 
 Status: P0 governance baseline  

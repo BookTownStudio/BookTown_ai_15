@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-PHASE-1-CONTRACTS
+title: "BookTown — Phase 1 Canonical Contracts"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown — Phase 1 Canonical Contracts
 Search → Acquire → Read
 

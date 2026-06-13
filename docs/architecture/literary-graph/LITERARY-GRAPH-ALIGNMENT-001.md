@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-LITERARY-GRAPH-LITERARY-GRAPH-ALIGNMENT-001
+title: LITERARY-GRAPH-ALIGNMENT-001
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # LITERARY-GRAPH-ALIGNMENT-001
 
 Status: OPEN

@@ -1,3 +1,16 @@
+---
+id: BT-ENVIRONMENT-MATRIX
+title: "Environment & Secrets Matrix"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Environment & Secrets Matrix
 
 ## Frontend Environment Flags (VITE_*)

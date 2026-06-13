@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-DATA-PIPELINE
+title: "Data Pipeline"
+status: active
+authority_level: architecture
+owner: documentation-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 📚 BookTown Data Pipeline Architecture
 
 Search → Catalog → Reader (Canonical Ingestion Model)

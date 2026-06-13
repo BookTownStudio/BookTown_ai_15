@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-OPERATIONS-PROJECTIONRECOVERYRUNBOOKTEMPLATE
+title: "Projection Recovery Runbook Template"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Projection Recovery Runbook Template
 
 Use this template for every projection listed in `docs/architecture/ProjectionRegistry.md`.

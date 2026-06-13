@@ -1,3 +1,17 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATCHMAKER-MATCHMAKER-REGISTER
+title: "MatchMaker Register"
+status: active
+authority_level: architecture
+owner: matchmaker
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+canon_candidate: true
+---
+
 # MatchMaker Register
 
 Status: ARCHITECTURE_AUTHORITY

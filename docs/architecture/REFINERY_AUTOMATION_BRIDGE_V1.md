@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-REFINERY-AUTOMATION-BRIDGE-V1
+title: "BookTown Refinery Automation Bridge V1"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Refinery Automation Bridge V1
 
 ## Authority Boundary

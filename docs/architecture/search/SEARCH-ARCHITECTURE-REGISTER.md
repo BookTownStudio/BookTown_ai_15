@@ -1,3 +1,17 @@
+---
+id: BT-DOCS-ARCHITECTURE-SEARCH-SEARCH-ARCHITECTURE-REGISTER
+title: "BookTown Search Architecture Register"
+status: active
+authority_level: architecture
+owner: search-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+canon_candidate: true
+---
+
 # BookTown Search Architecture Register
 
 ## Purpose

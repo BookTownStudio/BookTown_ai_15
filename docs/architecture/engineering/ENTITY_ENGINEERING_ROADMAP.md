@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-ENGINEERING-ENTITY-ENGINEERING-ROADMAP
+title: BT-ENTITY-ENGINEERING-ROADMAP-001
+status: draft
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # BT-ENTITY-ENGINEERING-ROADMAP-001
 
 Title:

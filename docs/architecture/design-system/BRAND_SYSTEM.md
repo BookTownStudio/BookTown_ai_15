@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DESIGN-SYSTEM-BRAND-SYSTEM
+title: "BookTown Brand System"
+status: active
+authority_level: architecture
+owner: design-system
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Brand System
 
 Status: Foundation architecture.

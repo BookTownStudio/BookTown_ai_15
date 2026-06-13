@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DISCOVERY-DISCOVERY-MODULE-AUTHORITY
+title: "Discovery Module Authority"
+status: active
+authority_level: architecture
+owner: discovery-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Discovery Module Authority
 
 Status: ARCHITECTURE_AUTHORITY

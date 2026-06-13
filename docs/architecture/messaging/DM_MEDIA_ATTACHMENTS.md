@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MESSAGING-DM-MEDIA-ATTACHMENTS
+title: "Direct Message Media Attachments"
+status: active
+authority_level: architecture
+owner: messaging-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Direct Message Media Attachments
 
 Direct message media uploads are not supported by the current attachment upload contract.

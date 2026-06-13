@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATCHMAKER-MATCHMAKER-CONSUMPTION-MODEL
+title: "MatchMaker Consumption Model"
+status: active
+authority_level: architecture
+owner: matchmaker
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # MatchMaker Consumption Model
 
 Status: ARCHITECTURE_AUTHORITY

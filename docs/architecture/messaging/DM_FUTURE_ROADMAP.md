@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MESSAGING-DM-FUTURE-ROADMAP
+title: "Messenger Future Roadmap"
+status: draft
+authority_level: architecture
+owner: messaging-platform
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # Messenger Future Roadmap
 
 ## Messenger v1.1

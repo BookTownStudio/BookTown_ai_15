@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ENGINEERING-INGESTION-SURFACE-MAP
+title: "Ingestion Surface Map (Phase A)"
+status: active
+authority_level: governance
+owner: engineering-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Ingestion Surface Map (Phase A)
 
 ## Backend Entry Points

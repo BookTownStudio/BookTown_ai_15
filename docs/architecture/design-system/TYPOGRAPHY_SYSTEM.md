@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DESIGN-SYSTEM-TYPOGRAPHY-SYSTEM
+title: "BookTown Typography System"
+status: active
+authority_level: architecture
+owner: design-system
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Typography System
 
 Status: Foundation architecture.

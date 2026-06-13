@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATCHMAKER-MATCHMAKER-EXPLANATION-MODEL
+title: "MatchMaker Explanation Model"
+status: active
+authority_level: architecture
+owner: matchmaker
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # MatchMaker Explanation Model
 
 Status: ARCHITECTURE_AUTHORITY

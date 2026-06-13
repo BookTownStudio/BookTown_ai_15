@@ -1,3 +1,17 @@
+---
+id: BT-DOCS-ARCHITECTURE-READER-AUTHORITY-AND-MANIFEST
+title: "Reader Authority And Manifest Contract"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+canon_candidate: true
+---
+
 # Reader Authority And Manifest Contract
 
 Status: Phase C canonical EPUB infrastructure baseline.

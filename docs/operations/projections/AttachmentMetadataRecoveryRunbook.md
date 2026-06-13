@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-OPERATIONS-PROJECTIONS-ATTACHMENTMETADATARECOVERYRUNBOOK
+title: "Attachment Metadata Recovery Runbook"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Attachment Metadata Recovery Runbook
 
 Status: Phase 8A.20 production recovery runbook

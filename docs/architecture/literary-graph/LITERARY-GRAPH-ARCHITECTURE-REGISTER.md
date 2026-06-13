@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-LITERARY-GRAPH-LITERARY-GRAPH-ARCHITECTURE-REGISTER
+title: "BookTown Literary Graph Architecture Register"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # BookTown Literary Graph Architecture Register
 
 Purpose

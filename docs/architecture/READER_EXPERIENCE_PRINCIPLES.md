@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-READER-EXPERIENCE-PRINCIPLES
+title: "Reader Experience Principles"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Reader Experience Principles
 
 Status: Phase B2 baseline.

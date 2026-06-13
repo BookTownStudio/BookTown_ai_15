@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-MATCHMAKER-MATCHMAKER-V1-IMPLEMENTATION-PLAN
+title: "MatchMaker V1 Implementation Plan"
+status: draft
+authority_level: architecture
+owner: matchmaker
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # MatchMaker V1 Implementation Plan
 
 Status: IMPLEMENTATION_BLUEPRINT

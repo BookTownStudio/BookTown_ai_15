@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-AUTHORS-AUTHOR-DETAILS-ROADMAP
+title: "Author Details Roadmap"
+status: draft
+authority_level: architecture
+owner: author-platform
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # Author Details Roadmap
 
 Status: ARCHITECTURE_AUTHORITY

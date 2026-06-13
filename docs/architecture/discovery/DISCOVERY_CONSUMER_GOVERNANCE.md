@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-DISCOVERY-DISCOVERY-CONSUMER-GOVERNANCE
+title: "Discovery Consumer Governance"
+status: active
+authority_level: architecture
+owner: discovery-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Discovery Consumer Governance
 
 Status: ARCHITECTURE_AUTHORITY

@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-LITERARY-ENTITY-ROADMAP
+title: BT-LITERARY-ENTITY-ROADMAP-001
+status: draft
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: false
+supersedes: []
+superseded_by: null
+ai_read: false
+---
+
 # BT-LITERARY-ENTITY-ROADMAP-001
 
 ## BookTown Literary Entity Platform Roadmap

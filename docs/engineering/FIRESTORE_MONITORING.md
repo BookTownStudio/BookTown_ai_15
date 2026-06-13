@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ENGINEERING-FIRESTORE-MONITORING
+title: "Firestore Monitoring"
+status: active
+authority_level: governance
+owner: engineering-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Firestore Monitoring
 
 ## Budget Alerts

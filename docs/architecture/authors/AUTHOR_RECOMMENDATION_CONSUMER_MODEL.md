@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-ARCHITECTURE-AUTHORS-AUTHOR-RECOMMENDATION-CONSUMER-MODEL
+title: "Author Recommendation Consumer Model"
+status: active
+authority_level: architecture
+owner: author-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Author Recommendation Consumer Model
 
 Status: ARCHITECTURE_AUDIT

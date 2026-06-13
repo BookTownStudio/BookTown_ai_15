@@ -1,3 +1,16 @@
+---
+id: BT-DOCS-OPERATIONS-PROJECTIONS-AUTHOREDAUTHORLINKPROJECTIONRECOVERYRUNBOOK
+title: "Authored Author Link Projection Recovery Runbook"
+status: active
+authority_level: operations
+owner: operations-platform
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+---
+
 # Authored Author Link Projection Recovery Runbook
 
 Status: Phase 8A.21 production recovery runbook

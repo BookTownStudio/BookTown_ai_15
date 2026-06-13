@@ -1,3 +1,17 @@
+---
+id: BT-DOCS-ARCHITECTURE-WORK-AUTHORITY-SOURCE-LAW
+title: "WORK AUTHORITY SOURCE LAW"
+status: active
+authority_level: architecture
+owner: architecture-governance
+last_audited: 2026-06-13
+source_of_truth: true
+supersedes: []
+superseded_by: null
+ai_read: true
+canon_candidate: true
+---
+
 # WORK AUTHORITY SOURCE LAW
 
 ## Purpose
