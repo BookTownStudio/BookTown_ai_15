@@ -4,7 +4,7 @@ title: "BookTown Author System Master Document"
 status: active
 authority_level: master
 owner: author-platform
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
 supersedes: []
 superseded_by: null
@@ -15,7 +15,7 @@ ai_read: true
 
 ## Purpose
 
-This document is the Master Layer entry point for Authors, author identity, author details, author recommendations, and bibliography authority. It summarizes authority and routes to lower-level sources without replacing Catalog, Entity Platform, or Author Recommendation authority.
+This document is the Master Layer entry point for Authors, author identity, author details, author recommendations, and bibliography authority. It routes Author authority questions to the locked foundational Author Authority document before lower-level sources.
 
 For authority routing, start with [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md).
 
@@ -61,6 +61,7 @@ Backend runtime owns author identity materialization, provider evidence handling
 
 Primary authority documents:
 
+- [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md)
 - [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md)
 - [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
@@ -105,9 +106,9 @@ The architecture separates:
 
 | Data | Authority |
 |---|---|
-| Author identity | Catalog / Author backend authority. |
+| Author identity | Locked Author Authority / Catalog. |
 | Provider author evidence | Evidence only until accepted by authority. |
-| Bibliography links | Catalog and authored-author projection authority. |
+| Bibliography links | Canonical Author-to-Work relationships under locked Author Authority. |
 | Author details display | Author DTO/runtime and client rendering. |
 | Author recommendation outputs | Author recommendation runtime, derived only. |
 | Author affinity | Affinity runtime, derived only. |
@@ -155,15 +156,15 @@ Author System depends on:
 
 Product maturity: Operational.
 
-Architecture maturity: Governed.
+Architecture maturity: Foundational doctrine locked.
 
 Documentation maturity: Good, with author docs distributed across Catalog, Entity Platform, and Author Recommendation sources.
 
-Readiness: Closed Beta Ready.
+Readiness: Doctrine locked; runtime conformance remains future work.
 
 ## Known Gaps
 
-- Author identity and bibliography authority should be consolidated further.
+- Runtime Author identity and bibliography authority must conform to locked Author Authority before runtime lock.
 - Author recommendations have strong model docs but bounded product exposure.
 - Author details roadmap and completion files need lifecycle classification.
 - Public author pages should route through Public Web once expanded.
@@ -200,9 +201,9 @@ Readiness: Closed Beta Ready.
 
 | Question | Route |
 |---|---|
-| Author identity | [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md), then [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| Author identity | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md), then [MASTER_CATALOG_LIBRARY.md](MASTER_CATALOG_LIBRARY.md) and [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
 | Author recommendations | [AUTHOR_RECOMMENDATION_AUTHORITY.md](../architecture/authors/AUTHOR_RECOMMENDATION_AUTHORITY.md), then [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md). |
-| Bibliography authority | Work authority and authored-author runbook. |
+| Bibliography authority | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md), then Work authority and authored-author runbook. |
 | Author surfaces | This document and [MASTER_PRODUCT_MAP.md](MASTER_PRODUCT_MAP.md). |
 
 ## Future Evolution

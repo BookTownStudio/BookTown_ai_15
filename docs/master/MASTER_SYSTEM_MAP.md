@@ -4,7 +4,7 @@ title: "BookTown Master System Map"
 status: active
 authority_level: master
 owner: documentation-governance
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
 supersedes: []
 superseded_by: null
@@ -21,9 +21,9 @@ This is a navigation and authority-routing document. It does not create new arch
 
 | System | Classification | Current Maturity | Readiness | Priority | Primary Authority Document | Future Master Document |
 |---|---|---|---|---|---|---|
-| Books | Product System; Canonical Entity | First-Class | Closed Beta Ready | P0 | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
-| Catalog | Product Platform; Canonical Catalog | Operational | Closed Beta Ready | P0 | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md), [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
-| Authors | Product System; Canonical Entity | Operational | Closed Beta Ready | P1 | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [AUTHOR_RECOMMENDATION_AUTHORITY.md](../architecture/authors/AUTHOR_RECOMMENDATION_AUTHORITY.md) | `MASTER_AUTHOR_SYSTEM.md` |
+| Books | Product System; Canonical Entity | First-Class | Closed Beta Ready | P0 | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
+| Catalog | Product Platform; Canonical Catalog; Foundational Architecture | Operational | Closed Beta Ready | P0 | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) | `MASTER_CATALOG_LIBRARY.md` |
+| Authors | Product System; Canonical Entity; Foundational Architecture | Operational | Doctrine Locked; runtime conformance pending | P1 | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [AUTHOR_RECOMMENDATION_AUTHORITY.md](../architecture/authors/AUTHOR_RECOMMENDATION_AUTHORITY.md) | `MASTER_AUTHOR_SYSTEM.md` |
 | Quotes | Product System; Canonical Entity | Functional | Closed Beta Ready | P1 | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), [QuoteProjectionRecoveryRunbook.md](../operations/projections/QuoteProjectionRecoveryRunbook.md) | `MASTER_QUOTES_REVIEWS.md` |
 | Reader | Product System | First-Class | Public Beta Ready | P0 | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md) | `MASTER_READER.md` |
 | Search | Product System; Intelligence System | First-Class | Public Beta Ready | P0 | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) | `MASTER_SEARCH.md` |
@@ -33,9 +33,10 @@ This is a navigation and authority-routing document. It does not create new arch
 | Messaging | Product System | Functional | Closed Beta Ready | P2 | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) | `MASTER_SOCIAL_MESSAGING.md` |
 | Writing | Product System | Operational | Closed Beta Ready | P1 | [T6_write_publishing_authority_stabilization_execution.md](../audits/evidence/audit/T6_write_publishing_authority_stabilization_execution.md), write runtime callables | `MASTER_WRITE_PUBLISHING.md` |
 | Publishing | Product System | Operational | Closed Beta Ready | P1 | [T6_write_publishing_authority_stabilization_execution.md](../audits/evidence/audit/T6_write_publishing_authority_stabilization_execution.md), publishing runtime | `MASTER_WRITE_PUBLISHING.md` |
-| Literary Entity Platform | Platform System | Emerging | Internal Ready | P0 | [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) | `MASTER_ENTITY_PLATFORM.md` |
+| Literary Entity Platform | Platform System; Foundational Architecture | Implemented | Doctrine Locked; runtime conformance pending | P0 | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) | `MASTER_ENTITY_PLATFORM.md` |
+| Meaning Unit Authority | Platform System; Foundational Architecture | Doctrine Locked | Doctrine Locked; runtime conformance pending | P0 | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md), [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) | `MASTER_ENTITY_PLATFORM.md` |
 | MatchMaker | Intelligence System; Platform System | Emerging | Internal Ready | P0 | [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md) | `MASTER_AI_INTELLIGENCE.md` |
-| Literary Graph | Graph System | Emerging | Internal Ready | P0 | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) | `MASTER_ENTITY_PLATFORM.md` |
+| Literary Graph | Graph System; Foundational Architecture | Emerging | Doctrine Locked; runtime conformance pending | P0 | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) | `MASTER_ENTITY_PLATFORM.md` |
 | Identity Graph | Graph System; Intelligence System | Emerging | Internal Ready | P0 | [LITERARY_IDENTITY_GRAPH.md](../architecture/entity-platform/LITERARY_IDENTITY_GRAPH.md), entity interaction contracts | `MASTER_AI_INTELLIGENCE.md` |
 | Affinity Layer | Intelligence Infrastructure | Emerging | Internal Ready | P1 | [AUTHOR_RECOMMENDATION_AUTHORITY.md](../architecture/authors/AUTHOR_RECOMMENDATION_AUTHORITY.md), MatchMaker docs | `MASTER_AI_INTELLIGENCE.md` |
 | AI Librarian | Intelligence System | Functional | Internal Ready | P1 | AI runtime callables, [closed_beta_readiness_audit.md](../audits/evidence/audit/closed_beta_readiness_audit.md) | `MASTER_AI_INTELLIGENCE.md` |
@@ -67,7 +68,8 @@ This is a navigation and authority-routing document. It does not create new arch
 
 | System | Role | Primary Evidence |
 |---|---|---|
-| Literary Entity Platform | Cross-system literary entity references, summaries, lifecycle, authority states | `contracts/entityPlatform/*`, [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md) |
+| Literary Entity Platform | Cross-system literary entity references, summaries, lifecycle, authority states, and locked entity doctrine | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), `contracts/entityPlatform/*`, [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md) |
+| Meaning Unit Authority | Canonical meaning-unit doctrine for Themes, Concepts, semantic candidates, and meaning evidence boundaries | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md) |
 | Design System | Visual language, tokens, primitives, motion, typography, accessibility direction | [DESIGN_SYSTEM_REGISTER.md](../architecture/design-system/DESIGN_SYSTEM_REGISTER.md), `components/ui/*` |
 | Contracts / API Layer | Shared DTOs, callable wrappers, parity, error envelopes | `contracts/*`, `functions/src/contracts/*` |
 | Media / Attachments | Upload tokens, attachment metadata, storage, derivatives, signed URLs | `functions/src/domains/attachments.ts`, `lib/media/*`, storage rules |
@@ -87,7 +89,7 @@ This is a navigation and authority-routing document. It does not create new arch
 
 | System | Role | Primary Evidence |
 |---|---|---|
-| Literary Graph | Knowledge graph for literary entities and relationships | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
+| Literary Graph | Knowledge graph for literary entities and relationships; locked relationship authority doctrine | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
 | Identity Graph | User interaction graph over literary entities | [LITERARY_IDENTITY_GRAPH.md](../architecture/entity-platform/LITERARY_IDENTITY_GRAPH.md), user interaction contracts |
 | Social Graph | Follows, shelf follows, profile relationships | profile and social runtime callables |
 | Projection Dependency Graph | Authority-to-projection operational dependency graph | [ProjectionRegistry.md](../architecture/ProjectionRegistry.md) |
@@ -116,8 +118,9 @@ This is a navigation and authority-routing document. It does not create new arch
 | Owner | Owns | Current Authority Sources |
 |---|---|---|
 | Documentation Governance | Master routing and source-of-truth navigation | Master documents |
-| Catalog Platform | Books, catalog, provider authority, ingestion | Work authority law, data pipeline, catalog runtime |
-| Entity Platform | Literary entity contracts and maturity | Entity platform docs and contracts |
+| Catalog Platform | Books, catalog, provider authority, ingestion | Locked Work/Edition/Manifestation authority, work authority law, data pipeline, catalog runtime |
+| Entity Platform | Literary entity doctrine, contracts, lifecycle, references, summaries, and maturity | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), entity platform docs and contracts |
+| Meaning Unit Authority | Theme, Concept, semantic acceptance, alias, translation, near-synonym, and anti-hallucination doctrine | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md) |
 | Search Platform | Search architecture and result semantics | Search architecture register |
 | Reader Platform | Reader authority, manifests, progress, offline behavior | Reader authority docs and runbooks |
 | Operations Platform | Projections, recovery, observability, runbooks | Phase 8A docs, projection registry, operations runbooks |
@@ -131,7 +134,7 @@ This is a navigation and authority-routing document. It does not create new arch
 | Discovery Platform | Home, discovery, editorial modules, recommendation consumers | [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md), discovery runtime |
 | Library UX | Shelves, shelf membership, user library organization | [MASTER_SHELVES.md](MASTER_SHELVES.md), shelf runtime |
 | Quote Platform | Quotes, reviews, attribution, literary atoms | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md), quote/review runtime |
-| Author Platform | Author identity, author details, bibliography, author recommendations | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md), author runtime |
+| Author Platform | Author identity, author details, bibliography, author recommendations | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md), [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md), author runtime |
 | API Platform | Shared contracts, callable wrappers, parity, error envelopes | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md), contract runtime |
 | Design System | UI primitives, tokens, visual governance, component authority | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md), design-system docs |
 | Public Web | SSR, public pages, sitemap, public entity exposure | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md), SSR runtime |

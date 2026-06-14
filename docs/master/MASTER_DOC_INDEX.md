@@ -4,7 +4,7 @@ title: "BookTown Master Documentation Index"
 status: active
 authority_level: master
 owner: documentation-governance
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
 supersedes: []
 superseded_by: null
@@ -80,7 +80,10 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Which document is authoritative for a domain? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | The listed documentation authority. |
 | How does a user journey work? | [MASTER_PRODUCT_MAP.md](MASTER_PRODUCT_MAP.md) | Product surface docs and domain architecture. |
 | What is the current maturity or readiness of a system? | [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md) | Supporting audits only for evidence. |
-| What owns canonical literary truth? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), entity-platform docs, [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md). |
+| What owns canonical literary truth? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md). |
+| What is an Entity, LiteraryEntityRef, EntitySummary, or entity lifecycle state? | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) | [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| What is a Theme, Concept, Meaning Unit, meaning alias, translation, or near-synonym? | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md) | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md). |
+| What is a Literary Graph node, relationship, influence, response, lineage, membership, or graph evidence rule? | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md) | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md). |
 | How does Search work? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md). |
 | How does Reader work? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md), reader SLO/stress docs. |
 | How do projections recover? | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [ProjectionRegistry.md](../architecture/ProjectionRegistry.md), [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), relevant runbook. |
@@ -95,7 +98,7 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | How do Discovery or Home work? | [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) | Discovery architecture docs, Search, AI/Intelligence, Product Map. |
 | How do Shelves work? | [MASTER_SHELVES.md](MASTER_SHELVES.md) | Shelf runtime, user library, shelf projection runbooks. |
 | How do Quotes or Reviews work? | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) | Ontology, Catalog, quote/review runbooks. |
-| How do Authors work? | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) | Catalog, Entity Platform, author recommendation docs. |
+| How do Authors work? | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md) | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md), Catalog, Entity Platform, author recommendation docs. |
 | How do Contracts or APIs work? | [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) | Shared contracts, callable wrappers, owning domain Master docs. |
 | How does the Design System work? | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) | Design-system register and routed design-system authority docs. |
 | How do SSR or Public Web work? | [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) | SSR runtime, owning product Master docs, Design System. |
@@ -116,7 +119,7 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 |---|---|---|
 | Books | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md) |
 | Catalog | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md), [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md) |
-| Authors | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), author architecture docs |
+| Authors | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md) | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), author architecture docs |
 | Quotes | [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) | [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md), [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md), quote runbooks |
 | Reader | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md) |
 | Search | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) |
@@ -126,7 +129,9 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Messaging | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) |
 | Writing / Publishing | [MASTER_WRITE_PUBLISHING.md](MASTER_WRITE_PUBLISHING.md) | Write/publishing runtime and execution audit |
 | MatchMaker | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md) |
-| Literary Graph | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md) | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
+| Entity Platform | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) | [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) |
+| Meaning Unit Authority | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md) | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [MASTER_ENTITY_PLATFORM.md](MASTER_ENTITY_PLATFORM.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
+| Literary Graph | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md) | [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md), [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
 | Identity Graph | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | [LITERARY_IDENTITY_GRAPH.md](../architecture/entity-platform/LITERARY_IDENTITY_GRAPH.md), entity interaction contracts |
 | Affinity Layer | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | Author recommendation and MatchMaker docs |
 | AI Librarian | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) | AI runtime, beta audit, governance references |
@@ -146,13 +151,14 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 |---|---|
 | Canonical ontology | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md) |
 | Work/catalog authority | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md), [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md) |
-| Entity Platform | [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) |
+| Entity Platform | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md), [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md), [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md) |
+| Meaning Unit Authority | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md), then [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) |
 | Materializing entities | [MATERIALIZING_ENTITIES.md](../architecture/entity-platform/MATERIALIZING_ENTITIES.md) |
 | Search | [SEARCH-ARCHITECTURE-REGISTER.md](../architecture/search/SEARCH-ARCHITECTURE-REGISTER.md) |
 | Reader | [READER_AUTHORITY_AND_MANIFEST.md](../architecture/READER_AUTHORITY_AND_MANIFEST.md), [READER_MOBILE_SLOS.md](../architecture/READER_MOBILE_SLOS.md), [READER_STRESS_CORPUS.md](../architecture/READER_STRESS_CORPUS.md) |
 | Projection System | [Phase8AClosureRecord.md](../architecture/Phase8AClosureRecord.md), [ProjectionRegistry.md](../architecture/ProjectionRegistry.md), [ProjectionRecoveryFramework.md](../architecture/ProjectionRecoveryFramework.md) |
 | MatchMaker | [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md) |
-| Literary Graph | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
+| Literary Graph | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md), then [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md) |
 | Messaging | [MESSENGER_V1_LOCK.md](../architecture/messaging/MESSENGER_V1_LOCK.md) |
 | Social and Messaging | [MASTER_SOCIAL_MESSAGING.md](MASTER_SOCIAL_MESSAGING.md) |
 | Feedback and Reporting | [MASTER_FEEDBACK_REPORTING.md](MASTER_FEEDBACK_REPORTING.md) |
@@ -164,7 +170,7 @@ Canon sits above Vision. Canon foundation documents now define Canon governance 
 | Discovery and Home | [DISCOVERY_HOME_REGISTER.md](../architecture/discovery/DISCOVERY_HOME_REGISTER.md), [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md) |
 | Shelves | [SHELVES_ARCHITECTURE.md](../architecture/shelves/SHELVES_ARCHITECTURE.md), [MASTER_SHELVES.md](MASTER_SHELVES.md) |
 | Quotes and Reviews | [QUOTES_REVIEWS_AUTHORITY.md](../architecture/quotes/QUOTES_REVIEWS_AUTHORITY.md), [MASTER_QUOTES_REVIEWS.md](MASTER_QUOTES_REVIEWS.md) |
-| Author System | [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) |
+| Author System | [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md), then [MASTER_AUTHOR_SYSTEM.md](MASTER_AUTHOR_SYSTEM.md) |
 | Contracts and API | [CONTRACTS_API_REGISTER.md](../architecture/contracts/CONTRACTS_API_REGISTER.md), [MASTER_CONTRACTS_API.md](MASTER_CONTRACTS_API.md) |
 | Design System | [MASTER_DESIGN_SYSTEM.md](MASTER_DESIGN_SYSTEM.md) |
 | Public Web | [PUBLIC_WEB_REGISTER.md](../architecture/public-web/PUBLIC_WEB_REGISTER.md), [MASTER_PUBLIC_WEB.md](MASTER_PUBLIC_WEB.md) |

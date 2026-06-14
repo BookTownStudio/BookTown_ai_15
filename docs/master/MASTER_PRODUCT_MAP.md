@@ -4,7 +4,7 @@ title: "BookTown Master Product Map"
 status: active
 authority_level: master
 owner: documentation-governance
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
 supersedes: []
 superseded_by: null
@@ -22,8 +22,8 @@ This is a product navigation document. Runtime and architecture authority remain
 | Step | Feature Systems | Owner | Feature Maturity | Current Beta Exposure | Strategic Priority | Dependencies | Known Gaps |
 |---|---|---|---|---|---|---|---|
 | Find a book | Search, Discovery, Home, Catalog | Search / Catalog | First-Class | Candidate for constrained beta | P0 | Catalog, Search, Projections | Full public exposure still depends on broader beta posture. |
-| Inspect a work | Book Details, Authors, Quotes, Editions | Catalog | Operational | Candidate for constrained beta | P0 | Books, Authors, Editions, Search | Canonical authority is strong but distributed across docs. |
-| Acquire readable access | Reader access, rights, external ebook acquisition, uploads | Reader / Media | Operational | Candidate for constrained reading beta | P0 | Rights, Storage, Attachments, Catalog | Route through Reader, Catalog, and Media masters; rights/licensing remains cross-domain. |
+| Inspect a work | Book Details, Authors, Quotes, Editions | Catalog | Operational | Candidate for constrained beta | P0 | Books, Authors, Editions, Search | Work, Edition, and Manifestation authority is locked in [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md). |
+| Acquire readable access | Reader access, rights, external ebook acquisition, uploads | Reader / Media | Operational | Candidate for constrained reading beta | P0 | Rights, Storage, Attachments, Catalog | Route access through Manifestation authority; rights/licensing remains cross-domain. |
 | Read in app | EPUB/PDF reader, manifest, reader chrome, settings | Reader | First-Class | Candidate for constrained reading beta | P0 | Reader Manifests, EPUB/PDF runtime, Offline | Continue device/performance validation before broad public beta. |
 | Continue reading | progress, sessions, home continuity, offline sync | Reader | Operational | Candidate for constrained beta | P0 | Reading Progress, Reader Sync, Home | Offline conflict and replay behavior must remain governed. |
 | Annotate and remember | highlights, bookmarks, quotes, diagnostics | Reader / Quotes | Functional | Internal to constrained beta | P1 | Reader Sync, Quotes, Projections | Quote/annotation lifecycle authority needs consolidation. |
@@ -34,8 +34,8 @@ This is a product navigation document. Runtime and architecture authority remain
 |---|---|---|---|---|---|---|---|
 | Open discovery | Discover tab, Home, editorial console | Discovery | Functional | Limited/internal | P0 | Search, Catalog, Home Editorial | Route through [MASTER_DISCOVERY_HOME.md](MASTER_DISCOVERY_HOME.md). |
 | Search intentionally | Search UX, search contracts, projections | Search | First-Class | Candidate for public beta after product gate | P0 | Catalog, Contracts, Search Projections | Search register has open questions; ADRs govern locked behavior. |
-| Explore authors | Author details, author discovery, author recommendations | Author / Author Intelligence | Operational | Closed beta candidate | P1 | Authors, Catalog, Entity Platform | Author graph/global search participation remains incomplete. |
-| Explore graph context | Literary Graph, semantic collections, related works | Literary Graph | Emerging | Internal | P0 | Entity Platform, Relationships, Catalog | Product surfacing is early. |
+| Explore authors | Author details, author discovery, author recommendations | Author / Author Intelligence | Operational | Closed beta candidate | P1 | Authors, Catalog, Entity Platform | Author doctrine is locked in [AUTHOR_AUTHORITY.md](../architecture/authors/AUTHOR_AUTHORITY.md); runtime conformance remains incomplete. |
+| Explore graph context | Literary Graph, semantic collections, related works | Literary Graph | Emerging | Internal | P0 | Entity Platform, Meaning Unit Authority, Relationships, Catalog | Product surfacing is early; graph relationships must route through [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md), and Theme/Concept meaning must route through [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md). |
 | Receive recommendations | Discovery modules, MatchMaker foundations, author recommendations | Discovery / MatchMaker | Emerging | Internal | P0 | Entity Platform, Affinity, Identity Graph | MatchMaker is governed but product integration remains early. |
 
 ## Writing Journey
@@ -84,7 +84,7 @@ This is a product navigation document. Runtime and architecture authority remain
 |---|---|---|---|---|---|---|---|
 | Reading | Read tab, reader, publication reader | Reader Platform | First-Class | Constrained reading beta candidate | P0 | Catalog, Rights, Media, Projections | Route through [MASTER_READER.md](MASTER_READER.md). |
 | Search / Discovery | Search, Discover, Home | Search / Discovery | First-Class to Functional | Closed/public beta candidate by surface | P0 | Catalog, MatchMaker, Home Editorial | Discovery/MatchMaker integration is still emerging. |
-| Catalog / Entities | Book details, author details, quote details | Catalog / Entity Platform | Operational | Closed beta candidate | P0 | Books, Authors, Quotes, Entity Contracts | Authority spread across docs. |
+| Catalog / Entities | Book details, author details, quote details | Catalog / Entity Platform | Operational | Closed beta candidate | P0 | Books, Authors, Quotes, Entity Contracts, Meaning Unit Authority | Catalog foundation is locked by Work -> Edition -> Manifestation authority; Author doctrine is locked by Author Authority; entity reference and lifecycle doctrine is locked by [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md); Theme and Concept doctrine is locked by [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md). |
 | Library / Shelves | Shelf details, book shelf controls | Library UX | Operational | Closed beta candidate | P0 | `shelf_books`, user library projections | Route through [MASTER_SHELVES.md](MASTER_SHELVES.md). |
 | Social / Community | Social tab, posts, comments, profiles | Social Platform | Functional | Internal/constrained | P1 | Attachments, Moderation, Notifications | Broad beta exposure not currently recommended. |
 | Messaging | Messenger list/thread | Messaging Platform | Functional | Closed beta candidate | P2 | Users, Privacy, Reporting | V1 current scope must remain bounded. |
@@ -99,6 +99,9 @@ This is a product navigation document. Runtime and architecture authority remain
 | Search | Search Platform | Catalog, Contracts, Projections |
 | Discovery | Discovery Platform | Search, MatchMaker, Editorial Governance |
 | Catalog | Catalog Platform | Entity Platform, Providers, Authority Data |
+| Entity References | Entity Platform | Catalog, Author Authority, Quote Platform, Publishing, Meaning Unit Authority, Literary Graph |
+| Meaning Units | Meaning Unit Authority | Entity Platform, Literary Graph, Search, MatchMaker, Public Web, AI/Providers as evidence sources |
+| Literary Relationships | Literary Graph | Entity Platform, Meaning Unit Authority, WEM, Author Authority, Search, MatchMaker, Public Web |
 | Writing | Writing Platform | Editor Runtime, Publishing, Reader |
 | Social | Social Platform | Media, Notifications, Moderation |
 | Messaging | Messaging Platform | Users, Entity Attachments, Reporting |
@@ -111,7 +114,7 @@ This is a product navigation document. Runtime and architecture authority remain
 
 | Maturity | Feature Areas |
 |---|---|
-| First-Class | Reader, Search, Books/Catalog foundations, Projection Recovery |
+| First-Class | Reader, Search, locked Books/Catalog foundations, Projection Recovery |
 | Operational | Writing/Publishing, Shelves, Media/Attachments, Admin, Observability, Feedback |
 | Functional | Discovery, Social, Messaging, Quotes, Author Recommendations, AI Librarian |
 | Emerging | MatchMaker product integration, Literary Graph surfacing, Identity Graph, Affinity, Spaces/Venues, SSR/Public Pages |

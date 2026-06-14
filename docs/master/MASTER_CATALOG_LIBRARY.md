@@ -63,9 +63,9 @@ The backend owns canonical ingestion, materialization, provider role enforcement
 
 Primary authority documents:
 
+- [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md) - locked foundational architecture for Work, Edition, and Manifestation authority.
 - [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
-- [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md)
 - [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md)
 - [PHASE_1_CONTRACTS.md](../architecture/PHASE_1_CONTRACTS.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
@@ -81,7 +81,8 @@ Audit evidence:
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
 | Work authority | Catalog Platform | Book materialization and catalog runtime | Work authority law and canonical ontology. |
-| Edition authority | Catalog Platform; Reader Platform | Edition records, readability evidence, acquisition inputs | Work/Edition/Manifestation authority, Catalog Master, Reader Master. |
+| Edition authority | Catalog Platform | Edition records and material/publishing evidence | Locked Work/Edition/Manifestation authority, Catalog Master. |
+| Manifestation authority | Catalog Platform; Reader Platform; Media Platform; Acquisition | Manifestations and manifestation availability projections | Locked Work/Edition/Manifestation authority, Reader Master, Media Master. |
 | Author authority | Author Platform; Catalog Platform | Author ingestion, identity materialization, provider mappings | Author System Master and entity docs. |
 | Provider ingestion | Catalog Platform | Provider role registry and ingestion services | Work authority law, data pipeline, provider role docs. |
 | Library consumption | Library UX; Reader Platform | Shelf, library, and reader consumers | Shelf Master and Reader Master. |
@@ -100,6 +101,7 @@ Audit evidence:
 
 | Question | Route |
 |---|---|
+| Foundational Work, Edition, and Manifestation authority | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md). |
 | Work identity and source precedence | [WORK_AUTHORITY_SOURCE_LAW.md](../architecture/WORK_AUTHORITY_SOURCE_LAW.md). |
 | Ontology, Work, Edition, and manifestation semantics | [WORK_EDITION_MANIFESTATION_AUTHORITY.md](../architecture/catalog/WORK_EDITION_MANIFESTATION_AUTHORITY.md), then [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md). |
 | Catalog ingestion and provider evidence | [DATA_PIPELINE.md](../architecture/catalog/DATA_PIPELINE.md) and runtime authority. |
@@ -125,7 +127,8 @@ The architecture separates:
 | Component | Role |
 |---|---|
 | Work authority | Determines canonical Work truth. |
-| Edition layer | Holds material publishing evidence and readable manifestations. |
+| Edition layer | Holds material publishing truth. |
+| Manifestation layer | Holds readability, acquisition, rendering, and access truth. |
 | Author authority | Establishes creator identity and author mappings. |
 | Provider role registry | Declares provider authority role and allowed influence. |
 | Canonicalization | Resolves and protects canonical identity. |

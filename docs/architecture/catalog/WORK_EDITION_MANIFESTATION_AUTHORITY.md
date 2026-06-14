@@ -1,11 +1,13 @@
 ---
 id: BT-ARCH-CATALOG-WORK-EDITION-MANIFESTATION-AUTHORITY-001
 title: "Work, Edition, and Manifestation Authority"
-status: active
-authority_level: architecture
+status: locked
+authority_level: foundational
 owner: catalog-platform
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
+locked_at: 2026-06-14
+lock_id: BT-WEM-LOCK-001
 supersedes: []
 superseded_by: null
 ai_read: true
@@ -15,7 +17,23 @@ ai_read: true
 
 ## Purpose
 
-This document consolidates current BookTown authority routing for Works, Editions, and Manifestations. It summarizes existing doctrine from ontology, Work authority, catalog audits, and implementation planning without authorizing implementation by itself.
+This document is the locked foundational architecture for BookTown Work, Edition, and Manifestation authority. It defines the permanent catalog foundation for literary identity, material/publishing identity, and access/rendering/readability identity.
+
+## Lock Status
+
+Status: LOCKED.
+
+Lock date: 2026-06-14.
+
+Lock rationale: WEM implementation, certification, lock cleanup, and catalog reset readiness work completed with no remaining architecture blockers. BookTown now treats Work -> Edition -> Manifestation as the source-of-truth catalog architecture.
+
+Modification policy:
+
+- Future changes to Work, Edition, or Manifestation authority require a new architecture decision record or replacement locked authority document.
+- Runtime, migration, projection, search, reader, publishing, acquisition, graph, or MatchMaker work must route through this document when touching catalog authority.
+- Compatibility fields may exist only as projections and must not redefine Work, Edition, or Manifestation authority.
+- No downstream system may create parallel canonical Edition or Manifestation authority.
+- Documentation that conflicts with this locked authority is superseded for WEM questions.
 
 ## Scope
 

@@ -4,7 +4,7 @@ title: "BookTown Literary Entity Platform Master Document"
 status: active
 authority_level: master
 owner: entity-platform
-last_audited: 2026-06-13
+last_audited: 2026-06-14
 source_of_truth: true
 supersedes: []
 superseded_by: null
@@ -15,7 +15,7 @@ ai_read: true
 
 ## Purpose
 
-This document is the Master Layer entry point for the BookTown Literary Entity Platform. It consolidates existing entity architecture, lifecycle, authority, summaries, references, canonical entity types, and roadmap context without creating new architecture.
+This document is the Master Layer entry point for the BookTown Literary Entity Platform. It routes locked Entity Platform doctrine, entity architecture, lifecycle, authority, summaries, references, canonical entity types, and roadmap context without creating new runtime behavior.
 
 For authority routing, start with [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md).
 
@@ -55,6 +55,7 @@ Contracts define entity references, summaries, authority states, lifecycle state
 
 Primary authority documents:
 
+- [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md)
 - [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
 - [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md)
@@ -63,6 +64,8 @@ Primary authority documents:
 
 Related graph and intelligence documents:
 
+- [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md)
+- [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md)
 - [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md)
 - [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md)
 
@@ -70,8 +73,9 @@ Related graph and intelligence documents:
 
 | System | Owner | Runtime Authority | Documentation Authority |
 |---|---|---|---|
-| Entity contracts | Entity Platform | Shared entity contracts and compatibility types | Entity Platform Master and entity contract docs. |
-| Entity registry | Entity Platform | Contracted entity vocabulary and current maturity state | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| Entity doctrine | Entity Platform | Shared entity contracts and compatibility types | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md). |
+| Entity contracts | Entity Platform | Shared entity contracts and compatibility types | Entity Platform Authority, Entity Platform Master, and entity contract docs. |
+| Entity registry | Entity Platform | Contracted entity vocabulary and current maturity state | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) and [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
 | Literary Graph participation | Literary Graph | Graph contracts and relationship runtime | Literary Graph register and Entity Platform docs. |
 | Identity Graph participation | Intelligence Platform | User interaction contracts and intelligence snapshots | AI Intelligence Master and Identity Graph docs. |
 | MatchMaker entity consumption | MatchMaker | MatchMaker contracts and adapters | AI Intelligence Master and MatchMaker register. |
@@ -90,10 +94,13 @@ Related graph and intelligence documents:
 
 | Question | Route |
 |---|---|
-| Entity vocabulary and maturity | [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
-| Entity contracts and reference rules | [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md). |
+| Entity definition, lifecycle, taxonomy, ownership, and lock doctrine | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md). |
+| Theme, Concept, semantic meaning, aliases, translations, and near-synonyms | [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md). |
+| Entity vocabulary and maturity | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), then [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md). |
+| Entity contracts and reference rules | [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md), then [LITERARY_ENTITY_CONTRACTS.md](../architecture/entity-platform/LITERARY_ENTITY_CONTRACTS.md). |
 | Work/Edition/manifestation semantics | [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md). |
-| Literary Graph entity use | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md). |
+| Literary Graph definition, node eligibility, relationship authority, and evidence policy | [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md). |
+| Literary Graph register, audits, and open questions | [LITERARY-GRAPH-ARCHITECTURE-REGISTER.md](../architecture/literary-graph/LITERARY-GRAPH-ARCHITECTURE-REGISTER.md). |
 | MatchMaker entity use | [MASTER_AI_INTELLIGENCE.md](MASTER_AI_INTELLIGENCE.md) and [MATCHMAKER_REGISTER.md](../architecture/matchmaker/MATCHMAKER_REGISTER.md). |
 
 ## System Architecture
@@ -184,14 +191,15 @@ Entity Platform is not itself a projection family, but it depends on projections
 
 Product maturity: Emerging as a full product platform.
 
-Architecture maturity: Implemented.
+Architecture maturity: Doctrine Locked.
 
 Documentation maturity: Authority Complete.
 
-Readiness: Internal Ready.
+Readiness: Foundational Doctrine Locked; runtime conformance remains separate.
 
 ## Known Gaps
 
+- Runtime conformance to [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md) remains a separate future audit.
 - Theme, Concept, Movement, Period, and Place are not all equally mature.
 - Literary Graph and MatchMaker product surfacing remain emerging.
 - Entity Platform is implemented as contracts and architecture before becoming a fully visible product layer.
@@ -201,6 +209,9 @@ Readiness: Internal Ready.
 
 - [MASTER_AUTHORITY_MATRIX.md](MASTER_AUTHORITY_MATRIX.md)
 - [MASTER_SYSTEM_MAP.md](MASTER_SYSTEM_MAP.md)
+- [ENTITY_PLATFORM_AUTHORITY.md](../architecture/entity-platform/ENTITY_PLATFORM_AUTHORITY.md)
+- [MEANING_UNIT_AUTHORITY.md](../architecture/entity-platform/MEANING_UNIT_AUTHORITY.md)
+- [LITERARY_GRAPH_AUTHORITY.md](../architecture/literary-graph/LITERARY_GRAPH_AUTHORITY.md)
 - [BOOKTOWN_CANONICAL_ONTOLOGY_V2.md](../BOOKTOWN_CANONICAL_ONTOLOGY_V2.md)
 - [ENTITY_PLATFORM_VISION.md](../architecture/entity-platform/ENTITY_PLATFORM_VISION.md)
 - [ENTITY_REGISTRY.md](../architecture/entity-platform/ENTITY_REGISTRY.md)
