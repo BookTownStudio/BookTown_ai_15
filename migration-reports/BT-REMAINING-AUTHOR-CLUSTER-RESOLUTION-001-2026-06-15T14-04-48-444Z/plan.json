@@ -1,0 +1,189 @@
+{
+  "migrationId": "BT-REMAINING-AUTHOR-CLUSTER-RESOLUTION-001",
+  "projectId": "booktown-ai",
+  "mode": "dry_run",
+  "exportedAt": "2026-06-15T14:04:48.444Z",
+  "summary": {
+    "clusters": 2,
+    "losers": 4,
+    "bookRepoints": 2,
+    "authorIdentityRepoints": 0,
+    "authorIdentityDeferred": 11,
+    "quotes": 0,
+    "interactions": 0,
+    "graph": 0,
+    "writes": 6
+  },
+  "activeDuplicateClustersBefore": [
+    {
+      "name": "gabriel garcia marquez",
+      "ids": [
+        "0b0a628f-a706-44ab-a578-95c696f8bee3",
+        "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+        "6cd0e1f6-aef7-4120-b10d-71699e5f9f4c"
+      ]
+    },
+    {
+      "name": "thomas mann",
+      "ids": [
+        "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+        "dc32ee2c-3175-4568-b857-a273db1dc700"
+      ]
+    }
+  ],
+  "nameLinkageGapsBefore": [
+    {
+      "bookId": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+      "title": "One Hundred Years of Solitude",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "expectedAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "expectedAuthor": "Gabriel Garcia Marquez"
+    },
+    {
+      "bookId": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+      "title": "The Autumn of the Patriarch",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "expectedAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "expectedAuthor": "Gabriel Garcia Marquez"
+    },
+    {
+      "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+      "title": "The Magic Mountain",
+      "currentAuthorId": "dc32ee2c-3175-4568-b857-a273db1dc700",
+      "expectedAuthorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "expectedAuthor": "Thomas Mann"
+    }
+  ],
+  "requiredBookStates": [
+    {
+      "bookId": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "title": "The House of the Spirits",
+      "authorId": "d66ab2c6-d6e7-40c8-84c6-7208921a75cb",
+      "authorName": "Isabel Allende"
+    },
+    {
+      "bookId": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "title": "War and Peace",
+      "authorId": "d66e4f0f-24d8-4b89-8518-b03b1e176716",
+      "authorName": "Leo Tolstoy"
+    },
+    {
+      "bookId": "9b434a46-0a94-456d-884b-aa30359d85f3",
+      "title": "Berlin Alexanderplatz",
+      "authorId": "463fb613-faea-497d-aed0-0bce2c805a0b",
+      "authorName": "Alfred Döblin"
+    },
+    {
+      "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+      "title": "The Magic Mountain",
+      "authorId": "dc32ee2c-3175-4568-b857-a273db1dc700",
+      "authorName": "Thomas Mann"
+    }
+  ],
+  "clusterPlans": [
+    {
+      "authorName": "Gabriel Garcia Marquez",
+      "survivorAuthorId": "6cd0e1f6-aef7-4120-b10d-71699e5f9f4c",
+      "loserAuthorIds": [
+        "0b0a628f-a706-44ab-a578-95c696f8bee3",
+        "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "4d90b8d4-6ed5-4453-88e3-cb85df3ca441"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/73eebdf4-baea-4956-9e05-0416d9f56f56",
+          "title": "The Autumn of the Patriarch",
+          "from": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+          "to": "6cd0e1f6-aef7-4120-b10d-71699e5f9f4c"
+        },
+        {
+          "path": "books/be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+          "title": "One Hundred Years of Solitude",
+          "from": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+          "to": "6cd0e1f6-aef7-4120-b10d-71699e5f9f4c"
+        }
+      ],
+      "identityPolicy": "DEFER_CONTAMINATED_IDENTITY_REVIEW",
+      "identityRecordsDeferred": [
+        {
+          "path": "author_identity/authority:viaf:191378696",
+          "id": "authority:viaf:191378696",
+          "authorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/canonical:gabriel garcia marquez::1930",
+          "id": "canonical:gabriel garcia marquez::1930",
+          "authorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/canonical:gabriel garcia marquez::1949",
+          "id": "canonical:gabriel garcia marquez::1949",
+          "authorId": "0b0a628f-a706-44ab-a578-95c696f8bee3",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/canonical:gabriel garcia marquez::unknown",
+          "id": "canonical:gabriel garcia marquez::unknown",
+          "authorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:openLibrary:OL29809A",
+          "id": "provider:openLibrary:OL29809A",
+          "authorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:openLibrary:OL340795A",
+          "id": "provider:openLibrary:OL340795A",
+          "authorId": "0b0a628f-a706-44ab-a578-95c696f8bee3",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:openLibrary:OL7479026A",
+          "id": "provider:openLibrary:OL7479026A",
+          "authorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:wikidata:Q345612",
+          "id": "provider:wikidata:Q345612",
+          "authorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+          "canonicalAuthorId": ""
+        }
+      ]
+    },
+    {
+      "authorName": "Thomas Mann",
+      "survivorAuthorId": "dc32ee2c-3175-4568-b857-a273db1dc700",
+      "loserAuthorIds": [
+        "1a46c5d1-93ef-4b1f-b846-76e86edc90c5"
+      ],
+      "booksToRepoint": [],
+      "identityPolicy": "DEFER_PROVIDER_IDENTITY_REVIEW",
+      "identityRecordsDeferred": [
+        {
+          "path": "author_identity/canonical:thomas mann::unknown",
+          "id": "canonical:thomas mann::unknown",
+          "authorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:openLibrary:OL11584012A",
+          "id": "provider:openLibrary:OL11584012A",
+          "authorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+          "canonicalAuthorId": ""
+        },
+        {
+          "path": "author_identity/provider:openLibrary:OL4065209A",
+          "id": "provider:openLibrary:OL4065209A",
+          "authorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+          "canonicalAuthorId": ""
+        }
+      ]
+    }
+  ]
+}

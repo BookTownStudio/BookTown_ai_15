@@ -60,7 +60,7 @@ const AuthorCanonModule: React.FC<AuthorCanonModuleProps> = ({
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <BilingualText role="H1" className="!text-xl">
-            {lang === "en" ? "Author Canon" : "قانون المؤلف الأدبي"}
+            {lang === "en" ? "Canon" : "القانون الأدبي"}
           </BilingualText>
           <BilingualText role="Caption" className="mt-1 text-white/50">
             {lang === "en"
@@ -112,7 +112,7 @@ const AuthorCanonModule: React.FC<AuthorCanonModuleProps> = ({
 
           <div>
             <BilingualText role="Caption" className="mb-3 text-white/55">
-              {lang === "en" ? "Publication Chronology" : "التسلسل الزمني للنشر"}
+              {lang === "en" ? "Publication Timeline" : "الخط الزمني للنشر"}
             </BilingualText>
             <ol className="grid gap-2 sm:grid-cols-2">
               {canon.publicationChronology.slice(0, 8).map((book) => (
@@ -128,6 +128,30 @@ const AuthorCanonModule: React.FC<AuthorCanonModuleProps> = ({
                 </li>
               ))}
             </ol>
+          </div>
+
+          <div>
+            <BilingualText role="Caption" className="mb-3 text-white/55">
+              {lang === "en" ? "Complete Bibliography" : "القائمة الكاملة"}
+            </BilingualText>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {canon.completeBibliography.slice(0, 10).map((book) => (
+                <button
+                  key={book.id}
+                  type="button"
+                  onClick={() => onBookClick(book.id)}
+                  className="flex w-full items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] px-3 py-2 text-left text-sm text-white/72 hover:bg-white/[0.06]"
+                >
+                  <span className="min-w-0 truncate">{lang === "en" ? book.titleEn : book.titleAr}</span>
+                  <span className="shrink-0 text-white/40">{formatPublicationLabel(book)}</span>
+                </button>
+              ))}
+            </div>
+            {canon.completeBibliography.length > 10 || hasMore ? (
+              <button type="button" onClick={onViewAll} className="mt-3 text-sm font-semibold text-accent">
+                {lang === "en" ? "Open full bibliography" : "فتح القائمة الكاملة"}
+              </button>
+            ) : null}
           </div>
         </div>
       )}

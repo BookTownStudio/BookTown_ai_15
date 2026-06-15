@@ -3,6 +3,8 @@ import type { Quote } from "../../types/entities.ts";
 import BilingualText from "../ui/BilingualText.tsx";
 import LoadingSpinner from "../ui/LoadingSpinner.tsx";
 import QuoteSnippetCard from "../content/QuoteSnippetCard.tsx";
+import { BookmarkIcon } from "../icons/BookmarkIcon.tsx";
+import { ShareIcon } from "../icons/ShareIcon.tsx";
 
 interface AuthorVoiceModuleProps {
   readonly quotes: readonly Quote[];
@@ -11,6 +13,8 @@ interface AuthorVoiceModuleProps {
   readonly onViewAll: () => void;
   readonly onQuoteClick: (quoteId: string) => void;
   readonly onQuoteSourceClick: (event: React.MouseEvent, bookId: string) => void;
+  readonly onSaveQuote: (quoteId: string) => void;
+  readonly onShareQuote: (quoteId: string) => void;
 }
 
 const AuthorVoiceModule: React.FC<AuthorVoiceModuleProps> = ({
@@ -20,6 +24,8 @@ const AuthorVoiceModule: React.FC<AuthorVoiceModuleProps> = ({
   onViewAll,
   onQuoteClick,
   onQuoteSourceClick,
+  onSaveQuote,
+  onShareQuote,
 }) => {
   return (
     <section className="border-t border-white/10 pt-8">
@@ -62,15 +68,33 @@ const AuthorVoiceModule: React.FC<AuthorVoiceModuleProps> = ({
                 >
                   <QuoteSnippetCard quote={quote} />
                 </button>
-                {quote.bookId && sourceTitle ? (
+                <div className="flex flex-wrap items-center gap-3 px-2 pb-1">
+                  {quote.bookId && sourceTitle ? (
+                    <button
+                      type="button"
+                      onClick={(event) => onQuoteSourceClick(event, quote.bookId)}
+                      className="text-sm font-medium text-accent"
+                    >
+                      {lang === "en" ? `Open ${sourceTitle}` : `فتح ${sourceTitle}`}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
-                    onClick={(event) => onQuoteSourceClick(event, quote.bookId)}
-                    className="text-sm font-medium text-accent"
+                    onClick={() => onSaveQuote(quote.id)}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-white/65 hover:text-white"
                   >
-                    {lang === "en" ? `From ${sourceTitle}` : `من ${sourceTitle}`}
+                    <BookmarkIcon className="h-4 w-4" />
+                    {lang === "en" ? "Save" : "حفظ"}
                   </button>
-                ) : null}
+                  <button
+                    type="button"
+                    onClick={() => onShareQuote(quote.id)}
+                    className="inline-flex items-center gap-1.5 text-sm font-medium text-white/65 hover:text-white"
+                  >
+                    <ShareIcon className="h-4 w-4" />
+                    {lang === "en" ? "Share" : "مشاركة"}
+                  </button>
+                </div>
               </div>
             );
           })}

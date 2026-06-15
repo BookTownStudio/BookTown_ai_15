@@ -40,6 +40,7 @@ import type {
 } from '../lib/editor/writeOperationalTypes.ts';
 import type { LibrarianRecommendationContext } from '../types/librarian.ts';
 import type { BookSemanticGraph } from '../types/literaryGraph.ts';
+import type { ResolvedAuthorAuthority } from '../lib/authors/authorAuthorityResolution.ts';
 import type {
   SubmitFeedbackRequest,
   SubmitFeedbackResponse,
@@ -534,6 +535,7 @@ export interface CatalogDataService {
   getStats(bookId: string): Promise<BookStats>;
 
   getAuthor(authorId: string): Promise<Author | null>;
+  resolveAuthorAuthority(authorId: string): Promise<ResolvedAuthorAuthority>;
   createAuthor(author: Author): Promise<void>;
   searchAuthors(query: string): Promise<Author[]>;
   discoverAuthors(params: { query: string; limit?: number }): Promise<Author[]>;

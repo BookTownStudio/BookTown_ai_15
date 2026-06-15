@@ -8,9 +8,11 @@ const {
   navigateMock,
   followAuthorMock,
   unfollowAuthorMock,
+  saveBookmarkMock,
   authorityViewState,
   booksByAuthorState,
   followStatusState,
+  readerMemoryState,
 } = vi.hoisted(() => ({
   currentViewState: {
     type: "immersive",
@@ -20,6 +22,7 @@ const {
   navigateMock: vi.fn(),
   followAuthorMock: vi.fn(),
   unfollowAuthorMock: vi.fn(),
+  saveBookmarkMock: vi.fn(),
   authorityViewState: {
     data: null as any,
     author: null as any,
@@ -42,6 +45,18 @@ const {
   },
   followStatusState: {
     data: false,
+    isLoading: false,
+  },
+  readerMemoryState: {
+    data: {
+      isSignedIn: false,
+      isFollowed: false,
+      booksRead: [] as any[],
+      currentlyReading: [] as any[],
+      savedQuotes: [] as any[],
+      reviews: [] as any[],
+      continuation: { book: null as any, reason: "none", label: "No continuation available" },
+    },
     isLoading: false,
   },
 }));
@@ -122,6 +137,14 @@ vi.mock("../../lib/hooks/useUnfollowAuthor.ts", () => ({
   useUnfollowAuthor: () => ({ mutate: unfollowAuthorMock, isPending: false }),
 }));
 
+vi.mock("../../lib/hooks/useSaveQuote.ts", () => ({
+  useSaveBookmark: () => ({ mutate: saveBookmarkMock, isPending: false }),
+}));
+
+vi.mock("../../lib/hooks/useAuthorReaderMemory.ts", () => ({
+  useAuthorReaderMemory: () => readerMemoryState,
+}));
+
 vi.mock("../../store/toast.tsx", () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
@@ -166,8 +189,17 @@ vi.mock("../../components/icons/ShareIcon.tsx", () => ({
 vi.mock("../../components/icons/BookIcon.tsx", () => ({
   BookIcon: () => <span>book</span>,
 }));
+vi.mock("../../components/icons/BookOpenIcon.tsx", () => ({
+  BookOpenIcon: () => <span>book-open</span>,
+}));
 vi.mock("../../components/icons/QuoteIcon.tsx", () => ({
   QuoteIcon: () => <span>quote</span>,
+}));
+vi.mock("../../components/icons/BookmarkIcon.tsx", () => ({
+  BookmarkIcon: () => <span>bookmark</span>,
+}));
+vi.mock("../../components/icons/StarIcon.tsx", () => ({
+  StarIcon: () => <span>star</span>,
 }));
 
 describe("Author Details authority hardening", () => {
@@ -177,6 +209,16 @@ describe("Author Details authority hardening", () => {
     unfollowAuthorMock.mockReset();
     followStatusState.data = false;
     followStatusState.isLoading = false;
+    readerMemoryState.data = {
+      isSignedIn: false,
+      isFollowed: false,
+      booksRead: [],
+      currentlyReading: [],
+      savedQuotes: [],
+      reviews: [],
+      continuation: { book: null, reason: "none", label: "No continuation available" },
+    };
+    readerMemoryState.isLoading = false;
     currentViewState.params = { authorId: "route_author_id" };
     const view = buildAuthorityView();
     authorityViewState.data = view;
@@ -259,12 +301,36 @@ describe("Author Details authority hardening", () => {
 
     render(<AuthorDetailsScreen />);
 
-    expect(screen.getByText("Author Canon")).toBeTruthy();
+    expect(screen.getAllByText("Canon").length).toBeGreaterThan(0);
     expect(screen.getByText("book:canonical_work")).toBeTruthy();
     expect(screen.queryByText("Legacy catalog matches")).toBeNull();
     expect(screen.queryByText("book:repair_work")).toBeNull();
-    expect(screen.getByText("Complete Bibliography")).toBeTruthy();
+    expect(screen.getAllByText("Complete Bibliography").length).toBeGreaterThan(0);
     expect(screen.getByText(/Bibliography authority: mixed/)).toBeTruthy();
     expect(screen.getByText(/repair works excluded from canon: 1/)).toBeTruthy();
+  });
+
+  it("renders reader memory and deterministic continuation from canonical data", () => {
+    readerMemoryState.data = {
+      isSignedIn: true,
+      isFollowed: true,
+      booksRead: [{ book: { id: "read_work" } }],
+      currentlyReading: [{ book: { id: "current_work" } }],
+      savedQuotes: [{ id: "quote_1" }],
+      reviews: [{ id: "review_1" }],
+      continuation: {
+        book: { id: "current_work", titleEn: "Current Work", titleAr: "العمل الحالي" },
+        reason: "currently_reading",
+        label: "Continue reading",
+      },
+    };
+
+    render(<AuthorDetailsScreen />);
+
+    expect(screen.getByText("Reader Memory")).toBeTruthy();
+    expect(screen.getByText("Continue This Author")).toBeTruthy();
+    expect(screen.getByText("Continue currently reading")).toBeTruthy();
+    expect(screen.getByText("Current Work")).toBeTruthy();
+    expect(screen.getByText("book:current_work")).toBeTruthy();
   });
 });

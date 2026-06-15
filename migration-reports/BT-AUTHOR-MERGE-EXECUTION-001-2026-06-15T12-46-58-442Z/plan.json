@@ -1,0 +1,1147 @@
+{
+  "migrationId": "BT-AUTHOR-MERGE-EXECUTION-001",
+  "projectId": "booktown-ai",
+  "mode": "dry_run",
+  "exportedAt": "2026-06-15T12:46:58.443Z",
+  "summary": {
+    "clusters": 88,
+    "losers": 96,
+    "books": 14,
+    "authorIdentity": 143,
+    "quotes": 0,
+    "interactions": 0,
+    "graph": 0,
+    "writes": 253
+  },
+  "clusterPlans": [
+    {
+      "authorName": "adolfo bioy casares",
+      "survivorAuthorId": "56f36b36-d6b2-4b9f-b342-019070533d37",
+      "loserAuthorIds": [
+        "6f6e767e-4395-4cb7-be6a-75cb09863001"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:adolfo bioy casares::unknown"
+      ]
+    },
+    {
+      "authorName": "aeschylus",
+      "survivorAuthorId": "1d6cf14c-5e86-4bf9-9cfb-1a2c4b6c8f8f",
+      "loserAuthorIds": [
+        "60b87005-34c1-4517-874d-26fc5d13291c"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/edb03891-e4d2-481f-a55d-5fe32c755571",
+          "title": "The Oresteia",
+          "from": "60b87005-34c1-4517-874d-26fc5d13291c",
+          "to": "1d6cf14c-5e86-4bf9-9cfb-1a2c4b6c8f8f"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:aeschylus::unknown"
+      ]
+    },
+    {
+      "authorName": "albert camus",
+      "survivorAuthorId": "9b9fb1e3-1578-4de5-bf68-ea9a450abc46",
+      "loserAuthorIds": [
+        "006a416c-f221-4e98-a97a-1274777bfdfb"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/a4f04259-e013-4a2e-a971-bf3055ace663",
+          "title": "The Stranger",
+          "from": "006a416c-f221-4e98-a97a-1274777bfdfb",
+          "to": "9b9fb1e3-1578-4de5-bf68-ea9a450abc46"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:albert camus::unknown",
+        "author_identity/provider:openLibrary:OL3823431A"
+      ]
+    },
+    {
+      "authorName": "alejo carpentier",
+      "survivorAuthorId": "5ebfe6af-cf3b-4988-9a85-378c36a31b05",
+      "loserAuthorIds": [
+        "e97627d2-a678-4518-b652-a2579a33f3f0"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:alejo carpentier::unknown"
+      ]
+    },
+    {
+      "authorName": "amos tutuola",
+      "survivorAuthorId": "80c50465-6b29-43ba-a61a-c7d28d55199c",
+      "loserAuthorIds": [
+        "1a1d43cd-a68a-487b-95be-32ef07b3a015"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:amos tutuola::unknown"
+      ]
+    },
+    {
+      "authorName": "andrei platonov",
+      "survivorAuthorId": "6061fac2-682b-40bb-8423-f20b1877001a",
+      "loserAuthorIds": [
+        "d81d2fb6-8204-48d1-b726-e9fac9b66342"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:andrei platonov::unknown",
+        "author_identity/provider:openLibrary:OL7716490A"
+      ]
+    },
+    {
+      "authorName": "annie ernaux",
+      "survivorAuthorId": "5c039073-76c4-451e-a8bb-6af63d9aadb7",
+      "loserAuthorIds": [
+        "a8b3ca64-2a9d-4144-a7dd-f4c63f412afb"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:annie ernaux::unknown"
+      ]
+    },
+    {
+      "authorName": "aristotle",
+      "survivorAuthorId": "c33dfb22-3c82-483f-85d1-5b671f5fa6f7",
+      "loserAuthorIds": [
+        "f9b8e192-9c63-478a-9d40-cd14d46c20cc"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:aristotle::unknown"
+      ]
+    },
+    {
+      "authorName": "ayi kwei armah",
+      "survivorAuthorId": "da0aa36b-2860-444a-971f-acb6fade936b",
+      "loserAuthorIds": [
+        "f9264874-e0f2-4263-a7b8-bac0b004e279"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ayi kwei armah::unknown"
+      ]
+    },
+    {
+      "authorName": "ben okri",
+      "survivorAuthorId": "d74e4793-5960-4e39-9260-4ff28371e31c",
+      "loserAuthorIds": [
+        "87d793be-39b0-491f-bfe7-9c2f043c6af5"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ben okri::unknown"
+      ]
+    },
+    {
+      "authorName": "benito perez galdos",
+      "survivorAuthorId": "c8384802-8153-4218-9565-e70023e7b94d",
+      "loserAuthorIds": [
+        "6c587b71-f397-4fb3-8ebe-1b22a87301fe"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:benito perez galdos::unknown"
+      ]
+    },
+    {
+      "authorName": "cao xueqin",
+      "survivorAuthorId": "fd3c58bd-71e5-4c4d-b289-b5fd2e87b8f6",
+      "loserAuthorIds": [
+        "5d6a76ed-4589-46fa-adef-c60c591bfdab"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/639be911-6d91-4ba8-9067-ab076691d62f",
+          "title": "Dream of the Red Chamber",
+          "from": "5d6a76ed-4589-46fa-adef-c60c591bfdab",
+          "to": "fd3c58bd-71e5-4c4d-b289-b5fd2e87b8f6"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:cao xueqin::unknown",
+        "author_identity/provider:openLibrary:OL10767920A"
+      ]
+    },
+    {
+      "authorName": "carlos fuentes",
+      "survivorAuthorId": "73eb1f87-caa1-492a-b81e-8f9bc1455455",
+      "loserAuthorIds": [
+        "8f6e01c4-a445-4818-9931-8c370d04ee5b"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:carlos fuentes::unknown",
+        "author_identity/provider:openLibrary:OL12776849A"
+      ]
+    },
+    {
+      "authorName": "chinua achebe",
+      "survivorAuthorId": "5dc73741-cb65-4541-bd4d-46daf80074aa",
+      "loserAuthorIds": [
+        "a39aa66b-f335-4832-b515-d4ff256b6e9e"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:chinua achebe::1932",
+        "author_identity/provider:openLibrary:OL771517A"
+      ]
+    },
+    {
+      "authorName": "clarice lispector",
+      "survivorAuthorId": "bb58aab2-38b5-4916-9b9b-baff0903e79b",
+      "loserAuthorIds": [
+        "45106187-1fba-43a2-a630-7f62837826b3"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:clarice lispector::unknown"
+      ]
+    },
+    {
+      "authorName": "confucius",
+      "survivorAuthorId": "733ecce3-bef9-43de-b3fe-9644bb233495",
+      "loserAuthorIds": [
+        "3c861e8c-7698-44b4-a1e6-4dc923882970"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/8902b2c0-cc5a-42ba-83d5-10de1f283064",
+          "title": "The Analects",
+          "from": "3c861e8c-7698-44b4-a1e6-4dc923882970",
+          "to": "733ecce3-bef9-43de-b3fe-9644bb233495"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:confucius::unknown",
+        "author_identity/provider:openLibrary:OL9956461A"
+      ]
+    },
+    {
+      "authorName": "dante alighieri",
+      "survivorAuthorId": "a642a43d-b0c0-4913-8f6a-bff031c3c621",
+      "loserAuthorIds": [
+        "7af17d5b-dbf7-45e0-905c-750def30c7c6"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:dante alighieri::unknown"
+      ]
+    },
+    {
+      "authorName": "doris lessing",
+      "survivorAuthorId": "c0d0dc87-0255-446c-b2c7-2eb132b55fe6",
+      "loserAuthorIds": [
+        "3560521f-9179-46af-8bc2-0232ff785084"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:doris lessing::unknown"
+      ]
+    },
+    {
+      "authorName": "e m forster",
+      "survivorAuthorId": "0b388b38-5887-4a4e-b850-cd3b310cba5c",
+      "loserAuthorIds": [
+        "9ea4338b-cfff-4775-bfba-006ad8496c1c"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:e m forster::unknown"
+      ]
+    },
+    {
+      "authorName": "emile habiby",
+      "survivorAuthorId": "b381ad8d-eec8-497d-8ef6-b86a99ec1a86",
+      "loserAuthorIds": [
+        "0f27a0ac-9229-45d7-92e7-777ffb2995be"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:emile habiby::unknown"
+      ]
+    },
+    {
+      "authorName": "ernesto sabato",
+      "survivorAuthorId": "4c5f33c2-48b9-402e-8bc5-6fd70a8c4e14",
+      "loserAuthorIds": [
+        "23ed1de9-9479-48c3-9883-550f1318e54a"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ernesto sabato::unknown"
+      ]
+    },
+    {
+      "authorName": "fernando pessoa",
+      "survivorAuthorId": "6ce0e20c-cb16-4cad-9c0f-b7bb8305ca17",
+      "loserAuthorIds": [
+        "14565f32-baa5-4e46-b7f1-1f32e3dd3363"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:fernando pessoa::unknown"
+      ]
+    },
+    {
+      "authorName": "franz kafka",
+      "survivorAuthorId": "c9301a56-133f-453a-a35d-09e26e271ae5",
+      "loserAuthorIds": [
+        "1c9e73a0-3705-4511-953a-e4b780c1fd0a"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/04ecc5cf-d220-4601-bf90-1c82d7c73dac",
+          "title": "The Trial",
+          "from": "1c9e73a0-3705-4511-953a-e4b780c1fd0a",
+          "to": "c9301a56-133f-453a-a35d-09e26e271ae5"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:franz kafka::unknown",
+        "author_identity/provider:openLibrary:OL14046958A"
+      ]
+    },
+    {
+      "authorName": "friedrich nietzsche",
+      "survivorAuthorId": "6e32aaf0-66b2-4b3e-bcf4-6f7ec469c18c",
+      "loserAuthorIds": [
+        "d144e234-570b-4dd9-8a92-cc5f270b49fb"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:friedrich nietzsche::1844",
+        "author_identity/provider:openLibrary:OL20157A",
+        "author_identity/provider:wikidata:Q9358"
+      ]
+    },
+    {
+      "authorName": "geoffrey chaucer",
+      "survivorAuthorId": "3c73d77e-ffc1-4028-9932-b56c241917c8",
+      "loserAuthorIds": [
+        "d467ed6b-b879-4927-ae71-cd550e3c1fc9"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/8a3674ed-9fd0-469e-a838-bdd6fad0a75c",
+          "title": "The Canterbury Tales",
+          "from": "d467ed6b-b879-4927-ae71-cd550e3c1fc9",
+          "to": "3c73d77e-ffc1-4028-9932-b56c241917c8"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:geoffrey chaucer::unknown"
+      ]
+    },
+    {
+      "authorName": "george eliot",
+      "survivorAuthorId": "ea5120b1-1957-42cf-aa20-7225f2aefdfc",
+      "loserAuthorIds": [
+        "d086ece9-4ff7-4103-9e3b-d011dee57f1d"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:george eliot::1819",
+        "author_identity/provider:openLibrary:OL24528A",
+        "author_identity/provider:wikidata:Q131333"
+      ]
+    },
+    {
+      "authorName": "ghassan kanafani",
+      "survivorAuthorId": "066151ba-06da-465f-8d53-6abf37bdbef7",
+      "loserAuthorIds": [
+        "f6d24258-dd67-4c70-ab15-4040b2071fcf"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ghassan kanafani::unknown"
+      ]
+    },
+    {
+      "authorName": "giuseppe tomasi di lampedusa",
+      "survivorAuthorId": "9972180e-d9f3-4e11-879b-8f7658840d76",
+      "loserAuthorIds": [
+        "c612ee11-c71a-4276-9eea-8befba868d6b"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:giuseppe tomasi di lampedusa::unknown",
+        "author_identity/provider:openLibrary:OL9153909A"
+      ]
+    },
+    {
+      "authorName": "gustave flaubert",
+      "survivorAuthorId": "a43ab534-595e-4d18-9c05-f935c4ea63aa",
+      "loserAuthorIds": [
+        "ddd33e7f-867c-472d-aba9-8eaeae83b7b1"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:gustave flaubert::unknown"
+      ]
+    },
+    {
+      "authorName": "haruki murakami",
+      "survivorAuthorId": "8b4bc13d-d27a-486f-886d-36733d84849e",
+      "loserAuthorIds": [
+        "f24237e0-61e7-45d7-9ec9-154d7f1108c3",
+        "7af3b4de-8263-4b27-8ec2-0a1c458942be"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:haruki murakami::2015",
+        "author_identity/canonical:haruki murakami::unknown",
+        "author_identity/provider:openLibrary:OL8354734A"
+      ]
+    },
+    {
+      "authorName": "herman melville",
+      "survivorAuthorId": "59d3bcb5-dd01-41c3-9517-f5cd05bf626e",
+      "loserAuthorIds": [
+        "5dfbda8c-6b76-44f7-b9bb-6e270747d490"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:herman melville::unknown"
+      ]
+    },
+    {
+      "authorName": "hermann hesse",
+      "survivorAuthorId": "66f1ce08-1c41-4dce-8673-fa3fa7b00031",
+      "loserAuthorIds": [
+        "e2a37acf-e693-4439-9591-fc76facf8eaf"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:hermann hesse::unknown"
+      ]
+    },
+    {
+      "authorName": "homer",
+      "survivorAuthorId": "7ce982f9-8bc2-4374-b0ad-2f6a1f6deaf3",
+      "loserAuthorIds": [
+        "1e679ec0-26f5-4339-bd8e-d19198e927d5"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/authority:viaf:224924963",
+        "author_identity/canonical:homer::0009",
+        "author_identity/provider:openLibrary:OL18404A",
+        "author_identity/provider:wikidata:Q6691"
+      ]
+    },
+    {
+      "authorName": "honore de balzac",
+      "survivorAuthorId": "7d0c1030-1f5d-4708-87ca-e82cc926a54f",
+      "loserAuthorIds": [
+        "c03bdca6-0141-47b0-90c9-42e6d7d73d37"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:honore de balzac::unknown"
+      ]
+    },
+    {
+      "authorName": "ibn khaldun",
+      "survivorAuthorId": "4e04ba95-1a5f-4392-8090-e53cac6b4d39",
+      "loserAuthorIds": [
+        "7ee8216d-55ce-429d-9a3a-cae036f07ebc"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/1f751273-b3ff-4541-a7c2-380c8fce4d52",
+          "title": "The Muqaddimah",
+          "from": "7ee8216d-55ce-429d-9a3a-cae036f07ebc",
+          "to": "4e04ba95-1a5f-4392-8090-e53cac6b4d39"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ibn khaldun::unknown"
+      ]
+    },
+    {
+      "authorName": "iris murdoch",
+      "survivorAuthorId": "e7926879-5fa6-4656-b0e6-1a2dabb62c3e",
+      "loserAuthorIds": [
+        "38042b09-587e-4539-bc63-94ea6d9ef263"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:iris murdoch::unknown"
+      ]
+    },
+    {
+      "authorName": "italo calvino",
+      "survivorAuthorId": "aa9db922-8f00-4e93-98e1-9c002e3e76fa",
+      "loserAuthorIds": [
+        "ad444918-6816-465e-b1ee-bdac0e971b72"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:italo calvino::unknown",
+        "author_identity/provider:openLibrary:OL13704554A"
+      ]
+    },
+    {
+      "authorName": "j m coetzee",
+      "survivorAuthorId": "ac504269-9f60-40ed-a540-ec98918e199d",
+      "loserAuthorIds": [
+        "1c111200-4eda-41da-9c37-7d7bffddd9fa"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:j m coetzee::unknown"
+      ]
+    },
+    {
+      "authorName": "james joyce",
+      "survivorAuthorId": "8b557fc7-346f-4436-b4bd-32bd2291cf11",
+      "loserAuthorIds": [
+        "48b4496f-0e9d-4f3d-8a48-cf75d4c4e2df"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:james joyce::unknown",
+        "author_identity/provider:openLibrary:OL11598064A"
+      ]
+    },
+    {
+      "authorName": "jane austen",
+      "survivorAuthorId": "c17ae6c8-580b-41fc-8660-c3f80fcc1a03",
+      "loserAuthorIds": [
+        "b7a50124-715b-4500-bbb7-89a6dd0cd7d0"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/9654574b-7cfa-46ea-87b7-2daf9c759f1c",
+          "title": "Pride and Prejudice",
+          "from": "b7a50124-715b-4500-bbb7-89a6dd0cd7d0",
+          "to": "c17ae6c8-580b-41fc-8660-c3f80fcc1a03"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:jane austen::unknown"
+      ]
+    },
+    {
+      "authorName": "jean paul sartre",
+      "survivorAuthorId": "6858c7b5-9e85-4a9e-86a8-058a14ef8bb6",
+      "loserAuthorIds": [
+        "ca1815f3-d2ae-4e72-bc26-af2c5fb7bc30"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:jean paul sartre::unknown"
+      ]
+    },
+    {
+      "authorName": "jean racine",
+      "survivorAuthorId": "8b1c18bc-2355-4ead-bec8-ad78610ae06b",
+      "loserAuthorIds": [
+        "1134d30d-42a3-4a0a-b399-bd9d6c681607"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:jean racine::unknown"
+      ]
+    },
+    {
+      "authorName": "joao guimaraes rosa",
+      "survivorAuthorId": "c78fbfaa-da4c-4e02-82d1-231808960ba2",
+      "loserAuthorIds": [
+        "db9e7ba7-dccc-48d5-98d5-96c10a84a172"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:joao guimaraes rosa::unknown"
+      ]
+    },
+    {
+      "authorName": "johann wolfgang von goethe",
+      "survivorAuthorId": "47b528aa-0e8f-466f-8532-5abe35314081",
+      "loserAuthorIds": [
+        "f00cd754-aca0-4aa7-a10a-d18477586f90",
+        "62d3a3c0-225d-4f01-9999-feabc69caf17"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/f1c82d98-7ec0-46c6-9432-576c5299645a",
+          "title": "Faust Part Two",
+          "from": "f00cd754-aca0-4aa7-a10a-d18477586f90",
+          "to": "47b528aa-0e8f-466f-8532-5abe35314081"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/authority:viaf:24602065",
+        "author_identity/canonical:johann wolfgang von goethe::1749",
+        "author_identity/canonical:johann wolfgang von goethe::unknown",
+        "author_identity/provider:openLibrary:OL13193A",
+        "author_identity/provider:wikidata:Q5879"
+      ]
+    },
+    {
+      "authorName": "john stuart mill",
+      "survivorAuthorId": "c4617898-04e9-46f5-b44e-313e31a058ac",
+      "loserAuthorIds": [
+        "829cd252-9f75-4516-b552-27e86c1ccc92"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:john stuart mill::unknown"
+      ]
+    },
+    {
+      "authorName": "jorge luis borges",
+      "survivorAuthorId": "6d5e76e2-5c78-43ea-bb81-a80bda518fd2",
+      "loserAuthorIds": [
+        "dbcc503e-0fe6-440e-a131-fe307fb25de9"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:jorge luis borges::1899",
+        "author_identity/provider:openLibrary:OL18928A",
+        "author_identity/provider:wikidata:Q909"
+      ]
+    },
+    {
+      "authorName": "jose saramago",
+      "survivorAuthorId": "bbe738d3-6369-48e8-a51e-274dc616fe94",
+      "loserAuthorIds": [
+        "fdce3f2a-2a82-4c9c-a7f5-32a4eb85f253"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:jose saramago::unknown"
+      ]
+    },
+    {
+      "authorName": "joseph roth",
+      "survivorAuthorId": "d0ff41ee-0e13-4f8e-b040-61895031db33",
+      "loserAuthorIds": [
+        "26755c1a-cb28-40ad-830f-8b167650eaf4"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/2989dcc1-99ce-4702-a238-3a5d41dec210",
+          "title": "The Radetzky March",
+          "from": "26755c1a-cb28-40ad-830f-8b167650eaf4",
+          "to": "d0ff41ee-0e13-4f8e-b040-61895031db33"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:joseph roth::unknown",
+        "author_identity/provider:openLibrary:OL10827879A"
+      ]
+    },
+    {
+      "authorName": "juan rulfo",
+      "survivorAuthorId": "c39f310b-0103-4cf9-b808-c095482ac64a",
+      "loserAuthorIds": [
+        "5b1a4be5-92e9-4b61-b4b4-573c7b070049"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:juan rulfo::unknown"
+      ]
+    },
+    {
+      "authorName": "julio cortazar",
+      "survivorAuthorId": "fb3452fc-2bc6-496a-afc0-a05c4935e012",
+      "loserAuthorIds": [
+        "58d69fd2-175b-4cba-9fc5-a252405efa57"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:julio cortazar::unknown"
+      ]
+    },
+    {
+      "authorName": "kobo abe",
+      "survivorAuthorId": "b4e37662-80a3-4452-9f1d-57135d47d59f",
+      "loserAuthorIds": [
+        "b11510e0-fcab-4b81-84d7-2c97cafd4405"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:kobo abe::unknown"
+      ]
+    },
+    {
+      "authorName": "louis ferdinand celine",
+      "survivorAuthorId": "3fd5b64d-1c77-4ffc-aba6-abc0da55ea60",
+      "loserAuthorIds": [
+        "c31f667d-c57c-40a5-978e-66c9b5e24f86"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:louis ferdinand celine::unknown"
+      ]
+    },
+    {
+      "authorName": "lu xun",
+      "survivorAuthorId": "533c7049-2f80-4446-bf88-2a5abee794dc",
+      "loserAuthorIds": [
+        "95eb5190-c1a8-4831-a371-4908a132f843"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:lu xun::unknown"
+      ]
+    },
+    {
+      "authorName": "machado de assis",
+      "survivorAuthorId": "b7935084-e106-4568-a03c-1e7d04476db1",
+      "loserAuthorIds": [
+        "27eb6b76-44de-4cf5-a0b2-32d15203fbb9"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:machado de assis::unknown"
+      ]
+    },
+    {
+      "authorName": "marcel proust",
+      "survivorAuthorId": "6d1ee723-4bde-489f-a4aa-3b3e4de9cf1f",
+      "loserAuthorIds": [
+        "060e1525-0d23-4249-8e33-8a229b481fca"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:marcel proust::unknown"
+      ]
+    },
+    {
+      "authorName": "marcus aurelius",
+      "survivorAuthorId": "ccee0a67-ab33-4469-a1d6-b7f0e50ee6b0",
+      "loserAuthorIds": [
+        "e5ffa910-f1f6-4b88-b299-bad350b99991"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:marcus aurelius::unknown"
+      ]
+    },
+    {
+      "authorName": "marguerite duras",
+      "survivorAuthorId": "1d5d15de-f1f5-4504-bc34-da88a240207b",
+      "loserAuthorIds": [
+        "6fa655aa-3976-4cb6-a10e-638420647cbe"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:marguerite duras::unknown"
+      ]
+    },
+    {
+      "authorName": "mariama ba",
+      "survivorAuthorId": "a90542eb-e2c2-4b45-ad4b-c5351116acb8",
+      "loserAuthorIds": [
+        "d31a8bb9-930a-479c-810f-668cf90f50c7"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:mariama ba::unknown"
+      ]
+    },
+    {
+      "authorName": "mario vargas llosa",
+      "survivorAuthorId": "1494fd18-cb63-4b9d-afff-9847236b31c7",
+      "loserAuthorIds": [
+        "b89cb0b7-12b9-498b-a8fe-286b445d06e7"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:mario vargas llosa::unknown"
+      ]
+    },
+    {
+      "authorName": "miguel de cervantes",
+      "survivorAuthorId": "4626161b-1c24-4def-b16f-29ccec9d2985",
+      "loserAuthorIds": [
+        "ceb7d563-7c88-4b3c-8b35-64503871c085"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:miguel de cervantes::unknown",
+        "author_identity/provider:openLibrary:OL15266562A"
+      ]
+    },
+    {
+      "authorName": "milan kundera",
+      "survivorAuthorId": "d211127a-a19e-40d4-834b-2a01952653df",
+      "loserAuthorIds": [
+        "6dc84ff6-e21c-4a33-b6bf-5664826420f3"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:milan kundera::unknown"
+      ]
+    },
+    {
+      "authorName": "murasaki shikibu",
+      "survivorAuthorId": "fb7cf1a0-02d6-4ebf-a133-cc5fff70f128",
+      "loserAuthorIds": [
+        "b82c47bd-2f70-49e9-9027-96838015b2a7"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/271aafd9-771c-479e-bce6-983937543356",
+          "title": "The Tale of Genji",
+          "from": "b82c47bd-2f70-49e9-9027-96838015b2a7",
+          "to": "fb7cf1a0-02d6-4ebf-a133-cc5fff70f128"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:murasaki shikibu::unknown"
+      ]
+    },
+    {
+      "authorName": "natsume soseki",
+      "survivorAuthorId": "2216ce8c-105c-45b6-8c6b-ba5ae23b6e69",
+      "loserAuthorIds": [
+        "f837bca9-4e64-4a99-b4cb-76f3ef5dfece"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:natsume soseki::unknown",
+        "author_identity/provider:openLibrary:OL14422717A"
+      ]
+    },
+    {
+      "authorName": "ngugi wa thiong o",
+      "survivorAuthorId": "ba9dc645-cb6a-4328-94d7-f1a098f11442",
+      "loserAuthorIds": [
+        "0b63edd3-f8fe-4ef2-b74c-70e259b96cc2",
+        "d731ce46-9ba4-4f99-b44e-08fec149146c"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ngugi wa thiong o::unknown",
+        "author_identity/canonical:ngugi wa thiongʼo::unknown",
+        "author_identity/provider:openLibrary:OL15297907A"
+      ]
+    },
+    {
+      "authorName": "nguyen du",
+      "survivorAuthorId": "f61850ac-e5b8-4d9a-ad9a-47263d67ce82",
+      "loserAuthorIds": [
+        "7a1f1d9a-d7c9-4427-85a4-74511bd7ee85",
+        "4fc00a62-177b-4dfb-830c-1afe43a3656f"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:nguyen du::1926",
+        "author_identity/canonical:nguyen du::unknown",
+        "author_identity/provider:openLibrary:OL6618998A"
+      ]
+    },
+    {
+      "authorName": "niccolo machiavelli",
+      "survivorAuthorId": "a60daff3-0500-46d7-9ba4-58d78dc90f8e",
+      "loserAuthorIds": [
+        "1135c281-b8fc-4353-adb6-0e71e62fc368"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:niccolo machiavelli::unknown"
+      ]
+    },
+    {
+      "authorName": "olga tokarczuk",
+      "survivorAuthorId": "7be4e0eb-4e36-4e4c-8d29-da4ca8966ab0",
+      "loserAuthorIds": [
+        "c66dc28a-e062-4cc9-993c-621f0944bb24"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:olga tokarczuk::unknown"
+      ]
+    },
+    {
+      "authorName": "orhan pamuk",
+      "survivorAuthorId": "d90f3437-69c4-46f3-bf73-588ee5724bba",
+      "loserAuthorIds": [
+        "4c20217b-1739-4f2a-8136-a354a8896c5e"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:orhan pamuk::unknown"
+      ]
+    },
+    {
+      "authorName": "ousmane sembene",
+      "survivorAuthorId": "63dd6b8c-0b82-4865-958a-6d176c6c5ab9",
+      "loserAuthorIds": [
+        "bb79f9a5-0341-4e49-b080-79622a90e8f8"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ousmane sembene::unknown"
+      ]
+    },
+    {
+      "authorName": "plato",
+      "survivorAuthorId": "00ba860b-145e-4e9c-816f-bc0c25674168",
+      "loserAuthorIds": [
+        "39bce523-83a1-475a-8a01-f6b0ca6dfd60"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:plato::unknown"
+      ]
+    },
+    {
+      "authorName": "rabindranath tagore",
+      "survivorAuthorId": "76e99fb4-049c-4849-a00c-212cad23cec6",
+      "loserAuthorIds": [
+        "90d6a535-b8a1-4b2e-af16-c210a2bc0f96"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:rabindranath tagore::1923",
+        "author_identity/provider:openLibrary:OL1610329A"
+      ]
+    },
+    {
+      "authorName": "ralph ellison",
+      "survivorAuthorId": "431b3b73-275d-431b-9121-48d623397b62",
+      "loserAuthorIds": [
+        "23e6fa55-3791-4f07-9a7e-1ee88392b498"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/8637179c-dacf-4ec9-aaf6-7a1bd7eeb384",
+          "title": "Invisible Man",
+          "from": "23e6fa55-3791-4f07-9a7e-1ee88392b498",
+          "to": "431b3b73-275d-431b-9121-48d623397b62"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:ralph ellison::unknown",
+        "author_identity/provider:openLibrary:OL10842069A"
+      ]
+    },
+    {
+      "authorName": "robert musil",
+      "survivorAuthorId": "3b5e5733-a3cd-49ff-b4db-5038d1b9703e",
+      "loserAuthorIds": [
+        "79279dff-01a3-4fc1-8ed6-1685a14d084b"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:robert musil::unknown"
+      ]
+    },
+    {
+      "authorName": "roberto bolano",
+      "survivorAuthorId": "ee8574a6-a6f0-4f6f-bcad-c920dee0859b",
+      "loserAuthorIds": [
+        "fcac9391-9bff-48f2-8946-6029c3f5fb57"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:roberto bolano::unknown",
+        "author_identity/provider:openLibrary:OL6838768A"
+      ]
+    },
+    {
+      "authorName": "salman rushdie",
+      "survivorAuthorId": "c7d6bbd4-1404-46e2-b931-f6fc2bd3b88e",
+      "loserAuthorIds": [
+        "69a92f33-e03e-473e-9c67-3402dff5c1e8"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:salman rushdie::unknown"
+      ]
+    },
+    {
+      "authorName": "samuel beckett",
+      "survivorAuthorId": "45b7c2ad-eabd-4492-a43b-c6d78c4dee1c",
+      "loserAuthorIds": [
+        "e64f9005-6c26-4ac2-9549-67d2dae03bcd",
+        "64917453-764e-402e-8413-6151f29a6475"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:samuel beckett::1906",
+        "author_identity/canonical:samuel beckett::1928",
+        "author_identity/provider:openLibrary:OL29858A",
+        "author_identity/provider:openLibrary:OL382009A",
+        "author_identity/provider:wikidata:Q37327"
+      ]
+    },
+    {
+      "authorName": "simone de beauvoir",
+      "survivorAuthorId": "68077554-cac9-4856-a2da-bff18095a09b",
+      "loserAuthorIds": [
+        "2a22636a-673a-466f-85b0-121d75564947"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:simone de beauvoir::1908",
+        "author_identity/provider:openLibrary:OL63285A",
+        "author_identity/provider:wikidata:Q7197"
+      ]
+    },
+    {
+      "authorName": "stendhal",
+      "survivorAuthorId": "66b93dbf-9dc9-4216-995d-b824163fd31b",
+      "loserAuthorIds": [
+        "b16cd01c-1847-441d-9375-14148fc6358d"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:stendhal::unknown"
+      ]
+    },
+    {
+      "authorName": "t s eliot",
+      "survivorAuthorId": "08b6ec75-cb05-43ea-8761-f93feb1ecb3d",
+      "loserAuthorIds": [
+        "20b993f7-a17c-48d9-8a45-73fca4fbddde"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:t s eliot::unknown"
+      ]
+    },
+    {
+      "authorName": "toni morrison",
+      "survivorAuthorId": "9a7c8266-d868-4513-bc99-3cf915bd6586",
+      "loserAuthorIds": [
+        "0170cbc5-7c46-4b5a-a4d4-980681e0a228",
+        "7c81a052-b2df-49aa-bf81-4e9e1dc75ef4"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:toni morrison::1931",
+        "author_identity/canonical:toni morrison::unknown",
+        "author_identity/provider:openLibrary:OL31120A",
+        "author_identity/provider:openLibrary:OL460035A",
+        "author_identity/provider:wikidata:Q72334"
+      ]
+    },
+    {
+      "authorName": "tsitsi dangarembga",
+      "survivorAuthorId": "4b0c5034-df55-423e-9bdd-871251c64596",
+      "loserAuthorIds": [
+        "26bc6b9c-989c-4dd4-b2b8-8e772b9c0518"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:tsitsi dangarembga::unknown"
+      ]
+    },
+    {
+      "authorName": "umberto eco",
+      "survivorAuthorId": "5e92e6a6-1557-4c19-8e72-91bb739bed5a",
+      "loserAuthorIds": [
+        "cac17d27-d005-4b5e-a3d1-094ac164f41f"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/7e855873-c53b-4b41-8fa2-0d52d944ba2f",
+          "title": "The Name of the Rose",
+          "from": "cac17d27-d005-4b5e-a3d1-094ac164f41f",
+          "to": "5e92e6a6-1557-4c19-8e72-91bb739bed5a"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:umberto eco::unknown",
+        "author_identity/provider:openLibrary:OL15295596A"
+      ]
+    },
+    {
+      "authorName": "victor hugo",
+      "survivorAuthorId": "4fa881b1-a863-47b0-a9b0-63193bc262ea",
+      "loserAuthorIds": [
+        "2f01519c-9643-4dac-94cb-cacda55a0161"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:victor hugo::unknown"
+      ]
+    },
+    {
+      "authorName": "virginia woolf",
+      "survivorAuthorId": "687fc515-c95e-49dc-b88f-fe9dce827932",
+      "loserAuthorIds": [
+        "b6885210-3acd-46c8-9719-7e7eb307f8d4"
+      ],
+      "booksToRepoint": [
+        {
+          "path": "books/fde855e8-bcb1-40d9-92a8-eed4a0aa0360",
+          "title": "Mrs Dalloway",
+          "from": "b6885210-3acd-46c8-9719-7e7eb307f8d4",
+          "to": "687fc515-c95e-49dc-b88f-fe9dce827932"
+        }
+      ],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:virginia woolf::unknown",
+        "author_identity/provider:openLibrary:OL2735471A"
+      ]
+    },
+    {
+      "authorName": "william faulkner",
+      "survivorAuthorId": "0b4c502b-f41b-469b-9b8a-66a3afb46c3d",
+      "loserAuthorIds": [
+        "af300c6a-b246-4e7a-a617-f0b551752567",
+        "6576c953-a7f6-46a1-8ace-36806de88f98"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:william faulkner::1933",
+        "author_identity/canonical:william faulkner::unknown",
+        "author_identity/provider:openLibrary:OL19037A",
+        "author_identity/provider:openLibrary:OL3332143A"
+      ]
+    },
+    {
+      "authorName": "william shakespeare",
+      "survivorAuthorId": "df2cd6a3-0126-4b60-a6bb-6bff597e0a8e",
+      "loserAuthorIds": [
+        "c3e8d7f1-93c8-46cb-9c9c-b86d4fcebea8",
+        "0ffc0786-0219-4420-b0d9-0bb39240ff9e"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/authority:viaf:96994048",
+        "author_identity/canonical:william shakespeare::1564",
+        "author_identity/canonical:william shakespeare::1939",
+        "author_identity/provider:openLibrary:OL5516961A",
+        "author_identity/provider:openLibrary:OL9388A",
+        "author_identity/provider:wikidata:Q692"
+      ]
+    },
+    {
+      "authorName": "wu cheng en",
+      "survivorAuthorId": "cb53caf5-81b8-4735-ab91-67254b0170ff",
+      "loserAuthorIds": [
+        "14c993ba-f56c-4c27-9d64-6db8d4f4d3f7"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:wu cheng en::unknown"
+      ]
+    },
+    {
+      "authorName": "yasunari kawabata",
+      "survivorAuthorId": "20cd6865-444d-4b20-acee-8fe02db04d48",
+      "loserAuthorIds": [
+        "75302343-0248-41ca-b124-eb7b1ef6dd93"
+      ],
+      "booksToRepoint": [],
+      "identityRecordsToRepoint": [
+        "author_identity/canonical:yasunari kawabata::unknown"
+      ]
+    }
+  ]
+}

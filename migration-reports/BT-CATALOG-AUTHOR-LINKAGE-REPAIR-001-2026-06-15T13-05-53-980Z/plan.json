@@ -1,0 +1,164 @@
+{
+  "migrationId": "BT-CATALOG-AUTHOR-LINKAGE-REPAIR-001",
+  "projectId": "booktown-ai",
+  "mode": "execute",
+  "exportedAt": "2026-06-15T13:05:53.980Z",
+  "allGaps": [
+    {
+      "bookId": "9b434a46-0a94-456d-884b-aa30359d85f3",
+      "title": "Berlin Alexanderplatz",
+      "currentAuthorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "correctAuthorId": "463fb613-faea-497d-aed0-0bce2c805a0b",
+      "correctAuthor": "Alfred Döblin",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+      "title": "One Hundred Years of Solitude",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthor": "Gabriel Garcia Marquez",
+      "classification": "MANUAL_REVIEW"
+    },
+    {
+      "bookId": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+      "title": "The Autumn of the Patriarch",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthor": "Gabriel Garcia Marquez",
+      "classification": "MANUAL_REVIEW"
+    },
+    {
+      "bookId": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+      "title": "The Brothers Karamazov",
+      "currentAuthorId": "e847bb9f-2ad9-40a6-94be-593b32d706c4",
+      "correctAuthorId": "46834c79-b8d7-498d-92ac-8b27366a7be1",
+      "correctAuthor": "Fyodor Dostoevsky",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+      "title": "The Cairo Trilogy",
+      "currentAuthorId": "220eb6d0-b908-4fc1-9465-88859a223146",
+      "correctAuthorId": "8b36d1c6-76a4-4814-9c6b-9a1eebf0cac5",
+      "correctAuthor": "Naguib Mahfouz",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "title": "The House of the Spirits",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "d66ab2c6-d6e7-40c8-84c6-7208921a75cb",
+      "correctAuthor": "Isabel Allende",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+      "title": "The Magic Mountain",
+      "currentAuthorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "correctAuthorId": "dc32ee2c-3175-4568-b857-a273db1dc700",
+      "correctAuthor": "Thomas Mann",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+      "title": "The Republic",
+      "currentAuthorId": "079dc9fa-e174-42b8-8237-e2ab3627260a",
+      "correctAuthorId": "00ba860b-145e-4e9c-816f-bc0c25674168",
+      "correctAuthor": "Plato",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "title": "War and Peace",
+      "currentAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthorId": "d66e4f0f-24d8-4b89-8518-b03b1e176716",
+      "correctAuthor": "Leo Tolstoy",
+      "classification": "SAFE_REPAIR"
+    }
+  ],
+  "safeRepairs": [
+    {
+      "bookId": "9b434a46-0a94-456d-884b-aa30359d85f3",
+      "path": "books/9b434a46-0a94-456d-884b-aa30359d85f3",
+      "title": "Berlin Alexanderplatz",
+      "currentAuthorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "correctAuthorId": "463fb613-faea-497d-aed0-0bce2c805a0b",
+      "correctAuthor": "Alfred Döblin",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+      "path": "books/6f953c6b-61a8-4987-be35-05abf25e0b66",
+      "title": "The Brothers Karamazov",
+      "currentAuthorId": "e847bb9f-2ad9-40a6-94be-593b32d706c4",
+      "correctAuthorId": "46834c79-b8d7-498d-92ac-8b27366a7be1",
+      "correctAuthor": "Fyodor Dostoevsky",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+      "path": "books/33ec07ed-cd83-467d-8a71-b75f997c178e",
+      "title": "The Cairo Trilogy",
+      "currentAuthorId": "220eb6d0-b908-4fc1-9465-88859a223146",
+      "correctAuthorId": "8b36d1c6-76a4-4814-9c6b-9a1eebf0cac5",
+      "correctAuthor": "Naguib Mahfouz",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "path": "books/a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "title": "The House of the Spirits",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "d66ab2c6-d6e7-40c8-84c6-7208921a75cb",
+      "correctAuthor": "Isabel Allende",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+      "path": "books/e63b33c9-babb-489c-9d27-145a114e439d",
+      "title": "The Magic Mountain",
+      "currentAuthorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "correctAuthorId": "dc32ee2c-3175-4568-b857-a273db1dc700",
+      "correctAuthor": "Thomas Mann",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+      "path": "books/3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+      "title": "The Republic",
+      "currentAuthorId": "079dc9fa-e174-42b8-8237-e2ab3627260a",
+      "correctAuthorId": "00ba860b-145e-4e9c-816f-bc0c25674168",
+      "correctAuthor": "Plato",
+      "classification": "SAFE_REPAIR"
+    },
+    {
+      "bookId": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "path": "books/c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "title": "War and Peace",
+      "currentAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthorId": "d66e4f0f-24d8-4b89-8518-b03b1e176716",
+      "correctAuthor": "Leo Tolstoy",
+      "classification": "SAFE_REPAIR"
+    }
+  ],
+  "manualReview": [
+    {
+      "bookId": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+      "title": "One Hundred Years of Solitude",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthor": "Gabriel Garcia Marquez",
+      "classification": "MANUAL_REVIEW"
+    },
+    {
+      "bookId": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+      "title": "The Autumn of the Patriarch",
+      "currentAuthorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "correctAuthorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "correctAuthor": "Gabriel Garcia Marquez",
+      "classification": "MANUAL_REVIEW"
+    }
+  ],
+  "writes": 7
+}

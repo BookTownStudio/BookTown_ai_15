@@ -3,7 +3,7 @@ import type { Author } from "../../types/entities.ts";
 import BilingualText from "../ui/BilingualText.tsx";
 import { PlusIcon } from "../icons/PlusIcon.tsx";
 import { ShareIcon } from "../icons/ShareIcon.tsx";
-import { BookIcon } from "../icons/BookIcon.tsx";
+import { BookOpenIcon } from "../icons/BookOpenIcon.tsx";
 import { QuoteIcon } from "../icons/QuoteIcon.tsx";
 
 function shortIntroduction(text: string): string {
@@ -44,24 +44,23 @@ const AuthorIdentityModule: React.FC<AuthorIdentityModuleProps> = ({
   const [isBioExpanded, setBioExpanded] = useState(false);
   const bio = lang === "en" ? author.bioEn : author.bioAr;
   const introduction = useMemo(() => shortIntroduction(bio), [bio]);
-  const occupation =
-    lang === "en"
-      ? ((author as any).occupationEn || author.languageEn)
-      : ((author as any).occupationAr || author.languageAr);
+  const primaryLanguage = lang === "en" ? author.languageEn : author.languageAr;
 
   return (
     <section className="border-b border-white/10 pb-8">
-      <div className={`grid gap-6 lg:grid-cols-[176px_minmax(0,1fr)] ${isRTL ? "lg:[direction:rtl]" : ""}`}>
-        <img
-          src={author.avatarUrl}
-          alt={lang === "en" ? author.nameEn : author.nameAr}
-          className="h-44 w-44 rounded-lg border border-white/10 object-cover shadow-[0_18px_50px_rgba(2,8,23,0.32)]"
-        />
+      <div className={`grid gap-7 lg:grid-cols-[240px_minmax(0,1fr)] ${isRTL ? "lg:[direction:rtl]" : ""}`}>
+        <div className="relative h-72 w-full max-w-64 overflow-hidden rounded-lg border border-white/10 bg-white/[0.04] shadow-[0_24px_70px_rgba(2,8,23,0.42)]">
+          <img
+            src={author.avatarUrl}
+            alt={lang === "en" ? author.nameEn : author.nameAr}
+            className="h-full w-full object-cover"
+          />
+        </div>
         <div className="min-w-0">
           <BilingualText role="Caption" className="text-accent">
             {lang === "en" ? "Literary Identity" : "هوية أدبية"}
           </BilingualText>
-          <BilingualText role="H1" className="mt-2 !text-4xl leading-tight">
+          <BilingualText role="H1" className="mt-2 !text-5xl leading-tight">
             {lang === "en" ? author.nameEn : author.nameAr}
           </BilingualText>
 
@@ -75,8 +74,8 @@ const AuthorIdentityModule: React.FC<AuthorIdentityModuleProps> = ({
               <span>{lang === "en" ? author.countryEn : author.countryAr}</span>
             </div>
             <div>
-              <span className="block text-white/40">{lang === "en" ? "Occupation" : "المهنة"}</span>
-              <span>{occupation || "-"}</span>
+              <span className="block text-white/40">{lang === "en" ? "Primary Language" : "اللغة الرئيسية"}</span>
+              <span>{primaryLanguage || "-"}</span>
             </div>
             <div>
               <span className="block text-white/40">{lang === "en" ? "Canon" : "القانون الأدبي"}</span>
@@ -132,7 +131,7 @@ const AuthorIdentityModule: React.FC<AuthorIdentityModuleProps> = ({
               aria-label="View Books"
               className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-white/10 bg-white/[0.06] px-4 text-sm font-semibold text-white/85 transition-colors hover:bg-white/[0.1] focus:outline-none focus:ring-2 focus:ring-accent"
             >
-              <BookIcon className="h-4 w-4" />
+              <BookOpenIcon className="h-4 w-4" />
               {lang === "en" ? "View Books" : "عرض الكتب"}
             </button>
             <button

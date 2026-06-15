@@ -1,0 +1,1652 @@
+{
+  "migrationId": "BT-CATALOG-AUTHOR-LINKAGE-REPAIR-001",
+  "docs": [
+    {
+      "path": "books/9b434a46-0a94-456d-884b-aa30359d85f3",
+      "id": "9b434a46-0a94-456d-884b-aa30359d85f3",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777541899,
+          "_nanoseconds": 782000000
+        },
+        "searchedPhrase": null,
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777541899,
+            "_nanoseconds": 782000000
+          }
+        },
+        "isEbookAvailable": false,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "PENDING"
+        },
+        "createdAt": {
+          "_seconds": 1777541899,
+          "_nanoseconds": 782000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "berlin alexanderplatz",
+          "alfred doblin, berlin alexanderplatz"
+        ],
+        "literaryForm": "novel",
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL10083103W"
+        },
+        "id": "9b434a46-0a94-456d-884b-aa30359d85f3",
+        "identityKeys": [
+          "canonical:alfred doblin::berlin alexanderplatz",
+          "canonical:alfred doblin::alfred doblin berlin alexanderplatz",
+          "provider:openLibrary:OL10083103W"
+        ],
+        "normalizedTitle": "berlin alexanderplatz",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "descriptionEn": "Alfred Döblin (1878-1957) studied medicine in Berlin and specialized in the treatment of nervous diseases. Along with his experiences as a psychiatrist in the workers' quarter of Berlin, his writing was inspired by the work of Holderlin, Schopenhauer and Nietzsche and was first published in the literary magazine, Der Sturm. Associated with the Expressionist literary movement in Germany, he is now recognized as on of the most important modern European novelists. Berlin Alexanderplatz is one of the masterpieces of modern European literature and the first German novel to adopt the technique of James Joyce. It tells the story of Franz Biberkopf, who, on being released from prison, is confronted with the poverty, unemployment, crime and burgeoning Nazism of 1920s Germany. As Franz struggles to survive in this world, fate teases him with a little pleasure before cruelly turning on him. Foreword by Alexander Stephan Translated by Eugene Jolas&gt;",
+        "workIdentity": {
+          "canonicalKey": "alfred doblin::berlin alexanderplatz",
+          "mergeKeys": [
+            "alfred doblin::berlin alexanderplatz",
+            "alfred doblin::alfred doblin berlin alexanderplatz"
+          ],
+          "providerWorkId": "openLibrary:OL10083103W"
+        },
+        "searchableTitleAuthor": "berlin alexanderplatz alfred doblin",
+        "visibility": "public",
+        "author": "Alfred Döblin",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "alfred doblin::berlin alexanderplatz",
+              "mergeKeys": [
+                "alfred doblin::berlin alexanderplatz",
+                "alfred doblin::alfred doblin berlin alexanderplatz"
+              ],
+              "providerWorkId": "openLibrary:OL10083103W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "Berlin Alexanderplatz",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "alfred doblin::berlin alexanderplatz",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "1a46c5d1-93ef-4b1f-b846-76e86edc90c5"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL10083103W",
+        "descriptionAr": "",
+        "abstractDescription": "Alfred Döblin (1878-1957) studied medicine in Berlin and specialized in the treatment of nervous diseases. Along with his experiences as a psychiatrist in the workers' quarter of Berlin, his writing was inspired by the work of Holderlin, Schopenhauer and Nietzsche and was first published in the literary magazine, Der Sturm. Associated with the Expressionist literary movement in Germany, he is now recognized as on of the most important modern European novelists. Berlin Alexanderplatz is one of the masterpieces of modern European literature and the first German novel to adopt the technique of James Joyce. It tells the story of Franz Biberkopf, who, on being released from prison, is confronted with the poverty, unemployment, crime and burgeoning Nazism of 1920s Germany. As Franz struggles to survive in this world, fate teases him with a little pleasure before cruelly turning on him. Foreword by Alexander Stephan Translated by Eugene Jolas&gt;",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL10083103W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "Berlin Alexanderplatz",
+        "fileSize": null,
+        "titleEn": "Berlin Alexanderplatz",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL10083103W"
+        ],
+        "authors": [
+          "Alfred Döblin"
+        ],
+        "downloadable": false,
+        "canonicalAuthorIds": [
+          "1a46c5d1-93ef-4b1f-b846-76e86edc90c5"
+        ],
+        "rightsMode": "public_free",
+        "description": "Alfred Döblin (1878-1957) studied medicine in Berlin and specialized in the treatment of nervous diseases. Along with his experiences as a psychiatrist in the workers' quarter of Berlin, his writing was inspired by the work of Holderlin, Schopenhauer and Nietzsche and was first published in the literary magazine, Der Sturm. Associated with the Expressionist literary movement in Germany, he is now recognized as on of the most important modern European novelists. Berlin Alexanderplatz is one of the masterpieces of modern European literature and the first German novel to adopt the technique of James Joyce. It tells the story of Franz Biberkopf, who, on being released from prison, is confronted with the poverty, unemployment, crime and burgeoning Nazism of 1920s Germany. As Franz struggles to survive in this world, fate teases him with a little pleasure before cruelly turning on him. Foreword by Alexander Stephan Translated by Eugene Jolas&gt;",
+        "ebookStoragePath": null,
+        "title": "Berlin Alexanderplatz",
+        "literaryAuthorityClass": "classic_work",
+        "search": {
+          "tokens": [
+            "berlin",
+            "alexanderplatz",
+            "alfred",
+            "doblin"
+          ]
+        },
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Alfred Döblin",
+            "authorCanonicalKey": "alfred doblin::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Alfred Döblin",
+            "authors": [
+              "Alfred Döblin"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "alfred doblin"
+        ],
+        "descriptionAuthority": 70,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777541899,
+            "_nanoseconds": 782000000
+          }
+        },
+        "titleEnNormalized": "berlin alexanderplatz",
+        "descriptionSource": "openLibrary",
+        "storagePath": null,
+        "authorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777541899,
+            "_nanoseconds": 782000000
+          }
+        },
+        "bookId": "9b434a46-0a94-456d-884b-aa30359d85f3",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "alfred doblin::berlin alexanderplatz",
+        "originalTitle": "Berlin Alexanderplatz",
+        "titleAliases": [
+          "Alfred Döblin, Berlin Alexanderplatz"
+        ],
+        "workType": "canonical",
+        "authorEn": "Alfred Döblin",
+        "fileType": null,
+        "coverFailureCode": "INVALID_BOOK_SOURCE",
+        "coverState": "FAILED_FATAL",
+        "coverFailureMessage": "Cover job source must be user_upload.",
+        "coverUpdatedAt": {
+          "_seconds": 1777541900,
+          "_nanoseconds": 83000000
+        },
+        "authorCanonicalKey": "alfred doblin::1878",
+        "publicationYear": 1929,
+        "language": "de",
+        "originalLanguage": "de",
+        "canonicalFingerprint": "berlin alexanderplatz::alfred doblin::1878",
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777635924,
+          "_nanoseconds": 962000000
+        },
+        "canonicalAuthorityScore": 75,
+        "canonicalImportance": "standard",
+        "canonicalTradition": "novel_tradition",
+        "form": "novel",
+        "updatedAt": 1777700816376,
+        "ontology": {
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "canonicalTradition": null,
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          }
+        }
+      }
+    },
+    {
+      "path": "books/6f953c6b-61a8-4987-be35-05abf25e0b66",
+      "id": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777400481,
+          "_nanoseconds": 385000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400481,
+            "_nanoseconds": 385000000
+          }
+        },
+        "isEbookAvailable": false,
+        "createdAt": {
+          "_seconds": 1777400481,
+          "_nanoseconds": 385000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the brothers karamazov"
+        ],
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL24600223W"
+        },
+        "id": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+        "identityKeys": [
+          "canonical:fyodor dostoevsky::the brothers karamazov",
+          "provider:openLibrary:OL24600223W"
+        ],
+        "normalizedTitle": "the brothers karamazov",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "workIdentity": {
+          "canonicalKey": "fyodor dostoevsky::the brothers karamazov",
+          "mergeKeys": [
+            "fyodor dostoevsky::the brothers karamazov"
+          ],
+          "providerWorkId": "openLibrary:OL24600223W"
+        },
+        "searchableTitleAuthor": "the brothers karamazov fyodor dostoevsky",
+        "visibility": "public",
+        "author": "Fyodor Dostoevsky",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "fyodor dostoevsky::the brothers karamazov",
+              "mergeKeys": [
+                "fyodor dostoevsky::the brothers karamazov"
+              ],
+              "providerWorkId": "openLibrary:OL24600223W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "The Brothers Karamazov",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "fyodor dostoevsky::the brothers karamazov",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "e847bb9f-2ad9-40a6-94be-593b32d706c4"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL24600223W",
+        "descriptionAr": "",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL24600223W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The Brothers Karamazov",
+        "fileSize": null,
+        "titleEn": "The Brothers Karamazov",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": true,
+        "providerExternalIds": [
+          "openLibrary:OL24600223W"
+        ],
+        "authors": [
+          "Fyodor Dostoevsky"
+        ],
+        "downloadable": false,
+        "authorCanonicalKey": "fyodor dostoevsky::1821",
+        "canonicalAuthorIds": [
+          "e847bb9f-2ad9-40a6-94be-593b32d706c4"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "The Brothers Karamazov",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "authorNamesNormalized": [
+          "fyodor dostoevsky"
+        ],
+        "descriptionAuthority": null,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400481,
+            "_nanoseconds": 385000000
+          }
+        },
+        "titleEnNormalized": "the brothers karamazov",
+        "descriptionSource": null,
+        "storagePath": null,
+        "authorId": "e847bb9f-2ad9-40a6-94be-593b32d706c4",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400481,
+            "_nanoseconds": 385000000
+          }
+        },
+        "bookId": "6f953c6b-61a8-4987-be35-05abf25e0b66",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "fyodor dostoevsky::the brothers karamazov",
+        "originalTitle": "The Brothers Karamazov",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Fyodor Dostoevsky",
+        "fileType": null,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "coverState": "FAILED",
+        "descriptionEn": "The Brothers Karamazov follows a divided family through murder, faith, doubt, rivalry, freedom, and moral responsibility in a searching drama of conscience.",
+        "literaryForm": "novel",
+        "description": "The Brothers Karamazov follows a divided family through murder, faith, doubt, rivalry, freedom, and moral responsibility in a searching drama of conscience.",
+        "abstractDescription": "The Brothers Karamazov follows a divided family through murder, faith, doubt, rivalry, freedom, and moral responsibility in a searching drama of conscience.",
+        "provenance": {
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          },
+          "seedAuthorLock": {
+            "author": "Fyodor Dostoevsky",
+            "source": "canonical_seed",
+            "authorEn": "Fyodor Dostoevsky",
+            "authors": [
+              "Fyodor Dostoevsky"
+            ],
+            "authorCanonicalKey": "fyodor dostoevsky::1821"
+          }
+        },
+        "canonicalFingerprint": "the brothers karamazov::fyodor dostoevsky::1821",
+        "publicationYear": 1880,
+        "canonicalTier": "Tier1",
+        "canonicalType": "literary",
+        "canonicalImportance": "civilizational",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777645112,
+          "_nanoseconds": 857000000
+        },
+        "canonicalAuthorityScore": 135,
+        "canonicalTradition": "russian_realism",
+        "form": "novel",
+        "updatedAt": 1777700803709,
+        "ontology": {
+          "tradition": "tradition:russian_realism",
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "russian_literary_tradition"
+        },
+        "search": {
+          "tokens": [
+            "the",
+            "brothers",
+            "karamazov",
+            "fyodor",
+            "dostoevsky"
+          ],
+          "form": "novel"
+        }
+      }
+    },
+    {
+      "path": "books/33ec07ed-cd83-467d-8a71-b75f997c178e",
+      "id": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777523580,
+          "_nanoseconds": 815000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777523580,
+            "_nanoseconds": 815000000
+          }
+        },
+        "isEbookAvailable": false,
+        "createdAt": {
+          "_seconds": 1777523580,
+          "_nanoseconds": 815000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the cairo trilogy"
+        ],
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL12467431M"
+        },
+        "id": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+        "identityKeys": [
+          "canonical:naguib mahfouz::the cairo trilogy",
+          "provider:openLibrary:OL1599697W"
+        ],
+        "normalizedTitle": "the cairo trilogy",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "workIdentity": {
+          "canonicalKey": "naguib mahfouz::the cairo trilogy",
+          "mergeKeys": [
+            "naguib mahfouz::the cairo trilogy"
+          ],
+          "providerWorkId": "openLibrary:OL1599697W"
+        },
+        "searchableTitleAuthor": "the cairo trilogy naguib mahfouz",
+        "visibility": "public",
+        "author": "Naguib Mahfouz",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "naguib mahfouz::the cairo trilogy",
+              "mergeKeys": [
+                "naguib mahfouz::the cairo trilogy"
+              ],
+              "providerWorkId": "openLibrary:OL1599697W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "The Cairo Trilogy",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "naguib mahfouz::the cairo trilogy",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "220eb6d0-b908-4fc1-9465-88859a223146"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL12467431M",
+        "descriptionAr": "",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL1599697W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The Cairo Trilogy",
+        "fileSize": null,
+        "titleEn": "The Cairo Trilogy",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL12467431M"
+        ],
+        "authors": [
+          "Naguib Mahfouz"
+        ],
+        "downloadable": false,
+        "authorCanonicalKey": "naguib mahfouz::1911",
+        "canonicalAuthorIds": [
+          "220eb6d0-b908-4fc1-9465-88859a223146"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "The Cairo Trilogy",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Naguib Mahfouz",
+            "authorCanonicalKey": "naguib mahfouz::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Naguib Mahfouz",
+            "authors": [
+              "Naguib Mahfouz"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "naguib mahfouz"
+        ],
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777523580,
+            "_nanoseconds": 815000000
+          }
+        },
+        "titleEnNormalized": "the cairo trilogy",
+        "storagePath": null,
+        "authorId": "220eb6d0-b908-4fc1-9465-88859a223146",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777523580,
+            "_nanoseconds": 815000000
+          }
+        },
+        "bookId": "33ec07ed-cd83-467d-8a71-b75f997c178e",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "naguib mahfouz::the cairo trilogy",
+        "originalTitle": "The Cairo Trilogy",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Naguib Mahfouz",
+        "fileType": null,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "coverState": "FAILED",
+        "descriptionEn": "The Cairo Trilogy follows a Cairo family across generations, tracing authority, domestic life, nationalism, and social transformation.",
+        "literaryForm": "novel",
+        "descriptionAuthority": 100,
+        "description": "The Cairo Trilogy follows a Cairo family across generations, tracing authority, domestic life, nationalism, and social transformation.",
+        "descriptionSource": "manualAdmin",
+        "abstractDescription": "The Cairo Trilogy follows a Cairo family across generations, tracing authority, domestic life, nationalism, and social transformation.",
+        "canonicalFingerprint": "the cairo trilogy::naguib mahfouz::1911",
+        "inferredYear": true,
+        "publicationYear": 1951,
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777635924,
+          "_nanoseconds": 962000000
+        },
+        "canonicalAuthorityScore": 75,
+        "canonicalImportance": "standard",
+        "canonicalTradition": "novel_tradition",
+        "form": "novel",
+        "updatedAt": 1777700786702,
+        "ontology": {
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "arabic_modern"
+        },
+        "search": {
+          "tokens": [
+            "the",
+            "cairo",
+            "trilogy",
+            "naguib",
+            "mahfouz"
+          ],
+          "form": "novel"
+        }
+      }
+    },
+    {
+      "path": "books/a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "id": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777537308,
+          "_nanoseconds": 294000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777537308,
+            "_nanoseconds": 294000000
+          }
+        },
+        "isEbookAvailable": false,
+        "createdAt": {
+          "_seconds": 1777537308,
+          "_nanoseconds": 294000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the house of the spirits",
+          "the house of the spirits by isabel allende"
+        ],
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL26726465W"
+        },
+        "id": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+        "identityKeys": [
+          "canonical:isabel allende::the house of the spirits",
+          "canonical:isabel allende::the house of the spirits by isabel allende",
+          "provider:openLibrary:OL26726465W"
+        ],
+        "normalizedTitle": "the house of the spirits",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "descriptionEn": "Soon to be an original series on Prime Video! This “spectacular…absorbing and distinguished work…is a unique achievement, both personal witness and possible allegory of the past, present, and future of Latin America” ( The New York Times Book Review ). The House of the Spirits , which introduced Isabel Allende as one of the world’s most gifted storytellers, brings to life the triumphs and tragedies of three generations of the Trueba family. The patriarch Esteban is a volatile, proud man whose voracious pursuit of political power is tempered only by his love for his delicate wife Clara, a woman with a mystical connection to the spirit world. When their daughter Blanca embarks on a forbidden love affair in defiance of her implacable father, the result is an unexpected gift to Esteban: his adored granddaughter Alba, a beautiful and strong-willed child who will lead her family and her country into a revolutionary future. One of the most important novels of the twentieth century, The House of the Spirits is an enthralling epic that spans decades and lives, weaving the personal and the political into a universal story of love, magic, and fate.",
+        "workIdentity": {
+          "canonicalKey": "isabel allende::the house of the spirits",
+          "mergeKeys": [
+            "isabel allende::the house of the spirits",
+            "isabel allende::the house of the spirits by isabel allende"
+          ],
+          "providerWorkId": "openLibrary:OL26726465W"
+        },
+        "searchableTitleAuthor": "the house of the spirits isabel allende",
+        "visibility": "public",
+        "author": "Isabel Allende",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "isabel allende::the house of the spirits",
+              "mergeKeys": [
+                "isabel allende::the house of the spirits",
+                "isabel allende::the house of the spirits by isabel allende"
+              ],
+              "providerWorkId": "openLibrary:OL26726465W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "The House of the Spirits",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "isabel allende::the house of the spirits",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL26726465W",
+        "descriptionAr": "",
+        "abstractDescription": "Soon to be an original series on Prime Video! This “spectacular…absorbing and distinguished work…is a unique achievement, both personal witness and possible allegory of the past, present, and future of Latin America” ( The New York Times Book Review ). The House of the Spirits , which introduced Isabel Allende as one of the world’s most gifted storytellers, brings to life the triumphs and tragedies of three generations of the Trueba family. The patriarch Esteban is a volatile, proud man whose voracious pursuit of political power is tempered only by his love for his delicate wife Clara, a woman with a mystical connection to the spirit world. When their daughter Blanca embarks on a forbidden love affair in defiance of her implacable father, the result is an unexpected gift to Esteban: his adored granddaughter Alba, a beautiful and strong-willed child who will lead her family and her country into a revolutionary future. One of the most important novels of the twentieth century, The House of the Spirits is an enthralling epic that spans decades and lives, weaving the personal and the political into a universal story of love, magic, and fate.",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL26726465W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The House of the Spirits",
+        "fileSize": null,
+        "titleEn": "The House of the Spirits",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL26726465W"
+        ],
+        "authors": [
+          "Isabel Allende"
+        ],
+        "downloadable": false,
+        "authorCanonicalKey": "isabel allende::unknown",
+        "canonicalAuthorIds": [
+          "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+        ],
+        "rightsMode": "public_free",
+        "description": "Soon to be an original series on Prime Video! This “spectacular…absorbing and distinguished work…is a unique achievement, both personal witness and possible allegory of the past, present, and future of Latin America” ( The New York Times Book Review ). The House of the Spirits , which introduced Isabel Allende as one of the world’s most gifted storytellers, brings to life the triumphs and tragedies of three generations of the Trueba family. The patriarch Esteban is a volatile, proud man whose voracious pursuit of political power is tempered only by his love for his delicate wife Clara, a woman with a mystical connection to the spirit world. When their daughter Blanca embarks on a forbidden love affair in defiance of her implacable father, the result is an unexpected gift to Esteban: his adored granddaughter Alba, a beautiful and strong-willed child who will lead her family and her country into a revolutionary future. One of the most important novels of the twentieth century, The House of the Spirits is an enthralling epic that spans decades and lives, weaving the personal and the political into a universal story of love, magic, and fate.",
+        "ebookStoragePath": null,
+        "title": "The House of the Spirits",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Isabel Allende",
+            "authorCanonicalKey": "isabel allende::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Isabel Allende",
+            "authors": [
+              "Isabel Allende"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "isabel allende"
+        ],
+        "descriptionAuthority": 70,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777537308,
+            "_nanoseconds": 294000000
+          }
+        },
+        "titleEnNormalized": "the house of the spirits",
+        "descriptionSource": "openLibrary",
+        "storagePath": null,
+        "authorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777537308,
+            "_nanoseconds": 294000000
+          }
+        },
+        "bookId": "a235c57d-bd8b-497c-a7bb-6474acb71ab8",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "isabel allende::the house of the spirits",
+        "originalTitle": "The House of the Spirits",
+        "titleAliases": [
+          "The House of the Spirits by Isabel Allende"
+        ],
+        "workType": "canonical",
+        "authorEn": "Isabel Allende",
+        "fileType": null,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "coverState": "FAILED",
+        "canonicalFingerprint": "the house of the spirits::isabel allende::unknown",
+        "publicationYear": 1982,
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777635924,
+          "_nanoseconds": 962000000
+        },
+        "canonicalAuthorityScore": 75,
+        "canonicalImportance": "standard",
+        "canonicalTradition": "general_literary_tradition",
+        "updatedAt": 1777677164768,
+        "literaryForm": "novel",
+        "ontology": {
+          "schemaVersion": 1,
+          "confidence": "mapped",
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "latin_american_literary_tradition",
+          "form": "novel"
+        },
+        "search": {
+          "tokens": [
+            "the",
+            "house",
+            "of",
+            "spirits",
+            "by",
+            "isabel",
+            "allende"
+          ],
+          "form": "novel"
+        }
+      }
+    },
+    {
+      "path": "books/e63b33c9-babb-489c-9d27-145a114e439d",
+      "id": "e63b33c9-babb-489c-9d27-145a114e439d",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777483867,
+          "_nanoseconds": 232000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777483867,
+            "_nanoseconds": 232000000
+          }
+        },
+        "isEbookAvailable": false,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "PENDING"
+        },
+        "createdAt": {
+          "_seconds": 1777483867,
+          "_nanoseconds": 232000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the magic mountain"
+        ],
+        "literaryForm": "novel",
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL31884801W"
+        },
+        "id": "e63b33c9-babb-489c-9d27-145a114e439d",
+        "identityKeys": [
+          "canonical:thomas mann::the magic mountain",
+          "provider:openLibrary:OL31884801W"
+        ],
+        "normalizedTitle": "the magic mountain",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "workIdentity": {
+          "canonicalKey": "thomas mann::the magic mountain",
+          "mergeKeys": [
+            "thomas mann::the magic mountain"
+          ],
+          "providerWorkId": "openLibrary:OL31884801W"
+        },
+        "searchableTitleAuthor": "the magic mountain thomas mann",
+        "visibility": "public",
+        "author": "Thomas Mann",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "thomas mann::the magic mountain",
+              "mergeKeys": [
+                "thomas mann::the magic mountain"
+              ],
+              "providerWorkId": "openLibrary:OL31884801W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "The Magic Mountain",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "thomas mann::the magic mountain",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "1a46c5d1-93ef-4b1f-b846-76e86edc90c5"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL31884801W",
+        "descriptionAr": "",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL31884801W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The Magic Mountain",
+        "fileSize": null,
+        "titleEn": "The Magic Mountain",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL31884801W"
+        ],
+        "authors": [
+          "Thomas Mann"
+        ],
+        "downloadable": false,
+        "authorCanonicalKey": "thomas mann::unknown",
+        "canonicalAuthorIds": [
+          "1a46c5d1-93ef-4b1f-b846-76e86edc90c5"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "The Magic Mountain",
+        "literaryAuthorityClass": "classic_work",
+        "search": {
+          "tokens": [
+            "the",
+            "magic",
+            "mountain",
+            "thomas",
+            "mann"
+          ]
+        },
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Thomas Mann",
+            "authorCanonicalKey": "thomas mann::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Thomas Mann",
+            "authors": [
+              "Thomas Mann"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "thomas mann"
+        ],
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777483867,
+            "_nanoseconds": 232000000
+          }
+        },
+        "titleEnNormalized": "the magic mountain",
+        "storagePath": null,
+        "authorId": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777483867,
+            "_nanoseconds": 232000000
+          }
+        },
+        "bookId": "e63b33c9-babb-489c-9d27-145a114e439d",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "thomas mann::the magic mountain",
+        "originalTitle": "The Magic Mountain",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Thomas Mann",
+        "fileType": null,
+        "coverFailureCode": "INVALID_BOOK_SOURCE",
+        "coverState": "FAILED_FATAL",
+        "coverFailureMessage": "Cover job source must be user_upload.",
+        "coverUpdatedAt": {
+          "_seconds": 1777483871,
+          "_nanoseconds": 12000000
+        },
+        "descriptionEn": "The Magic Mountain follows Hans Castorp in a Swiss sanatorium, where illness, time, intellect, and European crisis reshape his education.",
+        "descriptionAuthority": 100,
+        "description": "The Magic Mountain follows Hans Castorp in a Swiss sanatorium, where illness, time, intellect, and European crisis reshape his education.",
+        "descriptionSource": "manualAdmin",
+        "abstractDescription": "The Magic Mountain follows Hans Castorp in a Swiss sanatorium, where illness, time, intellect, and European crisis reshape his education.",
+        "canonicalFingerprint": "the magic mountain::thomas mann::unknown",
+        "publicationYear": 1924,
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777635924,
+          "_nanoseconds": 962000000
+        },
+        "canonicalAuthorityScore": 75,
+        "canonicalImportance": "standard",
+        "canonicalTradition": "novel_tradition",
+        "form": "novel",
+        "updatedAt": 1777700833428,
+        "ontology": {
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "canonicalTradition": null,
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          }
+        }
+      }
+    },
+    {
+      "path": "books/3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+      "id": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777400629,
+          "_nanoseconds": 195000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400629,
+            "_nanoseconds": 195000000
+          }
+        },
+        "isEbookAvailable": false,
+        "createdAt": {
+          "_seconds": 1777400629,
+          "_nanoseconds": 195000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the republic"
+        ],
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL47069808M"
+        },
+        "id": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+        "identityKeys": [
+          "canonical:plato::the republic",
+          "provider:openLibrary:OL34723025W"
+        ],
+        "normalizedTitle": "the republic",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "workIdentity": {
+          "canonicalKey": "plato::the republic",
+          "mergeKeys": [
+            "plato::the republic"
+          ],
+          "providerWorkId": "openLibrary:OL34723025W"
+        },
+        "searchableTitleAuthor": "the republic plato",
+        "visibility": "public",
+        "author": "Plato",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "plato::the republic",
+              "mergeKeys": [
+                "plato::the republic"
+              ],
+              "providerWorkId": "openLibrary:OL34723025W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "The Republic",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "plato::the republic",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "079dc9fa-e174-42b8-8237-e2ab3627260a"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL47069808M",
+        "descriptionAr": "",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL34723025W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The Republic",
+        "fileSize": null,
+        "titleEn": "The Republic",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL47069808M"
+        ],
+        "authors": [
+          "Plato"
+        ],
+        "downloadable": false,
+        "canonicalAuthorIds": [
+          "079dc9fa-e174-42b8-8237-e2ab3627260a"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "The Republic",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Plato",
+            "authorCanonicalKey": "plato::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Plato",
+            "authors": [
+              "Plato"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "plato"
+        ],
+        "descriptionAuthority": 70,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400629,
+            "_nanoseconds": 195000000
+          }
+        },
+        "titleEnNormalized": "the republic",
+        "descriptionSource": "openLibrary",
+        "storagePath": null,
+        "authorId": "079dc9fa-e174-42b8-8237-e2ab3627260a",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777400629,
+            "_nanoseconds": 195000000
+          }
+        },
+        "bookId": "3f2115a7-5d3c-42a7-8893-904fbcd1ff05",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "plato::the republic",
+        "originalTitle": "The Republic",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Plato",
+        "fileType": null,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "coverState": "FAILED",
+        "descriptionEn": "The Republic presents Socrates' inquiry into justice, the ideal city, education, poetry, political order, and the philosophical life.",
+        "literaryForm": "philosophy",
+        "description": "The Republic presents Socrates' inquiry into justice, the ideal city, education, poetry, political order, and the philosophical life.",
+        "abstractDescription": "The Republic presents Socrates' inquiry into justice, the ideal city, education, poetry, political order, and the philosophical life.",
+        "authorCanonicalKey": "plato::0428bc",
+        "canonicalFingerprint": "the republic::plato::0428bc",
+        "publicationYear": -380,
+        "canonicalTier": "Tier1",
+        "canonicalType": "philosophical",
+        "originalLanguage": "grc",
+        "canonicalImportance": "civilizational",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777645112,
+          "_nanoseconds": 857000000
+        },
+        "canonicalAuthorityScore": 130,
+        "canonicalTradition": "greek_philosophy",
+        "form": "philosophy",
+        "updatedAt": 1777700790486,
+        "search": {
+          "tokens": [
+            "the",
+            "republic",
+            "plato"
+          ],
+          "form": "philosophy"
+        },
+        "ontology": {
+          "tradition": "tradition:greek_philosophy",
+          "schemaVersion": 1,
+          "form": "philosophy",
+          "confidence": "mapped",
+          "source": "migration",
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "greco_roman_classical",
+          "subForm": "political_philosophy"
+        }
+      }
+    },
+    {
+      "path": "books/c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "id": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+      "data": {
+        "coverAuthority": 70,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777190719,
+          "_nanoseconds": 483000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "openLibrary",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777190719,
+            "_nanoseconds": 483000000
+          }
+        },
+        "isEbookAvailable": false,
+        "createdAt": {
+          "_seconds": 1777190719,
+          "_nanoseconds": 483000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "war and peace",
+          "leo tolstoy's war and peace"
+        ],
+        "literaryForm": "novel",
+        "coverSource": "openLibrary",
+        "canonicalRelations": {
+          "primaryEditionId": "openLibrary:OL19535726W"
+        },
+        "id": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+        "identityKeys": [
+          "canonical:leo tolstoy::war and peace",
+          "canonical:leo tolstoy::leo tolstoy s war and peace",
+          "provider:openLibrary:OL19535726W"
+        ],
+        "normalizedTitle": "war and peace",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "descriptionEn": "War and Peace follows aristocratic families during the Napoleonic wars, weaving battles, domestic life, political change, and philosophical reflection into a large-scale study of history, fate, and human choice.",
+        "workIdentity": {
+          "canonicalKey": "leo tolstoy::war and peace",
+          "mergeKeys": [
+            "leo tolstoy::war and peace",
+            "leo tolstoy::leo tolstoy s war and peace"
+          ],
+          "providerWorkId": "openLibrary:OL19535726W"
+        },
+        "searchableTitleAuthor": "war and peace leo tolstoy",
+        "visibility": "public",
+        "author": "Leo Tolstoy",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "leo tolstoy::war and peace",
+              "mergeKeys": [
+                "leo tolstoy::war and peace",
+                "leo tolstoy::leo tolstoy s war and peace"
+              ],
+              "providerWorkId": "openLibrary:OL19535726W"
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "War and Peace",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "leo tolstoy::war and peace",
+            "acceptedAuthority": "openLibrary"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": [
+              "4d90b8d4-6ed5-4453-88e3-cb85df3ca441"
+            ],
+            "acceptedAuthority": "openLibrary"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "openLibrary",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "openLibrary"
+          }
+        },
+        "editionId": "openLibrary:OL19535726W",
+        "descriptionAr": "",
+        "abstractDescription": "War and Peace follows aristocratic families during the Napoleonic wars, weaving battles, domestic life, political change, and philosophical reflection into a large-scale study of history, fate, and human choice.",
+        "coverUrl": "https://covers.openlibrary.org/b/olid/OL19535726W-L.jpg",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "War and Peace",
+        "fileSize": null,
+        "titleEn": "War and Peace",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": false,
+        "providerExternalIds": [
+          "openLibrary:OL19535726W"
+        ],
+        "authors": [
+          "Leo Tolstoy"
+        ],
+        "downloadable": false,
+        "canonicalAuthorIds": [
+          "4d90b8d4-6ed5-4453-88e3-cb85df3ca441"
+        ],
+        "rightsMode": "public_free",
+        "description": "War and Peace follows aristocratic families during the Napoleonic wars, weaving battles, domestic life, political change, and philosophical reflection into a large-scale study of history, fate, and human choice.",
+        "ebookStoragePath": null,
+        "title": "War and Peace",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Leo Tolstoy",
+            "authorCanonicalKey": "leo tolstoy::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Leo Tolstoy",
+            "authors": [
+              "Leo Tolstoy"
+            ]
+          },
+          "fieldConfidence": {
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "openLibrary"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "leo tolstoy"
+        ],
+        "descriptionAuthority": 70,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777190719,
+            "_nanoseconds": 483000000
+          }
+        },
+        "titleEnNormalized": "war and peace",
+        "descriptionSource": "openLibrary",
+        "storagePath": null,
+        "authorId": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "openLibrary",
+          "lastAcceptedAt": {
+            "_seconds": 1777190719,
+            "_nanoseconds": 483000000
+          }
+        },
+        "bookId": "c0892e34-b521-4963-b3fd-29a8648b8c30",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "leo tolstoy::war and peace",
+        "originalTitle": "War and Peace",
+        "titleAliases": [
+          "Leo Tolstoy's War and peace"
+        ],
+        "workType": "canonical",
+        "authorEn": "Leo Tolstoy",
+        "fileType": null,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "coverState": "FAILED",
+        "authorCanonicalKey": "leo tolstoy::1828",
+        "canonicalFingerprint": "war and peace::leo tolstoy::1828",
+        "publicationYear": 1869,
+        "canonicalTier": "Tier1",
+        "canonicalType": "literary",
+        "canonicalImportance": "civilizational",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777645112,
+          "_nanoseconds": 857000000
+        },
+        "canonicalAuthorityScore": 135,
+        "canonicalTradition": "russian_realism",
+        "form": "novel",
+        "updatedAt": 1777700828275,
+        "ontology": {
+          "tradition": "tradition:russian_realism",
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "russian_literary_tradition"
+        },
+        "search": {
+          "tokens": [
+            "war",
+            "and",
+            "peace",
+            "leo",
+            "tolstoy"
+          ],
+          "form": "novel"
+        }
+      }
+    }
+  ]
+}

@@ -26,6 +26,7 @@ import {
 } from "../firebase.ts";
 import { firestoreAdapter } from "../infrastructure/firebase/firestoreAdapter.ts";
 import { ensureCanonicalAuthor } from "../authors/ensureCanonicalAuthor.ts";
+import type { ResolvedAuthorAuthority } from "../authors/authorAuthorityResolution.ts";
 import { ensureCanonicalBook } from "../books/ensureCanonicalBook.ts";
 import { buildLegacyBookView } from "../books/buildLegacyBookView.ts";
 import type { Author, Book, Review } from "../../types/entities.ts";
@@ -194,6 +195,16 @@ function mapAuthor(data: any, id: string): Author {
     ...(providerSource ? { providerSource } : {}),
     ...(providerExternalId ? { providerExternalId } : {}),
     ...(requiresCanonicalization ? { requiresCanonicalization } : {}),
+    ...(typeof data.lifecycleState === "string" ? { lifecycleState: data.lifecycleState } : {}),
+    ...(typeof data.authorityState === "string" ? { authorityState: data.authorityState } : {}),
+    ...(typeof data.status === "string" ? { status: data.status } : {}),
+    ...(typeof data.canonicalAuthorId === "string" ? { canonicalAuthorId: data.canonicalAuthorId } : {}),
+    ...(typeof data.mergeTargetAuthorId === "string" ? { mergeTargetAuthorId: data.mergeTargetAuthorId } : {}),
+    ...(typeof data.supersededByAuthorId === "string" ? { supersededByAuthorId: data.supersededByAuthorId } : {}),
+    ...(Array.isArray(data.splitTargetAuthorIds) ? { splitTargetAuthorIds: data.splitTargetAuthorIds } : {}),
+    ...(data.archived === true ? { archived: true } : {}),
+    ...(data.isPseudonym === true ? { isPseudonym: true } : {}),
+    ...(typeof data.pseudonymOfAuthorId === "string" ? { pseudonymOfAuthorId: data.pseudonymOfAuthorId } : {}),
   };
 }
 
@@ -701,7 +712,18 @@ export const firebaseCatalogService = {
       | "none";
     totalCanonicalCount: number;
     totalRepairCount: number;
+    suppressedRepairCount: number;
     hasMore: boolean;
+    audit?: {
+      mode: "dry_run";
+      unlinkedNameMatchCount: number;
+      unlinkedNameMatches: Array<{
+        bookId: string;
+        title: string;
+        currentAuthorId: string;
+        reason: "author_name_match_author_id_mismatch";
+      }>;
+    };
   }> {
     if (!authorId) {
       return {
@@ -711,71 +733,31 @@ export const firebaseCatalogService = {
         bibliographyAuthority: "none",
         totalCanonicalCount: 0,
         totalRepairCount: 0,
+        suppressedRepairCount: 0,
         hasMore: false,
       };
     }
 
-    const db = getDbOrThrow();
-    const byAuthorId = query(
-      collection(db, "books"),
-      where("authorId", "==", authorId),
-      limit(AUTHOR_BOOKS_LIMIT)
-    );
-    const canonicalSnap = await getDocs(byAuthorId);
-    const canonicalWorks = canonicalSnap.docs.map((d) => mapBook(d.data(), d.id));
-    let repairWorks: Book[] = [];
-
-    if (canonicalSnap.empty) {
-      const authorSnap = await getDoc(doc(db, "authors", authorId));
-      const fallbackNameEn = authorSnap.exists()
-        ? String(authorSnap.data()?.nameEn || "").trim()
-        : "";
-
-      if (fallbackNameEn) {
-        const byAuthorName = query(
-          collection(db, "books"),
-          where("authorEn", "==", fallbackNameEn),
-          limit(AUTHOR_BOOKS_LIMIT)
-        );
-        const repairSnap = await getDocs(byAuthorName);
-        repairWorks = repairSnap.docs.map((d) => mapBook(d.data(), d.id));
-      }
-    }
-
-    const sortBooks = (books: Book[]) =>
-      books.sort((a, b) => {
-        const publication = (a.publicationDate || "9999-99-99").localeCompare(
-          b.publicationDate || "9999-99-99"
-        );
-        if (publication !== 0) return publication;
-        const title = (a.titleEn || a.title || "").localeCompare(b.titleEn || b.title || "");
-        if (title !== 0) return title;
-        return a.id.localeCompare(b.id);
-      });
-    const sortedCanonicalWorks = sortBooks(canonicalWorks);
-    const canonicalIds = new Set(sortedCanonicalWorks.map((book) => book.id));
-    const sortedRepairWorks = sortBooks(
-      repairWorks.filter((book) => !canonicalIds.has(book.id))
-    );
-    const bibliographyAuthority =
-      sortedCanonicalWorks.length > 0 && sortedRepairWorks.length > 0
-        ? "mixed"
-        : sortedCanonicalWorks.length > 0
-          ? "canonical_author_id"
-          : sortedRepairWorks.length > 0
-            ? "legacy_display_name_repair"
-            : "none";
-    const books = [...sortedCanonicalWorks, ...sortedRepairWorks];
-
-    return {
-      books,
-      canonicalWorks: sortedCanonicalWorks,
-      repairWorks: sortedRepairWorks,
-      bibliographyAuthority,
-      totalCanonicalCount: sortedCanonicalWorks.length,
-      totalRepairCount: sortedRepairWorks.length,
-      hasMore: books.length >= AUTHOR_BOOKS_LIMIT,
-    };
+    return callEndpoint<{ authorId: string }, {
+      books: Book[];
+      canonicalWorks: Book[];
+      repairWorks: Book[];
+      bibliographyAuthority: "canonical_author_id" | "none";
+      totalCanonicalCount: number;
+      totalRepairCount: number;
+      suppressedRepairCount: number;
+      hasMore: boolean;
+      audit: {
+        mode: "dry_run";
+        unlinkedNameMatchCount: number;
+        unlinkedNameMatches: Array<{
+          bookId: string;
+          title: string;
+          currentAuthorId: string;
+          reason: "author_name_match_author_id_mismatch";
+        }>;
+      };
+    }>("listCanonicalAuthorBibliography", { authorId });
   },
 
   async getBooksByAuthor(authorId: string): Promise<Book[]> {
@@ -817,10 +799,24 @@ export const firebaseCatalogService = {
       throw new Error("AUTHOR_ID_MISSING");
     }
 
-    const db = getDbOrThrow();
-    const snap = await getDoc(doc(db, "authors", authorId));
-    if (!snap.exists()) return null;
-    return mapAuthor(snap.data(), snap.id);
+    const resolution = await this.resolveAuthorAuthority(authorId);
+    return resolution.author;
+  },
+
+  async resolveAuthorAuthority(authorId: string): Promise<ResolvedAuthorAuthority> {
+    if (!authorId) {
+      throw new Error("AUTHOR_ID_MISSING");
+    }
+
+    const result = await callEndpoint<{ authorId: string }, ResolvedAuthorAuthority>(
+      "resolveAuthorAuthority",
+      { authorId }
+    );
+
+    return {
+      ...result,
+      author: result.author ? mapAuthor(result.author, result.author.id) : null,
+    };
   },
 
   async createAuthor(author: Author): Promise<void> {
@@ -864,7 +860,23 @@ export const firebaseCatalogService = {
       }
     }
 
-    const authors = docs.map((d) => mapAuthor(d.data(), d.id));
+    const resolved = await Promise.all(
+      docs.map((d) => this.resolveAuthorAuthority(d.id).catch(() => null))
+    );
+    const deduped = new Map<string, Author>();
+    for (const resolution of resolved) {
+      if (!resolution?.author || !resolution.resolvedAuthorId) continue;
+      if (
+        resolution.state === "not_found" ||
+        resolution.state === "candidate" ||
+        resolution.state === "archived" ||
+        resolution.state === "split"
+      ) {
+        continue;
+      }
+      deduped.set(resolution.resolvedAuthorId, resolution.author);
+    }
+    const authors = Array.from(deduped.values());
     authors.sort((a, b) => a.nameEn.localeCompare(b.nameEn));
     return authors;
   },
@@ -897,10 +909,15 @@ export const firebaseCatalogService = {
   async followAuthor(uid: string, authorId: string): Promise<void> {
     if (!uid) throw new Error("UID_MISSING");
     if (!authorId) throw new Error("AUTHOR_ID_MISSING");
+    const resolution = await this.resolveAuthorAuthority(authorId);
+    const targetAuthorId = resolution.resolvedAuthorId;
+    if (!targetAuthorId || resolution.state === "candidate" || resolution.state === "archived" || resolution.state === "split") {
+      throw new Error("AUTHOR_NOT_ACTIVE_CANONICAL");
+    }
 
     const db = getDbOrThrow();
-    const authorRef = doc(db, "authors", authorId);
-    const followRef = doc(db, "users", uid, "follows_authors", authorId);
+    const authorRef = doc(db, "authors", targetAuthorId);
+    const followRef = doc(db, "users", uid, "follows_authors", targetAuthorId);
 
     await runTransaction(db, async (tx) => {
       const authorSnap = await tx.get(authorRef);
@@ -913,7 +930,8 @@ export const firebaseCatalogService = {
 
       tx.set(followRef, {
         uid,
-        authorId,
+        authorId: targetAuthorId,
+        ...(targetAuthorId !== authorId ? { requestedAuthorId: authorId } : {}),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -932,10 +950,12 @@ export const firebaseCatalogService = {
   async unfollowAuthor(uid: string, authorId: string): Promise<void> {
     if (!uid) throw new Error("UID_MISSING");
     if (!authorId) throw new Error("AUTHOR_ID_MISSING");
+    const resolution = await this.resolveAuthorAuthority(authorId);
+    const targetAuthorId = resolution.resolvedAuthorId || authorId;
 
     const db = getDbOrThrow();
-    const authorRef = doc(db, "authors", authorId);
-    const followRef = doc(db, "users", uid, "follows_authors", authorId);
+    const authorRef = doc(db, "authors", targetAuthorId);
+    const followRef = doc(db, "users", uid, "follows_authors", targetAuthorId);
 
     await runTransaction(db, async (tx) => {
       const followSnap = await tx.get(followRef);

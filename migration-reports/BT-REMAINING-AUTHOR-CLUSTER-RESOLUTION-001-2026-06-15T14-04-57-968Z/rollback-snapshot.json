@@ -1,0 +1,1025 @@
+{
+  "migrationId": "BT-REMAINING-AUTHOR-CLUSTER-RESOLUTION-001",
+  "docs": [
+    {
+      "path": "authors/0b0a628f-a706-44ab-a578-95c696f8bee3",
+      "id": "0b0a628f-a706-44ab-a578-95c696f8bee3",
+      "data": {
+        "countryEn": "",
+        "popularityScore": 0,
+        "remoteIds": {},
+        "primarySource": "openLibrary",
+        "aliases": [],
+        "lifespan": "1949-",
+        "bioEn": "",
+        "sourceRecordType": "provider",
+        "workCount": 8,
+        "bioAr": "",
+        "createdAt": {
+          "_seconds": 1776583027,
+          "_nanoseconds": 954000000
+        },
+        "languageAr": "",
+        "enrichmentEligible": true,
+        "nameArNormalized": "gabriel garcia marquez",
+        "topWorks": [
+          {
+            "workId": "OL2454503W",
+            "title": "Alamo"
+          },
+          {
+            "workId": "OL2454504W",
+            "title": "Bumerán"
+          },
+          {
+            "workId": "OL2454505W",
+            "title": "Cien años de soledad [de] Gabriel García Márquez"
+          },
+          {
+            "workId": "OL2454506W",
+            "title": "El inglés"
+          },
+          {
+            "workId": "OL2454507W",
+            "title": "Ensayos del Nuevo Mundo"
+          },
+          {
+            "workId": "OL2454508W",
+            "title": "La narrativa de Manuel Puig"
+          },
+          {
+            "workId": "OL2454509W",
+            "title": "Malaquita"
+          },
+          {
+            "workId": "OL2454510W",
+            "title": "Por un imaginario atlántico"
+          }
+        ],
+        "languageEn": "",
+        "id": "0b0a628f-a706-44ab-a578-95c696f8bee3",
+        "officialLinks": [],
+        "sourceIds": {
+          "googleBooks": "",
+          "openLibrary": "OL340795A",
+          "wikidata": ""
+        },
+        "nameAr": "Gabriel García Márquez",
+        "avatarUrl": "https://covers.openlibrary.org/a/olid/OL340795A-L.jpg",
+        "nameEn": "Gabriel García Márquez",
+        "metadataVersion": 1,
+        "nameEnNormalized": "gabriel garcia marquez",
+        "searchPrefixes": [
+          "ga",
+          "gab",
+          "gabr",
+          "gabri",
+          "gabrie",
+          "gabriel",
+          "gar",
+          "garc",
+          "garci",
+          "garcia",
+          "ma",
+          "mar",
+          "marq",
+          "marqu",
+          "marque",
+          "marquez"
+        ],
+        "searchTokens": [
+          "gabriel",
+          "garcia",
+          "marquez"
+        ],
+        "aliasesNormalized": [],
+        "birthYear": "1949",
+        "deathYear": null,
+        "canonicalKey": "gabriel garcia marquez::1949",
+        "countryAr": "",
+        "providerExternalIds": [
+          "openLibrary:OL340795A"
+        ],
+        "bookIds": [],
+        "updatedAt": {
+          "_seconds": 1776618941,
+          "_nanoseconds": 404000000
+        }
+      }
+    },
+    {
+      "path": "authors/1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "id": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+      "data": {
+        "countryEn": "",
+        "popularityScore": 0,
+        "remoteIds": {},
+        "aliases": [],
+        "lifespan": "",
+        "bioEn": "",
+        "bioAr": "",
+        "createdAt": {
+          "_seconds": 1776183401,
+          "_nanoseconds": 971000000
+        },
+        "languageAr": "",
+        "nameArNormalized": "thomas mann",
+        "languageEn": "",
+        "id": "1a46c5d1-93ef-4b1f-b846-76e86edc90c5",
+        "officialLinks": [],
+        "nameAr": "Thomas Mann",
+        "nameEn": "Thomas Mann",
+        "metadataVersion": 1,
+        "nameEnNormalized": "thomas mann",
+        "searchPrefixes": [
+          "th",
+          "tho",
+          "thom",
+          "thoma",
+          "thomas",
+          "ma",
+          "man",
+          "mann"
+        ],
+        "searchTokens": [
+          "thomas",
+          "mann"
+        ],
+        "aliasesNormalized": [],
+        "birthYear": null,
+        "deathYear": null,
+        "canonicalKey": "thomas mann::unknown",
+        "countryAr": "",
+        "bookIds": [],
+        "primarySource": "openLibrary",
+        "enrichmentEligible": true,
+        "provenance": {},
+        "sourceRecordType": "provider",
+        "authorityLinks": {
+          "isni": "",
+          "wikidataId": "",
+          "goodreadsId": "",
+          "openLibraryId": "OL4065209A",
+          "viaf": "",
+          "wikipediaUrl": ""
+        },
+        "topWorks": [
+          {
+            "workId": "OL31884801W",
+            "title": "The Magic Mountain"
+          }
+        ],
+        "avatarUrl": "https://covers.openlibrary.org/a/olid/OL11584012A-L.jpg",
+        "workCount": 1,
+        "sourceIds": {
+          "googleBooks": "",
+          "wikidata": "",
+          "openLibrary": "OL11584012A"
+        },
+        "providerExternalIds": [
+          "openLibrary:OL4065209A",
+          "openLibrary:OL11584012A"
+        ],
+        "updatedAt": {
+          "_seconds": 1777483867,
+          "_nanoseconds": 232000000
+        }
+      }
+    },
+    {
+      "path": "authors/2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "id": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+      "data": {
+        "countryEn": "",
+        "popularityScore": 0,
+        "remoteIds": {},
+        "aliases": [],
+        "lifespan": "",
+        "bioEn": "",
+        "bioAr": "",
+        "createdAt": {
+          "_seconds": 1776166998,
+          "_nanoseconds": 703000000
+        },
+        "languageAr": "",
+        "nameArNormalized": "gabriel garcia marquez",
+        "languageEn": "",
+        "id": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "officialLinks": [],
+        "metadataVersion": 1,
+        "nameEnNormalized": "gabriel garcia marquez",
+        "searchPrefixes": [
+          "ga",
+          "gab",
+          "gabr",
+          "gabri",
+          "gabrie",
+          "gabriel",
+          "gar",
+          "garc",
+          "garci",
+          "garcia",
+          "ma",
+          "mar",
+          "marq",
+          "marqu",
+          "marque",
+          "marquez"
+        ],
+        "searchTokens": [
+          "gabriel",
+          "garcia",
+          "marquez"
+        ],
+        "aliasesNormalized": [],
+        "birthYear": null,
+        "deathYear": null,
+        "canonicalKey": "gabriel garcia marquez::unknown",
+        "countryAr": "",
+        "bookIds": [],
+        "primarySource": "openLibrary",
+        "enrichmentEligible": true,
+        "topWorks": [
+          {
+            "workId": "OL44097167W",
+            "title": "Cousin Bette by Honoré de Balzac"
+          },
+          {
+            "workId": "OL35314650W",
+            "title": "A Farewell to Arms by Ernest Hemingway"
+          },
+          {
+            "workId": "OL35139538W",
+            "title": "The Maltese Falcon by Dashiell Hammett"
+          },
+          {
+            "workId": "OL34949576W",
+            "title": "The Sorrows of Young Werther by Johann Wolfgang von Goethe"
+          },
+          {
+            "workId": "OL34316637W",
+            "title": "1984 by George Orwell"
+          },
+          {
+            "workId": "OL33696404W",
+            "title": "Memoirs of a Dutiful Daughter by Simone de Beauvoir"
+          },
+          {
+            "workId": "OL33367293W",
+            "title": "The Satanic Verses by Salman Rushdie"
+          },
+          {
+            "workId": "OL33212612W",
+            "title": "The Pillars of the Earth by Ken Follett"
+          },
+          {
+            "workId": "OL31239928W",
+            "title": "Sanctuary by William Faulkner"
+          },
+          {
+            "workId": "OL28943109W",
+            "title": "The Evolution Man, Or, How I Ate My Father by Roy Lewis"
+          },
+          {
+            "workId": "OL28900875W",
+            "title": "Memoirs of Hadrian by Marguerite Yourcenar"
+          },
+          {
+            "workId": "OL28606389W",
+            "title": "One Hundred Years of Solitude by Gabriel García Marquez"
+          }
+        ],
+        "avatarUrl": "https://covers.openlibrary.org/a/olid/OL7479026A-L.jpg",
+        "sourceRecordType": "provider",
+        "workCount": 34,
+        "sourceIds": {
+          "googleBooks": "",
+          "wikidata": "",
+          "openLibrary": "OL7479026A"
+        },
+        "providerExternalIds": [
+          "openLibrary:OL7479026A"
+        ],
+        "provenance": {},
+        "nameAr": "Gabriel Garcia Marquez",
+        "authorityLinks": {
+          "isni": "",
+          "wikidataId": "",
+          "goodreadsId": "",
+          "openLibraryId": "OL7479026A",
+          "viaf": "",
+          "wikipediaUrl": ""
+        },
+        "nameEn": "Gabriel Garcia Marquez",
+        "updatedAt": {
+          "_seconds": 1777400357,
+          "_nanoseconds": 942000000
+        }
+      }
+    },
+    {
+      "path": "authors/4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "id": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+      "data": {
+        "countryEn": "",
+        "popularityScore": 0,
+        "remoteIds": {
+          "lc_naf": "n79003258",
+          "opac_sbn": "CFIV006896",
+          "isni": "0000000385505720",
+          "bookbrainz": "ac210bfa-7f53-48f5-8930-05972d900bea",
+          "goodreads": "236",
+          "wikidata": "Q345612",
+          "librarything": "bloomharold",
+          "viaf": "191378696"
+        },
+        "primarySource": "openLibrary",
+        "aliases": [
+          "Sterling Professor of Humanities Harold Bloom",
+          "Harold BLOOM",
+          "HAROLD BLOOM",
+          "Professor Harold Bloom",
+          "Bloom, Ed, Harold",
+          "Ed Harold Bloom",
+          "Harold Selected By Bloom",
+          "Harold (editor) BLOOM",
+          "Bloom, Harold, Editor",
+          "Harold Irving Bloom"
+        ],
+        "lifespan": "1930-2019",
+        "bioEn": "Harold Bloom is an American literary critic and Sterling Professor of Humanities at Yale University. Since the publication of his first book in 1959, Bloom has written more than 20 books of literary criticism, several books discussing religion, and a novel. He has edited hundreds of anthologies concerning numerous literary and philosophical figures for the Chelsea House publishing firm. Bloom's books have been translated into more than 40 languages. - Wikipedia",
+        "sourceRecordType": "provider",
+        "workCount": 2329,
+        "bioAr": "ناقد أدبي وصحفي وأستاذ جامعي وكاتب أمريكي",
+        "createdAt": {
+          "_seconds": 1776700003,
+          "_nanoseconds": 892000000
+        },
+        "languageAr": "",
+        "enrichmentEligible": true,
+        "provenance": {},
+        "nameArNormalized": "هارولد بلوم",
+        "topWorks": [
+          {
+            "workId": "OL44897616W",
+            "title": "Kabbala"
+          },
+          {
+            "workId": "OL38369005W",
+            "title": "Ralph Waldo Emerson"
+          },
+          {
+            "workId": "OL44419679W",
+            "title": "Mont Blanc"
+          },
+          {
+            "workId": "OL18330048W",
+            "title": "Sophocles"
+          },
+          {
+            "workId": "OL18272949W",
+            "title": "Katherine Anne Porter"
+          },
+          {
+            "workId": "OL35093511W",
+            "title": "Shakespeare"
+          },
+          {
+            "workId": "OL40018771W",
+            "title": "Franz Kafka"
+          },
+          {
+            "workId": "OL18719308W",
+            "title": "Upton Sinclair's The jungle"
+          },
+          {
+            "workId": "OL21548910W",
+            "title": "Western Canon"
+          },
+          {
+            "workId": "OL37591804W",
+            "title": "Classic Horror Writers"
+          },
+          {
+            "workId": "OL39755223W",
+            "title": "Grapes of Wrath - John Steinbeck"
+          },
+          {
+            "workId": "OL40074605W",
+            "title": "Herman Melville"
+          }
+        ],
+        "languageEn": "",
+        "id": "4d90b8d4-6ed5-4453-88e3-cb85df3ca441",
+        "authorityLinks": {
+          "isni": "",
+          "wikidataId": "Q345612",
+          "goodreadsId": "",
+          "openLibraryId": "OL29809A",
+          "viaf": "",
+          "wikipediaUrl": ""
+        },
+        "officialLinks": [],
+        "sourceIds": {
+          "googleBooks": "",
+          "openLibrary": "OL29809A",
+          "wikidata": "Q345612"
+        },
+        "nameAr": "هارولد بلوم",
+        "avatarUrl": "https://covers.openlibrary.org/a/olid/OL29809A-L.jpg",
+        "nameEn": "Gabriel Garcia Marquez",
+        "metadataVersion": 1,
+        "nameEnNormalized": "gabriel garcia marquez",
+        "searchPrefixes": [
+          "ga",
+          "gab",
+          "gabr",
+          "gabri",
+          "gabrie",
+          "gabriel",
+          "gar",
+          "garc",
+          "garci",
+          "garcia",
+          "ma",
+          "mar",
+          "marq",
+          "marqu",
+          "marque",
+          "marquez",
+          "ها",
+          "هار",
+          "هارو",
+          "هارول",
+          "هارولد",
+          "بل",
+          "بلو",
+          "بلوم",
+          "st",
+          "ste",
+          "ster",
+          "sterl",
+          "sterli",
+          "sterlin",
+          "sterling",
+          "pr",
+          "pro",
+          "prof",
+          "profe",
+          "profes",
+          "profess",
+          "professo",
+          "professor",
+          "of",
+          "hu",
+          "hum",
+          "huma",
+          "human",
+          "humani",
+          "humanit",
+          "humaniti",
+          "humanitie",
+          "humanities",
+          "ha",
+          "har",
+          "haro",
+          "harol",
+          "harold",
+          "bl",
+          "blo",
+          "bloo",
+          "bloom",
+          "ed",
+          "se",
+          "sel",
+          "sele",
+          "selec",
+          "select",
+          "selecte",
+          "selected",
+          "by",
+          "edi",
+          "edit",
+          "edito",
+          "editor",
+          "ir",
+          "irv",
+          "irvi",
+          "irvin",
+          "irving"
+        ],
+        "searchTokens": [
+          "gabriel",
+          "garcia",
+          "marquez",
+          "هارولد",
+          "بلوم",
+          "sterling",
+          "professor",
+          "of",
+          "humanities",
+          "harold",
+          "bloom",
+          "ed",
+          "selected",
+          "by",
+          "editor",
+          "irving"
+        ],
+        "aliasesNormalized": [
+          "sterling professor of humanities harold bloom",
+          "harold bloom",
+          "professor harold bloom",
+          "bloom, ed, harold",
+          "ed harold bloom",
+          "harold selected by bloom",
+          "harold (editor) bloom",
+          "bloom, harold, editor",
+          "harold irving bloom"
+        ],
+        "birthYear": "1930",
+        "deathYear": "2019",
+        "canonicalKey": "gabriel garcia marquez::1930",
+        "countryAr": "",
+        "providerExternalIds": [
+          "openLibrary:OL29809A"
+        ],
+        "bookIds": [],
+        "updatedAt": {
+          "_seconds": 1777189132,
+          "_nanoseconds": 306000000
+        }
+      }
+    },
+    {
+      "path": "books/73eebdf4-baea-4956-9e05-0416d9f56f56",
+      "id": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+      "data": {
+        "coverAuthority": 90,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777539082,
+          "_nanoseconds": 287000000
+        },
+        "searchedPhrase": null,
+        "source": "googleBooks",
+        "originalLanguageAuthority": {
+          "confidence": "medium",
+          "source": "googleBooks",
+          "lastAcceptedAt": {
+            "_seconds": 1777539082,
+            "_nanoseconds": 287000000
+          }
+        },
+        "isEbookAvailable": false,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "PENDING"
+        },
+        "createdAt": {
+          "_seconds": 1777539082,
+          "_nanoseconds": 287000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "the autumn of the patriarch"
+        ],
+        "coverSource": "googleBooks",
+        "canonicalRelations": {
+          "primaryEditionId": "googleBooks:6HqbVWJl79wC"
+        },
+        "id": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+        "identityKeys": [
+          "canonical:gabriel garcia marquez::the autumn of the patriarch",
+          "provider:googleBooks:6HqbVWJl79wC"
+        ],
+        "normalizedTitle": "the autumn of the patriarch",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "descriptionEn": "",
+        "workIdentity": {
+          "canonicalKey": "gabriel garcia marquez::the autumn of the patriarch",
+          "mergeKeys": [
+            "gabriel garcia marquez::the autumn of the patriarch"
+          ]
+        },
+        "searchableTitleAuthor": "the autumn of the patriarch gabriel garcia marquez",
+        "visibility": "public",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": false,
+            "value": {
+              "canonicalKey": "gabriel garcia marquez::the autumn of the patriarch",
+              "mergeKeys": [
+                "gabriel garcia marquez::the autumn of the patriarch"
+              ]
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "medium",
+            "source": "googleBooks",
+            "locked": true,
+            "value": "The Autumn of the Patriarch",
+            "acceptedAuthority": "googleBooks"
+          },
+          "canonicalKey": {
+            "confidence": "medium",
+            "source": "googleBooks",
+            "locked": true,
+            "value": "gabriel garcia marquez::the autumn of the patriarch",
+            "acceptedAuthority": "googleBooks"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "medium",
+            "source": "googleBooks",
+            "locked": true,
+            "value": [
+              "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+            ],
+            "acceptedAuthority": "googleBooks"
+          },
+          "originalLanguage": {
+            "confidence": "medium",
+            "source": "googleBooks",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "googleBooks"
+          }
+        },
+        "editionId": "googleBooks:6HqbVWJl79wC",
+        "descriptionAr": "",
+        "abstractDescription": "",
+        "coverUrl": "https://books.google.com/books/content?id=6HqbVWJl79wC&printsec=frontcover&img=1&zoom=0&edge=curl&source=gbs_api",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "The Autumn of the Patriarch",
+        "fileSize": null,
+        "titleEn": "The Autumn of the Patriarch",
+        "isbn13": "9780140157536",
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": "0140157530",
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": true,
+        "providerExternalIds": [
+          "googleBooks:6HqbVWJl79wC"
+        ],
+        "authors": [
+          "Gabriel Garcia Marquez"
+        ],
+        "downloadable": false,
+        "canonicalAuthorIds": [
+          "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "The Autumn of the Patriarch",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Gabriel Garcia Marquez",
+            "authorCanonicalKey": "gabriel garcia marquez::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Gabriel Garcia Marquez",
+            "authors": [
+              "Gabriel Garcia Marquez"
+            ]
+          },
+          "fieldConfidence": {
+            "publicationYear": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "googleBooks"
+            },
+            "publisher": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "googleBooks"
+            },
+            "language": {
+              "supportingSources": [],
+              "confidence": "direct",
+              "source": "googleBooks"
+            }
+          }
+        },
+        "authorNamesNormalized": [
+          "gabriel garcia marquez"
+        ],
+        "descriptionAuthority": null,
+        "titleAuthority": {
+          "confidence": "medium",
+          "source": "googleBooks",
+          "lastAcceptedAt": {
+            "_seconds": 1777539082,
+            "_nanoseconds": 287000000
+          }
+        },
+        "titleEnNormalized": "the autumn of the patriarch",
+        "descriptionSource": null,
+        "storagePath": null,
+        "authorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "medium",
+          "source": "googleBooks",
+          "lastAcceptedAt": {
+            "_seconds": 1777539082,
+            "_nanoseconds": 287000000
+          }
+        },
+        "bookId": "73eebdf4-baea-4956-9e05-0416d9f56f56",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "gabriel garcia marquez::the autumn of the patriarch",
+        "originalTitle": "The Autumn of the Patriarch",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Gabriel Garcia Marquez",
+        "fileType": null,
+        "coverFailureCode": "INVALID_BOOK_SOURCE",
+        "coverState": "FAILED_FATAL",
+        "coverFailureMessage": "Cover job source must be user_upload.",
+        "coverUpdatedAt": {
+          "_seconds": 1777539082,
+          "_nanoseconds": 606000000
+        },
+        "literaryForm": "novel",
+        "author": "Gabriel García Márquez",
+        "authorCanonicalKey": "gabriel garcia marquez::1927",
+        "description": "A dense political novel by Gabriel García Márquez portraying absolute power, decay, and solitude through the figure of an aging dictator.",
+        "publicationYear": 1975,
+        "language": "es",
+        "canonicalFingerprint": "the autumn of the patriarch::gabriel garcia marquez::1927",
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777635924,
+          "_nanoseconds": 962000000
+        },
+        "canonicalAuthorityScore": 75,
+        "canonicalImportance": "standard",
+        "canonicalTradition": "novel_tradition",
+        "form": "novel",
+        "updatedAt": 1777700805051,
+        "ontology": {
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "source": "migration",
+          "subForm": null,
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "latin_american_magical_realism"
+        },
+        "search": {
+          "tokens": [
+            "the",
+            "autumn",
+            "of",
+            "patriarch",
+            "gabriel",
+            "garcia",
+            "marquez",
+            "9780140157536",
+            "0140157530"
+          ],
+          "form": "novel"
+        }
+      }
+    },
+    {
+      "path": "books/be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+      "id": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+      "data": {
+        "coverAuthority": null,
+        "popularityScore": 0,
+        "fileName": null,
+        "recentActivityAt": {
+          "_seconds": 1777400357,
+          "_nanoseconds": 942000000
+        },
+        "searchedPhrase": null,
+        "language": "en",
+        "source": "canonical_seed",
+        "originalLanguageAuthority": {
+          "confidence": "high",
+          "source": "canonical_seed",
+          "lastAcceptedAt": {
+            "_seconds": 1777400357,
+            "_nanoseconds": 942000000
+          }
+        },
+        "isEbookAvailable": false,
+        "cover": {
+          "small": "",
+          "original": "",
+          "large": "",
+          "medium": "",
+          "state": "FAILED"
+        },
+        "createdAt": {
+          "_seconds": 1777400357,
+          "_nanoseconds": 942000000
+        },
+        "authorityStatus": "canonical",
+        "canonicalTitleAuthorities": [
+          "one hundred years of solitude"
+        ],
+        "coverSource": null,
+        "canonicalRelations": {},
+        "coverState": "FAILED",
+        "id": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+        "identityKeys": [
+          "canonical:gabriel garcia marquez::one hundred years of solitude"
+        ],
+        "normalizedTitle": "one hundred years of solitude",
+        "sourcePriority": "canonical",
+        "canonicalLocked": true,
+        "workIdentity": {
+          "canonicalKey": "gabriel garcia marquez::one hundred years of solitude",
+          "mergeKeys": [
+            "gabriel garcia marquez::one hundred years of solitude"
+          ]
+        },
+        "searchableTitleAuthor": "one hundred years of solitude gabriel garcia marquez",
+        "visibility": "public",
+        "author": "Gabriel Garcia Marquez",
+        "canonicalFieldTrust": {
+          "workIdentity": {
+            "confidence": "high",
+            "source": "booktown_canonical",
+            "locked": true,
+            "value": {
+              "canonicalKey": "gabriel garcia marquez::one hundred years of solitude",
+              "mergeKeys": [
+                "gabriel garcia marquez::one hundred years of solitude"
+              ]
+            },
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalTitle": {
+            "confidence": "high",
+            "source": "canonical_seed",
+            "locked": true,
+            "value": "One Hundred Years of Solitude",
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalKey": {
+            "confidence": "high",
+            "source": "canonical_seed",
+            "locked": true,
+            "value": "gabriel garcia marquez::one hundred years of solitude",
+            "acceptedAuthority": "manualAuthority"
+          },
+          "canonicalAuthorIds": {
+            "confidence": "high",
+            "source": "canonical_seed",
+            "locked": true,
+            "value": [
+              "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+            ],
+            "acceptedAuthority": "manualAuthority"
+          },
+          "originalLanguage": {
+            "confidence": "high",
+            "source": "canonical_seed",
+            "locked": true,
+            "value": "en",
+            "acceptedAuthority": "manualAuthority"
+          }
+        },
+        "descriptionAr": "",
+        "coverUrl": "",
+        "ebookAttachmentId": null,
+        "canonicalTitle": "One Hundred Years of Solitude",
+        "fileSize": null,
+        "titleEn": "One Hundred Years of Solitude",
+        "isbn13": null,
+        "epubStoragePath": null,
+        "hasEbook": false,
+        "isbn10": null,
+        "externalReadableSources": [],
+        "ownerUid": null,
+        "titleAr": "",
+        "needsEnrichment": true,
+        "providerExternalIds": [],
+        "authors": [
+          "Gabriel Garcia Marquez"
+        ],
+        "downloadable": false,
+        "canonicalAuthorIds": [
+          "2511fa3b-7d4f-48d1-a418-1d0132c04009"
+        ],
+        "rightsMode": "public_free",
+        "ebookStoragePath": null,
+        "title": "One Hundred Years of Solitude",
+        "literaryAuthorityClass": "classic_work",
+        "publicationState": "published",
+        "provenance": {
+          "seedAuthorLock": {
+            "author": "Gabriel Garcia Marquez",
+            "authorCanonicalKey": "gabriel garcia marquez::unknown",
+            "source": "canonical_seed",
+            "authorEn": "Gabriel Garcia Marquez",
+            "authors": [
+              "Gabriel Garcia Marquez"
+            ]
+          }
+        },
+        "authorNamesNormalized": [
+          "gabriel garcia marquez"
+        ],
+        "descriptionAuthority": null,
+        "titleAuthority": {
+          "confidence": "high",
+          "source": "canonical_seed",
+          "lastAcceptedAt": {
+            "_seconds": 1777400357,
+            "_nanoseconds": 942000000
+          }
+        },
+        "titleEnNormalized": "one hundred years of solitude",
+        "descriptionSource": null,
+        "storagePath": null,
+        "authorId": "2511fa3b-7d4f-48d1-a418-1d0132c04009",
+        "originalLanguage": "en",
+        "abstractDescriptionAuthority": {
+          "confidence": "high",
+          "source": "canonical_seed",
+          "lastAcceptedAt": {
+            "_seconds": 1777400357,
+            "_nanoseconds": 942000000
+          }
+        },
+        "bookId": "be5dae27-b6d3-4e32-92d3-8427da5f88a6",
+        "engagementScore": 0,
+        "acquiredFromProvider": null,
+        "authorAr": "",
+        "canonicalKey": "gabriel garcia marquez::one hundred years of solitude",
+        "originalTitle": "One Hundred Years of Solitude",
+        "titleAliases": [],
+        "workType": "canonical",
+        "authorEn": "Gabriel Garcia Marquez",
+        "fileType": null,
+        "descriptionEn": "One Hundred Years of Solitude follows the Buendia family and the town of Macondo across generations, blending history, myth, solitude, desire, and political violence.",
+        "literaryForm": "novel",
+        "description": "One Hundred Years of Solitude follows the Buendia family and the town of Macondo across generations, blending history, myth, solitude, desire, and political violence.",
+        "abstractDescription": "One Hundred Years of Solitude follows the Buendia family and the town of Macondo across generations, blending history, myth, solitude, desire, and political violence.",
+        "authorCanonicalKey": "gabriel garcia marquez::1927",
+        "canonicalFingerprint": "one hundred years of solitude::gabriel garcia marquez::1927",
+        "inferredYear": true,
+        "publicationYear": 1967,
+        "canonicalTier": "Tier2",
+        "canonicalType": "literary",
+        "canonicalImportance": "civilizational",
+        "canonicalAuthorityScoreUpdatedAt": {
+          "_seconds": 1777648211,
+          "_nanoseconds": 378000000
+        },
+        "canonicalAuthorityScore": 100,
+        "canonicalTradition": "magical_realism",
+        "form": "novel",
+        "updatedAt": 1777700827969,
+        "search": {
+          "tokens": [
+            "one",
+            "hundred",
+            "years",
+            "of",
+            "solitude",
+            "gabriel",
+            "garcia",
+            "marquez"
+          ],
+          "form": "novel"
+        },
+        "ontology": {
+          "tradition": "tradition:magical_realism",
+          "schemaVersion": 1,
+          "form": "novel",
+          "confidence": "mapped",
+          "source": "migration",
+          "updatedAt": {
+            "_seconds": 1777971688,
+            "_nanoseconds": 529000000
+          },
+          "canonicalTradition": "latin_american_magical_realism",
+          "subForm": "magical_realism"
+        }
+      }
+    }
+  ]
+}

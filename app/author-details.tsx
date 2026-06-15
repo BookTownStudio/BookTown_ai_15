@@ -1,4 +1,4 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useNavigation } from "../store/navigation.tsx";
 import { useI18n } from "../store/i18n.tsx";
 import { useAuthorDetailsAuthority } from "../lib/hooks/useAuthorDetailsAuthority.ts";
@@ -15,7 +15,11 @@ import { ChevronLeftIcon } from "../components/icons/ChevronLeftIcon.tsx";
 import AuthorIdentityModule from "../components/authors/AuthorIdentityModule.tsx";
 import AuthorCanonModule from "../components/authors/AuthorCanonModule.tsx";
 import AuthorVoiceModule from "../components/authors/AuthorVoiceModule.tsx";
+import AuthorReaderMemoryModule from "../components/authors/AuthorReaderMemoryModule.tsx";
+import AuthorContinueModule from "../components/authors/AuthorContinueModule.tsx";
 import { buildAuthorCanonModel } from "../lib/authors/authorCanon.ts";
+import { useAuthorReaderMemory } from "../lib/hooks/useAuthorReaderMemory.ts";
+import { useSaveBookmark } from "../lib/hooks/useSaveQuote.ts";
 
 const AUTHOR_DETAILS_QUOTE_LIMIT = 6;
 
@@ -26,19 +30,19 @@ const AuthorDetailsScreen: React.FC = () => {
   const authorId = currentView.type === "immersive" ? currentView.params?.authorId : undefined;
 
   const {
-    data: books = [],
-    isLoading: isBooksLoading,
-    bibliographyAuthority,
-    bibliography,
-  } = useBooksByAuthor(authorId);
-  const {
     data: authorityView,
     author,
     isLoading,
     isError,
     authorityState,
-  } = useAuthorDetailsAuthority(authorId, bibliographyAuthority);
+  } = useAuthorDetailsAuthority(authorId);
   const canonicalAuthorId = authorityView?.authorRef.entityId;
+  const {
+    data: books = [],
+    isLoading: isBooksLoading,
+    bibliographyAuthority,
+    bibliography,
+  } = useBooksByAuthor(canonicalAuthorId);
   const { data: quotes = [], isLoading: isQuotesLoading } = useDiscoverQuotes({
     authorId: canonicalAuthorId,
     limit: AUTHOR_DETAILS_QUOTE_LIMIT,
@@ -48,11 +52,28 @@ const AuthorDetailsScreen: React.FC = () => {
 
   const { mutate: followAuthor, isPending: isFollowing } = useFollowAuthor();
   const { mutate: unfollowAuthor, isPending: isUnfollowing } = useUnfollowAuthor();
+  const { mutate: saveBookmark } = useSaveBookmark();
   const canonicalWorks = bibliography?.canonicalWorks ?? books;
   const repairWorks = bibliography?.repairWorks ?? [];
   const visibleQuotes = quotes.slice(0, AUTHOR_DETAILS_QUOTE_LIMIT);
   const isFollowActionPending = isFollowing || isUnfollowing || isFollowStateLoading;
   const canon = useMemo(() => buildAuthorCanonModel(canonicalWorks), [canonicalWorks]);
+  const { data: readerMemory, isLoading: isReaderMemoryLoading } = useAuthorReaderMemory({
+    authorId: canonicalAuthorId,
+    canonicalWorks,
+    quotes: visibleQuotes,
+    isFollowed: isAuthorFollowed,
+  });
+
+  useEffect(() => {
+    const targetAuthorId = authorityView?.redirect?.targetAuthorId;
+    if (!authorityView?.redirect?.required || !targetAuthorId || targetAuthorId === authorId) return;
+    navigate({
+      type: "immersive",
+      id: "authorDetails",
+      params: { ...currentView.params, authorId: targetAuthorId, redirectedFromAuthorId: authorId },
+    });
+  }, [authorityView?.redirect?.required, authorityView?.redirect?.targetAuthorId, authorId, currentView.params, navigate]);
 
   const handleBack = () => {
     const fromView = currentView.params?.from;
@@ -133,6 +154,31 @@ const AuthorDetailsScreen: React.FC = () => {
     navigate({ type: "immersive", id: "bookDetails", params: { bookId, from: currentView } });
   };
 
+  const handleSaveQuote = (quoteId: string) => {
+    saveBookmark(
+      { entityId: quoteId, type: "quote" },
+      {
+        onSuccess: () => {
+          showToast(lang === "en" ? "Quote saved." : "تم حفظ الاقتباس.");
+        },
+        onError: () => {
+          showToast(lang === "en" ? "Failed to save quote." : "تعذر حفظ الاقتباس.");
+        },
+      }
+    );
+  };
+
+  const handleShareQuote = (quoteId: string) => {
+    navigate({
+      type: "immersive",
+      id: "postComposer",
+      params: {
+        from: currentView,
+        attachment: { type: "quote", id: quoteId },
+      },
+    });
+  };
+
   if (isLoading) {
     return (
       <div className="h-screen w-full flex flex-col items-center justify-center gap-4 bg-slate-900 px-6">
@@ -189,6 +235,18 @@ const AuthorDetailsScreen: React.FC = () => {
             onViewQuotes={handleViewQuotes}
           />
 
+          <AuthorReaderMemoryModule
+            memory={readerMemory}
+            isLoading={isReaderMemoryLoading}
+            lang={lang}
+          />
+
+          <AuthorContinueModule
+            continuation={readerMemory?.continuation}
+            lang={lang}
+            onBookClick={handleBookClick}
+          />
+
           <AuthorCanonModule
             canon={canon}
             isLoading={isBooksLoading}
@@ -208,6 +266,8 @@ const AuthorDetailsScreen: React.FC = () => {
             onViewAll={handleViewQuotes}
             onQuoteClick={handleQuoteClick}
             onQuoteSourceClick={handleQuoteSourceClick}
+            onSaveQuote={handleSaveQuote}
+            onShareQuote={handleShareQuote}
           />
         </div>
       </main>

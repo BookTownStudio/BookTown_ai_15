@@ -1128,6 +1128,83 @@ const catalogBookSchema = z
   })
   .strict();
 
+const canonicalAuthorBibliographyAuditSchema = z
+  .object({
+    mode: z.literal("dry_run"),
+    unlinkedNameMatchCount: z.number().int().nonnegative(),
+    unlinkedNameMatches: z.array(
+      z
+        .object({
+          bookId: z.string().min(1),
+          title: z.string().min(1).max(300),
+          currentAuthorId: z.string().max(256),
+          reason: z.literal("author_name_match_author_id_mismatch"),
+        })
+        .strict()
+    ),
+  })
+  .strict();
+
+const canonicalAuthorBibliographyResponseSchema = z
+  .object({
+    books: z.array(catalogBookSchema),
+    canonicalWorks: z.array(catalogBookSchema),
+    repairWorks: z.array(catalogBookSchema),
+    bibliographyAuthority: z.enum(["canonical_author_id", "none"]),
+    totalCanonicalCount: z.number().int().nonnegative(),
+    totalRepairCount: z.number().int().nonnegative(),
+    suppressedRepairCount: z.number().int().nonnegative(),
+    hasMore: z.boolean(),
+    audit: canonicalAuthorBibliographyAuditSchema,
+  })
+  .strict();
+
+const authorAuthorityResolutionSchema = z
+  .object({
+    requestedAuthorId: z.string().min(1).max(256),
+    resolvedAuthorId: z.string().min(1).max(256).nullable(),
+    state: z.enum(["canonical", "merged", "superseded", "archived", "candidate", "split", "not_found"]),
+    author: z
+      .object({
+        id: z.string().min(1).max(256),
+        nameEn: z.string(),
+        nameAr: z.string(),
+        avatarUrl: z.string(),
+        bioEn: z.string(),
+        bioAr: z.string(),
+        lifespan: z.string(),
+        countryEn: z.string(),
+        countryAr: z.string(),
+        languageEn: z.string(),
+        languageAr: z.string(),
+        signatureQuoteEn: z.string().optional(),
+        signatureQuoteAr: z.string().optional(),
+        providerSource: z.string().optional(),
+        providerExternalId: z.string().optional(),
+        requiresCanonicalization: z.boolean().optional(),
+        lifecycleState: z.string().optional(),
+        authorityState: z.string().optional(),
+        status: z.string().optional(),
+        canonicalAuthorId: z.string().optional(),
+        mergeTargetAuthorId: z.string().optional(),
+        supersededByAuthorId: z.string().optional(),
+        splitTargetAuthorIds: z.array(z.string()).optional(),
+        archived: z.boolean().optional(),
+        isPseudonym: z.boolean().optional(),
+        pseudonymOfAuthorId: z.string().optional(),
+      })
+      .strict()
+      .nullable(),
+    redirect: z
+      .object({
+        required: z.boolean(),
+        targetAuthorId: z.string().min(1).max(256).nullable(),
+        reason: z.string().min(1).max(80),
+      })
+      .strict(),
+  })
+  .strict();
+
 const continuityStarterSelectionSchema = z.discriminatedUnion("kind", [
   z
     .object({
@@ -3167,6 +3244,41 @@ export const apiContracts = {
       "httpsCallable",
       {
         callSites: ["lib/services/firebaseCatalogService.ts"],
+      }
+    ),
+
+    listCanonicalAuthorBibliography: defineContract(
+      z
+        .object({
+          authorId: z.string().min(1).max(256),
+        })
+        .strict(),
+      canonicalAuthorBibliographyResponseSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useBooksByAuthor.ts",
+          "app/author-details.tsx",
+          "app/drawer/books.tsx",
+        ],
+      }
+    ),
+
+    resolveAuthorAuthority: defineContract(
+      z
+        .object({
+          authorId: z.string().min(1).max(256),
+        })
+        .strict(),
+      authorAuthorityResolutionSchema,
+      "httpsCallable",
+      {
+        callSites: [
+          "lib/services/firebaseCatalogService.ts",
+          "lib/hooks/useAuthorDetailsAuthority.ts",
+          "app/author-details.tsx",
+        ],
       }
     ),
 

@@ -1,13 +1,16 @@
 import { useMemo } from "react";
 import type { EntitySummary, LiteraryEntityRef } from "../../contracts/entityPlatform";
+import { dataService } from "../../services/dataService.ts";
+import { useQuery } from "../react-query.ts";
+import { queryKeys } from "../queryKeys.ts";
 import { toAuthorEntitySummary } from "../authors/authorEntitySummaryAdapter.ts";
+import type { ResolvedAuthorAuthority } from "../authors/authorAuthorityResolution.ts";
 import {
   resolveAuthorRuntimeLifecycle,
   type AuthorDetailsAuthorityState,
   type AuthorLifecycleResolution,
 } from "../authors/authorLifecycle.ts";
 import type { Author } from "../../types/entities.ts";
-import { useAuthorDetails } from "./useAuthorDetails.ts";
 
 export type AuthorDetailsBibliographyAuthority =
   | "canonical_author_id"
@@ -22,6 +25,8 @@ export interface AuthorDetailsAuthorityView {
   readonly authorityState: AuthorDetailsAuthorityState;
   readonly bibliographyAuthority: AuthorDetailsBibliographyAuthority;
   readonly lifecycle: AuthorLifecycleResolution;
+  readonly requestedAuthorId: string;
+  readonly redirect: ResolvedAuthorAuthority["redirect"];
 }
 
 export interface UseAuthorDetailsAuthorityResult {
@@ -30,6 +35,7 @@ export interface UseAuthorDetailsAuthorityResult {
   readonly isLoading: boolean;
   readonly isError: boolean;
   readonly authorityState: AuthorDetailsAuthorityState;
+  readonly resolution: ResolvedAuthorAuthority | null | undefined;
 }
 
 export function resolveAuthorDetailsAuthorityState(
@@ -47,6 +53,8 @@ export function buildAuthorDetailsAuthorityView(params: {
   readonly authorityState: AuthorDetailsAuthorityState;
   readonly bibliographyAuthority: AuthorDetailsBibliographyAuthority;
   readonly lifecycle?: AuthorLifecycleResolution;
+  readonly requestedAuthorId?: string;
+  readonly redirect?: ResolvedAuthorAuthority["redirect"];
 }): AuthorDetailsAuthorityView | null {
   if (
     !params.author ||
@@ -72,6 +80,12 @@ export function buildAuthorDetailsAuthorityView(params: {
     authorityState: params.authorityState,
     bibliographyAuthority: params.bibliographyAuthority,
     lifecycle,
+    requestedAuthorId: params.requestedAuthorId ?? params.authorId,
+    redirect: params.redirect ?? {
+      required: false,
+      targetAuthorId: null,
+      reason: "active_author",
+    },
   };
 }
 
@@ -79,19 +93,34 @@ export function useAuthorDetailsAuthority(
   authorId: string | undefined,
   bibliographyAuthority: AuthorDetailsBibliographyAuthority = "none"
 ): UseAuthorDetailsAuthorityResult {
-  const { data: author, isLoading, isError } = useAuthorDetails(authorId);
-  const lifecycle = resolveAuthorRuntimeLifecycle({ authorId, author, isLoading, isError });
+  const normalizedAuthorId = typeof authorId === "string" ? authorId.trim() : "";
+  const {
+    data: resolution,
+    isLoading: isResolving,
+    isError: isResolveError,
+  } = useQuery<ResolvedAuthorAuthority | null>({
+    queryKey: [...(queryKeys.catalog.author(normalizedAuthorId || undefined) as unknown as any[]), "authorityResolution"],
+    queryFn: () => dataService.catalog.resolveAuthorAuthority(normalizedAuthorId),
+    enabled: normalizedAuthorId.length > 0,
+  });
+  const author = resolution?.author;
+  const resolvedAuthorId = resolution?.resolvedAuthorId ?? normalizedAuthorId;
+  const isLoading = isResolving;
+  const isError = isResolveError;
+  const lifecycle = resolveAuthorRuntimeLifecycle({ authorId: resolvedAuthorId, author, isLoading, isError });
   const authorityState = lifecycle.authorityState;
 
   const data = useMemo<AuthorDetailsAuthorityView | null>(() => {
     return buildAuthorDetailsAuthorityView({
-      authorId,
+      authorId: resolvedAuthorId,
       author,
       authorityState,
       bibliographyAuthority,
       lifecycle,
+      requestedAuthorId: normalizedAuthorId,
+      redirect: resolution?.redirect,
     });
-  }, [author, authorId, authorityState, bibliographyAuthority, lifecycle]);
+  }, [author, resolvedAuthorId, authorityState, bibliographyAuthority, lifecycle, normalizedAuthorId, resolution?.redirect]);
 
   return {
     data,
@@ -99,5 +128,6 @@ export function useAuthorDetailsAuthority(
     isLoading,
     isError,
     authorityState,
+    resolution,
   };
 }

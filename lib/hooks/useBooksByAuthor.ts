@@ -19,7 +19,18 @@ export interface BooksByAuthorWithAuthority {
   readonly bibliographyAuthority: BibliographyAuthority;
   readonly totalCanonicalCount?: number;
   readonly totalRepairCount?: number;
+  readonly suppressedRepairCount?: number;
   readonly hasMore?: boolean;
+  readonly audit?: {
+    readonly mode: "dry_run";
+    readonly unlinkedNameMatchCount: number;
+    readonly unlinkedNameMatches: readonly {
+      readonly bookId: string;
+      readonly title: string;
+      readonly currentAuthorId: string;
+      readonly reason: "author_name_match_author_id_mismatch";
+    }[];
+  };
 }
 
 type CatalogWithBibliographyAuthority = typeof dataService.catalog & {
@@ -44,6 +55,7 @@ export const useBooksByAuthor = (authorId: string | undefined) => {
                     totalCanonicalCount: result.totalCanonicalCount ?? model.totalCanonicalCount,
                     totalRepairCount: result.totalRepairCount ?? model.totalRepairCount,
                     hasMore: result.hasMore ?? model.hasMore,
+                    suppressedRepairCount: result.suppressedRepairCount ?? model.suppressedRepairCount,
                 });
             }
             const books = await dataService.catalog.getBooksByAuthor(authorId!);

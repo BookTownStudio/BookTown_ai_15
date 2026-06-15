@@ -7,6 +7,7 @@ const {
   currentViewState,
   followAuthorMock,
   unfollowAuthorMock,
+  saveBookmarkMock,
   showToastMock,
   confirmMock,
   authorityViewState,
@@ -22,6 +23,7 @@ const {
   } as any,
   followAuthorMock: vi.fn(),
   unfollowAuthorMock: vi.fn(),
+  saveBookmarkMock: vi.fn(),
   showToastMock: vi.fn(),
   confirmMock: vi.fn(),
   authorityViewState: {
@@ -136,6 +138,25 @@ vi.mock("../../lib/hooks/useUnfollowAuthor.ts", () => ({
   useUnfollowAuthor: () => ({ mutate: unfollowAuthorMock, isPending: unfollowMutationState.isPending }),
 }));
 
+vi.mock("../../lib/hooks/useSaveQuote.ts", () => ({
+  useSaveBookmark: () => ({ mutate: saveBookmarkMock, isPending: false }),
+}));
+
+vi.mock("../../lib/hooks/useAuthorReaderMemory.ts", () => ({
+  useAuthorReaderMemory: () => ({
+    data: {
+      isSignedIn: false,
+      isFollowed: false,
+      booksRead: [],
+      currentlyReading: [],
+      savedQuotes: [],
+      reviews: [],
+      continuation: { book: null, reason: "none", label: "No continuation available" },
+    },
+    isLoading: false,
+  }),
+}));
+
 vi.mock("../../components/ui/LoadingSpinner.tsx", () => ({
   default: () => <div>loading</div>,
 }));
@@ -176,8 +197,17 @@ vi.mock("../../components/icons/ShareIcon.tsx", () => ({
 vi.mock("../../components/icons/BookIcon.tsx", () => ({
   BookIcon: () => <span>book</span>,
 }));
+vi.mock("../../components/icons/BookOpenIcon.tsx", () => ({
+  BookOpenIcon: () => <span>book-open</span>,
+}));
 vi.mock("../../components/icons/QuoteIcon.tsx", () => ({
   QuoteIcon: () => <span>quote</span>,
+}));
+vi.mock("../../components/icons/BookmarkIcon.tsx", () => ({
+  BookmarkIcon: () => <span>bookmark</span>,
+}));
+vi.mock("../../components/icons/StarIcon.tsx", () => ({
+  StarIcon: () => <span>star</span>,
 }));
 
 describe("Author Details follow lifecycle", () => {

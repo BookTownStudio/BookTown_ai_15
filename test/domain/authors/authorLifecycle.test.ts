@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveAuthorRuntimeLifecycle } from "../../../lib/authors/authorLifecycle.ts";
+import { resolveAuthorAuthorityFromRecord } from "../../../lib/authors/authorAuthorityResolution.ts";
 import { toAuthorEntitySummary } from "../../../lib/authors/authorEntitySummaryAdapter.ts";
 import type { Author } from "../../../types/entities.ts";
 
@@ -127,6 +128,51 @@ describe("authorLifecycle", () => {
       authorityState: "archived",
       entityAuthorityState: "archived",
       reason: "archived_author_not_active",
+    });
+  });
+
+  it("resolves merged author records to survivor redirect metadata", () => {
+    expect(
+      resolveAuthorAuthorityFromRecord({
+        requestedAuthorId: "author_old",
+        author: {
+          ...baseAuthor,
+          id: "author_old",
+          lifecycleState: "merged",
+          mergeTargetAuthorId: "author_survivor",
+        },
+      })
+    ).toMatchObject({
+      requestedAuthorId: "author_old",
+      resolvedAuthorId: "author_survivor",
+      state: "merged",
+      redirect: {
+        required: true,
+        targetAuthorId: "author_survivor",
+        reason: "merged_author_redirect",
+      },
+    });
+  });
+
+  it("resolves superseded author records to current authority redirect metadata", () => {
+    expect(
+      resolveAuthorAuthorityFromRecord({
+        requestedAuthorId: "author_old",
+        author: {
+          ...baseAuthor,
+          id: "author_old",
+          lifecycleState: "superseded",
+          supersededByAuthorId: "author_current",
+        },
+      })
+    ).toMatchObject({
+      resolvedAuthorId: "author_current",
+      state: "superseded",
+      redirect: {
+        required: true,
+        targetAuthorId: "author_current",
+        reason: "superseded_author_redirect",
+      },
     });
   });
 });

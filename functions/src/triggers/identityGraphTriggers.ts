@@ -5,6 +5,7 @@ import {
   toAuthorFollowInteraction,
   writeUserEntityInteractionDirect,
 } from "../identityGraph/userEntityInteractionRuntime";
+import { resolveAuthorAuthorityHandler } from "../catalog/resolveAuthorAuthority";
 
 const db = admin.firestore();
 
@@ -47,11 +48,22 @@ export const onAuthorFollowWrittenToIdentityGraph = onDocumentWritten(
         : beforeData.updatedAt ?? beforeData.createdAt
     );
 
+    const resolution = await resolveAuthorAuthorityHandler({ authorId }, db);
+    const resolvedAuthorId = resolution.resolvedAuthorId;
+    if (!resolvedAuthorId || resolution.state === "candidate" || resolution.state === "archived" || resolution.state === "split") {
+      logger.warn("[IDENTITY_GRAPH][AUTHOR_FOLLOW_SKIP_NON_CANONICAL_AUTHOR]", {
+        uid,
+        authorId,
+        state: resolution.state,
+      });
+      return;
+    }
+
     await writeUserEntityInteractionDirect(
       db,
       toAuthorFollowInteraction({
         uid,
-        authorId,
+        authorId: resolvedAuthorId,
         occurredAt,
         lifecycleState: afterExists ? "recorded" : "withdrawn",
       })

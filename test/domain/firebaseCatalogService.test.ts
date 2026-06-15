@@ -2,16 +2,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   getDocMock,
+  getDocsMock,
+  collectionMock,
+  queryMock,
+  whereMock,
+  orderByMock,
+  limitMock,
+  startAtMock,
+  endAtMock,
   getDownloadUrlMock,
   storageRefMock,
   getFirebaseStorageMock,
+  getFirebaseDbMock,
   httpsCallableMock,
   callableInvokeMock,
 } = vi.hoisted(() => ({
   getDocMock: vi.fn(),
+  getDocsMock: vi.fn(),
+  collectionMock: vi.fn((db, path) => ({ db, path })),
+  queryMock: vi.fn((...parts) => ({ parts })),
+  whereMock: vi.fn((field, op, value) => ({ kind: "where", field, op, value })),
+  orderByMock: vi.fn((field, direction) => ({ kind: "orderBy", field, direction })),
+  limitMock: vi.fn((value) => ({ kind: "limit", value })),
+  startAtMock: vi.fn((value) => ({ kind: "startAt", value })),
+  endAtMock: vi.fn((value) => ({ kind: "endAt", value })),
   getDownloadUrlMock: vi.fn(),
   storageRefMock: vi.fn(),
   getFirebaseStorageMock: vi.fn(() => ({})),
+  getFirebaseDbMock: vi.fn(() => ({ app: "db" })),
   httpsCallableMock: vi.fn(),
   callableInvokeMock: vi.fn(),
 }));
@@ -23,9 +41,27 @@ vi.mock("../../lib/infrastructure/firebase/firestoreAdapter.ts", () => ({
 }));
 
 vi.mock("../../lib/firebase.ts", () => ({
-  getFirebaseDb: vi.fn(),
+  getFirebaseDb: getFirebaseDbMock,
   getFirebaseFunctions: vi.fn(),
   getFirebaseStorage: getFirebaseStorageMock,
+}));
+
+vi.mock("firebase/firestore", () => ({
+  collection: collectionMock,
+  deleteDoc: vi.fn(),
+  doc: vi.fn((db, path, id) => ({ db, path, id })),
+  documentId: vi.fn(() => "__name__"),
+  endAt: endAtMock,
+  getDoc: vi.fn(),
+  getDocs: getDocsMock,
+  increment: vi.fn((value) => ({ __increment: value })),
+  limit: limitMock,
+  orderBy: orderByMock,
+  query: queryMock,
+  runTransaction: vi.fn(),
+  serverTimestamp: vi.fn(() => "SERVER_TIMESTAMP"),
+  startAt: startAtMock,
+  where: whereMock,
 }));
 
 vi.mock("firebase/storage", () => ({
@@ -64,6 +100,7 @@ describe("firebaseCatalogService.getBook", () => {
         author: "Author One",
         theme: "ink",
       },
+      semanticGraphEligible: true,
     });
     getDownloadUrlMock.mockImplementation(
       () => new Promise<string>(() => {})
@@ -139,5 +176,108 @@ describe("firebaseCatalogService.getBook", () => {
       authorEn: "Author One",
       coverUrl: "https://cdn.example.com/book_1.jpg",
     });
+  });
+});
+
+describe("firebaseCatalogService.searchAuthors", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    httpsCallableMock.mockReturnValue(callableInvokeMock);
+  });
+
+  function authorDoc(id: string) {
+    return { id, data: () => ({ nameEn: id }) };
+  }
+
+  function resolverResponse(params: {
+    requestedAuthorId: string;
+    resolvedAuthorId: string;
+    state: "canonical" | "merged" | "superseded";
+    nameEn?: string;
+  }) {
+    return {
+      success: true,
+      data: {
+        requestedAuthorId: params.requestedAuthorId,
+        resolvedAuthorId: params.resolvedAuthorId,
+        state: params.state,
+        author: {
+          id: params.resolvedAuthorId,
+          nameEn: params.nameEn ?? "Franz Kafka",
+          nameAr: params.nameEn ?? "Franz Kafka",
+          avatarUrl: "",
+          bioEn: "",
+          bioAr: "",
+          lifespan: "",
+          countryEn: "",
+          countryAr: "",
+          languageEn: "",
+          languageAr: "",
+          lifecycleState: "canonical",
+        },
+        redirect: {
+          required: params.requestedAuthorId !== params.resolvedAuthorId,
+          targetAuthorId:
+            params.requestedAuthorId !== params.resolvedAuthorId
+              ? params.resolvedAuthorId
+              : null,
+          reason:
+            params.state === "merged"
+              ? "merged_author_redirect"
+              : params.state === "superseded"
+                ? "superseded_author_redirect"
+                : "active_author",
+        },
+      },
+    };
+  }
+
+  it("displays the survivor when raw search returns only a losing merged author", async () => {
+    getDocsMock.mockResolvedValueOnce({ docs: [authorDoc("author_old")] });
+    callableInvokeMock.mockResolvedValueOnce({
+      data: resolverResponse({
+        requestedAuthorId: "author_old",
+        resolvedAuthorId: "author_survivor",
+        state: "merged",
+        nameEn: "Franz Kafka",
+      }),
+    });
+
+    const authors = await firebaseCatalogService.searchAuthors("kafka");
+
+    expect(authors).toHaveLength(1);
+    expect(authors[0]).toMatchObject({
+      id: "author_survivor",
+      nameEn: "Franz Kafka",
+    });
+  });
+
+  it("dedupes raw loser and raw survivor results into one survivor author", async () => {
+    getDocsMock.mockResolvedValueOnce({
+      docs: [authorDoc("author_old"), authorDoc("author_survivor")],
+    });
+    callableInvokeMock
+      .mockResolvedValueOnce({
+        data: resolverResponse({
+          requestedAuthorId: "author_old",
+          resolvedAuthorId: "author_survivor",
+          state: "merged",
+          nameEn: "Franz Kafka",
+        }),
+      })
+      .mockResolvedValueOnce({
+        data: resolverResponse({
+          requestedAuthorId: "author_survivor",
+          resolvedAuthorId: "author_survivor",
+          state: "canonical",
+          nameEn: "Franz Kafka",
+        }),
+      });
+
+    const authors = await firebaseCatalogService.searchAuthors("kafka");
+
+    expect(authors).toHaveLength(1);
+    expect(authors[0]?.id).toBe("author_survivor");
+    expect(callableInvokeMock).toHaveBeenCalledTimes(2);
   });
 });

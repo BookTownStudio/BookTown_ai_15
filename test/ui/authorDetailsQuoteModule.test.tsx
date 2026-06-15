@@ -10,6 +10,7 @@ const {
   booksByAuthorState,
   quotesState,
   useDiscoverQuotesMock,
+  saveBookmarkMock,
 } = vi.hoisted(() => ({
   currentViewState: {
     type: "immersive",
@@ -17,6 +18,7 @@ const {
     params: { authorId: "route_author_id" },
   } as any,
   navigateMock: vi.fn(),
+  saveBookmarkMock: vi.fn(),
   authorityViewState: {
     data: null as any,
     author: null as any,
@@ -132,6 +134,25 @@ vi.mock("../../lib/hooks/useUnfollowAuthor.ts", () => ({
   useUnfollowAuthor: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
+vi.mock("../../lib/hooks/useSaveQuote.ts", () => ({
+  useSaveBookmark: () => ({ mutate: saveBookmarkMock, isPending: false }),
+}));
+
+vi.mock("../../lib/hooks/useAuthorReaderMemory.ts", () => ({
+  useAuthorReaderMemory: () => ({
+    data: {
+      isSignedIn: false,
+      isFollowed: false,
+      booksRead: [],
+      currentlyReading: [],
+      savedQuotes: [],
+      reviews: [],
+      continuation: { book: null, reason: "none", label: "No continuation available" },
+    },
+    isLoading: false,
+  }),
+}));
+
 vi.mock("../../store/toast.tsx", () => ({
   useToast: () => ({ showToast: vi.fn() }),
 }));
@@ -181,8 +202,17 @@ vi.mock("../../components/icons/ShareIcon.tsx", () => ({
 vi.mock("../../components/icons/BookIcon.tsx", () => ({
   BookIcon: () => <span>book</span>,
 }));
+vi.mock("../../components/icons/BookOpenIcon.tsx", () => ({
+  BookOpenIcon: () => <span>book-open</span>,
+}));
 vi.mock("../../components/icons/QuoteIcon.tsx", () => ({
   QuoteIcon: () => <span>quote</span>,
+}));
+vi.mock("../../components/icons/BookmarkIcon.tsx", () => ({
+  BookmarkIcon: () => <span>bookmark</span>,
+}));
+vi.mock("../../components/icons/StarIcon.tsx", () => ({
+  StarIcon: () => <span>star</span>,
 }));
 
 describe("Author Details quote module", () => {
@@ -285,12 +315,34 @@ describe("Author Details quote module", () => {
     render(<AuthorDetailsScreen />);
 
     expect(screen.getByText("Canonical Book")).toBeTruthy();
-    fireEvent.click(screen.getByText("From Canonical Book"));
+    fireEvent.click(screen.getByText("Open Canonical Book"));
 
     expect(navigateMock).toHaveBeenCalledWith({
       type: "immersive",
       id: "bookDetails",
       params: { bookId: "canonical_book_id", from: currentViewState },
+    });
+  });
+
+  it("saves and shares canonical quote identities from Author Voice", () => {
+    quotesState.data = [quote("quote_1")];
+
+    render(<AuthorDetailsScreen />);
+
+    fireEvent.click(screen.getByText("Save"));
+    expect(saveBookmarkMock).toHaveBeenCalledWith(
+      { entityId: "quote_1", type: "quote" },
+      expect.any(Object)
+    );
+
+    fireEvent.click(screen.getAllByText("Share")[1]);
+    expect(navigateMock).toHaveBeenCalledWith({
+      type: "immersive",
+      id: "postComposer",
+      params: {
+        from: currentViewState,
+        attachment: { type: "quote", id: "quote_1" },
+      },
     });
   });
 
