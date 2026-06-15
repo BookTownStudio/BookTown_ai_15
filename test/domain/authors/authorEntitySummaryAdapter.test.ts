@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  resolveAuthorRuntimeLifecycle,
+} from "../../../lib/authors/authorLifecycle.ts";
+import {
   toAuthorEntitySummary,
   toCanonicalAuthorRef,
 } from "../../../lib/authors/authorEntitySummaryAdapter.ts";
@@ -63,6 +66,31 @@ describe("authorEntitySummaryAdapter", () => {
     });
   });
 
+  it("carries lifecycle metadata without converting it into display identity", () => {
+    const lifecycle = resolveAuthorRuntimeLifecycle({
+      authorId: "author_octavia_butler",
+      author: { ...author, lifecycleState: "merged", mergeTargetAuthorId: "author_survivor" },
+      isLoading: false,
+      isError: false,
+    });
+    const summary = toAuthorEntitySummary(author, "author_octavia_butler", lifecycle);
+
+    expect(summary.ref).toMatchObject({
+      entityType: "author",
+      entityId: "author_octavia_butler",
+      authorityState: "merged",
+      mergeTarget: {
+        entityType: "author",
+        entityId: "author_survivor",
+      },
+    });
+    expect(summary.title).toBe("Octavia Butler");
+    expect(summary.typeSpecific).toMatchObject({
+      lifecycleState: "merged",
+      mergeTargetAuthorId: "author_survivor",
+    });
+  });
+
   it("resolves authority state transitions", () => {
     expect(resolveAuthorDetailsAuthorityState("author_1", author, false, false)).toBe(
       "canonical"
@@ -80,7 +108,7 @@ describe("authorEntitySummaryAdapter", () => {
         false,
         false
       )
-    ).toBe("unresolved");
+    ).toBe("candidate");
   });
 
   it("builds an authority view with explicit legacy repair bibliography state", () => {
@@ -101,4 +129,3 @@ describe("authorEntitySummaryAdapter", () => {
     });
   });
 });
-

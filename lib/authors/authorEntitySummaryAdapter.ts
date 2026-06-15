@@ -5,20 +5,38 @@ import {
   type LiteraryEntityRef,
 } from "../../contracts/entityPlatform";
 import type { Author } from "../../types/entities.ts";
+import type { AuthorLifecycleResolution } from "./authorLifecycle.ts";
 
 function text(value: string | undefined): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-export function toCanonicalAuthorRef(authorId: string): LiteraryEntityRef {
-  return createAuthorEntityRef(authorId.trim());
+export function toCanonicalAuthorRef(
+  authorId: string,
+  lifecycle?: AuthorLifecycleResolution
+): LiteraryEntityRef {
+  const entityId = authorId.trim();
+  return createAuthorEntityRef(entityId, {
+    authorityState: lifecycle?.entityAuthorityState ?? "canonical",
+    canonicalId: lifecycle?.canonicalAuthorId ?? entityId,
+    ...(lifecycle?.mergeTargetAuthorId
+      ? { mergeTarget: createAuthorEntityRef(lifecycle.mergeTargetAuthorId) }
+      : {}),
+    provenance: {
+      sourceClass: "system",
+      sourceSystem: "author_authority",
+      sourceId: entityId,
+      ...(lifecycle ? { evidence: [`lifecycle:${lifecycle.authorityState}`, `reason:${lifecycle.reason}`] } : {}),
+    },
+  });
 }
 
 export function toAuthorEntitySummary(
   author: Author,
-  authorId: string = author.id
+  authorId: string = author.id,
+  lifecycle?: AuthorLifecycleResolution
 ): EntitySummary {
-  const ref = toCanonicalAuthorRef(authorId);
+  const ref = toCanonicalAuthorRef(authorId, lifecycle);
   const nameEn = text(author.nameEn) || ref.entityId;
   const nameAr = text(author.nameAr);
   const countryEn = text(author.countryEn);
@@ -52,7 +70,22 @@ export function toAuthorEntitySummary(
       ...(author.requiresCanonicalization === true
         ? { requiresCanonicalization: true }
         : {}),
+      ...(lifecycle
+        ? {
+            lifecycleState: lifecycle.authorityState,
+            lifecycleReason: lifecycle.reason,
+            isPseudonym: lifecycle.isPseudonym,
+            ...(lifecycle.mergeTargetAuthorId
+              ? { mergeTargetAuthorId: lifecycle.mergeTargetAuthorId }
+              : {}),
+            ...(lifecycle.splitTargetAuthorIds.length > 0
+              ? { splitTargetAuthorIds: lifecycle.splitTargetAuthorIds }
+              : {}),
+            ...(lifecycle.supersededByAuthorId
+              ? { supersededByAuthorId: lifecycle.supersededByAuthorId }
+              : {}),
+          }
+        : {}),
     },
   };
 }
-

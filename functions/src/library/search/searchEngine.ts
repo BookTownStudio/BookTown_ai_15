@@ -1837,7 +1837,7 @@ function deriveCorrectedQueryCandidates(params: {
     for (const seed of seeds) {
       const normalized = normalizeSearchText(seed);
       if (!normalized) continue;
-       seenSeedPhrases.add(normalized);
+      seenSeedPhrases.add(normalized);
       if (seed !== titleSeed) {
         seenAuthorPhrases.add(normalized);
       }

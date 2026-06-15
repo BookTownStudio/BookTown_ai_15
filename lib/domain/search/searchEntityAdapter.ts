@@ -5,7 +5,20 @@ import {
   type EntitySummary,
   type LiteraryEntityRef,
 } from "../../../contracts/entityPlatform";
-import type { SearchResultDTO } from "../../../types/bookSearch.ts";
+import type {
+  SearchEntityResult,
+  SearchResponseDTO,
+  SearchResultDTO,
+  SearchResultEnvelope,
+} from "../../../types/bookSearch.ts";
+import type { Author, Quote } from "../../../types/entities.ts";
+import type { AuthorLifecycleResolution } from "../../authors/authorLifecycle.ts";
+import { toAuthorEntitySummary } from "../../authors/authorEntitySummaryAdapter.ts";
+import {
+  resolveQuoteRuntimeLifecycle,
+  type QuoteLifecycleResolution,
+} from "../../quotes/quoteLifecycle.ts";
+import { toQuoteEntitySummary } from "../../quotes/quoteEntitySummaryAdapter.ts";
 
 /**
  * Derives a LiteraryEntityRef from the existing book search DTO.
@@ -105,3 +118,94 @@ export function toEntitySummaryFromSearchResult(result: SearchResultDTO): Entity
   };
 }
 
+export function toWorkSearchEntityResult(result: SearchResultDTO): SearchEntityResult {
+  const summary = toEntitySummaryFromSearchResult(result);
+  const route =
+    result.resultType === "canonical" && result.bookId
+      ? {
+          kind: "book_details" as const,
+          bookId: result.bookId,
+          ...(result.editionId ? { editionId: result.editionId } : {}),
+        }
+      : {
+          kind: "none" as const,
+          reason: "external_work_candidate_not_routable",
+        };
+
+  return {
+    resultId: result.id,
+    entityType: "work",
+    entityRef: summary.ref,
+    summary,
+    route,
+    source: "book_search",
+    rank: result.rank,
+    score: result.confidence,
+    legacyWorkResult: result,
+  };
+}
+
+export function toAuthorSearchEntityResult(params: {
+  readonly author: Author;
+  readonly authorId?: string;
+  readonly lifecycle?: AuthorLifecycleResolution;
+  readonly rank?: number;
+  readonly score?: number;
+}): SearchEntityResult {
+  const authorId = (params.authorId || params.author.id).trim();
+  const summary = toAuthorEntitySummary(params.author, authorId, params.lifecycle);
+
+  return {
+    resultId: `author:${summary.ref.entityId}`,
+    entityType: "author",
+    entityRef: summary.ref,
+    summary,
+    route:
+      summary.ref.authorityState === "canonical" || summary.ref.authorityState === "enriched"
+        ? { kind: "author_details", authorId: summary.ref.entityId }
+        : { kind: "none", reason: "non_canonical_author_not_routable" },
+    source: "author_entity_adapter",
+    ...(params.rank !== undefined ? { rank: params.rank } : {}),
+    ...(params.score !== undefined ? { score: params.score } : {}),
+  };
+}
+
+export function toQuoteSearchEntityResult(params: {
+  readonly quote: Quote;
+  readonly quoteId?: string;
+  readonly lifecycle?: QuoteLifecycleResolution;
+  readonly rank?: number;
+  readonly score?: number;
+}): SearchEntityResult {
+  const lifecycle = params.lifecycle ?? resolveQuoteRuntimeLifecycle(params.quote);
+  const quoteId = (params.quoteId || params.quote.canonicalQuoteId || params.quote.id).trim();
+  const summary = toQuoteEntitySummary(params.quote, quoteId, lifecycle);
+
+  return {
+    resultId: `quote:${summary.ref.entityId}`,
+    entityType: "quote",
+    entityRef: summary.ref,
+    summary,
+    route:
+      lifecycle.identityGraphEligible &&
+      (summary.ref.authorityState === "canonical" || summary.ref.authorityState === "enriched")
+        ? { kind: "quote_details", quoteId: summary.ref.entityId }
+        : { kind: "none", reason: "non_canonical_quote_not_routable" },
+    source: "quote_entity_adapter",
+    ...(params.rank !== undefined ? { rank: params.rank } : {}),
+    ...(params.score !== undefined ? { score: params.score } : {}),
+  };
+}
+
+export function toSearchResultEnvelope(response: SearchResponseDTO): SearchResultEnvelope {
+  return {
+    contractVersion: 1,
+    mode: "work_compatibility",
+    primaryEntityType: "work",
+    results: response.results,
+    entityResults: response.results.map(toWorkSearchEntityResult),
+    nextCursor: response.nextCursor,
+    hasMore: response.hasMore,
+    cursorUsed: response.cursorUsed,
+  };
+}

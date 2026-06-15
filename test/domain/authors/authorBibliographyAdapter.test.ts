@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   AUTHOR_BIBLIOGRAPHY_PREVIEW_LIMIT,
   buildAuthorBibliographyModel,
+  enforceCanonicalAuthorBibliography,
   flattenAuthorBibliographyPreview,
 } from "../../../lib/authors/authorBibliographyAdapter.ts";
 import type { Book } from "../../../types/entities.ts";
@@ -72,6 +73,40 @@ describe("authorBibliographyAdapter", () => {
     expect(model.repairWorks.map((item) => item.id)).toEqual(["repair_1"]);
   });
 
+  it("enforces canonical-only bibliography for Tier-1 Author Details", () => {
+    const model = enforceCanonicalAuthorBibliography(
+      buildAuthorBibliographyModel({
+        canonicalWorks: [book("work_1")],
+        repairWorks: [book("repair_1"), book("repair_2")],
+      })
+    );
+
+    expect(model).toMatchObject({
+      authoritySource: "canonical_author_id",
+      totalCanonicalCount: 1,
+      totalRepairCount: 0,
+      suppressedRepairCount: 2,
+    });
+    expect(model.canonicalWorks.map((item) => item.id)).toEqual(["work_1"]);
+    expect(model.repairWorks).toEqual([]);
+  });
+
+  it("does not promote legacy repair bibliography to canonical authority", () => {
+    const model = enforceCanonicalAuthorBibliography(
+      buildAuthorBibliographyModel({
+        repairWorks: [book("repair_1")],
+      })
+    );
+
+    expect(model).toMatchObject({
+      authoritySource: "none",
+      totalCanonicalCount: 0,
+      totalRepairCount: 0,
+      suppressedRepairCount: 1,
+    });
+    expect(flattenAuthorBibliographyPreview(model)).toEqual([]);
+  });
+
   it("orders deterministically by publication date, title, then id without popularity", () => {
     const model = buildAuthorBibliographyModel({
       canonicalWorks: [
@@ -98,4 +133,3 @@ describe("authorBibliographyAdapter", () => {
     );
   });
 });
-

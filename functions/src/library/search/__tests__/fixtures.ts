@@ -28,6 +28,20 @@ type LocalEditionFixture = {
     attachmentId: string | null;
     source?: string;
   };
+  manifestationAvailability?: {
+    hasReadableManifestation: boolean;
+    canReadInApp: boolean;
+    canDownload?: boolean;
+    acquisitionEligible?: boolean;
+    manifestationId: string;
+    editionId: string;
+    format: "epub" | "pdf" | "unknown";
+    source: string;
+    accessMode: "in_app" | "external_link";
+    attachmentId?: string;
+    visibility?: "public" | "restricted" | "private";
+    updatedAt?: string;
+  };
   isbn13?: string;
   isbn10?: string;
   normalizedTitle: string;
@@ -76,6 +90,19 @@ const base = (
     downloadable,
     ...(downloadable
       ? {
+          manifestationAvailability: {
+            hasReadableManifestation: true,
+            canReadInApp: true,
+            canDownload: true,
+            acquisitionEligible: true,
+            manifestationId: `${id}_manifestation`,
+            editionId: id,
+            format: "epub",
+            source: "ebook_attachment",
+            accessMode: "in_app",
+            attachmentId: `${id}_attachment`,
+            visibility: "public",
+          },
           readerAuthority: {
             hasReadableAttachment: true,
             attachmentId: `${id}_attachment`,

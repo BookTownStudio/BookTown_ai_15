@@ -267,6 +267,16 @@ export interface Author {
     providerSource?: 'openLibrary' | 'wikidata';
     providerExternalId?: string;
     requiresCanonicalization?: boolean;
+    lifecycleState?: 'candidate' | 'canonical' | 'merged' | 'split' | 'superseded' | 'archived';
+    authorityState?: 'candidate' | 'canonical' | 'merged' | 'split' | 'superseded' | 'archived';
+    status?: 'candidate' | 'canonical' | 'merged' | 'split' | 'superseded' | 'archived';
+    canonicalAuthorId?: string;
+    mergeTargetAuthorId?: string;
+    splitTargetAuthorIds?: string[];
+    supersededByAuthorId?: string;
+    isPseudonym?: boolean;
+    pseudonymOfAuthorId?: string;
+    archived?: boolean;
 }
 
 export type BookForm =
@@ -515,6 +525,19 @@ export interface Quote {
     sourceAr: string;
     bookId?: string;
     authorId?: string;
+    lifecycleState?: 'canonical' | 'merged' | 'duplicate' | 'disputed' | 'translation' | 'variant' | 'paraphrase' | 'reader_highlight' | 'imported' | 'archived';
+    quoteLifecycleState?: 'canonical' | 'merged' | 'duplicate' | 'disputed' | 'translation' | 'variant' | 'paraphrase' | 'reader_highlight' | 'imported' | 'archived';
+    originType?: 'user_authored' | 'saved_reference' | 'dataset_import';
+    mergeTargetQuoteId?: string;
+    duplicateOfQuoteId?: string;
+    variantOfQuoteId?: string;
+    paraphraseOfQuoteId?: string;
+    disputed?: boolean;
+    archived?: boolean;
+    language?: string;
+    originalLanguage?: string;
+    translatedFrom?: string;
+    translationStatus?: string;
     provenance?: {
         sourceType: 'book' | 'author' | 'manual';
         verificationStatus: 'unverified' | 'canonical_linked' | 'saved_reference';
@@ -522,6 +545,13 @@ export interface Quote {
         sourceAuthorId?: string;
         savedFromOwnerId?: string;
         savedFromQuoteId?: string;
+        readerSource?: {
+            sourceSignatureHash: string;
+            attachmentId: string | null;
+            manifestVersion: number;
+            sourceType: string;
+            editionId?: string | null;
+        };
     };
 }
 

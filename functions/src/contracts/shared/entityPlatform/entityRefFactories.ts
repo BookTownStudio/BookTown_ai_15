@@ -9,6 +9,7 @@ export interface LiteraryEntityRefFactoryOptions {
   readonly canonicalId?: string;
   readonly canonicalKey?: string;
   readonly sourceRef?: LiteraryEntitySourceRef;
+  readonly mergeTarget?: LiteraryEntityRef;
   readonly displayHint?: string;
   readonly languageHint?: string;
   readonly resolutionConfidence?: number;
@@ -50,6 +51,7 @@ export function createLiteraryEntityRef(
     ...(options.canonicalId !== undefined ? { canonicalId: options.canonicalId } : {}),
     ...(options.canonicalKey !== undefined ? { canonicalKey: options.canonicalKey } : {}),
     ...(options.sourceRef !== undefined ? { sourceRef: options.sourceRef } : {}),
+    ...(options.mergeTarget !== undefined ? { mergeTarget: options.mergeTarget } : {}),
     ...(options.displayHint !== undefined ? { displayHint: options.displayHint } : {}),
     ...(options.languageHint !== undefined ? { languageHint: options.languageHint } : {}),
     ...(options.resolutionConfidence !== undefined
@@ -107,4 +109,3 @@ export function createPeriodEntityRef(
 ): LiteraryEntityRef {
   return createLiteraryEntityRef("period", periodId, options);
 }
-

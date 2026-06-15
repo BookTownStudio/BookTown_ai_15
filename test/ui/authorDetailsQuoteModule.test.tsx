@@ -229,7 +229,7 @@ describe("Author Details quote module", () => {
       authorId: "canonical_author_id",
       limit: 6,
     });
-    expect(screen.getByText("Quotes by this Author")).toBeTruthy();
+    expect(screen.getByText("Author Voice")).toBeTruthy();
     expect(screen.getByText("Quote text quote_1")).toBeTruthy();
     expect(screen.getByText("Quote text quote_6")).toBeTruthy();
     expect(screen.queryByText("Quote text quote_7")).toBeNull();

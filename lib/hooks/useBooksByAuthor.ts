@@ -4,6 +4,7 @@ import { dataService } from '../../services/dataService.ts';
 import { Book } from '../../types/entities.ts';
 import {
     buildAuthorBibliographyModel,
+    enforceCanonicalAuthorBibliography,
     flattenAuthorBibliographyPreview,
     type AuthorBibliographyAuthoritySource,
     type AuthorBibliographyModel,
@@ -38,15 +39,17 @@ export const useBooksByAuthor = (authorId: string | undefined) => {
                     canonicalWorks: result.canonicalWorks ?? (result.bibliographyAuthority === "canonical_author_id" ? result.books ?? [] : []),
                     repairWorks: result.repairWorks ?? (result.bibliographyAuthority === "legacy_display_name_repair" ? result.books ?? [] : []),
                 });
-                return {
+                return enforceCanonicalAuthorBibliography({
                     ...model,
                     totalCanonicalCount: result.totalCanonicalCount ?? model.totalCanonicalCount,
                     totalRepairCount: result.totalRepairCount ?? model.totalRepairCount,
                     hasMore: result.hasMore ?? model.hasMore,
-                };
+                });
             }
             const books = await dataService.catalog.getBooksByAuthor(authorId!);
-            return buildAuthorBibliographyModel({ canonicalWorks: books });
+            return enforceCanonicalAuthorBibliography(
+                buildAuthorBibliographyModel({ repairWorks: books })
+            );
         },
         enabled: !!authorId,
     });

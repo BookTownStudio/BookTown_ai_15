@@ -1,5 +1,9 @@
 import { onCall, HttpsError } from "firebase-functions/v2/https";
 import { admin } from "../firebaseAdmin";
+import {
+  toSocialAttachmentInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 import { SOCIAL_QUOTE_PROJECTION_COLLECTION } from "../projections/quoteProjections";
 import {
   buildNotificationSummaryPatch,
@@ -956,6 +960,27 @@ export const sendDirectMessage = onCall(DM_CALLABLE_OPTIONS, async (request) => 
       idempotencyKey,
       version: 1,
     });
+    if (
+      attachmentSnapshot &&
+      (attachmentSnapshot.type === "book" ||
+        attachmentSnapshot.type === "author" ||
+        attachmentSnapshot.type === "quote")
+    ) {
+      writeUserEntityInteraction(
+        transaction,
+        db,
+        toSocialAttachmentInteraction({
+          uid,
+          entityType: attachmentSnapshot.type,
+          entityId: attachmentSnapshot.entityId,
+          sourceSurface: "message",
+          sourceId: messageRef.id,
+          visibility: "private",
+          occurredAt: new Date().toISOString(),
+          idempotencyKey,
+        })
+      );
+    }
 
     transaction.set(dedupeRef, {
       senderId: uid,

@@ -11,6 +11,10 @@ import {
   readShelfBookInTransaction,
   writeShelfBookInTransaction,
 } from "./shelfBookEntry";
+import {
+  toShelfInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -127,6 +131,17 @@ export const addBookToShelf = onCall<AddBookToShelfRequest>({ cors: true }, asyn
         ? { recommendationOrigin: recommendationOrigin as Record<string, unknown> }
         : {}),
     });
+    writeUserEntityInteraction(
+      tx,
+      db,
+      toShelfInteraction({
+        uid,
+        shelfId,
+        bookId,
+        occurredAt: addedAt,
+        visibility: typeof shelfData.visibility === "string" ? shelfData.visibility : undefined,
+      })
+    );
   });
 
   return { ok: true };

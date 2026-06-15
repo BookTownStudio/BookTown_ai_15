@@ -10,6 +10,8 @@ export const ENTITY_LIFECYCLE_STATES = [
   "surfaced",
   "deprecated",
   "merged",
+  "split",
+  "superseded",
   "archived",
   "unresolved",
 ] as const;
@@ -25,4 +27,3 @@ export interface EntityMergeRecord {
   readonly compatibilityState: EntityLifecycleState;
   readonly provenance?: EntityPlatformProvenance;
 }
-

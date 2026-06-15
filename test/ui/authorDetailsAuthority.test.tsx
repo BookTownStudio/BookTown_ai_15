@@ -242,7 +242,7 @@ describe("Author Details authority hardening", () => {
     expect(screen.getByText("Author not found.")).toBeTruthy();
   });
 
-  it("keeps canonical and repair bibliography visibly separated with authority metadata", () => {
+  it("excludes repair bibliography from Author Canon while preserving authority metadata", () => {
     booksByAuthorState.data = [
       { id: "canonical_work" },
       { id: "repair_work" },
@@ -259,10 +259,12 @@ describe("Author Details authority hardening", () => {
 
     render(<AuthorDetailsScreen />);
 
+    expect(screen.getByText("Author Canon")).toBeTruthy();
     expect(screen.getByText("book:canonical_work")).toBeTruthy();
-    expect(screen.getByText("Legacy catalog matches")).toBeTruthy();
-    expect(screen.getByText("book:repair_work")).toBeTruthy();
-    expect(screen.getByText("View all")).toBeTruthy();
+    expect(screen.queryByText("Legacy catalog matches")).toBeNull();
+    expect(screen.queryByText("book:repair_work")).toBeNull();
+    expect(screen.getByText("Complete Bibliography")).toBeTruthy();
     expect(screen.getByText(/Bibliography authority: mixed/)).toBeTruthy();
+    expect(screen.getByText(/repair works excluded from canon: 1/)).toBeTruthy();
   });
 });

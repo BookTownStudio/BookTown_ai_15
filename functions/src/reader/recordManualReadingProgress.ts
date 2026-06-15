@@ -7,6 +7,10 @@ import {
   isPersistedReadingState,
   ReadingState,
 } from "./readingProgressStateMachine";
+import {
+  toReadingInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -195,6 +199,7 @@ export const recordManualReadingProgressHandler = async (request: any) => {
       }
 
       const now = Timestamp.now();
+      const nowIso = now.toDate().toISOString();
       const previousData = progressSnap.exists ? progressSnap.data() || {} : {};
       const mutation = computeReadingProgressMutation({
         uid,
@@ -246,6 +251,18 @@ export const recordManualReadingProgressHandler = async (request: any) => {
         ...baseEvent,
         event: "manual_progress_update",
       });
+
+      writeUserEntityInteraction(
+        tx,
+        db,
+        toReadingInteraction({
+          uid,
+          bookId,
+          progress: normalizedProgress,
+          occurredAt: nowIso,
+          sourceId: `manual:${bookId}`,
+        })
+      );
 
       observedPreviousState = mutation.previousState;
       observedNextState = mutation.nextState;

@@ -17,6 +17,10 @@ import {
   provenanceFromManifest,
   writeSourceProvenance,
 } from "./readerContinuityCompatibility";
+import {
+  toReadingInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -249,6 +253,7 @@ export const recordReadingProgressHandler = async (request: any) => {
     await db.runTransaction(async (tx) => {
       const snap = await tx.get(progressRef);
       const now = Timestamp.now();
+      const nowIso = now.toDate().toISOString();
 
       const data = snap.exists ? snap.data()! : {};
       const existingRecommendationOrigin = sanitizeRecommendationOrigin(
@@ -311,6 +316,18 @@ export const recordReadingProgressHandler = async (request: any) => {
 
         observedEvent = event;
       }
+
+      writeUserEntityInteraction(
+        tx,
+        db,
+        toReadingInteraction({
+          uid,
+          bookId,
+          progress: normalizedProgress,
+          occurredAt: nowIso,
+          sourceId: bookId,
+        })
+      );
     });
 
     logger.info("[READER][PROGRESS_WRITE_OK]", {

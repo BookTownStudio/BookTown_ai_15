@@ -3,6 +3,10 @@ import { FieldValue } from "firebase-admin/firestore";
 import { admin } from "../firebaseAdmin";
 import { assertShelfAllowsEntryMutation } from "./currentlyReadingInvariant";
 import { deleteShelfBookInTransaction } from "./shelfBookEntry";
+import {
+  toShelfInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -54,6 +58,18 @@ export const removeBookFromShelf = onCall<RemoveBookFromShelfRequest>(
 
       // Remove from shelf_books collection (SHELF_BOOKS_SCHEMA_V1).
       deleteShelfBookInTransaction(tx, db, shelfId, bookId);
+      writeUserEntityInteraction(
+        tx,
+        db,
+        toShelfInteraction({
+          uid,
+          shelfId,
+          bookId,
+          occurredAt: new Date().toISOString(),
+          visibility: typeof shelfData.visibility === "string" ? shelfData.visibility : undefined,
+          lifecycleState: "withdrawn",
+        })
+      );
     });
 
     return { ok: true };

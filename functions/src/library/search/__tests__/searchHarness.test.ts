@@ -201,6 +201,175 @@ afterEach(() => {
 });
 
 describe("Search Harness — Canonical Local Engine", () => {
+  describe("P0 golden query stabilization matrix", () => {
+    it.each([
+      {
+        label: "exact title",
+        query: "Pride and Prejudice",
+        expectedTitle: "Pride and Prejudice",
+        expectedAuthor: "Jane Austen",
+        expectedRank: 1,
+      },
+      {
+        label: "ISBN",
+        query: "9780747532743",
+        expectedTitle: "Harry Potter and the Philosopher Stone",
+        expectedAuthor: "J. K. Rowling",
+        expectedRank: 0,
+      },
+      {
+        label: "bounded typo",
+        query: "harry potr",
+        expectedTitle: "Harry Potter and the Philosopher Stone",
+        expectedAuthor: "J. K. Rowling",
+        expectedRank: 2,
+      },
+      {
+        label: "author intent",
+        query: "Kafka",
+        expectedTitle: "The Trial",
+        expectedAuthor: "Franz Kafka",
+        expectedRank: 2,
+      },
+    ])(
+      "preserves canonical-first ranking for $label",
+      async ({ query, expectedTitle, expectedAuthor, expectedRank }) => {
+        const response = await unifiedSearch(query, {});
+        const top = response.results[0] as any;
+
+        expect(response.results.length).toBeGreaterThan(0);
+        expect(top.resultType).toBe("canonical");
+        expect(top.workType).toBe("work");
+        expect(top.rank).toBe(expectedRank);
+        expect(normalize(top.title || "")).toBe(normalize(expectedTitle));
+        expect(normalize(top.authorEn || top.authors?.[0] || "")).toBe(
+          normalize(expectedAuthor)
+        );
+      }
+    );
+
+    it("preserves external fallback without allowing external rows to outrank canonical rows", async () => {
+      vi.stubEnv("NODE_ENV", "development");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL) => {
+          const url = String(input);
+          if (url.includes("googleapis")) {
+            return {
+              ok: true,
+              json: async () => ({
+                items: [
+                  {
+                    id: "gb-p0-rare",
+                    volumeInfo: {
+                      title: "Rare Fallback Term Volume",
+                      authors: ["External Author"],
+                      printType: "BOOK",
+                    },
+                  },
+                ],
+              }),
+            } as any;
+          }
+
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  key: "/works/OLP0RARE1W",
+                  title: "Rare Fallback Term Companion",
+                  author_name: ["External Author"],
+                  type: "book",
+                },
+              ],
+            }),
+          } as any;
+        }) as any
+      );
+
+      const response = await unifiedSearch("rare fallback term", {});
+      const firstExternalIndex = response.results.findIndex(
+        (entry: any) => entry.resultType === "external"
+      );
+      const lastCanonicalIndex = Math.max(
+        ...response.results.map((entry: any, index: number) =>
+          entry.resultType === "canonical" ? index : -1
+        )
+      );
+
+      expect(response.telemetry?.externalFallbackTriggered).toBe(true);
+      expect(response.canonicalCount).toBeGreaterThan(0);
+      expect(response.externalCount).toBeGreaterThan(0);
+      expect(firstExternalIndex).toBeGreaterThan(lastCanonicalIndex);
+    });
+
+    it("preserves duplicate prevention for ISBN-less external title and author matches", async () => {
+      vi.stubEnv("NODE_ENV", "development");
+      const menInTheSunIndex = LOCAL_EDITIONS.findIndex((entry: any) => entry.id === "e22");
+      const originalMenInTheSun = { ...(LOCAL_EDITIONS[menInTheSunIndex] as any) };
+
+      if (LOCAL_EDITIONS[menInTheSunIndex]) {
+        (LOCAL_EDITIONS[menInTheSunIndex] as any).isbn13 = undefined;
+        (LOCAL_EDITIONS[menInTheSunIndex] as any).isbn10 = undefined;
+      }
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (input: string | URL) => {
+          const url = String(input);
+          if (url.includes("googleapis")) {
+            return {
+              ok: true,
+              json: async () => ({
+                items: [
+                  {
+                    id: "gb-p0-men-sun",
+                    volumeInfo: {
+                      title: "Men in the Sun",
+                      authors: ["Ghassan Kanafani"],
+                      printType: "BOOK",
+                    },
+                  },
+                ],
+              }),
+            } as any;
+          }
+
+          return {
+            ok: true,
+            json: async () => ({
+              docs: [
+                {
+                  key: "/works/OLP0MEN1W",
+                  title: "Men in the Sun",
+                  author_name: ["Ghassan Kanafani"],
+                  type: "book",
+                },
+              ],
+            }),
+          } as any;
+        }) as any
+      );
+
+      try {
+        const response = await unifiedSearch("Men in the Sun", {});
+        const matchingRows = response.results.filter(
+          (entry: any) =>
+            normalize(entry.title || "") === "men in the sun" ||
+            normalize(entry.titleAr || "") === "رجال في الشمس"
+        );
+
+        expect(matchingRows).toHaveLength(1);
+        expect(matchingRows[0]?.resultType).toBe("canonical");
+      } finally {
+        if (LOCAL_EDITIONS[menInTheSunIndex]) {
+          (LOCAL_EDITIONS[menInTheSunIndex] as any) = originalMenInTheSun;
+        }
+      }
+    });
+  });
+
   it("canonical-first order: ISBN exact match ranks tier 0 and appears first", async () => {
     const response = await unifiedSearch("9780747532743", {});
     expect(response.results.length).toBeGreaterThan(0);
@@ -1165,17 +1334,24 @@ describe("Search Harness — Canonical Local Engine", () => {
 
   it('returns the canonical Pride row for ebookOnly when readerAuthority allows in-app reading without an attachment id', async () => {
     const pride = LOCAL_EDITIONS.find((entry) => entry.id === 'e16') as
-      | (Record<string, unknown> & { readerAuthority?: unknown })
+      | (Record<string, unknown> & { manifestationAvailability?: unknown })
       | undefined;
     expect(pride).toBeDefined();
 
-    const previousReaderAuthority = pride?.readerAuthority;
+    const previousManifestationAvailability = pride?.manifestationAvailability;
 
     if (pride) {
-      pride.readerAuthority = {
-        hasReadableAttachment: true,
-        attachmentId: null,
+      pride.manifestationAvailability = {
+        hasReadableManifestation: true,
+        canReadInApp: true,
+        canDownload: true,
+        acquisitionEligible: true,
+        manifestationId: 'e16_manifestation',
+        editionId: 'e16',
+        format: 'epub',
         source: "user_upload",
+        accessMode: 'in_app',
+        attachmentId: null,
       };
     }
 
@@ -1194,14 +1370,15 @@ describe("Search Harness — Canonical Local Engine", () => {
       expect(response.results[0]?.readerAuthority).toEqual({
         hasReadableAttachment: true,
         attachmentId: null,
+        manifestationId: "e16_manifestation",
         source: "user_upload",
       });
     } finally {
       if (pride) {
-        if (previousReaderAuthority !== undefined) {
-          pride.readerAuthority = previousReaderAuthority;
+        if (previousManifestationAvailability !== undefined) {
+          pride.manifestationAvailability = previousManifestationAvailability;
         } else {
-          delete pride.readerAuthority;
+          delete pride.manifestationAvailability;
         }
       }
     }

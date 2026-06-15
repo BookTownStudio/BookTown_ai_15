@@ -13,6 +13,7 @@ export interface AuthorBibliographyModel {
   readonly totalCanonicalCount: number;
   readonly totalRepairCount: number;
   readonly hasMore: boolean;
+  readonly suppressedRepairCount: number;
 }
 
 export const AUTHOR_BIBLIOGRAPHY_PREVIEW_LIMIT = 12;
@@ -83,6 +84,24 @@ export function buildAuthorBibliographyModel(params: {
     totalCanonicalCount,
     totalRepairCount,
     hasMore: totalCanonicalCount + totalRepairCount > previewLimit,
+    suppressedRepairCount: 0,
+  };
+}
+
+export function enforceCanonicalAuthorBibliography(
+  bibliography: AuthorBibliographyModel
+): AuthorBibliographyModel {
+  const canonicalCount = bibliography.totalCanonicalCount;
+  return {
+    canonicalWorks: bibliography.canonicalWorks,
+    repairWorks: [],
+    authoritySource: canonicalCount > 0 ? "canonical_author_id" : "none",
+    totalCanonicalCount: canonicalCount,
+    totalRepairCount: 0,
+    hasMore: bibliography.totalCanonicalCount > bibliography.canonicalWorks.length,
+    suppressedRepairCount:
+      bibliography.suppressedRepairCount +
+      bibliography.totalRepairCount,
   };
 }
 

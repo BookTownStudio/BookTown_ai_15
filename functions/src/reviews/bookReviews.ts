@@ -7,6 +7,10 @@ import {
   bookReviewProjectionId,
   canonicalReviewId,
 } from "../projections/reviewProjections";
+import {
+  toReviewInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -342,6 +346,17 @@ export const upsertBookReview = onCall({ cors: true }, async (request) => {
       },
       { merge: true }
     );
+    writeUserEntityInteraction(
+      tx,
+      db,
+      toReviewInteraction({
+        uid,
+        bookId,
+        reviewId: canonicalReviewId(uid, bookId),
+        visibility,
+        occurredAt: nowIso,
+      })
+    );
 
     return isNew;
   });
@@ -384,6 +399,18 @@ export const deleteBookReview = onCall({ cors: true }, async (request) => {
         updatedAt: nowIso,
       },
       { merge: true }
+    );
+    writeUserEntityInteraction(
+      tx,
+      db,
+      toReviewInteraction({
+        uid,
+        bookId,
+        reviewId: canonicalReviewId(uid, bookId),
+        visibility: "private",
+        lifecycleState: "deleted",
+        occurredAt: nowIso,
+      })
     );
   });
 

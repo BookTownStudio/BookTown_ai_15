@@ -9,6 +9,10 @@ import {
   buildRenderProjectionEntity,
 } from "./social/postRenderProjection";
 import { SOCIAL_QUOTE_PROJECTION_COLLECTION } from "./projections/quoteProjections";
+import {
+  toSocialAttachmentInteraction,
+  writeUserEntityInteraction,
+} from "./identityGraph/userEntityInteractionRuntime";
 
 type StructuredEntityType =
   | "book"
@@ -523,6 +527,27 @@ export const createSocialPost = onCall({ cors: true }, async (request) => {
         }
 
         transaction.set(postRef, postData);
+        if (
+            primaryStructured &&
+            (primaryStructured.type === "book" ||
+                primaryStructured.type === "author" ||
+                primaryStructured.type === "quote")
+        ) {
+            writeUserEntityInteraction(
+                transaction,
+                db,
+                toSocialAttachmentInteraction({
+                    uid,
+                    entityType: primaryStructured.type,
+                    entityId: primaryStructured.entityId,
+                    sourceSurface: "social_post",
+                    sourceId: postRef.id,
+                    visibility,
+                    occurredAt: new Date().toISOString(),
+                    idempotencyKey: publishToken,
+                })
+            );
+        }
 
         for (const attachment of verifiedMediaAttachments) {
             const attachmentMetadata =

@@ -1,14 +1,13 @@
 import { useMemo } from "react";
 import type { EntitySummary, LiteraryEntityRef } from "../../contracts/entityPlatform";
 import { toAuthorEntitySummary } from "../authors/authorEntitySummaryAdapter.ts";
+import {
+  resolveAuthorRuntimeLifecycle,
+  type AuthorDetailsAuthorityState,
+  type AuthorLifecycleResolution,
+} from "../authors/authorLifecycle.ts";
 import type { Author } from "../../types/entities.ts";
 import { useAuthorDetails } from "./useAuthorDetails.ts";
-
-export type AuthorDetailsAuthorityState =
-  | "canonical"
-  | "unresolved"
-  | "legacy_repair"
-  | "not_found";
 
 export type AuthorDetailsBibliographyAuthority =
   | "canonical_author_id"
@@ -22,6 +21,7 @@ export interface AuthorDetailsAuthorityView {
   readonly author: Author;
   readonly authorityState: AuthorDetailsAuthorityState;
   readonly bibliographyAuthority: AuthorDetailsBibliographyAuthority;
+  readonly lifecycle: AuthorLifecycleResolution;
 }
 
 export interface UseAuthorDetailsAuthorityResult {
@@ -38,11 +38,7 @@ export function resolveAuthorDetailsAuthorityState(
   isLoading: boolean,
   isError: boolean
 ): AuthorDetailsAuthorityState {
-  if (isLoading) return "unresolved";
-  if (isError || !author) return "not_found";
-  if (!authorId?.trim()) return "unresolved";
-  if (author.requiresCanonicalization === true) return "unresolved";
-  return "canonical";
+  return resolveAuthorRuntimeLifecycle({ authorId, author, isLoading, isError }).authorityState;
 }
 
 export function buildAuthorDetailsAuthorityView(params: {
@@ -50,6 +46,7 @@ export function buildAuthorDetailsAuthorityView(params: {
   readonly author: Author | null | undefined;
   readonly authorityState: AuthorDetailsAuthorityState;
   readonly bibliographyAuthority: AuthorDetailsBibliographyAuthority;
+  readonly lifecycle?: AuthorLifecycleResolution;
 }): AuthorDetailsAuthorityView | null {
   if (
     !params.author ||
@@ -59,13 +56,22 @@ export function buildAuthorDetailsAuthorityView(params: {
     return null;
   }
 
-  const authorSummary = toAuthorEntitySummary(params.author, params.authorId);
+  const lifecycle =
+    params.lifecycle ??
+    resolveAuthorRuntimeLifecycle({
+      authorId: params.authorId,
+      author: params.author,
+      isLoading: false,
+      isError: false,
+    });
+  const authorSummary = toAuthorEntitySummary(params.author, params.authorId, lifecycle);
   return {
     authorRef: authorSummary.ref,
     authorSummary,
     author: params.author,
     authorityState: params.authorityState,
     bibliographyAuthority: params.bibliographyAuthority,
+    lifecycle,
   };
 }
 
@@ -74,12 +80,8 @@ export function useAuthorDetailsAuthority(
   bibliographyAuthority: AuthorDetailsBibliographyAuthority = "none"
 ): UseAuthorDetailsAuthorityResult {
   const { data: author, isLoading, isError } = useAuthorDetails(authorId);
-  const authorityState = resolveAuthorDetailsAuthorityState(
-    authorId,
-    author,
-    isLoading,
-    isError
-  );
+  const lifecycle = resolveAuthorRuntimeLifecycle({ authorId, author, isLoading, isError });
+  const authorityState = lifecycle.authorityState;
 
   const data = useMemo<AuthorDetailsAuthorityView | null>(() => {
     return buildAuthorDetailsAuthorityView({
@@ -87,8 +89,9 @@ export function useAuthorDetailsAuthority(
       author,
       authorityState,
       bibliographyAuthority,
+      lifecycle,
     });
-  }, [author, authorId, authorityState, bibliographyAuthority]);
+  }, [author, authorId, authorityState, bibliographyAuthority, lifecycle]);
 
   return {
     data,

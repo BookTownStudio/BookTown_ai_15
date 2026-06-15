@@ -6,6 +6,10 @@ import { createHash } from "crypto";
 import { normalizeSearchText, tokenizeSearchText } from "../search/normalization";
 import { assertActiveAuthenticatedUser, assertRoleFromClaims } from "../shared/auth";
 import {
+  toQuoteInteraction,
+  writeUserEntityInteractionDirect,
+} from "../identityGraph/userEntityInteractionRuntime";
+import {
   BOOK_QUOTE_PROJECTION_COLLECTION,
   SOCIAL_QUOTE_PROJECTION_COLLECTION,
   USER_QUOTE_PROJECTION_COLLECTION,
@@ -40,6 +44,18 @@ export type QuoteProvenance = {
   };
 };
 
+type QuoteLifecycleState =
+  | "canonical"
+  | "merged"
+  | "duplicate"
+  | "disputed"
+  | "translation"
+  | "variant"
+  | "paraphrase"
+  | "reader_highlight"
+  | "imported"
+  | "archived";
+
 type CanonicalQuote = {
   id: string;
   canonicalQuoteId?: string;
@@ -55,6 +71,7 @@ type CanonicalQuote = {
   updatedAt?: string;
   isPublic: boolean;
   provenance?: QuoteProvenance;
+  lifecycleState?: QuoteLifecycleState;
   searchTextNormalized: string;
 };
 
@@ -94,6 +111,11 @@ type AdminQuoteShape = {
   sourceType?: string;
   sourceReference?: string;
   provenance?: QuoteProvenance;
+  lifecycleState?: QuoteLifecycleState;
+  quoteLifecycleState?: QuoteLifecycleState;
+  variantOfQuoteId?: string;
+  paraphraseOfQuoteId?: string;
+  disputed?: boolean;
   status: AdminQuoteStatus;
   isPublic: boolean;
   createdAt?: string;
@@ -133,6 +155,10 @@ export type CanonicalQuoteCreateInput = {
   sourceReference?: string;
   savedFromOwnerId?: string;
   savedFromQuoteId?: string;
+  lifecycleState?: QuoteLifecycleState;
+  variantOfQuoteId?: string;
+  paraphraseOfQuoteId?: string;
+  disputed?: boolean;
   authorNameOverride?: string;
   bookTitleOverride?: string;
   readerSource?: QuoteProvenance["readerSource"];
@@ -318,6 +344,43 @@ function resolveRootAttributionType(params: {
   return "label";
 }
 
+function normalizeQuoteLifecycleState(value: unknown): QuoteLifecycleState | undefined {
+  return value === "canonical" ||
+    value === "merged" ||
+    value === "duplicate" ||
+    value === "disputed" ||
+    value === "translation" ||
+    value === "variant" ||
+    value === "paraphrase" ||
+    value === "reader_highlight" ||
+    value === "imported" ||
+    value === "archived"
+    ? value
+    : undefined;
+}
+
+function resolveQuoteLifecycleState(params: {
+  readonly explicit?: QuoteLifecycleState;
+  readonly originType?: RootQuoteOriginType;
+  readonly status?: AdminQuoteStatus;
+  readonly translationStatus?: string;
+  readonly translatedFrom?: string;
+  readonly readerSource?: QuoteProvenance["readerSource"];
+  readonly variantOfQuoteId?: string;
+  readonly paraphraseOfQuoteId?: string;
+  readonly disputed?: boolean;
+}): QuoteLifecycleState {
+  if (params.status === "archived") return "archived";
+  if (params.explicit) return params.explicit;
+  if (params.disputed === true) return "disputed";
+  if (params.paraphraseOfQuoteId) return "paraphrase";
+  if (params.variantOfQuoteId) return "variant";
+  if (params.readerSource) return "reader_highlight";
+  if (params.originType === "dataset_import") return "imported";
+  if (params.translationStatus || params.translatedFrom) return "translation";
+  return "canonical";
+}
+
 function parseQuoteProvenance(value: unknown): QuoteProvenance | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return undefined;
@@ -433,6 +496,7 @@ function parseQuote(
     updatedAt: timestampToIso(raw.updatedAt),
     isPublic: raw.isPublic !== false,
     provenance: parseQuoteProvenance(raw.provenance),
+    lifecycleState: normalizeQuoteLifecycleState(raw.lifecycleState),
     searchTextNormalized:
       typeof raw.searchTextNormalized === "string" && raw.searchTextNormalized.trim()
         ? raw.searchTextNormalized.trim()
@@ -494,6 +558,7 @@ function parseRootQuote(
     updatedAt: timestampToIso(raw.updatedAt),
     isPublic: raw.status !== "archived" && raw.status !== "deleted" && raw.visibility !== "private" && raw.isPublic !== false,
     provenance: parseQuoteProvenance(raw.provenance),
+    lifecycleState: normalizeQuoteLifecycleState(raw.lifecycleState),
     searchTextNormalized:
       typeof raw.searchTextNormalized === "string" && raw.searchTextNormalized.trim()
         ? raw.searchTextNormalized.trim()
@@ -526,6 +591,7 @@ function publicQuotePayload(quote: CanonicalQuote) {
     ...(quote.createdAt ? { createdAt: quote.createdAt } : {}),
     ...(quote.updatedAt ? { updatedAt: quote.updatedAt } : {}),
     ...(quote.provenance ? { provenance: quote.provenance } : {}),
+    ...(quote.lifecycleState ? { lifecycleState: quote.lifecycleState } : {}),
   };
 }
 
@@ -1004,6 +1070,17 @@ function mapAdminQuote(raw: DocumentData, quoteId: string): AdminQuoteShape {
         ? raw.sourceReference.trim()
         : undefined,
     provenance: parseQuoteProvenance(raw.provenance),
+    lifecycleState: normalizeQuoteLifecycleState(raw.lifecycleState),
+    quoteLifecycleState: normalizeQuoteLifecycleState(raw.quoteLifecycleState),
+    variantOfQuoteId:
+      typeof raw.variantOfQuoteId === "string" && raw.variantOfQuoteId.trim()
+        ? raw.variantOfQuoteId.trim()
+        : undefined,
+    paraphraseOfQuoteId:
+      typeof raw.paraphraseOfQuoteId === "string" && raw.paraphraseOfQuoteId.trim()
+        ? raw.paraphraseOfQuoteId.trim()
+        : undefined,
+    disputed: raw.disputed === true,
     status: raw.status === "archived" ? "archived" : "active",
     isPublic: raw.isPublic !== false,
     createdAt: timestampToIso(raw.createdAt),
@@ -1155,6 +1232,17 @@ export async function prepareCanonicalQuoteWrite(
   const normalizedText = normalizeSearchText(canonicalText);
   const slug = slugifyQuoteValue(canonicalText) || canonicalQuoteId;
   const now = admin.firestore.FieldValue.serverTimestamp();
+  const lifecycleState = resolveQuoteLifecycleState({
+    explicit: input.lifecycleState,
+    originType: input.originType,
+    status: input.status,
+    translationStatus: input.translationStatus,
+    translatedFrom: input.translatedFrom,
+    readerSource: input.readerSource,
+    variantOfQuoteId: input.variantOfQuoteId,
+    paraphraseOfQuoteId: input.paraphraseOfQuoteId,
+    disputed: input.disputed,
+  });
 
   return {
     canonicalQuoteId,
@@ -1175,6 +1263,8 @@ export async function prepareCanonicalQuoteWrite(
       normalizedText,
       slug,
       originType: input.originType,
+      lifecycleState,
+      quoteLifecycleState: lifecycleState,
       attributionType: resolveRootAttributionType(canonicalLinks),
       attributionLabel: input.sourceEn,
       authorId: canonicalLinks.authorId ?? null,
@@ -1189,6 +1279,9 @@ export async function prepareCanonicalQuoteWrite(
       originalLanguage: input.originalLanguage ?? null,
       translatedFrom: input.translatedFrom ?? null,
       translationStatus: input.translationStatus ?? null,
+      variantOfQuoteId: input.variantOfQuoteId ?? null,
+      paraphraseOfQuoteId: input.paraphraseOfQuoteId ?? null,
+      disputed: input.disputed === true,
       themes: input.themes ?? [],
       mood: input.mood ?? null,
       concepts: input.concepts ?? [],
@@ -1218,6 +1311,7 @@ export async function prepareCanonicalQuoteWrite(
       searchTextNormalized,
       bookId: canonicalLinks.bookId ?? null,
       authorId: canonicalLinks.authorId ?? null,
+      lifecycleState,
       createdAt: now,
       updatedAt: now,
     },
@@ -1422,6 +1516,16 @@ export const createQuote = onCall({ cors: true }, async (request) => {
     originType: "user_authored",
     readerSource: rawQuote.readerSource,
   });
+  await writeUserEntityInteractionDirect(
+    db,
+    toQuoteInteraction({
+      uid,
+      quoteId: canonicalQuote.canonicalQuoteId,
+      ...(canonicalQuote.bookId ? { bookId: canonicalQuote.bookId } : {}),
+      isPublic: canonicalQuote.isPublic,
+      occurredAt: nowIso,
+    })
+  );
 
   return {
     id: canonicalQuote.canonicalQuoteId,
@@ -1550,6 +1654,10 @@ export const adminQuoteCreate = onCall({ cors: true }, async (request) => {
     attributionConfidence: normalizeOptionalConfidence(data.attributionConfidence),
     sourceType: normalizeOptionalString(data.sourceType, "sourceType", 80),
     sourceReference: normalizeOptionalString(data.sourceReference, "sourceReference", 240),
+    lifecycleState: normalizeQuoteLifecycleState(data.lifecycleState),
+    variantOfQuoteId: normalizeOptionalString(data.variantOfQuoteId, "variantOfQuoteId", 180),
+    paraphraseOfQuoteId: normalizeOptionalString(data.paraphraseOfQuoteId, "paraphraseOfQuoteId", 180),
+    disputed: data.disputed === true,
   });
 
   return {
@@ -1624,6 +1732,23 @@ export const adminQuoteUpdate = onCall({ cors: true }, async (request) => {
   const searchTokens = tokenizeSearchText(searchTextNormalized, 40);
   const nextStatus =
     data.status === "archived" || existing.status === "archived" ? "archived" : "active";
+  const nextVariantOfQuoteId =
+    normalizeOptionalString(data.variantOfQuoteId ?? existing.variantOfQuoteId, "variantOfQuoteId", 180);
+  const nextParaphraseOfQuoteId =
+    normalizeOptionalString(data.paraphraseOfQuoteId ?? existing.paraphraseOfQuoteId, "paraphraseOfQuoteId", 180);
+  const nextDisputed =
+    data.disputed === undefined ? existing.disputed === true : data.disputed === true;
+  const nextLifecycleState = resolveQuoteLifecycleState({
+    explicit: normalizeQuoteLifecycleState(data.lifecycleState ?? existing.lifecycleState),
+    status: nextStatus,
+    translationStatus:
+      normalizeOptionalString(data.translationStatus ?? existing.translationStatus, "translationStatus", 40),
+    translatedFrom:
+      normalizeOptionalString(data.translatedFrom ?? existing.translatedFrom, "translatedFrom", 16),
+    variantOfQuoteId: nextVariantOfQuoteId,
+    paraphraseOfQuoteId: nextParaphraseOfQuoteId,
+    disputed: nextDisputed,
+  });
   const updatePayload = {
     canonicalQuoteId: quoteId,
     canonicalQuoteHash,
@@ -1668,6 +1793,11 @@ export const adminQuoteUpdate = onCall({ cors: true }, async (request) => {
         "translationStatus",
         40
       ) ?? null,
+    lifecycleState: nextLifecycleState,
+    quoteLifecycleState: nextLifecycleState,
+    variantOfQuoteId: nextVariantOfQuoteId ?? null,
+    paraphraseOfQuoteId: nextParaphraseOfQuoteId ?? null,
+    disputed: nextDisputed,
     themes: normalizeStringArray(data.themes ?? existing.themes, 20),
     mood: normalizeOptionalString(data.mood ?? existing.mood, "mood", 80) ?? null,
     concepts: normalizeStringArray(data.concepts ?? existing.concepts, 20),
@@ -1861,6 +1991,17 @@ export const saveQuoteFromReference = onCall({ cors: true }, async (request) => 
     savedFromOwnerId: sourceOwnerId,
     savedFromQuoteId: sourceQuoteId,
   });
+  await writeUserEntityInteractionDirect(
+    db,
+    toQuoteInteraction({
+      uid,
+      quoteId: canonicalQuote.canonicalQuoteId,
+      ...(canonicalQuote.bookId ? { bookId: canonicalQuote.bookId } : {}),
+      isPublic: canonicalQuote.isPublic,
+      occurredAt: nowIso,
+      idempotencyKey: `save_reference:${sourceOwnerId}:${sourceQuoteId}`,
+    })
+  );
 
   return {
     quote: {

@@ -71,6 +71,16 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
   const legacyQuoteId = normalizeOptionalString(quote.legacyQuoteId);
   const bookId = normalizeOptionalString(quote.bookId);
   const authorId = normalizeOptionalString(quote.authorId);
+  const lifecycleState = normalizeOptionalString(quote.lifecycleState);
+  const quoteLifecycleState = normalizeOptionalString(quote.quoteLifecycleState);
+  const originType = normalizeOptionalString(quote.originType);
+  const mergeTargetQuoteId = normalizeOptionalString(quote.mergeTargetQuoteId);
+  const duplicateOfQuoteId = normalizeOptionalString(quote.duplicateOfQuoteId);
+  const variantOfQuoteId = normalizeOptionalString(quote.variantOfQuoteId);
+  const paraphraseOfQuoteId = normalizeOptionalString(quote.paraphraseOfQuoteId);
+  const originalLanguage = normalizeOptionalString(quote.originalLanguage);
+  const translatedFrom = normalizeOptionalString(quote.translatedFrom);
+  const translationStatus = normalizeOptionalString(quote.translationStatus);
   const createdAt = normalizeOptionalString(quote.createdAt);
   const updatedAt = normalizeOptionalString(quote.updatedAt);
   const provenance =
@@ -116,10 +126,39 @@ function parseManagedQuote(payload: unknown): ManagedQuote {
     sourceAr: assertNonEmptyString(quote.sourceAr, "quote.sourceAr"),
     ...(bookId ? { bookId } : {}),
     ...(authorId ? { authorId } : {}),
+    ...(isQuoteLifecycleState(lifecycleState) ? { lifecycleState } : {}),
+    ...(isQuoteLifecycleState(quoteLifecycleState) ? { quoteLifecycleState } : {}),
+    ...(isQuoteOriginType(originType) ? { originType } : {}),
+    ...(mergeTargetQuoteId ? { mergeTargetQuoteId } : {}),
+    ...(duplicateOfQuoteId ? { duplicateOfQuoteId } : {}),
+    ...(variantOfQuoteId ? { variantOfQuoteId } : {}),
+    ...(paraphraseOfQuoteId ? { paraphraseOfQuoteId } : {}),
+    ...(quote.disputed === true ? { disputed: true } : {}),
+    ...(quote.archived === true ? { archived: true } : {}),
+    ...(originalLanguage ? { originalLanguage } : {}),
+    ...(translatedFrom ? { translatedFrom } : {}),
+    ...(translationStatus ? { translationStatus } : {}),
     ...(createdAt ? { createdAt } : {}),
     ...(updatedAt ? { updatedAt } : {}),
     ...(provenance ? { provenance } : {}),
   };
+}
+
+function isQuoteLifecycleState(value: string | undefined): value is ManagedQuote["lifecycleState"] {
+  return value === "canonical" ||
+    value === "merged" ||
+    value === "duplicate" ||
+    value === "disputed" ||
+    value === "translation" ||
+    value === "variant" ||
+    value === "paraphrase" ||
+    value === "reader_highlight" ||
+    value === "imported" ||
+    value === "archived";
+}
+
+function isQuoteOriginType(value: string | undefined): value is ManagedQuote["originType"] {
+  return value === "user_authored" || value === "saved_reference" || value === "dataset_import";
 }
 
 function extractSuccessData<T>(

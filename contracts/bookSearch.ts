@@ -1,3 +1,8 @@
+import type {
+  EntitySummary,
+  LiteraryEntityRef,
+} from "./entityPlatform";
+
 export type BookSearchSource = "booktown" | "googleBooks" | "openLibrary";
 export type BookSearchResultType = "canonical" | "external";
 export type BookSearchWorkType = "work" | "edition";
@@ -111,4 +116,59 @@ export interface SearchResponseDTO {
   nextCursor: string | null;
   hasMore: boolean;
   cursorUsed: boolean;
+}
+
+export type SearchEntityResultType = "work" | "author" | "quote";
+
+export type SearchEntityResultSource =
+  | "book_search"
+  | "author_entity_adapter"
+  | "quote_entity_adapter";
+
+export type SearchEntityRoute =
+  | {
+      kind: "book_details";
+      bookId: string;
+      editionId?: string;
+    }
+  | {
+      kind: "author_details";
+      authorId: string;
+    }
+  | {
+      kind: "quote_details";
+      quoteId: string;
+    }
+  | {
+      kind: "none";
+      reason: string;
+    };
+
+/**
+ * Future-facing entity search projection.
+ *
+ * This is not the live Search Results contract. Current Search remains
+ * work-centric and continues to return SearchResultDTO[].
+ */
+export interface SearchEntityResult {
+  readonly resultId: string;
+  readonly entityType: SearchEntityResultType;
+  readonly entityRef: LiteraryEntityRef;
+  readonly summary: EntitySummary;
+  readonly route: SearchEntityRoute;
+  readonly source: SearchEntityResultSource;
+  readonly rank?: number;
+  readonly score?: number;
+  readonly legacyWorkResult?: SearchResultDTO;
+}
+
+export interface SearchResultEnvelope {
+  readonly contractVersion: 1;
+  readonly mode: "work_compatibility";
+  readonly primaryEntityType: "work";
+  readonly results: readonly SearchResultDTO[];
+  readonly entityResults: readonly SearchEntityResult[];
+  readonly nextCursor: string | null;
+  readonly hasMore: boolean;
+  readonly cursorUsed: boolean;
 }

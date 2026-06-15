@@ -3,6 +3,10 @@ import { admin } from "../firebaseAdmin";
 import { assertActiveAuthenticatedUser } from "../shared/auth";
 import { z, parseInput } from "../shared/validation";
 import { assertViewerCanInteractWithPost } from "./postAccess";
+import {
+  toBookmarkInteraction,
+  writeUserEntityInteraction,
+} from "../identityGraph/userEntityInteractionRuntime";
 
 const db = admin.firestore();
 
@@ -210,6 +214,7 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
 
   if (active) {
     const batch = db.batch();
+    const nowIso = new Date().toISOString();
     batch.set(
       bookmarkRef,
       {
@@ -233,6 +238,22 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
         { merge: true }
       );
     }
+    if (
+      target.entityType === "book" ||
+      target.entityType === "author" ||
+      target.entityType === "quote"
+    ) {
+      writeUserEntityInteraction(
+        batch,
+        db,
+        toBookmarkInteraction({
+          uid,
+          entityType: target.entityType,
+          entityId: target.entityId,
+          occurredAt: nowIso,
+        })
+      );
+    }
     if (target.entityType === "event") {
       batch.set(
         db.collection("events").doc(target.entityId).collection("rsvps").doc(uid),
@@ -249,6 +270,7 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
     await batch.commit();
   } else {
     const batch = db.batch();
+    const nowIso = new Date().toISOString();
     batch.delete(bookmarkRef);
     if (target.entityType === "post") {
       batch.set(
@@ -260,6 +282,23 @@ export const toggleBookmark = onCall({ cors: true }, async (request) => {
           version: 1,
         },
         { merge: true }
+      );
+    }
+    if (
+      target.entityType === "book" ||
+      target.entityType === "author" ||
+      target.entityType === "quote"
+    ) {
+      writeUserEntityInteraction(
+        batch,
+        db,
+        toBookmarkInteraction({
+          uid,
+          entityType: target.entityType,
+          entityId: target.entityId,
+          occurredAt: nowIso,
+          lifecycleState: "withdrawn",
+        })
       );
     }
     await batch.commit();

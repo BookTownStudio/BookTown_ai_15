@@ -9,6 +9,11 @@ export type {
   BookSearchSourceClass,
   BookSearchWorkType,
   ExternalReadableSourceDTO,
+  SearchEntityResult,
+  SearchEntityResultSource,
+  SearchEntityResultType,
+  SearchEntityRoute,
   SearchResponseDTO,
+  SearchResultEnvelope,
   SearchResultDTO,
 } from "../contracts/bookSearch.ts";

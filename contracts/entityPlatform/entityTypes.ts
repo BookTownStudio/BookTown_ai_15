@@ -27,6 +27,8 @@ export const ENTITY_AUTHORITY_STATES = [
   "enriched",
   "deprecated",
   "merged",
+  "split",
+  "superseded",
   "archived",
   "unresolved",
 ] as const;
@@ -51,4 +53,3 @@ export const ENTITY_AUTHORITY_SOURCES = [
 ] as const;
 
 export type EntityAuthoritySource = (typeof ENTITY_AUTHORITY_SOURCES)[number];
-

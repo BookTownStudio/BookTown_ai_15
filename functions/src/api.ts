@@ -14,6 +14,10 @@ import {
   readRuntimeHealthProjection,
   recordOperationalMetric,
 } from "./operations/operationalMetrics";
+import {
+  toSearchClickInteraction,
+  writeUserEntityInteractionDirect,
+} from "./identityGraph/userEntityInteractionRuntime";
 import type {
   ExternalReadableSourceDTO,
   SearchManifestationAvailabilityProjectionDTO,
@@ -194,6 +198,25 @@ async function writeSearchClickTelemetry(payload: SearchClickTelemetryPayload): 
     timestamp: payload.timestamp,
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
+}
+
+async function writeAuthenticatedSearchClickInteraction(payload: {
+  uid: string;
+  bookId: string;
+  clickedRank: number;
+  timestamp: string;
+}): Promise<void> {
+  const db = admin.firestore();
+  await writeUserEntityInteractionDirect(
+    db,
+    toSearchClickInteraction({
+      uid: payload.uid,
+      bookId: payload.bookId,
+      resultId: payload.bookId,
+      clickedRank: payload.clickedRank,
+      occurredAt: payload.timestamp,
+    })
+  );
 }
 
 function readBearerToken(req: any): string | null {
@@ -1004,6 +1027,7 @@ apiRouter.post("/search/click", async (req: any, res: any) => {
   const bookId = String(payload.bookId || "").trim().slice(0, 128);
   const wasCanonical = Boolean(payload.wasCanonical);
   const timestamp = new Date().toISOString();
+  const authenticatedUid = await resolveOptionalAuthenticatedUid(req);
 
   runAfterResponse(res, async () => {
     if (!bookId || !normalizedQuery) {
@@ -1017,6 +1041,14 @@ apiRouter.post("/search/click", async (req: any, res: any) => {
       wasCanonical,
       timestamp,
     });
+    if (authenticatedUid) {
+      await writeAuthenticatedSearchClickInteraction({
+        uid: authenticatedUid,
+        bookId,
+        clickedRank,
+        timestamp,
+      });
+    }
   });
 
   logger.info("SEARCH_V2_CLICK", {
